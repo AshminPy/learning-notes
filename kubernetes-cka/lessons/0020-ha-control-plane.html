@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 20 — Highly-available control plane</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Kubernetes / CKA — Lesson 20 of 23</p>
+<h1>Highly-available control plane</h1>
+
+<p>Lesson 13 built a cluster with one control-plane node. If that node dies, the cluster can't be changed — existing Pods keep running (kubelets don't need the API server minute to minute), but nothing can be scheduled, healed, or modified until it's back. A highly-available (HA) control plane runs multiple control-plane nodes so no single machine is that critical.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>kube-apiserver</code> is stateless — run three copies behind a load balancer and any of them can answer any request, same answer either way. <code>kube-scheduler</code> and <code>kube-controller-manager</code> are the opposite — running two copies acting at once would double-schedule Pods, so exactly one is elected leader at a time; the rest sit idle, watching.</p>
+
+<h2>Setting it up with kubeadm</h2>
+<pre><code>kubeadm init --control-plane-endpoint "LB_DNS_NAME:6443" --upload-certs
+</code></pre>
+<p><code>--control-plane-endpoint</code> points every node at the load balancer, not at one specific control-plane node's IP — this is what makes the other control-plane nodes replaceable later. <code>--upload-certs</code> stores the cluster's certs in a Secret so the next control-plane node can fetch them automatically.</p>
+<p>The command prints two different <code>kubeadm join</code> commands:</p>
+<ul>
+<li>A plain one, for worker nodes.</li>
+<li>One with <code>--control-plane --certificate-key &lt;key&gt;</code>, for adding another control-plane node.</li>
+</ul>
+
+<h2>etcd: stacked vs. external</h2>
+<p>kubeadm defaults to <strong>stacked etcd</strong> — each control-plane node runs its own etcd member locally, alongside its API server. Simpler to operate, and what the exam expects unless told otherwise. <strong>External etcd</strong> runs etcd as a separate cluster the API servers all connect to — more moving parts, used when etcd needs to scale or fail independently of the control plane.</p>
+
+<h2>Who's actually in charge right now</h2>
+<p>Every <code>kube-apiserver</code> is active simultaneously. <code>kube-scheduler</code> and <code>kube-controller-manager</code> use a <code>Lease</code> object to elect one leader each — check who's holding it:</p>
+<pre><code>kubectl get lease -n kube-system kube-scheduler -o jsonpath='{.spec.holderIdentity}'
+kubectl get lease -n kube-system kube-controller-manager -o jsonpath='{.spec.holderIdentity}'
+</code></pre>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. In a 3-control-plane-node cluster, the node currently holding the <code>kube-scheduler</code> lease goes down. What happens to scheduling?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Briefly nothing new gets scheduled, then one of the two remaining <code>kube-scheduler</code> instances acquires the Lease (it was already running, just idle) and becomes the new leader. No manual action needed — that's the point of running more than one.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Why does <code>kube-apiserver</code> not need leader election, but <code>kube-scheduler</code> does?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>kube-apiserver</code> is stateless — it just reads/writes etcd, so any number of copies can serve requests at once with no conflict. <code>kube-scheduler</code> makes decisions (which node gets this Pod) — two copies deciding independently could schedule the same Pod twice, so only one may act at a time.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/high-availability/" target="_blank" rel="noopener">kubernetes.io/docs — kubeadm: Creating Highly Available Clusters</a> — exam-allowed page.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>--control-plane-endpoint</code> points at a load balancer, not one node — that's what makes control-plane nodes replaceable.</li>
+    <li>kubeadm defaults to stacked etcd (one member per control-plane node).</li>
+    <li>API servers are all active at once; scheduler and controller-manager elect one leader via a <code>Lease</code> object.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0019-crds-operators.html">&larr; CRDs &amp; Operators</a>
+  <a href="0021-coredns-gateway-api.html">Next: CoreDNS &amp; Gateway API &rarr;</a>
+</div>
+
+</body>
+</html>

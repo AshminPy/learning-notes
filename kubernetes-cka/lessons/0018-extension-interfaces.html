@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 18 — Extension interfaces: CNI, CSI, CRI</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Kubernetes / CKA — Lesson 18 of 23</p>
+<h1>Extension interfaces: CNI, CSI, CRI</h1>
+
+<p>Kubernetes core doesn't run containers, doesn't wire up Pod networking, and doesn't talk to storage arrays. It defines three plugin interfaces and lets other software do that work. You've already used all three without naming them — this lesson names them, because the exam does.</p>
+
+<p class="callout"><strong>Simple example:</strong> think of Kubernetes as a socket, not the appliance. CRI is the socket a container runtime plugs into. CNI is the socket a network plugin plugs into. CSI is the socket a storage driver plugs into. Swap the plugin, the socket doesn't change.</p>
+
+<h2>CRI — Container Runtime Interface</h2>
+<p>The kubelet doesn't run containers itself — it calls a CRI-compatible runtime (containerd, CRI-O) over a gRPC socket. <code>crictl</code> talks to that same socket directly, which is why it works even when the API server is unreachable (Lesson 15).</p>
+<pre><code>crictl ps -a          # containers, straight from the runtime
+crictl images         # images pulled on this node
+crictl logs &lt;id&gt;      # same idea as kubectl logs, one layer lower
+</code></pre>
+
+<h2>CNI — Container Network Interface</h2>
+<p>A CNI plugin (Calico, Cilium, Flannel...) is what actually gives every Pod an IP and routes traffic between nodes. Kubernetes defines <em>that a Pod gets an IP</em>; the CNI plugin defines <em>how</em>. This is why a <code>NetworkPolicy</code> object can exist and do nothing (Lesson 10) — creating the object doesn't enforce it, only a CNI plugin that implements NetworkPolicy does.</p>
+<pre><code>ls /etc/cni/net.d/            # CNI plugin config, on the node
+kubectl get pods -n kube-system -l k8s-app=calico-node   # example: Calico's own Pods
+</code></pre>
+
+<h2>CSI — Container Storage Interface</h2>
+<p>You already met this in Lesson 7 without the name: a <code>StorageClass</code>'s <code>provisioner</code> field (e.g. <code>pd.csi.storage.gke.io</code>) names a CSI driver. When a PVC requests dynamic storage, Kubernetes core hands the request to that driver — it's the driver, not Kubernetes, that actually creates the disk.</p>
+<pre><code>kubectl get storageclass                 # which provisioner (CSI driver) is default
+kubectl get pods -n kube-system | grep csi   # the driver's own Pods, running in-cluster
+</code></pre>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A Pod is stuck <code>Pending</code>, and <code>describe</code> shows no scheduling error — it's scheduled, but has no IP and never goes Running. Which interface's plugin would you check first?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">CNI. Assigning the Pod an IP and wiring its network is the CNI plugin's job — check its Pods/DaemonSet in <code>kube-system</code> are Running on that node, and check <code>/etc/cni/net.d</code> has valid config.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A PVC stays <code>Pending</code> forever with no PV bound. What's the most likely missing piece, and which interface does it belong to?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The CSI driver named in the StorageClass's <code>provisioner</code> field either isn't installed or isn't running — check <code>kubectl get pods -n kube-system</code> for it. That's CSI, storage's plugin interface.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://kubernetes.io/docs/concepts/extend-kubernetes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/extend-kubernetes</a> — exam-allowed page.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Kubernetes defines three plugin sockets, doesn't implement them: CRI (runtime), CNI (networking), CSI (storage).</li>
+    <li><code>crictl</code> talks straight to CRI — works even if the API server is down.</li>
+    <li>A CNI plugin gives Pods IPs and enforces NetworkPolicy; a CSI driver actually creates the disk behind a StorageClass.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0017-helm-kustomize.html">&larr; Helm &amp; Kustomize</a>
+  <a href="0019-crds-operators.html">Next: CRDs &amp; Operators &rarr;</a>
+</div>
+
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lesson 17 — Final Review</title>
+<title>Lesson 24 — Final Review</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
 <p class="eyebrow">Kubernetes / CKA — Final Review</p>
 <h1>Final Review — Cheat Sheet</h1>
 
-<p>This is a reference page, not a lesson — no new material, no quiz. It pulls together the commands and traps from Lessons 1–16 into one place to skim before the exam.</p>
+<p>This is a reference page, not a lesson — no new material, no quiz. It pulls together the commands and traps from Lessons 1–23 into one place to skim before the exam.</p>
 
 <h2>kubectl command cheat sheet</h2>
 
@@ -71,13 +71,37 @@
 <li><code>kubeadm certs check-expiration</code> / <code>kubeadm certs renew all</code> — check and renew control-plane TLS certs</li>
 </ul>
 
-<h2>Top 5 exam traps</h2>
+<h3>Helm, Kustomize &amp; extension interfaces</h3>
+<ul>
+<li><code>helm install/upgrade/rollback/uninstall &lt;release&gt; &lt;chart&gt;</code> — package install, tracked as a release</li>
+<li><code>kubectl apply -k &lt;dir&gt;</code> — Kustomize, built into kubectl, no install needed</li>
+<li><code>crictl ps -a</code> (CRI) / <code>/etc/cni/net.d</code> (CNI) / StorageClass <code>provisioner</code> (CSI) — the three plugin sockets</li>
+</ul>
+
+<h3>CRDs, operators &amp; HA control plane</h3>
+<ul>
+<li><code>kubectl get crds</code> — every custom kind installed; an Operator (a normal Pod) is what actually acts on them</li>
+<li><code>kubeadm init --control-plane-endpoint &lt;LB&gt; --upload-certs</code> — HA-ready first control-plane node</li>
+<li><code>kubectl get lease -n kube-system kube-scheduler</code> — who's the current elected leader</li>
+</ul>
+
+<h3>CoreDNS, Gateway API &amp; autoscaling</h3>
+<ul>
+<li><code>kubectl -n kube-system get pods -l k8s-app=kube-dns</code> — is the cluster's DNS itself healthy</li>
+<li><code>kubectl get gatewayclass,gateway,httproute -A</code> — Gateway API objects, if installed</li>
+<li><code>kubectl get hpa</code> — <code>TARGETS</code> showing <code>&lt;unknown&gt;</code> means metrics-server is missing, not an HPA bug</li>
+<li><code>kubectl top nodes</code> / <code>kubectl top pods --containers</code> — needs metrics-server, not installed by default on kubeadm</li>
+</ul>
+
+<h2>Top 7 exam traps</h2>
 <ol>
 <li>An Ingress or NetworkPolicy object does nothing by itself — it needs a controller (Ingress) or a CNI that implements it (NetworkPolicy), or it's silently a no-op. See <a href="0008-ingress.html">Lesson 8</a> and <a href="0010-networkpolicy.html">Lesson 10</a>.</li>
 <li>A fresh cluster is default-<strong>allow</strong> for Pod-to-Pod traffic — the opposite of a firewall's default-deny. See <a href="0010-networkpolicy.html">Lesson 10</a>.</li>
 <li>A Deployment's <code>spec.selector.matchLabels</code> must exactly match <code>spec.template.metadata.labels</code>, or the Deployment is invalid. See <a href="0004-deployment.html">Lesson 4</a>.</li>
 <li>A Kubernetes Secret is base64-<strong>encoded</strong>, not encrypted — anyone with etcd/API access reads it as plain text unless <code>EncryptionConfiguration</code> is explicitly turned on. See <a href="0006-configmap-secret.html">Lesson 6</a>.</li>
 <li>A failed readiness probe never restarts a container — it only pulls the Pod out of Service routing. Only a failed liveness probe restarts it. See <a href="0011-resource-limits-probes.html">Lesson 11</a>.</li>
+<li>A PV's <code>reclaimPolicy</code> decides whether data survives its PVC's deletion — <code>Delete</code> (default) destroys it, <code>Retain</code> keeps it but needs manual cleanup. See <a href="0007-pvc.html">Lesson 7</a>.</li>
+<li>An HPA showing <code>&lt;unknown&gt;</code> in <code>TARGETS</code>, or <code>kubectl top</code> failing outright, both trace back to the same cause — metrics-server missing or unhealthy, not a bug in either feature. See <a href="0022-workload-autoscaling.html">Lesson 22</a> and <a href="0023-resource-monitoring.html">Lesson 23</a>.</li>
 </ol>
 
 <h2>Domain weights (CKA exam)</h2>
@@ -104,7 +128,7 @@
 <footer class="teacher-reminder">End of course. Re-read any linked lesson above if a trap doesn't click yet.</footer>
 
 <div class="lesson-nav">
-  <a href="0016-troubleshooting-application-workload.html">&larr; Troubleshooting: application &amp; workload</a>
+  <a href="0023-resource-monitoring.html">&larr; Resource monitoring</a>
   <span>End of course</span>
 </div>
 
