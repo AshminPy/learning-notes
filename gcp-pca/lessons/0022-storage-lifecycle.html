@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 22 — Storage Lifecycle & Data Protection</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 22 of 24</p>
+<h1>Storage lifecycle &amp; data protection</h1>
+
+<p>Lesson 5 covered choosing a storage type. This lesson is what happens to data <em>after</em> it's written — most storage cost in a mature system comes from data nobody configured a lifecycle for, sitting in the most expensive class forever.</p>
+
+<p class="callout"><strong>Simple example:</strong> a lifecycle rule is a standing instruction to your storage: "if this file turns 90 days old, move it to the cheap shelf. If it turns a year old, throw it out." You write the rule once; it runs forever without you.</p>
+
+<h2>Object Lifecycle Management</h2>
+<p>Rules on a Cloud Storage bucket, evaluated automatically, that can transition an object to a cheaper storage class or delete it, based on conditions like age, storage class, or number of newer versions.</p>
+<pre><code>{
+  "rule": [{
+    "action": {"type": "SetStorageClass", "storageClass": "COLDLINE"},
+    "condition": {"age": 90}
+  }]
+}
+</code></pre>
+<table>
+<tr><th>Class</th><th>Typical use</th></tr>
+<tr><td>Standard</td><td>Accessed frequently</td></tr>
+<tr><td>Nearline</td><td>Accessed roughly monthly</td></tr>
+<tr><td>Coldline</td><td>Accessed roughly quarterly</td></tr>
+<tr><td>Archive</td><td>Accessed roughly yearly or less</td></tr>
+</table>
+<p>All four classes have the same millisecond access latency — the difference is storage price vs. retrieval price and minimum storage duration, not speed.</p>
+
+<h2>Retention — the opposite control</h2>
+<p>A bucket <strong>retention policy</strong> stops objects from being deleted or overwritten before a set period — the opposite direction from a lifecycle rule. <strong>Bucket Lock</strong> makes that retention policy permanent and unremovable, satisfying regulatory requirements that data can't be tampered with or deleted early (WORM: write once, read many). This is what "compliance" from Lesson 22 actually looks like configured, not just discussed.</p>
+<div class="trap"><strong>Exam trap:</strong> a lifecycle rule and a retention policy can conflict — a lifecycle "delete after 30 days" rule cannot delete an object a retention policy still protects. Retention always wins; that's the point of it.</div>
+
+<h2>Data protection &amp; growth planning</h2>
+<ul>
+<li><strong>Object versioning</strong> — keeps prior versions when an object is overwritten, protecting against accidental overwrite (not the same as backup — still one bucket, one failure domain).</li>
+<li><strong>Backup and DR service</strong> — GCP's centralized backup for Compute Engine, Cloud SQL, and GKE workloads, separate from storage-class lifecycle management.</li>
+<li><strong>Growth planning</strong> — forecasting storage growth against class choice and lifecycle rules up front avoids a painful, disruptive re-tiering project later. This is a design-time decision, not something to bolt on after the bucket is already full.</li>
+</ul>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Compliance requires that uploaded audit logs cannot be deleted for 7 years, even by an admin. Lifecycle rule, or something else?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Bucket Lock with a 7-year retention policy — a lifecycle rule only automates transitions/deletions, it doesn't prevent them. Retention + Bucket Lock is the control that makes deletion impossible, even for an admin, until the period expires.</div>
+</div>
+
+<h2>Quiz — Lesson 22</h2>
+<div class="quiz">
+<p>Q1. What's the actual difference between Standard and Archive storage classes?</p>
+<div class="opts">
+<label>A. Same access latency; Archive is cheaper to store, pricier to retrieve, with a longer minimum duration</label>
+<label>B. Archive is slower to read than Standard</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> All classes are millisecond-latency — the tradeoff is entirely storage cost vs. retrieval cost vs. minimum duration, never speed.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A lifecycle rule says "delete after 30 days," but a retention policy protects the same object for 1 year. What happens at day 30?</p>
+<div class="opts">
+<label>A. Nothing — the retention policy blocks the deletion until day 365</label>
+<label>B. The object is deleted as scheduled</label>
+</div>
+<button onclick="document.getElementById('q1b').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1b"><strong>A.</strong> Retention policies always override lifecycle deletion — that's their entire purpose.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://cloud.google.com/storage/docs/lifecycle" target="_blank" rel="noopener">Object Lifecycle Management documentation</a> and <a href="https://cloud.google.com/storage/docs/bucket-lock" target="_blank" rel="noopener">Bucket Lock documentation</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Lifecycle rules automate class transitions/deletion by age or version count.</li>
+    <li>Retention + Bucket Lock does the opposite — prevents deletion, even by an admin, until the period expires.</li>
+    <li>All storage classes have the same access latency — the tradeoff is cost and minimum duration, not speed.</li>
+    <li>Versioning protects against accidental overwrite; it is not a substitute for backup.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0021-secure-access-compliance.html">&larr; Secure remote access &amp; compliance</a>
+  <a href="0023-agent-platform-pipelines.html">Next: Agent Platform Pipelines &amp; AI Hypercomputer &rarr;</a>
+</div>
+
+</body>
+</html>

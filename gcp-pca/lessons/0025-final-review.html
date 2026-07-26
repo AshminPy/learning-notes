@@ -11,7 +11,7 @@
 <p class="eyebrow">GCP PCA — Final Review</p>
 <h1>Final review: the morning-of cheat sheet</h1>
 
-<p>Reference doc, not a lesson — no new content, no quiz. Every line compresses something already covered. Skim tonight, scan again the morning of the exam.</p>
+<p>Reference doc, not a lesson — no new content, no quiz. Every line compresses something already covered across Lessons 1-24. Skim tonight, scan again the morning of the exam.</p>
 
 <h2>1. Cheat sheet — keyword → service</h2>
 <p>Scan for the phrase closest to the scenario, jump to the answer.</p>
@@ -73,6 +73,14 @@
 <tr><td>Decouple two services, many independent consumers</td><td>Pub/Sub</td></tr>
 <tr><td>React to a file landing in a bucket / a GCP resource event</td><td>Eventarc</td></tr>
 <tr><td>Run this on a fixed schedule, no event involved</td><td>Cloud Scheduler</td></tr>
+<tr><td>Partner needs their own quota, API key, and self-serve docs</td><td>Apigee — API management, not the backend itself</td></tr>
+<tr><td>CI build/test vs. progressive rollout to prod</td><td>Cloud Build (CI) → Cloud Deploy (CD, canary/approval gates)</td></tr>
+<tr><td>"Root cause" listed as the literal trigger, nothing else</td><td>Trap — incomplete RCA; root cause explains why it wasn't caught, not just what broke</td></tr>
+<tr><td>Technically perfect migration, near-zero adoption</td><td>Change management failure, not a technical one</td></tr>
+<tr><td>Team lacks skills for the recommended architecture</td><td>Trap — the "best" design isn't best without a readiness/training plan</td></tr>
+<tr><td>"Running on GCP" used to claim your app is SOC 2 compliant</td><td>Trap — platform certification ≠ your app's compliance; shared responsibility</td></tr>
+<tr><td>Data must not be deletable early, even by an admin</td><td>Bucket Lock + retention policy (overrides lifecycle rules)</td></tr>
+<tr><td>Repeatable, auditable model retraining, not a one-off run</td><td>Agent Platform Pipelines (formerly Vertex AI Pipelines)</td></tr>
 </table>
 
 <h2>2. Service selection matrix</h2>
@@ -129,6 +137,10 @@
 <tr><td>Async decoupling, many-to-many messaging</td><td>Pub/Sub</td></tr>
 <tr><td>React to a GCP service event, no custom polling</td><td>Eventarc</td></tr>
 <tr><td>Fixed-time recurring job</td><td>Cloud Scheduler</td></tr>
+<tr><td>API monetization, quotas per consumer, developer portal</td><td>Apigee</td></tr>
+<tr><td>Local dev/test against Bigtable/Spanner/Pub/Sub/Firestore, no cost</td><td>Cloud Emulators</td></tr>
+<tr><td>Repeatable, versioned ML workflow (not a one-off training run)</td><td>Agent Platform Pipelines</td></tr>
+<tr><td>Prevent object deletion for a compliance-mandated period</td><td>Bucket Lock + retention policy</td></tr>
 </table>
 
 <h2>3. Database comparison table</h2>
@@ -342,6 +354,17 @@
 <li>Cloud Tasks is for app-scheduled work queues you control the rate of — distinct from Eventarc (platform events) and Pub/Sub (arbitrary messaging).</li>
 </ul>
 
+<h3>Process &amp; implementation</h3>
+<ul>
+<li>Apigee manages API <em>access</em> (auth, quota, monetization, portal) — it never hosts the backend itself.</li>
+<li>Cloud Build = CI (build/test). Cloud Deploy = CD (progressive rollout, canary, approval gates).</li>
+<li><code>gcloud storage</code> is current guidance over legacy <code>gsutil</code> for Cloud Storage CLI operations.</li>
+<li>Root cause ≠ trigger. A blameless postmortem explains why a failure wasn't caught, not just what broke.</li>
+<li>Business continuity is broader than disaster recovery — it covers people/process continuing to operate, not just systems failing over.</li>
+<li>A technically ideal architecture the team can't operate (no training plan mentioned) is a common exam trap — readiness matters as much as the design.</li>
+<li>SOC 2 / compliance certification of the platform (GCP) does not make an application built on it automatically compliant — shared responsibility.</li>
+</ul>
+
 <h2>12. Top architecture patterns</h2>
 <div class="quiz">
 <p><strong>Pattern 1 — Global low-latency, read-heavy web app (static assets)</strong></p>
@@ -383,7 +406,7 @@
 <footer class="teacher-reminder">Something here doesn't click, or you disagree with an answer? Re-read the section above, or note the question down and come back to it.</footer>
 
 <div class="lesson-nav">
-  <a href="0016-ai-and-modern-services.html">&larr; AI &amp; modern services</a>
+  <a href="0024-production-reliability.html">&larr; Reliability in production</a>
   <span>End of course</span>
 </div>
 

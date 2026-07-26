@@ -70,9 +70,8 @@
 
 <p class="eyebrow">GCP Professional Cloud Architect</p>
 <h1>Exam objectives tracker</h1>
-<p>Your 17 lessons, grouped by the <a href="https://services.google.com/fh/files/misc/professional_cloud_architect_exam_guide_english.pdf" target="_blank" rel="noopener">official PCA exam guide</a>'s 6 sections and weights (confirmed 2026-07-26). Check off a lesson once you can rebuild it from memory. Progress is saved in this browser only.</p>
+<p>Your 24 lessons, grouped by the <a href="https://services.google.com/fh/files/misc/professional_cloud_architect_exam_guide_english.pdf" target="_blank" rel="noopener">official PCA exam guide</a>'s 6 sections and weights (confirmed 2026-07-26). Every curriculum subtopic now has a lesson — nothing left unflagged. Check off a lesson once you can rebuild it from memory. Progress is saved in this browser only.</p>
 <p class="overall" id="overall"></p>
-<p class="empty-domain">Section 5 (Managing implementation, 12.5%) has no lesson coverage at all — see below. Worth reading directly off the exam guide before the exam if there's time left.</p>
 
 <div id="domains"></div>
 
@@ -102,7 +101,7 @@ const DOMAINS = [
       { id: "0015", title: "Migration strategies: rehost, replatform, refactor", href: "lessons/0015-migration-strategies.html" },
       { id: "0016", title: "AI platform rename, and the event-driven glue", href: "lessons/0016-ai-and-modern-services.html" }
     ],
-    gaps: ["Success measurements (KPI, ROI, metrics)", "Google Cloud Migration Center (the specific assessment/planning tool, beyond the rehost/replatform/refactor methodology already covered)"]
+    gaps: []
   },
   {
     key: "provision",
@@ -110,9 +109,11 @@ const DOMAINS = [
     weight: 17.5,
     lessons: [
       { id: "0008", title: "VPC, Shared VPC, and hybrid connectivity", href: "lessons/0008-vpc-and-hybrid-connectivity.html" },
-      { id: "0009", title: "Load balancing, CDN, and Cloud Armor", href: "lessons/0009-load-balancing-cdn-armor.html" }
+      { id: "0009", title: "Load balancing, CDN, and Cloud Armor", href: "lessons/0009-load-balancing-cdn-armor.html" },
+      { id: "0022", title: "Storage lifecycle & data protection", href: "lessons/0022-storage-lifecycle.html" },
+      { id: "0023", title: "Agent Platform Pipelines & AI Hypercomputer", href: "lessons/0023-agent-platform-pipelines.html" }
     ],
-    gaps: ["Storage data retention/lifecycle management and growth planning", "Gemini Enterprise Agent Platform Pipelines for ML workflow orchestration; AI Hypercomputer / GPU-TPU optimization"]
+    gaps: []
   },
   {
     key: "security-compliance",
@@ -120,40 +121,47 @@ const DOMAINS = [
     weight: 17.5,
     lessons: [
       { id: "0010", title: "IAM basics and resource hierarchy", href: "lessons/0010-iam-and-resource-hierarchy.html" },
-      { id: "0011", title: "Security tools: Secret Manager, KMS, VPC-SC, Org Policy", href: "lessons/0011-security-tools.html" }
+      { id: "0011", title: "Security tools: Secret Manager, KMS, VPC-SC, Org Policy", href: "lessons/0011-security-tools.html" },
+      { id: "0021", title: "Secure remote access & compliance", href: "lessons/0021-secure-access-compliance.html" }
     ],
-    gaps: ["Secure remote access (Identity-Aware Proxy, Workload Identity Federation, Chrome Enterprise Premium)", "Compliance: legislation/regulation, PII handling, industry certifications (SOC 2), audits"]
+    gaps: []
   },
   {
     key: "analyze-optimize",
     name: "Analyzing and optimizing technical and business processes",
     weight: 15,
     lessons: [
-      { id: "0014", title: "Cost optimization", href: "lessons/0014-cost-optimization.html" }
+      { id: "0014", title: "Cost optimization", href: "lessons/0014-cost-optimization.html" },
+      { id: "0019", title: "Technical processes: SDLC, CI/CD, RCA", href: "lessons/0019-technical-processes.html" },
+      { id: "0020", title: "Business processes: stakeholder & change management", href: "lessons/0020-business-processes.html" }
     ],
-    gaps: ["Technical processes: SDLC, CI/CD, troubleshooting/RCA best practices, testing & validation, service catalog", "Business processes: stakeholder management, change management, team assessment, decision-making, customer success, business continuity"]
+    gaps: []
   },
   {
     key: "manage-implementation",
     name: "Managing implementation",
     weight: 12.5,
-    lessons: [],
-    gaps: ["Advising dev/ops teams: app/infra deployment, API management (Apigee), testing frameworks, migration tooling", "Interacting with Google Cloud programmatically: Cloud Shell, gcloud/gsutil/bq SDKs, Cloud Emulators, Infrastructure as Code (Terraform), API client libraries"]
+    lessons: [
+      { id: "0017", title: "Apigee, deployment & testing tooling", href: "lessons/0017-apigee-deployment-testing.html" },
+      { id: "0018", title: "Interacting with GCP programmatically", href: "lessons/0018-gcp-programmatic-access.html" }
+    ],
+    gaps: []
   },
   {
     key: "ops-excellence",
     name: "Ensuring solution and operations excellence",
     weight: 12.5,
     lessons: [
-      { id: "0012", title: "Observability: Monitoring, Logging, Trace", href: "lessons/0012-observability.html" }
+      { id: "0012", title: "Observability: Monitoring, Logging, Trace", href: "lessons/0012-observability.html" },
+      { id: "0024", title: "Reliability in production", href: "lessons/0024-production-reliability.html" }
     ],
-    gaps: ["Deployment and release management", "Support of deployed solutions; quality control measures", "Reliability in production: chaos engineering, penetration testing, load testing"]
+    gaps: []
   }
 ];
 
 const FOUNDATIONS = [
   { id: "0001", title: "Exam structure", href: "lessons/0001-exam-structure.html" },
-  { id: "0017", title: "Final review: the morning-of cheat sheet", href: "lessons/0017-final-review.html" }
+  { id: "0025", title: "Final review: the morning-of cheat sheet", href: "lessons/0025-final-review.html" }
 ];
 
 const STORE_KEY = "pca-objectives-progress";

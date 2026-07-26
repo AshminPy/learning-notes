@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 24 — Reliability in Production</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 24 of 24</p>
+<h1>Reliability in production</h1>
+
+<p>Lesson 12 covered observability — seeing what's happening. This lesson is the other half of Section 6: proving, on purpose and before it matters, that the system actually holds up.</p>
+
+<p class="callout"><strong>Simple example:</strong> a fire drill isn't about the fire. It's finding out the exit door sticks <em>before</em> there's smoke in the building. Chaos engineering, penetration testing, and load testing are all the same idea — break it on purpose, on your schedule, not the internet's.</p>
+
+<h2>Deployment &amp; release management</h2>
+<p>Beyond just running Cloud Deploy (Lesson 17): release management means every release is versioned, rollback is a rehearsed action not a hope, and a rollout can be paused or reversed mid-way (canary, blue/green) without customers ever needing to know something went wrong.</p>
+
+<h2>Support of deployed solutions &amp; quality control</h2>
+<p>An SLO (Service Level Objective — e.g. "99.9% of requests succeed") and its error budget (the allowed 0.1% failure) turn "is it reliable enough" from a feeling into a number. Quality control is the pre-release gate that protects that budget: code review, automated test coverage, and canary analysis (comparing the new version's real metrics against the old one before a full rollout) all exist to catch a budget-burning regression before 100% of traffic sees it.</p>
+<div class="trap"><strong>Exam trap:</strong> "we have 100% uptime as a goal" is not a real SLO — an SLO always has a stated target below 100% and a matching error budget. A scenario demanding zero failures with no budget mentioned is testing whether you catch that unrealistic framing, not endorse it.</div>
+
+<h2>Reliability in production — proving it on purpose</h2>
+<ul>
+<li><strong>Chaos engineering</strong> — deliberately injecting failure (kill a Pod, cut a dependency) in a controlled way to verify the system actually degrades the way you assumed it would, instead of finding out during a real outage.</li>
+<li><strong>Penetration testing</strong> — authorized, deliberate attack simulation against your own systems to find real vulnerabilities before an attacker does. Google's Acceptable Use Policy permits testing your own GCP projects without prior notification to Google — but scope and authorization within your own org still matter.</li>
+<li><strong>Load testing</strong> — driving realistic (or peak-projected) traffic at a system before launch to find the actual breaking point, instead of discovering it live during a traffic spike.</li>
+</ul>
+<p>All three share the same shape: find the failure on your terms, with a rollback plan ready, instead of live in production with customers watching.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A team says their reliability target is "zero downtime, ever." What's the architect's response, and why?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Push back and define a real SLO with an explicit error budget. "Zero, ever" isn't achievable or measurable — every real reliability target has a stated threshold below 100%, which is exactly what makes it possible to know whether you're meeting it.</div>
+</div>
+
+<h2>Quiz — Lesson 24</h2>
+<div class="quiz">
+<p>Q1. What's the actual purpose of chaos engineering?</p>
+<div class="opts">
+<label>A. Verify the system degrades as expected, on your schedule, before a real failure forces the question</label>
+<label>B. Cause outages to test the on-call team's stress tolerance</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> It's a controlled, deliberate way to validate assumptions about failure behavior — not randomness for its own sake.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What does an error budget actually represent?</p>
+<div class="opts">
+<label>A. The amount of unreliability an SLO explicitly allows before it's breached</label>
+<label>B. The team's budget for fixing bugs</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> If the SLO is 99.9%, the error budget is the 0.1% of allowed failure — spend it on risk (faster releases) or save it, but it's a real, trackable quantity, not a vague goal.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://sre.google/sre-book/embracing-risk/" target="_blank" rel="noopener">Google SRE Book — Embracing Risk (SLOs and error budgets)</a> and <a href="https://cloud.google.com/architecture/framework/reliability" target="_blank" rel="noopener">Well-Architected Framework — Reliability pillar</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>An SLO always has a target below 100%, with an explicit error budget — "zero downtime ever" isn't a real target.</li>
+    <li>Chaos engineering, penetration testing, and load testing all find failure on your terms, before it happens for real.</li>
+    <li>Canary analysis compares new-version metrics against old before a full rollout — a quality gate, not just a deploy mechanism.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0023-agent-platform-pipelines.html">&larr; Agent Platform Pipelines &amp; AI Hypercomputer</a>
+  <a href="0025-final-review.html">Next: Final review &rarr;</a>
+</div>
+
+</body>
+</html>

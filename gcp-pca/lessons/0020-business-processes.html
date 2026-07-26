@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 20 — Business Processes</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 20 of 24</p>
+<h1>Business processes</h1>
+
+<p>No GCP product names in this lesson — this is the half of Section 4 that tests whether you can recognize a people/organization problem when a scenario disguises it as a technical one.</p>
+
+<p class="callout"><strong>Simple example:</strong> a migration stalls. The tempting answer is always "wrong tool." Half the time the real answer is "wrong stakeholder never signed off" or "the team doesn't have the skills yet" — and no service choice fixes either of those.</p>
+
+<h2>Stakeholder management</h2>
+<p>Business and technical stakeholders often want different things from the same project (speed vs. cost vs. risk). The architect's job includes surfacing that conflict explicitly, not picking a side unasked. On the exam: if a scenario names two people with conflicting goals, the "best" answer usually addresses both goals' underlying concern, not just the more technical-sounding one.</p>
+
+<h2>Change management</h2>
+<p>Getting an organization to actually adopt a new process or platform — different from a Kubernetes "rolling update." A technically perfect migration that nobody uses because the team wasn't looped in early is a change-management failure, not a technical one.</p>
+
+<h2>Team assessment / skills readiness</h2>
+<p>Before recommending an architecture, whether the team can actually run it matters. Recommending GKE + a service mesh to a team with zero Kubernetes experience, with no training plan, is a real exam trap — technically correct, organizationally set up to fail.</p>
+<div class="trap"><strong>Exam trap:</strong> the "best" architecture on paper isn't the best answer if the scenario explicitly says the team lacks the skills to operate it and there's no mention of a training plan. Watch for a simpler answer that matches the team's actual readiness.</div>
+
+<h2>Decision-making processes &amp; customer success</h2>
+<p><strong>Decision-making processes</strong> — who actually has authority to approve a design, and how disagreements get resolved, defined before you need it, not during an incident. <strong>Customer success management</strong> — for a solution built for an external customer, ensuring they actually adopt and get value from it, not just that it was delivered and works.</p>
+
+<h2>Business continuity vs. disaster recovery</h2>
+<p>DR (Lesson 13) is about systems: RPO, RTO, backup and failover. <strong>Business continuity</strong> is broader — can the business keep operating at all, including the people and processes, not just the IT systems. A DR plan can be flawless and the business still fails to continue if there's no plan for how staff work during the outage.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A scenario says a proposed migration is technically sound, but the ops team has never touched the target platform and no training is mentioned. What's the most likely "best answer" theme?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Something addressing team readiness — a phased rollout, a training plan, or a simpler architecture the team can actually operate. Not a more advanced technical option; the gap in the scenario is organizational, not technical.</div>
+</div>
+
+<h2>Quiz — Lesson 20</h2>
+<div class="quiz">
+<p>Q1. What's the key difference between disaster recovery and business continuity?</p>
+<div class="opts">
+<label>A. DR = systems (RPO/RTO). BC = the whole business, including people/process, continuing to operate</label>
+<label>B. They're the same thing, different names</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> A perfect technical failover doesn't guarantee the business itself keeps functioning — BC is the broader, organizational version of the same question.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A migration is complete and passes every technical test, but adoption is near zero six months later. What process most likely failed?</p>
+<div class="opts">
+<label>A. Change management — the org was never brought along</label>
+<label>B. Disaster recovery — the failover didn't work</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Zero adoption despite working tech is a classic change-management failure, not a technical one.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://services.google.com/fh/files/misc/professional_cloud_architect_exam_guide_english.pdf" target="_blank" rel="noopener">Official PCA exam guide (PDF)</a>, Section 4.2 — this lesson has no separate product docs since it's process/soft-skill content, not a GCP service.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A stalled or unadopted project is often a stakeholder/change-management problem, not a wrong-service problem.</li>
+    <li>Team skills readiness can make the "best" architecture the wrong answer if there's no plan to build those skills.</li>
+    <li>Business continuity is broader than disaster recovery — it includes people and process, not just systems.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the exam guide link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0019-technical-processes.html">&larr; Technical processes</a>
+  <a href="0021-secure-access-compliance.html">Next: Secure remote access &amp; compliance &rarr;</a>
+</div>
+
+</body>
+</html>

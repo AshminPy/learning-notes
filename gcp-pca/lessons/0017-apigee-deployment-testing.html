@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 17 — Apigee, Deployment & Testing Tooling</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 17 of 24</p>
+<h1>Apigee, deployment &amp; testing tooling</h1>
+
+<p>Section 5, "Managing implementation," isn't about which service to pick (that's Section 1) — it's about advising the team actually shipping it: how APIs get exposed, tested, and deployed safely.</p>
+
+<p class="callout"><strong>Simple example:</strong> a backend service and an API are not the same thing. The backend is the kitchen. Apigee is the front counter — it's what decides who gets served, how fast, and what they're charged, without the kitchen knowing any of that happened.</p>
+
+<h2>Apigee — API management, not API hosting</h2>
+<p>Apigee sits in front of backend APIs (Cloud Run, GKE, on-prem, anything) and adds what raw backends don't have: authentication, rate limiting/quotas, analytics, a developer portal, and monetization. It doesn't run your code — it manages access to it.</p>
+<ul>
+<li><strong>API proxy</strong> — the policy layer Apigee actually executes (auth checks, quota, transformation) in front of your real backend.</li>
+<li><strong>Quotas &amp; rate limiting</strong> — protect the backend from being overwhelmed by one noisy consumer.</li>
+<li><strong>Developer portal</strong> — self-service API keys and docs for external/partner developers.</li>
+</ul>
+<div class="trap"><strong>Exam trap:</strong> Apigee is not a load balancer and not a compute platform. If a scenario needs API monetization, quotas per partner, or a developer portal, that's Apigee. If it just needs to route traffic to healthy backends, that's Cloud Load Balancing (Lesson 9).</div>
+
+<h2>CI/CD: Cloud Build &amp; Cloud Deploy</h2>
+<ul>
+<li><strong>Cloud Build</strong> — runs your build/test steps (CI). Triggered by a commit, produces an artifact (container image, package).</li>
+<li><strong>Cloud Deploy</strong> — takes that artifact and progressively rolls it out (CD) to Cloud Run, GKE, or Anthos — supports canary and other progressive-delivery strategies, with an approval gate between stages.</li>
+</ul>
+<p>Testing frameworks the exam expects you to recognize by category, not by product name: <strong>unit</strong> (one function, in isolation), <strong>integration</strong> (multiple components together), <strong>load</strong> (does it hold up under real traffic). Cloud Build runs all three as pipeline stages — it doesn't care which testing library you use.</p>
+
+<h2>Gemini Cloud Assist</h2>
+<p>An AI assistant built into the Cloud Console — suggests architecture improvements, helps troubleshoot, and can explain a resource's config in plain language. The exam guide names it under both design (1.2) and implementation advising (5.1) — treat it as a helper woven through the console, not a separate product you provision.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A partner team needs their own API key, a request quota, and self-serve documentation to call your backend. Apigee, or Cloud Load Balancing?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Apigee. Quotas, developer self-service, and API keys are API-management concerns — Cloud Load Balancing only routes traffic to healthy backends, it has no concept of "who" is calling.</div>
+</div>
+
+<h2>Quiz — Lesson 17</h2>
+<div class="quiz">
+<p>Q1. What's the difference between what Cloud Build and Cloud Deploy each do?</p>
+<div class="opts">
+<label>A. Cloud Build = CI (build/test), Cloud Deploy = CD (progressive rollout)</label>
+<label>B. They're two names for the same product</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Cloud Build produces a tested artifact. Cloud Deploy takes that artifact and rolls it out progressively, with approval gates between stages.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A scenario says a service needs monetized, metered access for external developers. What's the tell that this is an Apigee question, not a networking question?</p>
+<div class="opts">
+<label>A. "Monetized" and "external developers" — that's API management, not routing</label>
+<label>B. Any mention of "API" always means Apigee</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Not every API question is an Apigee question — plenty of API traffic just needs a load balancer. The tell is business-facing concerns: billing, quotas per consumer, developer onboarding.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://cloud.google.com/apigee/docs" target="_blank" rel="noopener">Apigee documentation</a> and <a href="https://cloud.google.com/deploy/docs" target="_blank" rel="noopener">Cloud Deploy documentation</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Apigee manages <em>access</em> to APIs (auth, quota, monetization, portal) — it doesn't host the backend.</li>
+    <li>Cloud Build = CI. Cloud Deploy = CD, with progressive rollout and approval gates.</li>
+    <li>Exam trap: an API-shaped question isn't automatically an Apigee question — look for quota/monetization/developer-facing language.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0016-ai-and-modern-services.html">&larr; AI platform rename, and the event-driven glue</a>
+  <a href="0018-gcp-programmatic-access.html">Next: Interacting with GCP programmatically &rarr;</a>
+</div>
+
+</body>
+</html>
