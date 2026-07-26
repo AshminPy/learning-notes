@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PCA — Exam objectives tracker</title>
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .domain {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 1.25rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .domain-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .domain-head h2 { margin: 0; padding: 0; border: none; font-size: 1.1rem; }
+  .weight { color: var(--accent); font-weight: bold; font-size: 0.95rem; }
+  .bar-track {
+    height: 6px;
+    background: var(--code-bg);
+    border-radius: 3px;
+    margin: 0.7rem 0 1rem;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.2s ease;
+  }
+  .item-list { list-style: none; padding: 0; margin: 0; }
+  .item-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.35rem 0;
+  }
+  .item-list input[type="checkbox"] { margin-top: 0.2rem; }
+  .item-list a { color: var(--fg); }
+  .item-list a:hover { color: var(--accent); }
+  .gap-list { list-style: none; padding: 0; margin: 0.75rem 0 0; border-top: 1px dashed var(--rule); padding-top: 0.75rem; }
+  .gap-list li { padding: 0.25rem 0; color: var(--muted); font-size: 0.92rem; }
+  .gap-label {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-top: 1rem;
+    display: block;
+  }
+  .empty-domain {
+    color: var(--muted);
+    font-size: 0.92rem;
+    font-style: italic;
+  }
+  .overall {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">GCP Professional Cloud Architect</p>
+<h1>Exam objectives tracker</h1>
+<p>Your 17 lessons, grouped by the <a href="https://services.google.com/fh/files/misc/professional_cloud_architect_exam_guide_english.pdf" target="_blank" rel="noopener">official PCA exam guide</a>'s 6 sections and weights (confirmed 2026-07-26). Check off a lesson once you can rebuild it from memory. Progress is saved in this browser only.</p>
+<p class="overall" id="overall"></p>
+<p class="empty-domain">Section 5 (Managing implementation, 12.5%) has no lesson coverage at all — see below. Worth reading directly off the exam guide before the exam if there's time left.</p>
+
+<div id="domains"></div>
+
+<h2>Foundations (not separately weighted)</h2>
+<p>Exam logistics and the final cheat-sheet review — useful before the exam, not scored as their own domain.</p>
+<ul class="item-list" id="foundations"></ul>
+
+<div class="lesson-nav">
+  <a href="index.html">&larr; Back to lessons</a>
+  <span></span>
+</div>
+
+<script>
+const DOMAINS = [
+  {
+    key: "design-plan",
+    name: "Designing and planning a cloud solution architecture",
+    weight: 25,
+    lessons: [
+      { id: "0002", title: "Well-Architected Framework", href: "lessons/0002-well-architected-framework.html" },
+      { id: "0003", title: "Compute Engine vs GKE", href: "lessons/0003-compute-engine-vs-gke.html" },
+      { id: "0004", title: "Serverless compute: Cloud Run, App Engine, Cloud Run functions", href: "lessons/0004-serverless-compute.html" },
+      { id: "0005", title: "Storage basics: object, block, and file", href: "lessons/0005-storage-basics.html" },
+      { id: "0006", title: "Cloud SQL vs Spanner", href: "lessons/0006-cloud-sql-vs-spanner.html" },
+      { id: "0007", title: "Firestore vs Bigtable vs BigQuery", href: "lessons/0007-nosql-and-analytics.html" },
+      { id: "0013", title: "HA and disaster recovery", href: "lessons/0013-ha-and-disaster-recovery.html" },
+      { id: "0015", title: "Migration strategies: rehost, replatform, refactor", href: "lessons/0015-migration-strategies.html" },
+      { id: "0016", title: "AI platform rename, and the event-driven glue", href: "lessons/0016-ai-and-modern-services.html" }
+    ],
+    gaps: ["Success measurements (KPI, ROI, metrics)", "Google Cloud Migration Center (the specific assessment/planning tool, beyond the rehost/replatform/refactor methodology already covered)"]
+  },
+  {
+    key: "provision",
+    name: "Managing and provisioning a cloud solution infrastructure",
+    weight: 17.5,
+    lessons: [
+      { id: "0008", title: "VPC, Shared VPC, and hybrid connectivity", href: "lessons/0008-vpc-and-hybrid-connectivity.html" },
+      { id: "0009", title: "Load balancing, CDN, and Cloud Armor", href: "lessons/0009-load-balancing-cdn-armor.html" }
+    ],
+    gaps: ["Storage data retention/lifecycle management and growth planning", "Gemini Enterprise Agent Platform Pipelines for ML workflow orchestration; AI Hypercomputer / GPU-TPU optimization"]
+  },
+  {
+    key: "security-compliance",
+    name: "Designing for security and compliance",
+    weight: 17.5,
+    lessons: [
+      { id: "0010", title: "IAM basics and resource hierarchy", href: "lessons/0010-iam-and-resource-hierarchy.html" },
+      { id: "0011", title: "Security tools: Secret Manager, KMS, VPC-SC, Org Policy", href: "lessons/0011-security-tools.html" }
+    ],
+    gaps: ["Secure remote access (Identity-Aware Proxy, Workload Identity Federation, Chrome Enterprise Premium)", "Compliance: legislation/regulation, PII handling, industry certifications (SOC 2), audits"]
+  },
+  {
+    key: "analyze-optimize",
+    name: "Analyzing and optimizing technical and business processes",
+    weight: 15,
+    lessons: [
+      { id: "0014", title: "Cost optimization", href: "lessons/0014-cost-optimization.html" }
+    ],
+    gaps: ["Technical processes: SDLC, CI/CD, troubleshooting/RCA best practices, testing & validation, service catalog", "Business processes: stakeholder management, change management, team assessment, decision-making, customer success, business continuity"]
+  },
+  {
+    key: "manage-implementation",
+    name: "Managing implementation",
+    weight: 12.5,
+    lessons: [],
+    gaps: ["Advising dev/ops teams: app/infra deployment, API management (Apigee), testing frameworks, migration tooling", "Interacting with Google Cloud programmatically: Cloud Shell, gcloud/gsutil/bq SDKs, Cloud Emulators, Infrastructure as Code (Terraform), API client libraries"]
+  },
+  {
+    key: "ops-excellence",
+    name: "Ensuring solution and operations excellence",
+    weight: 12.5,
+    lessons: [
+      { id: "0012", title: "Observability: Monitoring, Logging, Trace", href: "lessons/0012-observability.html" }
+    ],
+    gaps: ["Deployment and release management", "Support of deployed solutions; quality control measures", "Reliability in production: chaos engineering, penetration testing, load testing"]
+  }
+];
+
+const FOUNDATIONS = [
+  { id: "0001", title: "Exam structure", href: "lessons/0001-exam-structure.html" },
+  { id: "0017", title: "Final review: the morning-of cheat sheet", href: "lessons/0017-final-review.html" }
+];
+
+const STORE_KEY = "pca-objectives-progress";
+const state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+function renderDomain(d) {
+  const wrap = document.createElement("div");
+  wrap.className = "domain";
+
+  const head = document.createElement("div");
+  head.className = "domain-head";
+  head.innerHTML = `<h2>${d.name}</h2><span class="weight">${d.weight}%</span>`;
+  wrap.appendChild(head);
+
+  const track = document.createElement("div");
+  track.className = "bar-track";
+  const fill = document.createElement("div");
+  fill.className = "bar-fill";
+  track.appendChild(fill);
+  wrap.appendChild(track);
+
+  if (d.lessons.length) {
+    const list = document.createElement("ul");
+    list.className = "item-list";
+    d.lessons.forEach(l => {
+      const li = document.createElement("li");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!state[l.id];
+      cb.addEventListener("change", () => {
+        state[l.id] = cb.checked;
+        save();
+        updateBar();
+        updateOverall();
+      });
+      const a = document.createElement("a");
+      a.href = l.href;
+      a.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      li.appendChild(cb);
+      li.appendChild(a);
+      list.appendChild(li);
+    });
+    wrap.appendChild(list);
+  } else {
+    const empty = document.createElement("p");
+    empty.className = "empty-domain";
+    empty.textContent = "No lesson covers this domain yet.";
+    wrap.appendChild(empty);
+  }
+
+  if (d.gaps.length) {
+    const label = document.createElement("span");
+    label.className = "gap-label";
+    label.textContent = "Not covered by a lesson yet";
+    wrap.appendChild(label);
+    const gapList = document.createElement("ul");
+    gapList.className = "gap-list";
+    d.gaps.forEach(g => {
+      const li = document.createElement("li");
+      li.textContent = g;
+      gapList.appendChild(li);
+    });
+    wrap.appendChild(gapList);
+  }
+
+  function updateBar() {
+    const done = d.lessons.filter(l => state[l.id]).length;
+    const pct = d.lessons.length ? Math.round((done / d.lessons.length) * 100) : 0;
+    fill.style.width = pct + "%";
+  }
+  updateBar();
+
+  return wrap;
+}
+
+function updateOverall() {
+  const all = DOMAINS.flatMap(d => d.lessons);
+  const done = all.filter(l => state[l.id]).length;
+  const weightedDone = DOMAINS.reduce((sum, d) => {
+    const domainDone = d.lessons.filter(l => state[l.id]).length;
+    const domainPct = d.lessons.length ? domainDone / d.lessons.length : 0;
+    return sum + domainPct * d.weight;
+  }, 0);
+  document.getElementById("overall").textContent =
+    `${done} of ${all.length} scored lessons checked off — ~${Math.round(weightedDone)}% of exam weight reviewed (Section 5 excluded — it has no lessons yet, so it can't contribute).`;
+}
+
+const container = document.getElementById("domains");
+DOMAINS.forEach(d => container.appendChild(renderDomain(d)));
+updateOverall();
+
+const foundationsList = document.getElementById("foundations");
+FOUNDATIONS.forEach(l => {
+  const li = document.createElement("li");
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.checked = !!state[l.id];
+  cb.addEventListener("change", () => { state[l.id] = cb.checked; save(); });
+  const a = document.createElement("a");
+  a.href = l.href;
+  a.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+  li.appendChild(cb);
+  li.appendChild(a);
+  foundationsList.appendChild(li);
+});
+</script>
+
+</body>
+</html>
