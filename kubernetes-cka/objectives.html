@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CKA — Exam objectives tracker</title>
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .domain {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 1.25rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .domain-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .domain-head h2 { margin: 0; padding: 0; border: none; font-size: 1.1rem; }
+  .weight { color: var(--accent); font-weight: bold; font-size: 0.95rem; }
+  .bar-track {
+    height: 6px;
+    background: var(--code-bg);
+    border-radius: 3px;
+    margin: 0.7rem 0 1rem;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.2s ease;
+  }
+  .item-list { list-style: none; padding: 0; margin: 0; }
+  .item-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.35rem 0;
+  }
+  .item-list input[type="checkbox"] { margin-top: 0.2rem; }
+  .item-list a { color: var(--fg); }
+  .item-list a:hover { color: var(--accent); }
+  .gap-list { list-style: none; padding: 0; margin: 0.75rem 0 0; border-top: 1px dashed var(--rule); padding-top: 0.75rem; }
+  .gap-list li { padding: 0.25rem 0; color: var(--muted); font-size: 0.92rem; }
+  .gap-label {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-top: 1rem;
+    display: block;
+  }
+  .overall {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Kubernetes / CKA</p>
+<h1>Exam objectives tracker</h1>
+<p>Your 17 lessons, grouped by the <a href="https://github.com/cncf/curriculum" target="_blank" rel="noopener">official CNCF CKA curriculum</a> domains and weights (v1.35, confirmed 2026-07-26). Check off a lesson once you can rebuild it from memory — not just once you've read it. Progress is saved in this browser only.</p>
+<p class="overall" id="overall"></p>
+
+<div id="domains"></div>
+
+<h2>Foundations (not separately weighted)</h2>
+<p>Prerequisite lessons and the final cheat-sheet review — every domain above depends on these, but the curriculum doesn't score them on their own.</p>
+<ul class="item-list" id="foundations"></ul>
+
+<div class="lesson-nav">
+  <a href="index.html">&larr; Back to lessons</a>
+  <span></span>
+</div>
+
+<script>
+const DOMAINS = [
+  {
+    key: "troubleshooting",
+    name: "Troubleshooting",
+    weight: 30,
+    lessons: [
+      { id: "0015", title: "Troubleshooting: cluster & node", href: "lessons/0015-troubleshooting-cluster-node.html" },
+      { id: "0016", title: "Troubleshooting: application & workload", href: "lessons/0016-troubleshooting-application-workload.html" }
+    ],
+    gaps: ["Monitor cluster/application resource usage (kubectl top, metrics-server)"]
+  },
+  {
+    key: "cluster-arch",
+    name: "Cluster Architecture, Installation & Configuration",
+    weight: 25,
+    lessons: [
+      { id: "0009", title: "RBAC", href: "lessons/0009-rbac.html" },
+      { id: "0013", title: "Cluster architecture: kubeadm & static pods", href: "lessons/0013-cluster-architecture-kubeadm.html" },
+      { id: "0014", title: "etcd backup, upgrades & TLS", href: "lessons/0014-cluster-architecture-etcd-upgrades-tls.html" }
+    ],
+    gaps: ["Helm & Kustomize", "CSI (storage extension interface)", "CRDs & operators", "Highly-available control plane (multiple control-plane nodes)"]
+  },
+  {
+    key: "services-networking",
+    name: "Services & Networking",
+    weight: 20,
+    lessons: [
+      { id: "0003", title: "Service → Pod", href: "lessons/0003-service-to-pod.html" },
+      { id: "0005", title: "Service → Deployment", href: "lessons/0005-service-to-deployment.html" },
+      { id: "0008", title: "Ingress → Service", href: "lessons/0008-ingress.html" },
+      { id: "0010", title: "NetworkPolicy", href: "lessons/0010-networkpolicy.html" }
+    ],
+    gaps: ["Gateway API", "CoreDNS"]
+  },
+  {
+    key: "workloads-scheduling",
+    name: "Workloads & Scheduling",
+    weight: 15,
+    lessons: [
+      { id: "0004", title: "Deployment", href: "lessons/0004-deployment.html" },
+      { id: "0006", title: "ConfigMap & Secret", href: "lessons/0006-configmap-secret.html" },
+      { id: "0011", title: "Resource limits & probes", href: "lessons/0011-resource-limits-probes.html" },
+      { id: "0012", title: "StatefulSet, DaemonSet, Job, CronJob", href: "lessons/0012-statefulset-daemonset-job-cronjob.html" }
+    ],
+    gaps: ["Workload autoscaling (HorizontalPodAutoscaler)"]
+  },
+  {
+    key: "storage",
+    name: "Storage",
+    weight: 10,
+    lessons: [
+      { id: "0007", title: "PVC → Pod", href: "lessons/0007-pvc.html" }
+    ],
+    gaps: ["Reclaim policies (Retain / Delete / Recycle)"]
+  }
+];
+
+const FOUNDATIONS = [
+  { id: "0001", title: "The Pod", href: "lessons/0001-pod-basics.html" },
+  { id: "0002", title: "Pod + labels", href: "lessons/0002-pod-labels.html" },
+  { id: "0017", title: "Final review & cheat sheet", href: "lessons/0017-final-review.html" }
+];
+
+const STORE_KEY = "cka-objectives-progress";
+const state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+function renderDomain(d) {
+  const wrap = document.createElement("div");
+  wrap.className = "domain";
+
+  const head = document.createElement("div");
+  head.className = "domain-head";
+  head.innerHTML = `<h2>${d.name}</h2><span class="weight">${d.weight}%</span>`;
+  wrap.appendChild(head);
+
+  const track = document.createElement("div");
+  track.className = "bar-track";
+  const fill = document.createElement("div");
+  fill.className = "bar-fill";
+  track.appendChild(fill);
+  wrap.appendChild(track);
+
+  const list = document.createElement("ul");
+  list.className = "item-list";
+  d.lessons.forEach(l => {
+    const li = document.createElement("li");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !!state[l.id];
+    cb.addEventListener("change", () => {
+      state[l.id] = cb.checked;
+      save();
+      updateBar();
+      updateOverall();
+    });
+    const a = document.createElement("a");
+    a.href = l.href;
+    a.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+    li.appendChild(cb);
+    li.appendChild(a);
+    list.appendChild(li);
+  });
+  wrap.appendChild(list);
+
+  if (d.gaps.length) {
+    const label = document.createElement("span");
+    label.className = "gap-label";
+    label.textContent = "Not covered by a lesson yet";
+    wrap.appendChild(label);
+    const gapList = document.createElement("ul");
+    gapList.className = "gap-list";
+    d.gaps.forEach(g => {
+      const li = document.createElement("li");
+      li.textContent = g;
+      gapList.appendChild(li);
+    });
+    wrap.appendChild(gapList);
+  }
+
+  function updateBar() {
+    const done = d.lessons.filter(l => state[l.id]).length;
+    const pct = d.lessons.length ? Math.round((done / d.lessons.length) * 100) : 0;
+    fill.style.width = pct + "%";
+  }
+  updateBar();
+
+  return wrap;
+}
+
+function updateOverall() {
+  const all = DOMAINS.flatMap(d => d.lessons);
+  const done = all.filter(l => state[l.id]).length;
+  const weightedDone = DOMAINS.reduce((sum, d) => {
+    const domainDone = d.lessons.filter(l => state[l.id]).length;
+    const domainPct = d.lessons.length ? domainDone / d.lessons.length : 0;
+    return sum + domainPct * d.weight;
+  }, 0);
+  document.getElementById("overall").textContent =
+    `${done} of ${all.length} scored lessons checked off — ~${Math.round(weightedDone)}% of exam weight reviewed.`;
+}
+
+const container = document.getElementById("domains");
+DOMAINS.forEach(d => container.appendChild(renderDomain(d)));
+updateOverall();
+
+const foundationsList = document.getElementById("foundations");
+FOUNDATIONS.forEach(l => {
+  const li = document.createElement("li");
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.checked = !!state[l.id];
+  cb.addEventListener("change", () => { state[l.id] = cb.checked; save(); });
+  const a = document.createElement("a");
+  a.href = l.href;
+  a.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+  li.appendChild(cb);
+  li.appendChild(a);
+  foundationsList.appendChild(li);
+});
+</script>
+
+</body>
+</html>
