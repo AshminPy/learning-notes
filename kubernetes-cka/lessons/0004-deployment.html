@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 4 — Deployment</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Kubernetes / CKA — Lesson 4 of 17</p>
+<h1>Deployment</h1>
+
+<p>A bare Pod has no memory. Kill it — node reboot, OOM, `kubectl delete pod` — and it stays dead. Nothing notices, nothing recreates it. A <strong>Deployment</strong> is the object that fixes that: it wraps a Pod template with a controller that continuously checks "do I have the number of Pods I was told to have?" and reconciles reality toward that number. That's self-healing, and it's also what makes rolling updates and scaling possible — they're all just the same reconcile loop, aimed at a Pod template that changed.</p>
+
+<p><strong>Tied to your mission:</strong> almost every real workload you run in GKE Autopilot is a Deployment (or something built the same way — StatefulSet, DaemonSet). The CKA troubleshooting domain assumes you already know this shape cold, so a broken rollout question doesn't cost you time re-deriving it.</p>
+
+<h2>The mental model</h2>
+<p>Strip a Deployment down and it's three things bolted together:</p>
+<ul>
+  <li><code>spec.template</code> — a full Pod spec, embedded (this is literally the Pod manifest you already know, minus <code>apiVersion</code>/<code>kind</code>, sitting one level deeper).</li>
+  <li><code>spec.replicas</code> — how many copies of that Pod template should exist.</li>
+  <li><code>spec.selector</code> — the label query the Deployment uses to find "which Pods are mine."</li>
+</ul>
+
+<p class="callout">The single trickiest structural gotcha: <code>spec.selector.matchLabels</code> must match the labels in <code>spec.template.metadata.labels</code>. If they don't match, the Deployment is invalid — the controller has no way to tell which Pods it owns. Nothing else in Kubernetes requires an object to "match itself" like this; it trips up almost everyone coming from bare Pods.</p>
+
+<p>The Deployment itself doesn't touch Pods directly. It creates and manages a <strong>ReplicaSet</strong>, and the ReplicaSet is the thing that actually creates and watches the Pods. When you update a Deployment's Pod template (say, a new image), it creates a <em>new</em> ReplicaSet and scales the old one down to zero while scaling the new one up — that's a rolling update. This is why <code>kubectl get rs</code> shows objects named like <code>my-app-7d9f8c9b7</code> — the hash suffix is generated from the Pod template, so a new template means a new ReplicaSet.</p>
+
+<h2>Try it first — before reading on</h2>
+<div class="quiz">
+  <p>Q1. What two fields must match for a Deployment to be valid?</p>
+  <input type="text" id="q1" placeholder="type your answer">
+  <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a1"><code>spec.selector.matchLabels</code> must match <code>spec.template.metadata.labels</code></div>
+</div>
+
+<div class="quiz">
+  <p>Q2. What object does a Deployment actually create to manage Pods — the thing you'd see if you ran <code>kubectl get rs</code>?</p>
+  <input type="text" id="q2" placeholder="type your answer">
+  <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a2">A ReplicaSet. The Deployment manages the ReplicaSet; the ReplicaSet manages the Pods.</div>
+</div>
+
+<div class="quiz">
+  <p>Q3. A Pod inside a Deployment gets OOMKilled and dies. What actually notices and recreates it — the Deployment, or something else?</p>
+  <input type="text" id="q3" placeholder="type your answer">
+  <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a3">The ReplicaSet's controller loop notices the replica count dropped below <code>spec.replicas</code> and creates a new Pod. The Deployment isn't watching Pods directly — it delegates that to the ReplicaSet it owns.</div>
+</div>
+
+<h2>Now build it — in your terminal, not here</h2>
+<p>Take the labeled Pod you wrote in Lesson 2 and turn it into a Deployment with 3 replicas. Write it by hand — no copy-paste. It needs:</p>
+<ul>
+  <li><code>apiVersion: apps/v1</code>, <code>kind: Deployment</code> (note: different API group from Pod — Pod is <code>v1</code>, Deployment is <code>apps/v1</code>)</li>
+  <li>a Deployment name in <code>metadata</code></li>
+  <li><code>spec.replicas: 3</code></li>
+  <li><code>spec.selector.matchLabels</code> — pick a label key/value (e.g. the same one you used on your Lesson 2 Pod)</li>
+  <li><code>spec.template.metadata.labels</code> — must be the exact same label key/value as the selector above</li>
+  <li><code>spec.template.spec.containers</code> — the same container spec (name + image) you used in your Lesson 2 Pod</li>
+</ul>
+<p>Once it's written, apply it and check the shape: <code>kubectl get deploy</code>, then <code>kubectl get rs</code>, then <code>kubectl get pods --show-labels</code>. Confirm you can trace Deployment &rarr; ReplicaSet &rarr; 3 Pods by label.</p>
+
+<div class="quiz">
+  <p>Reveal the reference answer</p>
+  <button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a4"><code>apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-nginx
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-nginx
+  template:
+    metadata:
+      labels:
+        app: my-nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx
+</code></pre>
+</div>
+
+<p>Bring what you wrote back to your notes — check the selector against the template labels field-by-field, since that's the one thing that silently breaks if you get it wrong.</p>
+
+<h2>Now use the operational payoff</h2>
+<p>This is the part a bare Pod can never give you. With the Deployment applied, try:</p>
+<ul>
+  <li><code>kubectl rollout status deployment/my-nginx</code> — watch a rollout reach steady state</li>
+  <li>change the image in your manifest (e.g. pin a tag), re-apply, and run <code>kubectl rollout status</code> again — watch the new ReplicaSet come up while the old one scales to zero</li>
+  <li><code>kubectl rollout undo deployment/my-nginx</code> — roll back to the previous ReplicaSet's Pod template</li>
+  <li><code>kubectl rollout history deployment/my-nginx</code> — see the revisions that undo can target</li>
+</ul>
+
+<h2>Primary source</h2>
+<p>Read (or at least skim) the official docs — the exact pages you're allowed to search during the real exam: <a href="https://kubernetes.io/docs/concepts/workloads/controllers/deployment/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/controllers/deployment</a> and <a href="https://kubernetes.io/docs/reference/kubectl/generated/kubectl_rollout/" target="_blank" rel="noopener">kubectl rollout reference</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A Deployment = Pod template (<code>spec.template</code>) + desired count (<code>spec.replicas</code>) + a selector that finds its own Pods (<code>spec.selector</code>)</li>
+    <li><code>spec.selector.matchLabels</code> must exactly match <code>spec.template.metadata.labels</code>, or the Deployment is invalid</li>
+    <li>A Deployment doesn't manage Pods directly — it creates and manages a ReplicaSet, which creates and watches the Pods</li>
+    <li><code>kubectl rollout status</code> / <code>rollout undo</code> / <code>rollout history</code> are the operational payoff: safe rollout tracking and rollback, something a bare Pod can never give you</li>
+  </ul>
+  <p><strong>Try solo:</strong> write a second Deployment from memory using a different app name, 2 replicas, and the <code>redis</code> image. Deliberately make the selector NOT match the template labels first, apply it, and read the error Kubernetes gives you. Then fix it. Don't reopen this file to check — bring it to your notes instead.</p>
+</div>
+
+<footer class="teacher-reminder">Stuck, or something doesn't make sense? Re-read the official docs linked above, or note the question down and come back to it.</footer>
+
+<div class="lesson-nav">
+  <a href="0003-service-to-pod.html">&larr; Service &rarr; Pod</a>
+  <a href="0005-service-to-deployment.html">Next: Service &rarr; Deployment &rarr;</a>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3 — Service → Pod (ClusterIP)</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Kubernetes / CKA — Lesson 3 of 17</p>
+<h1>Service &rarr; Pod (ClusterIP)</h1>
+
+<p>In Lesson 2 you put labels on a Pod. That was the setup, not the point. The point is this: a <strong>Service</strong> is a stable address that finds a moving target — a set of Pods that come and go, get rescheduled, and change IP every time — purely by matching the labels you already wrote.</p>
+
+<p><strong>Tied to your mission:</strong> in production this is exactly how one workload finds another inside a cluster — no hardcoded Pod IPs, no per-Pod config. Get the selector-to-label link solid here and Ingress and NetworkPolicy (both label-driven) will click much faster later.</p>
+
+<h2>The mental model</h2>
+<p>A Service is <em>not</em> a proxy you install on each Pod, and it's not a load balancer you configure by pointing at IPs. It's an object with its own stable virtual IP and DNS name. Kubernetes constantly watches for Pods matching the Service's <code>selector</code> and keeps an internal list of "who currently qualifies" up to date. Traffic to the Service gets spread across whatever Pods are on that list right now.</p>
+
+<p><strong>ClusterIP</strong> is the default Service type — and the one you'll use most. It's reachable only from inside the cluster. That's the right scope for Pod-to-Pod traffic (frontend calling backend, app calling database) where nothing outside the cluster needs to see it.</p>
+
+<p class="callout">The whole mechanism is one match: <code>spec.selector</code> on the Service has to equal the <code>metadata.labels</code> you put on the Pod. No selector match, no traffic — the Service exists but is silently empty. This is the payoff of Lesson 2.</p>
+
+<h2>Try it first — before reading on</h2>
+<div class="quiz">
+  <p>Q1. Which field on a Service has to match which field on a Pod for the Service to find it?</p>
+  <input type="text" id="q1" placeholder="type your answer">
+  <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a1">the Service's <code>spec.selector</code> must match the Pod's <code>metadata.labels</code> (key and value, exact match)</div>
+</div>
+
+<div class="quiz">
+  <p>Q2. You create a Service and it looks fine — no errors. What command tells you whether it actually found any Pods?</p>
+  <input type="text" id="q2" placeholder="type your answer">
+  <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a2"><code>kubectl get endpoints &lt;service-name&gt;</code> (or <code>kubectl get ep</code>) — if the list is empty, the selector didn't match any Pod's labels</div>
+</div>
+
+<div class="quiz">
+  <p>Q3. What's the full DNS name a Pod would use to reach a Service called <code>my-service</code> in the <code>default</code> namespace?</p>
+  <input type="text" id="q3" placeholder="type your answer">
+  <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a3"><code>my-service.default.svc.cluster.local</code> — pattern is <code>&lt;service&gt;.&lt;namespace&gt;.svc.cluster.local</code></div>
+</div>
+
+<h2>Now build it — in your terminal, not here</h2>
+<p>Write a ClusterIP Service manifest by hand — no copy-paste. It needs to:</p>
+<ul>
+  <li>select the Pod you built in Lesson 2, using the exact labels you put on it (not the Pod's <code>name</code> — <code>selector</code> matches <code>labels</code>, never the name field)</li>
+  <li>be type <code>ClusterIP</code> (or omit <code>type</code> entirely — it's the default)</li>
+  <li>expose a port and forward it to the port your container listens on</li>
+  <li>have its own name, separate from the Pod's name</li>
+</ul>
+<p>Apply it, then before checking the answer below, run <code>kubectl get endpoints &lt;your-service-name&gt;</code> yourself and confirm it lists your Pod's IP. If it's empty, that's real signal — go compare your <code>selector</code> against your Pod's actual <code>labels</code> before reading on.</p>
+
+<div class="quiz">
+  <p>Reveal the reference answer</p>
+  <button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a4"><code>apiVersion: v1
+kind: Service
+metadata:
+  name: my-nginx-svc
+spec:
+  type: ClusterIP
+  selector:
+    app: nginx
+  ports:
+    - port: 80
+      targetPort: 80
+</code></pre>
+</div>
+
+<p>This assumes your Lesson 2 Pod carries the label <code>app: nginx</code>. If you used a different key or value, your <code>selector</code> must match whatever you actually wrote — there's no default or fallback, just an exact key/value match against the Pod's labels.</p>
+
+<h2>Primary source</h2>
+<p>Read (or at least skim) the official docs — the exact page you're allowed to search during the real exam: <a href="https://kubernetes.io/docs/concepts/services-networking/service/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/service</a>. For the DNS naming rules specifically: <a href="https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/dns-pod-service</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A Service = a stable virtual IP + DNS name that load-balances to whatever Pods currently match its <code>selector</code> — it doesn't sit "on" a Pod</li>
+    <li><code>spec.selector</code> on the Service must exactly match <code>metadata.labels</code> on the Pod — that's the entire mechanism</li>
+    <li>ClusterIP is the default type: internal-only, for Pod-to-Pod traffic inside the cluster</li>
+    <li><code>kubectl get endpoints &lt;service&gt;</code> is how you check a Service actually found Pods — an empty list means the selector didn't match</li>
+    <li>DNS name: <code>&lt;service&gt;.&lt;namespace&gt;.svc.cluster.local</code></li>
+  </ul>
+  <p><strong>Try solo:</strong> change the label on your Lesson 2 Pod (edit and re-apply) so it no longer matches the Service's selector. Run <code>kubectl get endpoints</code> again and watch it go empty. Then fix the label back. Don't reopen this file to check — bring what you observed to your notes instead.</p>
+</div>
+
+<footer class="teacher-reminder">Stuck, or something doesn't make sense? Re-read the official docs linked above, or note the question down and come back to it.</footer>
+
+<div class="lesson-nav">
+  <a href="0002-pod-labels.html">&larr; Pod + labels</a>
+  <a href="0004-deployment.html">Next: Deployment &rarr;</a>
+</div>
+
+</body>
+</html>

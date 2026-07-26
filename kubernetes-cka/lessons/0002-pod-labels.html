@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2 — Pod with labels</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Kubernetes / CKA — Lesson 2 of 17</p>
+<h1>Pod with labels</h1>
+
+<p>A label is not a name. A Pod already has one name (<code>metadata.name</code>), and that's unique and fixed. Labels are extra <strong>key/value metadata</strong> you attach on top — arbitrary tags like <code>tier: frontend</code> or <code>release: canary</code> — and a Pod can carry many of them at once.</p>
+
+<p><strong>Tied to your mission:</strong> Lesson 3 introduces a Service. A Service never points at a Pod by name — it points at a <strong>label selector</strong>, and every Pod whose labels match gets traffic. If the labels are wrong or missing, the Service finds nothing, and nothing in the logs will tell you why unless you already understand this. This is the single most important concept to nail before that lesson.</p>
+
+<h2>The mental model</h2>
+<p>Labels exist so that other objects — Services, Deployments, ReplicaSets, NetworkPolicies — can find a group of Pods without hardcoding names. The object doing the finding carries a <strong>selector</strong> (a set of key/value pairs, or expressions like <code>in</code> / <code>notin</code> / <code>exists</code>), and Kubernetes matches it against every object's labels live, continuously. Add a label that matches, the Pod is in the group. Remove it, the Pod falls out — no restart needed.</p>
+
+<p class="callout">Name identifies one object. Labels group many. Everything from Lesson 3 onward — Service, Deployment, NetworkPolicy — works by matching labels, never by matching names.</p>
+
+<h2>Syntax rules (this will bite you if you skip it)</h2>
+<p>A label key is <code>[optional-prefix/]name</code>. The <code>name</code> part: max 63 characters, must start and end with an alphanumeric, and can contain <code>-</code>, <code>_</code>, <code>.</code> in between. The optional prefix must be a DNS subdomain, max 253 characters, and the <code>kubernetes.io/</code> and <code>k8s.io/</code> prefixes are reserved for core Kubernetes components — don't use them on your own objects. A label value follows the same character rules and can be empty.</p>
+
+<h2>Reading labels with kubectl</h2>
+<ul>
+  <li><code>kubectl get pods --show-labels</code> — adds a column showing every label on each Pod (hidden by default)</li>
+  <li><code>kubectl get pods -l tier=frontend</code> — filters to only Pods matching that label (equality-based)</li>
+  <li><code>kubectl get pods -l 'environment in (production,qa)'</code> — filters using a set-based expression</li>
+</ul>
+
+<h2>Labels vs. annotations, briefly</h2>
+<p>Both are key/value metadata under <code>metadata</code>. The difference is purpose: labels are for <strong>selection</strong> — that's why their charset is restricted and small. Annotations are for anything else you want to attach to an object (build info, a git commit hash, a contact) — up to 256 KiB, no charset restriction, but selectors can't query them. If you ever catch yourself trying to "select" on something, it belongs in a label, not an annotation.</p>
+
+<h2>Try it first — before reading on</h2>
+<div class="quiz">
+  <p>Q1. Under which top-level field of a Pod manifest do labels live?</p>
+  <input type="text" id="q1" placeholder="type your answer">
+  <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a1">metadata.labels — a map of key/value pairs nested inside <code>metadata</code>, alongside <code>name</code></div>
+</div>
+
+<div class="quiz">
+  <p>Q2. Why do labels matter for what comes next in this course (a Service pointing at a Pod)?</p>
+  <input type="text" id="q2" placeholder="type your answer">
+  <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a2">A Service never targets a Pod by name — it uses a label selector, and traffic goes to every Pod whose labels match. Wrong or missing labels mean the Service finds zero Pods, with no error to point you at why.</div>
+</div>
+
+<div class="quiz">
+  <p>Q3. What's the key difference in purpose between a label and an annotation?</p>
+  <input type="text" id="q3" placeholder="type your answer">
+  <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a3">Labels are for identifying/selecting objects (small, restricted charset, queryable with selectors). Annotations are for arbitrary non-identifying metadata (large, unrestricted, not queryable).</div>
+</div>
+
+<h2>Now build it — in your terminal, not here</h2>
+<p>Start from the Lesson 1 Pod manifest structure and add labels to it — by hand, no copy-paste. Give it:</p>
+<ul>
+  <li>the same shape as Lesson 1: a Pod named <code>my-nginx</code>, one container named <code>nginx</code> running the <code>nginx</code> image</li>
+  <li>a <code>metadata.labels</code> map with two entries: <code>app: my-nginx</code> and <code>tier: frontend</code></li>
+  <li>nothing changes in <code>spec</code> — labels are a <code>metadata</code>-only addition</li>
+</ul>
+<p>Once it's written, apply it and check it with <code>kubectl get pods --show-labels</code>, then try filtering it out with <code>kubectl get pods -l tier=frontend</code> and back in with <code>-l tier=backend</code> (should return nothing). Don't peek at the answer below first.</p>
+
+<div class="quiz">
+  <p>Reveal the reference answer</p>
+  <button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a4"><code>apiVersion: v1
+kind: Pod
+metadata:
+  name: my-nginx
+  labels:
+    app: my-nginx
+    tier: frontend
+spec:
+  containers:
+    - name: nginx
+      image: nginx
+</code></pre>
+</div>
+
+<p>Bring what you wrote back to your notes — check it field-by-field against the docs above and confirm what's right, what's missing, and why.</p>
+
+<h2>Primary source</h2>
+<p>Read (or at least skim) the official docs on this — it's the exact page you're allowed to search during the real exam: <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/overview/working-with-objects/labels</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Labels live under <code>metadata.labels</code> — key/value pairs, not names</li>
+    <li>Labels exist so other objects can find groups of Pods via a <strong>selector</strong>, matched live</li>
+    <li><code>--show-labels</code> to see them, <code>-l</code> to filter by them</li>
+    <li>Labels select; annotations don't — that's the whole difference</li>
+  </ul>
+  <p><strong>Try solo:</strong> write a third Pod manifest from memory, using the <code>redis</code> image and labels <code>app: my-redis</code>, <code>tier: backend</code>. Don't reopen this file to check — bring it to your notes instead.</p>
+</div>
+
+<footer class="teacher-reminder">Stuck, or something doesn't make sense? Re-read the official docs linked above, or note the question down and come back to it.</footer>
+
+<div class="lesson-nav">
+  <a href="0001-pod-basics.html">&larr; Pod basics</a>
+  <a href="0003-service-to-pod.html">Next: Service &rarr; Pod &rarr;</a>
+</div>
+
+</body>
+</html>

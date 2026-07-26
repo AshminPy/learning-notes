@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 11 — Resource limits + probes</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Kubernetes / CKA — Lesson 11 of 17</p>
+<h1>Resource limits + probes</h1>
+
+<p>Back in Lesson 5, a Service routed traffic to Pods with zero questions asked — as soon as a Pod matched the label selector, it got traffic, ready or not. That was foreshadowing. This lesson closes the gap: <strong>readiness</strong> is how a Pod tells a Service "don't send me traffic yet," without ever touching whether the container gets restarted. Restart and traffic-routing are two separate decisions in Kubernetes, made by two separate probes — and mixing them up is the single most common way people misread the exam.</p>
+
+<p><strong>Tied to your mission:</strong> GKE Autopilot forces every Pod you run to declare <code>resources.requests</code> — you've already worked around this in production without necessarily knowing why the scheduler cares, or what the matching <code>limits</code> field actually enforces underneath. This lesson gives you the mechanics behind a field you already touch daily.</p>
+
+<h2>The mental model — requests vs limits</h2>
+<p><strong>Requests</strong> are what the <strong>kube-scheduler</strong> uses to place your Pod. It looks at each node's spare capacity and only places a Pod on a node that can cover the sum of its containers' requests. Requests are a promise to the scheduler, not a ceiling on the container.</p>
+<p><strong>Limits</strong> are enforced by the <strong>kubelet</strong>, on the node, after the Pod is already running. A limit is the hard ceiling: the container is not allowed to use more of that resource than the limit says — but "not allowed" plays out very differently depending on which resource it is.</p>
+
+<p class="callout"><strong>The exam trap:</strong> exceeding a memory limit and exceeding a CPU limit do NOT produce the same outcome.
+<br><br>
+Memory is enforced by the kernel killing the process — OOMKilled. The container dies and (subject to <code>restartPolicy</code>) gets restarted from scratch. This is reactive: the kernel only kills once it detects memory pressure, so a container isn't necessarily killed the instant it crosses the line, but it can be killed at any point after.
+<br><br>
+CPU is enforced by throttling. A container that hits its CPU limit is not killed — it's just denied more CPU time until the next scheduling period. It keeps running, just slower. No restart, no crash, no event beyond degraded performance.
+<br><br>
+Same mechanism in your head ("a limit"), completely different consequence. Memory limit too low &rarr; crash loop. CPU limit too low &rarr; silent slowness that never shows up as a Pod restart.</p>
+
+<h2>The mental model — liveness, readiness, startup</h2>
+<p>A probe is the kubelet periodically asking a container a yes/no question. There are three, and each answers a different question:</p>
+<ul>
+  <li><strong>livenessProbe</strong> — "is this container alive?" If it fails (enough times to cross the failure threshold), the kubelet kills and restarts the container.</li>
+  <li><strong>readinessProbe</strong> — "is this container ready for traffic?" If it fails, the Pod is pulled out of every Service's list of endpoints. The container keeps running untouched — nothing restarts.</li>
+  <li><strong>startupProbe</strong> — "has this container finished starting up yet?" While a startup probe hasn't yet succeeded, liveness and readiness probes are disabled. This exists for slow-starting apps: without it, a liveness probe with a short timeout can kill a container that was never actually broken, just still booting.</li>
+</ul>
+
+<p>Once startupProbe succeeds (or if you didn't define one), livenessProbe and readinessProbe take over and run for the rest of the container's life.</p>
+
+<table>
+  <thead>
+    <tr><th>Probe</th><th>Question it asks</th><th>On failure</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>livenessProbe</code></td><td>Is this container alive?</td><td><strong>Restart</strong> the container</td></tr>
+    <tr><td><code>readinessProbe</code></td><td>Is this container ready for traffic?</td><td><strong>Remove Pod from Service endpoints</strong> — no restart</td></tr>
+    <tr><td><code>startupProbe</code></td><td>Has the container finished starting?</td><td>Blocks liveness/readiness from running until this succeeds (or the Pod is killed if startup itself never succeeds in time)</td></tr>
+  </tbody>
+</table>
+
+<p class="callout">The pair everyone confuses: a failed <strong>readiness</strong> probe never restarts a container — it only pulls the Pod out of Service routing. A failed <strong>liveness</strong> probe is the one that restarts. If you see "Pod still Running, 0 restarts, but no traffic reaching it" — that's readiness. If you see "Pod restart count climbing" — that's liveness.</p>
+
+<h2>Try it first — before reading on</h2>
+<div class="quiz">
+  <p>Q1. A Pod's readiness probe starts failing. Does the container restart?</p>
+  <input type="text" id="q1" placeholder="type your answer">
+  <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a1">No. A failed readiness probe never restarts the container — it only removes the Pod from the Service's endpoint list. The container keeps running.</div>
+</div>
+
+<div class="quiz">
+  <p>Q2. A container exceeds its memory limit, and separately, a container exceeds its CPU limit. What happens in each case?</p>
+  <input type="text" id="q2" placeholder="type your answer">
+  <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a2">Memory: the kernel OOMKills the container — it dies and gets restarted (subject to restartPolicy). CPU: the container is throttled, not killed — it keeps running, just denied extra CPU time.</div>
+</div>
+
+<div class="quiz">
+  <p>Q3. What problem does startupProbe solve that livenessProbe alone can't?</p>
+  <input type="text" id="q3" placeholder="type your answer">
+  <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a3">A slow-starting app can look "dead" to a liveness probe with a normal timeout while it's still booting, causing the kubelet to kill it before it ever gets a chance to start. startupProbe holds off liveness (and readiness) checks until the app has actually finished starting.</div>
+</div>
+
+<h2>Now build it — in your terminal, not here</h2>
+<p>Take the Deployment you wrote in Lesson 4 and edit its Pod template — no copy-paste. Add, to the container:</p>
+<ul>
+  <li><code>resources.requests</code> — a CPU value (e.g. <code>100m</code>) and a memory value (e.g. <code>128Mi</code>)</li>
+  <li><code>resources.limits</code> — a CPU value and a memory value, at or above your requests</li>
+  <li><code>readinessProbe</code> — an HTTP GET probe against the container's port (nginx serves on port 80), with an <code>initialDelaySeconds</code> and a <code>periodSeconds</code></li>
+</ul>
+<p>Apply it, then run <code>kubectl describe pod &lt;pod-name&gt;</code> and check the <code>Requests</code>/<code>Limits</code> lines and the <code>Readiness</code> line under the container section. Watch <code>kubectl get pods</code> — a Pod isn't marked <code>READY</code> until its readiness probe passes at least once.</p>
+
+<div class="quiz">
+  <p>Reveal the reference answer</p>
+  <button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a4"><code>apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-nginx
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-nginx
+  template:
+    metadata:
+      labels:
+        app: my-nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+</code></pre>
+</div>
+
+<p>Bring what you wrote back to your notes — check that <code>limits</code> is at or above <code>requests</code> for each resource (Kubernetes allows limits below requests to be set, but it's a self-defeating config: the Pod could be scheduled expecting headroom it can't actually use), and that the probe's <code>port</code> matches the port the container really listens on.</p>
+
+<h2>Primary source</h2>
+<p>Read (or at least skim) the official docs — the exact pages you're allowed to search during the real exam: <a href="https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/configuration/manage-resources-containers</a> and <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle</a> (probes section), plus the task walkthrough at <a href="https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/" target="_blank" rel="noopener">kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>requests</code> = what the scheduler uses to place the Pod. <code>limits</code> = the hard ceiling the kubelet enforces once it's running.</li>
+    <li>Exceed a memory limit &rarr; OOMKilled (container dies, restarts). Exceed a CPU limit &rarr; throttled (keeps running, just slower). Same word "limit," opposite failure mode.</li>
+    <li><code>livenessProbe</code> fails &rarr; container restarts. <code>readinessProbe</code> fails &rarr; Pod pulled from Service endpoints, no restart. These are independent decisions.</li>
+    <li><code>startupProbe</code> holds off liveness/readiness checks until a slow-starting container has actually finished starting.</li>
+  </ul>
+  <p><strong>Try solo:</strong> add a <code>livenessProbe</code> to the same Deployment (a different check than your readiness probe, e.g. a different path), deliberately point it at a path that returns an error, apply it, and watch <code>kubectl get pods</code> restart count climb. Then fix the path and confirm it stabilizes. Don't reopen this file to check — bring it to your notes instead.</p>
+</div>
+
+<footer class="teacher-reminder">Stuck, or something doesn't make sense? Re-read the official docs linked above, or note the question down and come back to it.</footer>
+
+<div class="lesson-nav">
+  <a href="0010-networkpolicy.html">&larr; NetworkPolicy</a>
+  <a href="0012-statefulset-daemonset-job-cronjob.html">Next: StatefulSet, DaemonSet, Job, CronJob &rarr;</a>
+</div>
+
+</body>
+</html>

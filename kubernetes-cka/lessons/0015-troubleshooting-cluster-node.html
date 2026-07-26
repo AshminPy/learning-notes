@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 15 — Troubleshooting: cluster &amp; node level</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Kubernetes / CKA — Lesson 15 of 17</p>
+<h1>Troubleshooting — cluster &amp; node level</h1>
+
+<p>This lesson opens the <strong>Troubleshooting</strong> domain — 30% of the CKA exam, the single largest domain by weight. Everything from here on is less "here's a new object kind" and more "here's a system that's broken, find out why, in order."</p>
+
+<p><strong>Tied to your mission:</strong> you troubleshoot production Kubernetes every day, but on GKE Autopilot the node and kubelet layer is Google's problem, not yours — you've never had to SSH into a node and read <code>journalctl</code> because that layer is managed away from you. The instinct you already have ("narrow the blast radius before you touch anything") is exactly right. What's missing is just the specific commands for the layer GKE normally hides: is the node itself healthy, is kubelet running, and — if things are bad enough that <code>kubectl</code> itself won't answer — is the container runtime even alive.</p>
+
+<h2>The mental model</h2>
+<p>Cluster/node troubleshooting is one discipline applied at shrinking scope: <strong>cluster-wide symptom &rarr; which node(s) &rarr; which component on that node &rarr; logs for that component.</strong> Skipping a step (jumping straight to reading kubelet logs before you've even confirmed which node is unhealthy) wastes exam minutes. Work the funnel in order.</p>
+
+<p><strong>Step 1 — cluster-wide: is a node NotReady?</strong></p>
+<pre><code>kubectl get nodes</code></pre>
+<p>Confirm every node you expect is present and in <code>Ready</code> state. If one isn't, that's your scope — stop looking cluster-wide and focus on that node.</p>
+
+<p><strong>Step 2 — node-level: what does the node say is wrong?</strong></p>
+<pre><code>kubectl describe node &lt;node-name&gt;</code></pre>
+<p>Read the <strong>Conditions</strong> block. A node reports four (sometimes five) conditions, each with a <code>Status</code> of <code>True</code>, <code>False</code>, or <code>Unknown</code>:</p>
+<ul>
+  <li><code>Ready</code> — kubelet is healthy and posting status. <code>False</code> means kubelet said it's unhealthy; <code>Unknown</code> means the node controller hasn't heard from kubelet recently at all (heartbeat stopped)</li>
+  <li><code>MemoryPressure</code> — node is low on available memory</li>
+  <li><code>DiskPressure</code> — node is low on disk space</li>
+  <li><code>PIDPressure</code> — node is running too many processes</li>
+</ul>
+<p>The bottom of <code>describe node</code> output also has an <code>Events</code> section — often the fastest way to see <em>why</em> a condition flipped.</p>
+
+<p><strong>Step 3 — component-level: check kubelet on the node itself.</strong> A <code>NotReady</code> node is almost always a kubelet problem — kubelet is what posts the heartbeat that keeps a node <code>Ready</code>. Log in to the node and check:</p>
+<pre><code>systemctl status kubelet
+journalctl -u kubelet -n 100 --no-pager</code></pre>
+<p>This tells you whether kubelet is running at all, and if not, why (crashed, cert expired, config error, can't reach the API server, disk full, and so on).</p>
+
+<p><strong>Step 4 — control-plane component health.</strong> Control-plane components (kube-apiserver, kube-scheduler, kube-controller-manager, etcd) run as <strong>static pods</strong>, as covered in Lesson 13 — kubelet on the control-plane node starts them straight from manifest files, with no API server involved in that decision. If one of those isn't running, and the reason <code>kubectl</code> itself won't answer is that the API server is the thing that's down, <code>kubectl get pods</code> can't help you — it depends on the very component you're diagnosing. Drop to the container-runtime level directly:</p>
+<pre><code>crictl ps -a</code></pre>
+<p><code>crictl</code> talks to the container runtime (containerd/CRI-O) directly over the CRI socket, bypassing the API server entirely. It's the one tool that still works when <code>kubectl</code> doesn't.</p>
+
+<p class="callout"><code>kubectl get events --sort-by=.metadata.creationTimestamp</code> is your first-look tool across the whole cluster, before you narrow to a node. Add <code>-A</code> for every namespace. Events are cheap, chronological, and often name the exact object and reason (<code>FailedScheduling</code>, <code>NodeNotReady</code>, <code>Evicted</code>, …) before you've read a single log line.</p>
+
+<h2>Try it first — before reading on</h2>
+<div class="quiz">
+  <p>Q1. A node's <code>Ready</code> condition shows <code>Unknown</code> rather than <code>False</code>. What does <code>Unknown</code> specifically mean, as opposed to <code>False</code>?</p>
+  <input type="text" id="q1" placeholder="type your answer">
+  <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a1"><code>False</code> means kubelet is running and actively reported itself unhealthy. <code>Unknown</code> means the node controller hasn't heard a heartbeat from kubelet recently at all — kubelet may be crashed, the node may be unreachable, or the network path between node and API server is broken. Same visible symptom (NotReady), different next step: <code>False</code> points you at kubelet's own logs; <code>Unknown</code> points you at whether the node is reachable at all first.</div>
+</div>
+
+<div class="quiz">
+  <p>Q2. Why can't you always rely on <code>kubectl</code> to diagnose a control-plane outage, and what do you drop down to instead?</p>
+  <input type="text" id="q2" placeholder="type your answer">
+  <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a2"><code>kubectl</code> talks to the API server — if the API server's static pod itself is down, <code>kubectl</code> has nothing to talk to, so <code>kubectl get pods</code> can't tell you the API server is broken. Drop to <code>crictl ps -a</code> on the control-plane node, which queries the container runtime directly and bypasses the API server entirely.</div>
+</div>
+
+<h2>Worked scenario — a node shows NotReady</h2>
+<p>Before you look at the checklist below, think through it yourself: a teammate pings you that a Pod is stuck Pending and the node it should land on shows <code>NotReady</code>. What do you check, and in what order?</p>
+
+<div class="quiz">
+  <p>Reveal the diagnostic order</p>
+  <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a3">
+    <ol>
+      <li><code>kubectl get nodes</code> — confirm scope: is it one node, or several? One node points at that node; several pointing at once often points at something shared (network, a control-plane component, a cloud-provider outage)</li>
+      <li><code>kubectl describe node &lt;node-name&gt;</code> — read the <code>Conditions</code> block: is it <code>Ready=False</code> (kubelet reported unhealthy) or <code>Ready=Unknown</code> (no heartbeat at all)? Also check <code>MemoryPressure</code>/<code>DiskPressure</code>/<code>PIDPressure</code> — any of those being <code>True</code> can itself cause <code>Ready</code> to flip</li>
+      <li><code>kubectl get events --sort-by=.metadata.creationTimestamp -A</code> — cluster-wide, chronological, look for anything near the time the node went NotReady (evictions, a cloud-provider event, other nodes affected)</li>
+      <li>Log in to the node itself (SSH, or your cloud provider's serial console)</li>
+      <li><code>systemctl status kubelet</code> — is the kubelet process even running?</li>
+      <li><code>journalctl -u kubelet -n 100 --no-pager</code> — read the actual error: expired certificate, cannot reach the API server, disk full, cgroup driver mismatch, OOM-killed process, etc.</li>
+      <li>If kubelet looks fine but pods (including control-plane static pods, if this is a control-plane node) aren't coming up as expected: <code>crictl ps -a</code> to see container state directly at the runtime level, independent of kubelet's own reporting</li>
+      <li>Fix the root cause you found (restart kubelet, free disk space, renew the cert, correct the config) and re-run <code>kubectl get nodes</code> to confirm <code>Ready</code> returns</li>
+    </ol>
+  </div>
+</div>
+
+<h2>Try it yourself — build the recall habit</h2>
+<p>The exam rewards speed of <em>diagnosis</em>, not memorized fixes. For each symptom below, answer out loud or in the box: what's your first command, and why that one first? Then reveal and compare your reasoning, not just the command.</p>
+
+<div class="quiz">
+  <p>Scenario 1: <code>kubectl get nodes</code> shows one node as <code>NotReady</code>. What's your first command on that node, and why?</p>
+  <input type="text" id="q4" placeholder="type your answer">
+  <button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a4"><code>kubectl describe node &lt;node-name&gt;</code> first — while still using <code>kubectl</code>, before logging into the node — to read the Conditions and Events and see whether the API server already knows the reason (DiskPressure, MemoryPressure) without you needing node access yet. Only after that do you SSH in and run <code>systemctl status kubelet</code> / <code>journalctl -u kubelet</code>, because NotReady is almost always a kubelet problem and those commands show you kubelet's own account of what's wrong.</div>
+</div>
+
+<div class="quiz">
+  <p>Scenario 2: every <code>kubectl</code> command hangs and times out, cluster-wide, on a cluster where you manage your own control plane. What's your first move?</p>
+  <input type="text" id="q5" placeholder="type your answer">
+  <button onclick="document.getElementById('a5').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a5">Don't keep retrying <code>kubectl</code> — it depends on the API server, and the API server is likely the thing that's down. SSH to a control-plane node and check kubelet there first (<code>systemctl status kubelet</code>, since kubelet is what starts the API server's static pod), then <code>crictl ps -a</code> to see directly whether the <code>kube-apiserver</code> container is even running, bypassing <code>kubectl</code> entirely.</div>
+</div>
+
+<div class="quiz">
+  <p>Scenario 3: Pods across several unrelated namespaces started getting evicted at roughly the same time. What's your first command to find the common cause?</p>
+  <input type="text" id="q6" placeholder="type your answer">
+  <button onclick="document.getElementById('a6').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a6"><code>kubectl get events --sort-by=.metadata.creationTimestamp -A</code> as a cluster-wide first look — evictions across unrelated namespaces usually share one root cause rather than being coincidence, and sorted events will often show the shared trigger (a node's <code>DiskPressure</code> or <code>MemoryPressure</code> flipping <code>True</code>) right before the evictions start. That points you at <code>kubectl get nodes</code> / <code>kubectl describe node</code> next, to confirm which node and which condition.</div>
+</div>
+
+<h2>Primary source</h2>
+<p>Read (or at least skim) the official docs — the exact pages you're allowed to search during the real exam: <a href="https://kubernetes.io/docs/tasks/debug/debug-cluster/" target="_blank" rel="noopener">kubernetes.io/docs/tasks/debug/debug-cluster</a> for the cluster-level checklist, <a href="https://kubernetes.io/docs/concepts/architecture/nodes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/architecture/nodes</a> for the full Node Conditions reference, <a href="https://kubernetes.io/docs/tasks/debug/debug-cluster/crictl/" target="_blank" rel="noopener">kubernetes.io/docs/tasks/debug/debug-cluster/crictl</a> for <code>crictl</code>, and the <a href="https://kubernetes.io/docs/reference/kubectl/cheatsheet/" target="_blank" rel="noopener">kubectl cheatsheet</a> for the exact <code>--sort-by</code> events syntax.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Work the funnel in order: cluster-wide symptom &rarr; which node(s) &rarr; which component &rarr; logs for that component</li>
+    <li><code>kubectl get nodes</code> then <code>kubectl describe node</code> — read the Conditions: <code>Ready</code>, <code>MemoryPressure</code>, <code>DiskPressure</code>, <code>PIDPressure</code></li>
+    <li><code>Ready=False</code> (kubelet reported unhealthy) vs. <code>Ready=Unknown</code> (no heartbeat at all) are different next steps</li>
+    <li>NotReady is almost always a kubelet problem — check it on the node itself with <code>systemctl status kubelet</code> and <code>journalctl -u kubelet</code></li>
+    <li>Control-plane components are static pods (Lesson 13) — if the API server itself is down, <code>kubectl</code> can't help you diagnose it; drop to <code>crictl ps -a</code>, which bypasses the API server</li>
+    <li><code>kubectl get events --sort-by=.metadata.creationTimestamp -A</code> is your cheap, cluster-wide, chronological first look</li>
+  </ul>
+  <p><strong>Try solo:</strong> pick any Pod running in your GKE Autopilot cluster and run <code>kubectl get events --sort-by=.metadata.creationTimestamp -n &lt;its-namespace&gt;</code> for real. You won't get node/kubelet-level access on Autopilot — that's expected and is exactly the boundary this lesson is teaching you to recognize — but confirm you can read the event stream fluently and pick out what's signal vs. noise. Don't reopen this file to check — write down what you observed in your own notes instead.</p>
+</div>
+
+<footer class="teacher-reminder">Stuck, or something doesn't make sense? Re-read the official docs linked above, or note the question down and come back to it.</footer>
+
+<div class="lesson-nav">
+  <a href="0014-cluster-architecture-etcd-upgrades-tls.html">&larr; etcd, upgrades &amp; TLS</a>
+  <a href="0016-troubleshooting-application-workload.html">Next: Troubleshooting &mdash; application &amp; workload level &rarr;</a>
+</div>
+
+</body>
+</html>

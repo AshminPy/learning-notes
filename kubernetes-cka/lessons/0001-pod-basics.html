@@ -3,51 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lesson 1 — The Pod, bare minimum</title>
+<title>Lesson 1 — The Pod</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 1 of many</p>
-<h1>The Pod, bare minimum</h1>
+<p class="eyebrow">Kubernetes / CKA — Lesson 1 of 17</p>
+<h1>The Pod</h1>
 
-<p>Every workload in Kubernetes — Deployment, StatefulSet, Job, whatever sits on top — ultimately runs as one or more <strong>Pods</strong>. This is the smallest thing the scheduler places on a node. Get this one right and every layer above it (Service, Deployment, RBAC…) is just "more fields on top of a Pod."</p>
+<p>A Pod is the smallest thing Kubernetes runs. Everything bigger (Deployment, Service, Job) is just "a Pod, plus extra rules."</p>
 
-<p><strong>Tied to your mission:</strong> the CKA's biggest single domain is Troubleshooting (30%), and almost every troubleshooting task starts with "read the Pod spec and figure out what's wrong with it." Fluency here pays off everywhere else.</p>
+<p class="callout"><strong>Simple example:</strong> think of a Pod like one shipping container. Inside it: one or more apps that share the same address and the same fate — they start together, they stop together. Most Pods hold just one app.</p>
 
-<h2>The mental model</h2>
-<p>A Pod is a thin wrapper around one or more containers that share a network namespace (same IP, can talk over <code>localhost</code>) and a lifecycle (they start and die together). Most of the time you'll run exactly one container per Pod — multi-container Pods are the exception, not the rule.</p>
-
-<p class="callout">Every Kubernetes object you'll ever write — Pod, Deployment, Service, all of them — starts with the same four top-level fields. Learn them once here, and you never re-learn them.</p>
-
-<h2>Try it first — before reading on</h2>
-<div class="quiz">
-  <p>Q1. What are the four top-level fields every Kubernetes manifest needs (not just Pod)?</p>
-  <input type="text" id="q1" placeholder="type your answer">
-  <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a1">apiVersion, kind, metadata, spec</div>
-</div>
-
-<div class="quiz">
-  <p>Q2. Inside <code>spec</code>, what's the one field a Pod absolutely cannot exist without — the thing that actually runs?</p>
-  <input type="text" id="q2" placeholder="type your answer">
-  <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a2">containers (a list, with at least one entry — name + image are required per container)</div>
-</div>
-
-<h2>Now build it — in your terminal, not here</h2>
-<p>Open a terminal (or your editor) and write a Pod manifest by hand — no copy-paste. Give it:</p>
-<ul>
-  <li>a name</li>
-  <li>the <code>nginx</code> image</li>
-  <li>a container name</li>
-</ul>
-<p>Don't peek at the answer below until you've written something — even a wrong attempt teaches more than reading the answer first.</p>
-
-<div class="quiz">
-  <p>Reveal the reference answer</p>
-  <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a3"><code>apiVersion: v1
+<h2>What's inside a Pod manifest</h2>
+<p>Every Kubernetes object (Pod, Deployment, Service — all of them) is written the same shape:</p>
+<pre><code>apiVersion: v1
 kind: Pod
 metadata:
   name: my-nginx
@@ -56,28 +26,62 @@ spec:
     - name: nginx
       image: nginx
 </code></pre>
+<p>Four parts, always:</p>
+<ul>
+<li><code>apiVersion</code> — which version of the Kubernetes API this object uses</li>
+<li><code>kind</code> — what kind of object this is (here: <code>Pod</code>)</li>
+<li><code>metadata</code> — its name and labels</li>
+<li><code>spec</code> — what you actually want (here: run the <code>nginx</code> image)</li>
+</ul>
+<p>Learn these four once. Every object you write from here on reuses the same shape.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Which of the four parts says <em>what container to actually run</em>?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>spec</code> — specifically <code>spec.containers</code>.</div>
 </div>
 
-<p>Bring what you wrote back to your notes — check it field-by-field against the docs above and confirm what's right, what's missing, and why.</p>
+<h2>Now write your own</h2>
+<p>Open a terminal or editor. Write a Pod manifest by hand (no copy-paste) with:</p>
+<ul>
+<li>a name of your choice</li>
+<li>the <code>redis</code> image</li>
+</ul>
+<p>Try it before you look at the answer below.</p>
 
-<h2>Primary source</h2>
-<p>Read (or at least skim) the official docs on this — it's the exact page you're allowed to search during the real exam: <a href="https://kubernetes.io/docs/concepts/workloads/pods/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/pods</a>.</p>
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>apiVersion: v1
+kind: Pod
+metadata:
+  name: my-redis
+spec:
+  containers:
+    - name: redis
+      image: redis
+</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://kubernetes.io/docs/concepts/workloads/pods/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/pods</a> — the exact page you can search in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Every manifest: <code>apiVersion</code>, <code>kind</code>, <code>metadata</code>, <code>spec</code></li>
-    <li>A Pod's <code>spec.containers</code> is the one field it can't live without</li>
-    <li>Most Pods run one container — multi-container is the exception</li>
+    <li>A Pod = one or more containers that share an IP and a lifecycle.</li>
+    <li>Every object: <code>apiVersion</code>, <code>kind</code>, <code>metadata</code>, <code>spec</code>.</li>
+    <li><code>spec.containers</code> is the part a Pod can't exist without.</li>
   </ul>
-  <p><strong>Try solo:</strong> write a second Pod manifest from memory, this time using the <code>redis</code> image and a different Pod name. Don't reopen this file to check — bring it to chat instead.</p>
 </div>
 
-<footer class="teacher-reminder">Stuck, or something doesn't make sense? Re-read the official docs linked above, or note the question down and come back to it.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <span>&larr; Start</span>
-  <span>Next: Pod + labels &rarr; <em>(not written yet)</em></span>
+  <span><a href="0002-pod-labels.html">Next: Pod + labels &rarr;</a></span>
 </div>
 
 </body>

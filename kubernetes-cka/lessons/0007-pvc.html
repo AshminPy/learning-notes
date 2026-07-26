@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 7 — PersistentVolumeClaim &rarr; Pod</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Kubernetes / CKA — Lesson 7 of 17</p>
+<h1>PersistentVolumeClaim &rarr; Pod</h1>
+
+<p>Everything so far (ConfigMap, Secret) has been about injecting small bits of config into a Pod. Storage is a different problem: a container's filesystem dies with the container, so anything that needs to survive a restart — a database's data directory, an uploaded file — needs a volume backed by real, persistent storage. Kubernetes splits this into three layers, and the exact plumbing between them is a classic exam trap.</p>
+
+<p><strong>Tied to your mission:</strong> storage binding issues (PVC stuck <code>Pending</code>, wrong access mode, wrong StorageClass) are a recurring Troubleshooting-domain scenario — the domain worth 30% of the exam.</p>
+
+<h2>The mental model — three layers</h2>
+<p>
+  <strong>PersistentVolume (PV)</strong> — the actual storage resource (a disk, an NFS share, whatever the backend is). It is <strong>cluster-scoped</strong>, not namespaced. It exists independently of any Pod.
+</p>
+<p>
+  <strong>PersistentVolumeClaim (PVC)</strong> — a <strong>namespaced</strong> request for storage: "I need N GiB, with this access mode." The control plane binds it to a PV that satisfies the request.
+</p>
+<p>
+  <strong>Pod</strong> — mounts the <strong>PVC</strong> as a volume, never the PV directly.
+</p>
+
+<p class="callout">This indirection is the single most important thing to understand in this lesson. A Pod's <code>spec.volumes</code> never points at a PV — it points at a PVC by name. The PVC is what's bound to the PV behind the scenes. Try to wire a Pod straight to a PV and there's no field for it; the normal path always goes Pod &rarr; PVC &rarr; PV. This trips people up in the exam because it feels like an unnecessary extra step — it isn't, it's what makes the Pod spec portable across clusters where the underlying storage differs.</p>
+
+<h2>Static vs. dynamic provisioning</h2>
+<p><strong>Dynamic provisioning</strong> is the realistic default on GKE and most clouds: a PVC references a <code>StorageClass</code>, and if no existing PV matches, the cluster automatically creates one for you. You rarely hand-write a PV yourself. GKE ships a default StorageClass out of the box (provisioner <code>pd.csi.storage.gke.io</code>, backed by a Persistent Disk) — create a PVC with no <code>storageClassName</code> at all and it still gets provisioned against that default.</p>
+<p><strong>Static provisioning</strong> is the older, on-prem-style pattern: an administrator pre-creates PVs by hand, and a new PVC binds to whichever existing PV matches its size and access mode — no StorageClass involved.</p>
+<p class="callout">Know both directions. The CKA exam environment may use static provisioning, a default StorageClass, or neither depending on how the cluster is set up — don't assume dynamic provisioning "just works" until you've confirmed a default StorageClass exists (<code>kubectl get storageclass</code>).</p>
+
+<h2><code>accessModes</code>, briefly</h2>
+<ul>
+  <li><strong>ReadWriteOnce (RWO)</strong> — the volume can be mounted read-write by a single node at a time. Most block storage (e.g. cloud persistent disks) only supports this.</li>
+  <li><strong>ReadOnlyMany (ROX)</strong> — many nodes can mount it read-only at once.</li>
+  <li><strong>ReadWriteMany (RWX)</strong> — many nodes can mount it read-write at once. Needs a backend that supports shared access (e.g. NFS) — most cloud block storage doesn't.</li>
+</ul>
+<p>(There's also <code>ReadWriteOncePod</code>, a stricter RWO that limits the mount to a single Pod rather than a single node — good to recognize if you see it, not the focus here.)</p>
+
+<h2>Try it first — before reading on</h2>
+<div class="quiz">
+  <p>Q1. Does a Pod's <code>spec.volumes</code> reference a PV or a PVC?</p>
+  <input type="text" id="q1" placeholder="type your answer">
+  <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a1">A PVC — always. The Pod never mounts a PV directly; the PVC is what's bound to the PV behind the scenes.</div>
+</div>
+
+<div class="quiz">
+  <p>Q2. What makes a PVC automatically get a matching PV without you creating one by hand?</p>
+  <input type="text" id="q2" placeholder="type your answer">
+  <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a2">Referencing a StorageClass (or letting the cluster's default StorageClass apply) — that triggers dynamic provisioning, which creates a new PV to satisfy the claim.</div>
+</div>
+
+<div class="quiz">
+  <p>Q3. Which <code>accessMode</code> would you pick for a volume that needs to be mounted read-write by Pods on several different nodes at the same time?</p>
+  <input type="text" id="q3" placeholder="type your answer">
+  <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a3">ReadWriteMany (RWX) — and note most cloud block storage (e.g. GCP Persistent Disk) doesn't support it, only ReadWriteOnce.</div>
+</div>
+
+<h2>Now build it — in your terminal, not here</h2>
+<p>Write two manifests by hand, no copy-paste:</p>
+<p><strong>1. A PersistentVolumeClaim</strong> that requests:</p>
+<ul>
+  <li>1Gi of storage</li>
+  <li><code>ReadWriteOnce</code> access mode</li>
+  <li>a <code>storageClassName</code> (use <code>standard</code>, or whatever your cluster's default StorageClass is called — check with <code>kubectl get storageclass</code>)</li>
+</ul>
+<p><strong>2. A Pod</strong> that:</p>
+<ul>
+  <li>mounts that PVC as a volume</li>
+  <li>mounts it into the container filesystem at some path (e.g. <code>/usr/share/nginx/html</code> if you use the <code>nginx</code> image)</li>
+</ul>
+<p>Don't peek at the answer below until you've written something.</p>
+
+<div class="quiz">
+  <p>Reveal the reference answer</p>
+  <button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a4"><code>apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pvc-pod
+spec:
+  containers:
+    - name: app
+      image: nginx
+      volumeMounts:
+        - name: data
+          mountPath: /usr/share/nginx/html
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: my-pvc
+</code></pre>
+</div>
+
+<p>Bring what you wrote back to your notes — check it field-by-field: does <code>volumes[].persistentVolumeClaim.claimName</code> match your PVC's <code>metadata.name</code>? Does <code>volumeMounts[].name</code> match <code>volumes[].name</code>? Those two links are where typos usually break this.</p>
+
+<h2>Primary source</h2>
+<p>Read (or at least skim) the official docs — these are the exact pages you're allowed to search during the real exam:</p>
+<ul>
+  <li><a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/storage/persistent-volumes</a></li>
+  <li><a href="https://kubernetes.io/docs/concepts/storage/storage-classes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/storage/storage-classes</a></li>
+</ul>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>PV = actual storage, cluster-scoped. PVC = namespaced request for storage. Pod mounts the PVC, never the PV.</li>
+    <li>Dynamic provisioning (PVC + StorageClass, auto-creates the PV) is the realistic default on GKE/cloud. Static provisioning (hand-created PVs) is more common on-prem, and possibly in the exam lab.</li>
+    <li><code>accessModes</code>: ReadWriteOnce (one node, read-write), ReadOnlyMany (many nodes, read-only), ReadWriteMany (many nodes, read-write — needs a backend that supports it).</li>
+  </ul>
+  <p><strong>Try solo:</strong> write a second PVC + Pod pair from memory, this time requesting <code>ReadOnlyMany</code> and a different PVC/Pod name. Don't reopen this file to check — write it down and self-check against the docs next session instead.</p>
+</div>
+
+<footer class="teacher-reminder">Stuck, or something doesn't make sense? Re-read the official docs linked above, or note the question down and come back to it.</footer>
+
+<div class="lesson-nav">
+  <a href="0006-configmap-secret.html">&larr; ConfigMap &amp; Secret</a>
+  <a href="0008-ingress.html">Next: Ingress &rarr; Service &rarr;</a>
+</div>
+
+</body>
+</html>
