@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 4 — Atuin: history search, zoxide: smart cd</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 4 of 8</p>
+<h1>Atuin and zoxide, from first principles</h1>
+
+<p>Both tools are already wired into your <code>.zshrc</code> — <code>eval "$(atuin init zsh)"</code> and <code>eval "$(zoxide init zsh)"</code>. This lesson covers what each one actually replaces: Atuin takes over <code>Ctrl-R</code> (history search), zoxide takes over <code>cd</code> (directory jumping).</p>
+
+<h2>Atuin: your history becomes a database</h2>
+<p>The default shell keeps history as a plain text file — one line per command, searched top to bottom. Atuin replaces that file with a SQLite database and records extra context per command: exit code, working directory, hostname, duration, timestamp.</p>
+<p class="callout">A plain <code>.zsh_history</code> is a pile of receipts in a shoebox — you can only flip through them in order. Atuin is the same receipts filed in a database you can query: "every <code>terraform plan</code> that succeeded, run from this folder, this week."</p>
+<p>Press <code>Ctrl-R</code> (or the up arrow, on an empty line) and Atuin opens a full-screen search UI instead of the old single-line reverse-search.</p>
+<table>
+<tr><th>Key</th><th>What it does</th></tr>
+<tr><td><code>Ctrl-R</code> / <code>&uarr;</code></td><td>Open the search UI</td></tr>
+<tr><td><code>Enter</code></td><td>Run the selected command immediately</td></tr>
+<tr><td><code>Tab</code></td><td>Insert the command into your shell line for editing first</td></tr>
+<tr><td><code>Ctrl-R</code> (pressed again, inside the UI)</td><td>Cycle filter mode: all hosts &rarr; this machine &rarr; this directory &rarr; this session</td></tr>
+<tr><td><code>Esc</code> / <code>Ctrl-C</code> / <code>Ctrl-D</code> / <code>Ctrl-G</code></td><td>Cancel and return to the shell, no command run</td></tr>
+</table>
+<p>Every command is also queryable from the command line without opening the UI: <code>atuin search --cwd . --exit 0 cargo</code> finds commands starting with "cargo" that succeeded, run in the current directory. Duration is recorded and shown per result, though it's a display field, not a separate filter flag like <code>--exit</code> or <code>--cwd</code>.</p>
+
+<h3>The one-time import</h3>
+<p>Atuin only knows about commands run <em>after</em> it was installed. If you've been using the terminal for years without it, your old shell history file has thousands of lines Atuin has never seen. One command fixes that, once:</p>
+<pre><code>atuin import auto</code></pre>
+<p>It detects your current shell and imports its existing history file. Run it once, right after install — your old history file keeps working normally either way, Atuin just reads a copy of it into its own database.</p>
+<p>Atuin can also sync history across machines, end-to-end encrypted before it leaves your laptop — hosted by the Atuin team, or self-hosted if you'd rather run the sync server yourself. Optional, not required for search to work locally.</p>
+
+<h2>zoxide: cd that remembers where you've been</h2>
+<p>Every <code>cd</code> you already run gets tracked. zoxide ranks directories by <strong>frecency</strong> — how often and how recently you visited each one — so a short, partial name jumps you to the right place without a full path.</p>
+<div class="callout"><code>cd</code> needs the exact path every time. <code>z</code> just needs enough of the name to be unambiguous, ranked by your own habits — <code>z proj</code> beats typing <code>cd ~/projects</code>, once you've actually visited it before.</div>
+<table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>z foo</code></td><td>Jump to the highest-ranked directory matching "foo"</td></tr>
+<tr><td><code>z foo bar</code></td><td>Jump to a directory matching both "foo" and "bar"</td></tr>
+<tr><td><code>z ..</code></td><td>Up one directory, same as plain <code>cd ..</code></td></tr>
+<tr><td><code>z -</code></td><td>Back to the previous directory</td></tr>
+<tr><td><code>zi foo</code></td><td>Interactive fuzzy picker over matches (needs fzf v0.51.0+)</td></tr>
+<tr><td><code>zoxide query foo</code></td><td>Print the matched path without jumping there — for scripts</td></tr>
+</table>
+<p>One catch worth remembering: zoxide only ranks directories you've actually <code>cd</code>'d into before. It's not a filesystem search — it's a memory of your own habits, so a brand-new folder won't be reachable by <code>z</code> until you've visited it at least once.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Pick a directory you've cd'd into before this week. Jump to it with <code>z</code> and a partial name instead of typing the full path. Then press <code>Ctrl-R</code>, search for something you ran recently, and press <code>Ctrl-R</code> again until the filter mode reads "this directory only."</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. What does Atuin replace the default <code>Ctrl-R</code> behavior with?</p>
+<div class="opts">
+<label>A. A full-screen fuzzy search backed by SQLite</label>
+<label>B. A simple list shown in reverse order</label>
+<label>C. A popup asking which shell to use</label>
+<label>D. A dropdown menu of saved bookmarks only</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Atuin swaps the default single-line reverse-search for a full-screen search UI reading from a SQLite database of your command history.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What one-time command pulls your existing shell history into Atuin?</p>
+<div class="opts">
+<label>A. Run atuin import auto once only</label>
+<label>B. Delete your old .zsh_history file first</label>
+<label>C. Manually retype each old command again</label>
+<label>D. Wait for automatic background history sync</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> <code>atuin import auto</code> detects your shell and imports its existing history file — a one-time step, not something that happens automatically.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. zoxide's frecency ranking combines what two signals?</p>
+<div class="opts">
+<label>A. How often and how recently visited</label>
+<label>B. How long and how deeply nested</label>
+<label>C. How fast and how quietly typed</label>
+<label>D. How big and how empty folders</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Frecency = frequency + recency — directories you visit often, or visited lately, rank higher for a short partial-name match.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. What underlying tool does zi's interactive picker require?</p>
+<div class="opts">
+<label>A. A minimum supported version of fzf</label>
+<label>B. A minimum supported version of grep</label>
+<label>C. A separate paid license for zoxide</label>
+<label>D. A working internet connection to zoxide</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> <code>zi</code> hands matches to fzf for fuzzy selection — the documented minimum is fzf v0.51.0.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. Inside Atuin's search UI, what does pressing Ctrl-R repeatedly do?</p>
+<div class="opts">
+<label>A. Cycles through host, directory, and session filters</label>
+<label>B. Deletes the most recent history entry shown</label>
+<label>C. Opens a brand new terminal tab instantly</label>
+<label>D. Syncs your history to every linked machine</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> Each extra press cycles the filter mode: all hosts, this machine, this directory, this session — no separate key needed.</div>
+</div>
+
+<h2>Primary source</h2>
+<p><a href="https://atuin.sh/docs/" target="_blank" rel="noopener">Atuin Docs</a> · <a href="https://docs.atuin.sh/latest/guide/basic-usage/" target="_blank" rel="noopener">Basic Usage</a> · <a href="https://docs.atuin.sh/latest/guide/import/" target="_blank" rel="noopener">Import</a> · <a href="https://docs.atuin.sh/latest/reference/search/" target="_blank" rel="noopener">Search Reference</a> · <a href="https://github.com/atuinsh/atuin" target="_blank" rel="noopener">atuinsh/atuin</a> · <a href="https://github.com/ajeetdsouza/zoxide" target="_blank" rel="noopener">ajeetdsouza/zoxide</a></p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><strong>Atuin</strong> replaces <code>Ctrl-R</code> with a full-screen search over a SQLite history database — <code>Enter</code> runs, <code>Tab</code> edits, repeated <code>Ctrl-R</code> cycles the filter (host/machine/directory/session).</li>
+    <li><code>atuin import auto</code> is a one-time step to pull in history from before you installed it.</li>
+    <li><strong>zoxide</strong> replaces <code>cd</code> with <code>z</code>, ranked by frecency (frequency + recency) — <code>zi</code> adds an interactive picker via fzf.</li>
+    <li>Both only know what you've actually done — Atuin needs the import, zoxide needs you to have visited a directory at least once.</li>
+  </ul>
+  <p><strong>Try solo:</strong> for one week, catch yourself typing a full <code>cd</code> path or scrolling history with the arrow keys — replace it with <code>z</code> or <code>Ctrl-R</code> instead, every time.</p>
+</div>
+
+<footer class="teacher-reminder">Something not matching what you see on screen? Bring the actual command and the exact output — the lesson can't cover every local config difference.</footer>
+
+<div class="lesson-nav">
+  <a href="0003-warp-fundamentals.html">&larr; Warp</a>
+  <a href="0005-eza-bat-fd.html">Next: eza, bat, fd &rarr;</a>
+</div>
+
+</body>
+</html>

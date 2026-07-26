@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 6 — delta and lazygit: read and drive git by keyboard</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 6 of 8</p>
+<h1>delta and lazygit</h1>
+
+<p>Stock <code>git diff</code> is hard to read — red and green text, no structure, everything in one column. Stock git also makes you type a full command for every single action: stage this file, commit, push, switch branch. This lesson fixes both problems: <strong>delta</strong> makes diffs readable, <strong>lazygit</strong> makes the rest of git driveable from the keyboard.</p>
+
+<p class="callout"><strong>Simple example:</strong> think of delta as new glasses for git — it doesn't change what git did, just how clearly you see it. Think of lazygit as a cockpit — one screen where every git action is one keypress away, instead of one typed command away.</p>
+
+<h2>delta: a pager, not a replacement</h2>
+<p>delta sits between git and your terminal. It reads the raw output of <code>git diff</code>, <code>git show</code>, and <code>git log -p</code>, and redraws it before you see it: side-by-side view, syntax highlighting per language, and line-level highlighting that shows exactly which words changed inside a line — not just which lines.</p>
+<p class="callout"><strong>Important:</strong> installing delta with Homebrew does not turn it on. Git has no idea delta exists until you tell git to use it as the <strong>pager</strong>. Skipping this step is the #1 reason people think "delta doesn't do anything."</p>
+<p>The wiring is one git config line:</p>
+<pre><code>git config --global core.pager delta</code></pre>
+<p>That's the one that matters. Two more are worth adding at the same time:</p>
+<pre><code>git config --global interactive.diffFilter 'delta --color-only'
+git config --global delta.navigate true</code></pre>
+<p><code>interactive.diffFilter</code> makes <code>git add -p</code> (picking hunks to stage) use delta's coloring too. <code>delta.navigate true</code> turns on <code>n</code> / <code>N</code> to jump between file sections in a large diff — no more scrolling past a file you don't care about.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Run <code>git config --global core.pager delta</code> now. Then <code>cd</code> into any git repo with history and run <code>git log -p</code> — you should see side-by-side, syntax-highlighted diffs instead of plain red/green text. If it looks unchanged, the config line didn't apply — check <code>git config --global core.pager</code> prints <code>delta</code>.</p>
+</div>
+
+<h2>lazygit: git without typing git commands</h2>
+<p>lazygit is a full-screen terminal app. Run <code>lazygit</code> in any git repo, and it opens a dashboard: unstaged files, staged files, branches, commits, and stash — all visible at once, all navigable with arrow keys. You stage, commit, branch, and push by pressing single keys instead of typing full commands.</p>
+<table>
+<tr><th>Key</th><th>What it does</th></tr>
+<tr><td><code>space</code></td><td>Stage (or unstage) the selected file</td></tr>
+<tr><td><code>c</code></td><td>Commit the currently staged changes</td></tr>
+<tr><td><code>p</code></td><td>Pull from the remote</td></tr>
+<tr><td><code>P</code></td><td>Push to the remote (capital — different key from pull)</td></tr>
+</table>
+<p>Everything stays visible while you work — no re-running <code>git status</code> to check what's staged, because the staged/unstaged split is just always on screen.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Change a file in any git repo. Run <code>lazygit</code>. Arrow down to the changed file in the Files panel and press <code>space</code> to stage it — using only the keyboard, no mouse. Press <code>q</code> to quit when done (don't commit or push yet if you're just practicing).</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. What must happen after <code>brew install git-delta</code> for delta to actually appear in your diffs?</p>
+<div class="opts">
+<label>A. Git must be told to use delta as its pager via config</label>
+<label>B. Nothing — delta activates the moment it is installed</label>
+<label>C. Every repo needs its own separate local install</label>
+<label>D. Delta must be restarted once after the first reboot</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Installing the binary just puts it on disk. Git only calls it once <code>core.pager</code> is set to <code>delta</code>.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Which command wires delta in as git's default pager?</p>
+<div class="opts">
+<label>A. <code>git config --global core.pager delta</code></label>
+<label>B. <code>git delta --enable --global</code></label>
+<label>C. <code>brew link delta --pager</code></label>
+<label>D. <code>git set pager=delta --permanent</code></label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> That's the documented config line — it sets git's <code>core.pager</code> value to <code>delta</code> globally.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. What's the main visual improvement delta gives over stock <code>git diff</code>?</p>
+<div class="opts">
+<label>A. Side-by-side view with syntax highlighting and word-level changes</label>
+<label>B. It compresses long diffs down to one summary line</label>
+<label>C. It removes context lines to shorten the output</label>
+<label>D. It converts every diff into a plain text email format</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Delta adds side-by-side layout, per-language syntax color, and highlights exactly which words changed inside a line — stock git only colors whole lines red or green.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. How do you open lazygit for the repo you're currently in?</p>
+<div class="opts">
+<label>A. Run <code>lazygit</code> from inside any git repo directory</label>
+<label>B. Run <code>git lazy</code> as a built-in git subcommand</label>
+<label>C. Open it only through a separate desktop application</label>
+<label>D. It launches automatically on every <code>git status</code></label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> lazygit is a standalone terminal program — running <code>lazygit</code> in a repo's directory opens its dashboard for that repo.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. In lazygit's Files panel, which key stages the currently selected file?</p>
+<div class="opts">
+<label>A. <code>space</code> toggles staged/unstaged for the selection</label>
+<label>B. <code>s</code> stages every file in the repo at once</label>
+<label>C. <code>enter</code> opens the file in an external editor</label>
+<label>D. <code>tab</code> moves focus to the commits panel instead</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> <code>space</code> is the documented stage/unstage toggle in lazygit's Files panel.</div>
+</div>
+
+<h2>Primary source</h2>
+<p><a href="https://github.com/dandavison/delta" target="_blank" rel="noopener">delta README</a> · <a href="https://github.com/jesseduffield/lazygit" target="_blank" rel="noopener">lazygit README</a> · <a href="https://github.com/jesseduffield/lazygit/blob/master/docs/keybindings/Keybindings_en.md" target="_blank" rel="noopener">lazygit keybindings cheatsheet</a></p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><strong>delta</strong> is a pager for <code>diff</code>/<code>show</code>/<code>log -p</code> — side-by-side, syntax-highlighted, word-level.</li>
+    <li>It does nothing until wired in: <code>git config --global core.pager delta</code>.</li>
+    <li><strong>lazygit</strong> is a full-screen git dashboard — run <code>lazygit</code> in any repo.</li>
+    <li>Core keys: <code>space</code> stage, <code>c</code> commit, <code>p</code> pull, <code>P</code> push.</li>
+  </ul>
+  <p><strong>Try solo:</strong> set delta as your pager on this machine today, then do your next real commit entirely inside lazygit — no typed git commands.</p>
+</div>
+
+<footer class="teacher-reminder">Something not clicking, or delta/lazygit doing something the lesson didn't cover? Bring the actual command or screen you're stuck on.</footer>
+
+<div class="lesson-nav">
+  <a href="0005-eza-bat-fd.html">&larr; eza, bat, fd</a>
+  <a href="0007-tldr-and-btop.html">Next: tldr and btop &rarr;</a>
+</div>
+
+</body>
+</html>

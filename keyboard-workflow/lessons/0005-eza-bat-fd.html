@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 5 — eza, bat, fd: sharper defaults for ls, cat, find</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 5 of 8</p>
+<h1>eza, bat, fd: sharper defaults</h1>
+
+<p><code>ls</code>, <code>cat</code>, and <code>find</code> still work. They were just built for a terminal with no color and no idea what a Git repo is. <strong>eza</strong>, <strong>bat</strong>, and <strong>fd</strong> do the exact same three jobs — list, read, search — with better defaults, and no new syntax to memorize for the basic case.</p>
+
+<p class="callout"><strong>Simple example:</strong> same three habits you already have — look at a folder, read a file, search for something — just with more useful information showing up automatically, without extra flags. No new muscle memory, just a better picture.</p>
+
+<h2>eza — a sharper ls</h2>
+<p><code>eza</code> replaces <code>ls</code>. Long listing is <code>eza -l</code> (add <code>-h</code> for human-readable sizes); add <code>--git</code> to show each file's Git status as an extra column, right in the listing — no separate <code>git status</code> needed.</p>
+<pre><code>eza -lh --git
+eza -T          # tree view (--tree also works)
+</code></pre>
+<p>Tree view is <code>-T</code> / <code>--tree</code> — one flag, no separate <code>tree</code> install. Icons need a Nerd Font in your terminal; turn them on with <code>--icons=auto</code>.</p>
+<p>A couple of aliases people commonly add — optional, only if you'll actually use them:</p>
+<pre><code>alias ll='eza -lh --git'
+alias lt='eza -T --icons=auto'
+</code></pre>
+
+<h2>bat — cat with syntax highlighting</h2>
+<p><code>bat</code> replaces <code>cat</code>. Same basic usage — <code>bat file.py</code> — but the output is syntax-highlighted, and inside a Git repo it adds small markers in the left gutter showing lines added or changed versus the last commit.</p>
+<p class="callout">If you already have a function like <code>awsbat() { command aws "$@" | bat }</code> in your shell config, it was silently broken before <code>bat</code> was installed — the pipe hit "command not found" and the function just failed. Installing <code>bat</code> fixes it with zero code changes, because the binary the function was always calling now exists.</p>
+<p>One default worth knowing: piped into another command or a file, <code>bat</code> detects it isn't a real terminal and quietly falls back to plain output, like <code>cat</code> — so scripts that pipe <code>bat</code>'s output elsewhere still get clean text, not color codes.</p>
+
+<h2>fd — a simpler find, with one real gotcha</h2>
+<p><code>fd</code> replaces <code>find</code> for the common case. Instead of <code>find . -iname "*pattern*"</code>, it's just:</p>
+<pre><code>fd pattern
+</code></pre>
+<p>The gotcha: <strong>fd ignores anything listed in your <code>.gitignore</code> by default.</strong> Search inside a repo for a file that's gitignored (build output, <code>node_modules</code>, a log file) and <code>fd</code> will find nothing — <code>find</code> would have shown it every time. This is the one place fd's default behavior is genuinely different from what <code>find</code> trained you to expect, not just shorter syntax. Add <code>-I</code> / <code>--no-ignore</code> to search everything anyway.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>In one directory, run all three back to back: <code>eza -la</code>, then <code>bat</code> on any file in it, then <code>fd</code> for part of a filename you know is there. Compare each against what <code>ls -la</code>, <code>cat</code>, and <code>find . -name</code> would have shown you for the same thing.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. Which eza flag turns on tree view?</p>
+<div class="opts">
+<label>A. -T, also written as --tree, for tree view</label>
+<label>B. -R, also written as --recurse, for tree view</label>
+<label>C. -D, also written as --deep, for tree view</label>
+<label>D. -N, also written as --nest, for tree view</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> eza's documented flag is <code>-T</code> / <code>--tree</code> — no separate <code>tree</code> binary required.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What does eza's <code>--git</code> flag add to a listing?</p>
+<div class="opts">
+<label>A. Each file's Git status shown as an extra column</label>
+<label>B. A live count of open branches in the repo</label>
+<label>C. The last commit message for the whole folder</label>
+<label>D. A prompt asking to run git status first</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> <code>--git</code> lists each file's Git status right in the listing — tracked, modified, or ignored.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. What shows up in bat's left gutter inside a Git repo?</p>
+<div class="opts">
+<label>A. Markers showing lines changed versus the last commit</label>
+<label>B. The full commit hash of the current branch head</label>
+<label>C. A list of every branch that touched the file</label>
+<label>D. The file's total line count for that commit</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> bat talks to git and shows modification markers against the index — a quick visual diff while just reading a file.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. By default, what does fd skip that find would show?</p>
+<div class="opts">
+<label>A. Anything matched by a .gitignore pattern</label>
+<label>B. Anything larger than roughly one megabyte</label>
+<label>C. Anything owned by a different system user</label>
+<label>D. Anything modified in the last twenty-four hours</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> fd respects .gitignore by default — genuinely different from find, not just shorter to type. Use <code>-I</code> to search everything.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. A shell function that pipes output into <code>bat</code> was failing before bat was installed. Why did it start working afterward, with no code change?</p>
+<div class="opts">
+<label>A. The bat binary now exists, so the pipe stops failing</label>
+<label>B. Homebrew silently rewrote the function during install</label>
+<label>C. bat auto-detects and repairs broken shell functions</label>
+<label>D. The function had a syntax error bat's install corrected</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> The function's code was never wrong — it called a command that didn't exist yet. Installing bat put the binary on PATH, so the same pipe now works.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://github.com/eza-community/eza" target="_blank" rel="noopener">eza</a> · <a href="https://github.com/sharkdp/bat" target="_blank" rel="noopener">bat</a> · <a href="https://github.com/sharkdp/fd" target="_blank" rel="noopener">fd</a></p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><strong>eza</strong> replaces ls: <code>-l</code>/<code>-h</code> for long/human sizes, <code>--git</code> for status, <code>-T</code> for tree view.</li>
+    <li><strong>bat</strong> replaces cat: syntax highlighting plus Git change markers in the gutter; falls back to plain text when piped.</li>
+    <li><strong>fd</strong> replaces find: <code>fd pattern</code>, but it skips anything gitignored unless you pass <code>-I</code>.</li>
+  </ul>
+  <p><strong>Try solo:</strong> run all three on a real project directory this week and notice the one moment fd finds nothing where find would have.</p>
+</div>
+
+<footer class="teacher-reminder">Getting a result you didn't expect from one of these? Bring the exact command and what showed up instead.</footer>
+
+<div class="lesson-nav">
+  <a href="0004-atuin-and-zoxide.html">&larr; Atuin + zoxide</a>
+  <span><a href="0006-delta-and-lazygit.html">Next: delta + lazygit &rarr;</a></span>
+</div>
+
+</body>
+</html>

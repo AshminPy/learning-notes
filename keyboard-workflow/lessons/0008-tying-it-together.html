@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 8 — Tying it together</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 8 of 8</p>
+<h1>Tying it together: a real daily workflow</h1>
+
+<p>Lessons 1–7 covered each tool alone. This one is the payoff: one realistic work session, start to finish, keyboard only. Nothing new to learn here — just your AeroSpace, Raycast, Warp, and CLI toolkit habits chained together.</p>
+
+<p class="callout"><strong>Simple example:</strong> think of it as one relay. Raycast hands off to AeroSpace ("here's the app, go place it"). AeroSpace hands off to you ("it's on the right workspace, go work"). Warp hands you the command you already saved. Atuin, zoxide, eza, bat, fd, delta, lazygit, tldr, and btop each remove one small manual step along the way. Each tool does one job and gets out of the way.</p>
+
+<h2>A realistic day, keyboard only</h2>
+<ol>
+<li>Wake the laptop. Press your Raycast hotkey, type the project or app name, hit Enter — Raycast launches it or focuses it if it's already open.</li>
+<li>Your AeroSpace <code>on-window-detected</code> rule (Lesson 1) fires automatically and places that app on its home workspace. You never drag it.</li>
+<li>Use your AeroSpace workspace-switch binding to jump to the workspace where Warp lives.</li>
+<li>Jump straight to the project directory with <code>z projectname</code> (Lesson 4) instead of typing the full path.</li>
+<li>Instead of retyping a command, press <code>Ctrl-R</code> in Warp and pull up either a saved Workflow (Lesson 3) or an Atuin history match filtered to this exact directory (Lesson 4).</li>
+<li>Review the pasted command, press enter to run it.</li>
+<li>Forgot a flag? <code>tldr</code> the command (Lesson 7) instead of scrolling a man page.</li>
+<li>Look around the directory with <code>eza -la --git</code> instead of <code>ls</code>, read a file with <code>bat</code> instead of <code>cat</code>, find one with <code>fd</code> instead of <code>find</code> (Lesson 5).</li>
+<li>Check what changed with <code>git log -p</code> through delta's side-by-side view, then stage and commit in <code>lazygit</code> without typing individual git commands (Lesson 6).</li>
+<li>Something using too much memory? Glance at <code>btop</code> (Lesson 7) instead of opening Activity Monitor.</li>
+<li>Two windows open on one workspace — use your <code>ctrl-alt</code> hjkl focus bindings to move between them, no click.</li>
+<li>Copy something along the way. A few steps later, pull it back with Raycast's Clipboard History — even if it's not the last thing you copied.</li>
+<li>Task done. The mouse only came out for something genuinely mouse-native.</li>
+</ol>
+
+<h2>Common friction points</h2>
+<ul>
+<li><strong>New app, no placement rule yet.</strong> Find the app's bundle ID (Raycast can show you this) and add one AeroSpace rule (Lesson 1). One-time fix, permanent payoff.</li>
+<li><strong>Don't let Raycast and AeroSpace fight over windows.</strong> If AeroSpace already owns tiling, use Raycast only for launching, focusing, and clipboard (Lesson 2).</li>
+<li><strong>A command you retype without a Workflow.</strong> Run it, then save it right after (Lesson 3) — next time it's one search away.</li>
+<li><strong>Reaching for <code>cd</code>/<code>ls</code>/<code>cat</code>/<code>find</code> out of habit.</strong> Muscle memory takes a week or two to shift to <code>z</code>/<code>eza</code>/<code>bat</code>/<code>fd</code> (Lessons 4–5). Give it time before deciding it's not worth it.</li>
+</ul>
+
+<h2>What's next</h2>
+<p>That's the full course — no more lessons after this one. From here, go deeper with each tool's own docs, already linked in Lessons 1–7. They cover every option this course didn't have room for.</p>
+
+<h2>Build your own</h2>
+<p>Write out your <em>actual</em> daily workflow, in your own notes app or on paper, in the same numbered-step format as above. Name the exact tool and keystroke pattern at each step. If a step feels clunky to write down, that's usually the step worth fixing first.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Raycast launches and focuses. AeroSpace places and arranges. Warp and Atuin remember your commands and history.</li>
+    <li>eza/bat/fd replace ls/cat/find; delta/lazygit make git readable and keyboard-fast; tldr/btop replace man/top for quick answers.</li>
+    <li>Missing AeroSpace rule → add one <code>on-window-detected</code> entry, don't fix it by hand every day.</li>
+    <li>Any command you type twice is a Workflow (or an Atuin search) you haven't used yet.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Something not clicking, or your desktop is doing something the lessons didn't cover? Go back to the tool's own docs, linked throughout this course — that's the habit worth building anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0007-tldr-and-btop.html">&larr; tldr &amp; btop</a>
+  <span>End of course</span>
+</div>
+
+</body>
+</html>

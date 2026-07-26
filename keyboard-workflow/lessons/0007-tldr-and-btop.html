@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 7 — tldr and btop</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 7 of 8</p>
+<h1>tldr and btop: fast reference, fast monitoring</h1>
+
+<p>This is the last tool-specific lesson. Lesson 8 ties everything — AeroSpace, Raycast, Warp, and this — into one daily workflow. Today: two small terminal tools that replace two habits that cost you time — reaching for <code>man</code>, and reaching for <code>top</code>.</p>
+
+<p class="callout"><strong>Simple example:</strong> a man page is the full instruction manual for a power tool — every bolt, every warning, every edge case. Most days you just need the one sentence a coworker would tell you: "hold this button, turn that dial." <code>tldr</code> is that coworker, for the terminal.</p>
+
+<h2>tldr: examples instead of the whole manual</h2>
+<p><code>man tar</code> opens a long reference document, and the first option it explains is one you'll almost never use. <code>tldr</code> replaces that with a short, community-maintained cheat sheet of the commands people actually run:</p>
+<pre><code>tldr tar
+
+- [c]reate an archive and write it to a [f]ile:
+    tar cf target.tar file1 file2
+
+- [c]reate a g[z]ipped archive:
+    tar czf target.tar.gz file1 file2
+
+- E[x]tract a (compressed) archive [f]ile:
+    tar xvf source.tar.gz</code></pre>
+<p>Five common invocations, not a full reference. Pages are written and reviewed by the community, so they cover what people actually type.</p>
+<p>First run needs a local page cache — there's nothing to show yet. You don't have to fetch it by hand first: the client checks the cache on every run and updates it automatically when it's missing or stale (about every two weeks by default), then shows your page. Force a refresh any time with <code>tldr --update</code>.</p>
+<p class="callout">Installing on macOS: use <code>brew install tlrc</code>, the current official Rust client. Homebrew's older plain <code>tldr</code> formula was deprecated in late 2025 and now points here.</p>
+
+<h2>btop: a terminal UI instead of a text list</h2>
+<p><code>top</code> gives you one thing: a scrolling text list, read-only. <code>btop</code> gives you a full keyboard-and-mouse UI for the same job, with three real advantages:</p>
+<ul>
+<li><strong>Per-core graphs</strong> — CPU usage and temperature drawn per core, not just one combined number.</li>
+<li><strong>Process tree view</strong> — see which process spawned which, collapsible, instead of one flat list.</li>
+<li><strong>Act, don't just watch</strong> — send a signal to the selected process from inside the UI. <code>top</code> only shows you the problem; <code>btop</code> lets you fix it without leaving.</li>
+</ul>
+<table>
+<tr><th>Key</th><th>What it does</th></tr>
+<tr><td><code>Up</code> / <code>Down</code></td><td>Select a process in the list</td></tr>
+<tr><td><code>Left</code> / <code>Right</code></td><td>Change which column the list is sorted by</td></tr>
+<tr><td><code>e</code></td><td>Toggle process tree view</td></tr>
+<tr><td><code>Space</code></td><td>Expand / collapse the selected process in tree view</td></tr>
+<tr><td><code>t</code></td><td>Terminate selected process (SIGTERM)</td></tr>
+<tr><td><code>k</code></td><td>Kill selected process (SIGKILL)</td></tr>
+<tr><td><code>s</code></td><td>Choose a specific signal to send</td></tr>
+</table>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Run <code>tldr</code> on a command you use often but always forget the flags for — <code>tldr tar</code> or <code>tldr fd</code>. Then launch <code>btop</code> and, using only the keyboard, find the process using the most memory right now: arrow to the process list, use <code>Left</code>/<code>Right</code> to sort by memory, <code>Up</code>/<code>Down</code> to scroll.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. What problem does tldr solve that man pages don't?</p>
+<div class="opts">
+<label>A. It shows a few common examples instead of the full reference</label>
+<label>B. It compiles command source code faster on your machine</label>
+<label>C. It automatically fixes typos in your shell commands</label>
+<label>D. It replaces your shell's built-in help system entirely</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Man pages aim for completeness; tldr pages are short, example-first, and community-maintained.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What happens the first time you run tldr on a fresh install?</p>
+<div class="opts">
+<label>A. It fetches its page cache automatically, then shows the page</label>
+<label>B. It refuses to run until you install a browser extension</label>
+<label>C. It falls back permanently to printing the full man page</label>
+<label>D. It requires a paid account before showing any examples</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> No manual setup step is required — the client checks and updates the cache on its own, and keeps doing so as it goes stale.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Which of these is something btop does that plain top does not?</p>
+<div class="opts">
+<label>A. Lets you send a signal to a selected process from inside the UI</label>
+<label>B. Shows the current CPU usage percentage at all</label>
+<label>C. Lists every running process by name and PID</label>
+<label>D. Refreshes its stats automatically at an interval</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> B, C, D are things <code>top</code> already does. Acting on a process — terminate or kill — without leaving the UI is btop's addition.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. In btop, which key toggles the process tree view?</p>
+<div class="opts">
+<label>A. <code>e</code> switches between flat list and tree view</label>
+<label>B. <code>t</code> sends SIGTERM to the selected process</label>
+<label>C. <code>k</code> sends SIGKILL to the selected process</label>
+<label>D. <code>s</code> opens the choose-a-signal prompt</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> B, C, D are real btop keys, just for sending signals, not for the tree view.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. In btop, which key sends SIGKILL to the selected process?</p>
+<div class="opts">
+<label>A. <code>k</code> kills the process immediately with SIGKILL</label>
+<label>B. <code>t</code> terminates the process gently with SIGTERM</label>
+<label>C. <code>e</code> only toggles the process tree view</label>
+<label>D. <code>Space</code> only expands or collapses a tree node</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> <code>k</code> is SIGKILL (force), <code>t</code> is SIGTERM (ask nicely first) — worth knowing which one you're pressing.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://github.com/tldr-pages/tldr" target="_blank" rel="noopener">tldr-pages/tldr</a> · <a href="https://tldr.sh/" target="_blank" rel="noopener">tldr.sh</a> · <a href="https://github.com/aristocratos/btop" target="_blank" rel="noopener">aristocratos/btop</a></p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><strong>tldr</strong> swaps the full man page for a handful of real-world examples — install with <code>brew install tlrc</code>.</li>
+    <li>The page cache fetches and refreshes itself automatically — no setup command needed, <code>tldr --update</code> only to force it.</li>
+    <li><strong>btop</strong> adds per-core graphs, a process tree, and the ability to terminate (<code>t</code>) or kill (<code>k</code>) a process without leaving the keyboard.</li>
+  </ul>
+  <p><strong>Try solo:</strong> next time you catch yourself opening Activity Monitor with the mouse, open btop instead and find the culprit process with only the keyboard.</p>
+</div>
+
+<footer class="teacher-reminder">Something not matching what you see on screen? Check your installed version — flags and defaults do shift between releases.</footer>
+
+<div class="lesson-nav">
+  <a href="0006-delta-and-lazygit.html">&larr; Delta and lazygit</a>
+  <a href="0008-tying-it-together.html">Next: Tying it together &rarr;</a>
+</div>
+
+</body>
+</html>
