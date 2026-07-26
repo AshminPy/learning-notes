@@ -228,6 +228,10 @@ function renderDomain(d) {
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = !!state[l.id];
+    cb.setAttribute(
+      "aria-label",
+      `Mark Lesson ${Number(l.id)} — ${l.title} as reviewed`
+    );
     cb.addEventListener("change", () => {
       state[l.id] = cb.checked;
       save();
@@ -290,6 +294,10 @@ FOUNDATIONS.forEach(l => {
   const cb = document.createElement("input");
   cb.type = "checkbox";
   cb.checked = !!state[l.id];
+  cb.setAttribute(
+    "aria-label",
+    `Mark Lesson ${Number(l.id)} — ${l.title} as reviewed`
+  );
   cb.addEventListener("change", () => { state[l.id] = cb.checked; save(); });
   const a = document.createElement("a");
   a.href = l.href;
