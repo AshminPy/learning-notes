@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 19 — Technical Processes</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 19 of 24</p>
+<h1>Technical processes</h1>
+
+<p>A Cloud Architect doesn't just pick services — they're expected to advise on the process around them: how code moves from idea to production, and how a team learns from what breaks. This is process knowledge, not a GCP product list.</p>
+
+<p class="callout"><strong>Simple example:</strong> the SDLC is the assembly line; CI/CD (Lesson 18) is one station on it. This lesson is the rest of the line — planning, testing discipline, and what happens after something breaks.</p>
+
+<h2>SDLC — the phases you're advising on</h2>
+<p>Plan → build → test → deploy → operate → learn, then repeat. The exam tests whether you can place a given practice in the right phase — e.g. a canary rollout is a <em>deploy</em>-phase practice, a blameless postmortem is a <em>learn</em>-phase practice.</p>
+
+<h2>Testing &amp; validation, beyond CI</h2>
+<p>Lesson 18 covered running tests as a pipeline stage. The process question here is <em>what</em> to validate before something ships: does it meet the functional spec, does it hold up under expected load, does a rollback actually work if triggered. "We have tests" and "we validated the rollback path" are different claims — the exam rewards recognizing that gap.</p>
+
+<h2>Troubleshooting &amp; root-cause analysis</h2>
+<p>The practice Google's own SRE discipline is built on: a <strong>blameless postmortem</strong> after any significant incident — reconstruct the timeline, find the root cause (not just the trigger), and produce concrete follow-up actions. "Blameless" isn't a soft-skills nicety on the exam — it's the mechanism that makes people report problems honestly instead of hiding them.</p>
+<div class="trap"><strong>Exam trap:</strong> a root cause is not "the server ran out of memory." That's the trigger. The root cause is why nothing caught it earlier — no alert, no capacity plan, no load test at that scale. If an answer option stops at the trigger, it's usually the wrong one.</div>
+
+<h2>Service catalog</h2>
+<p>A curated, pre-approved set of self-service deployable templates — so teams can spin up "the approved way to deploy a Postgres-backed API" without re-inventing networking, IAM, and monitoring from scratch each time. The mechanism varies (Terraform modules, a private Cloud Marketplace catalog), but the underlying goal is always the same: standardize the golden path, reduce one-off risky configurations.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. After an outage, the writeup says "root cause: a Pod ran out of memory." Is that a complete root-cause analysis?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — that's the trigger. A real RCA asks why it wasn't caught first: no memory alert, no load test at that traffic level, no autoscaling configured. The trigger explains what happened; the root cause explains why the system let it happen.</div>
+</div>
+
+<h2>Quiz — Lesson 19</h2>
+<div class="quiz">
+<p>Q1. Which SDLC phase does a canary rollout belong to?</p>
+<div class="opts">
+<label>A. Deploy</label>
+<label>B. Plan</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Deploy — it's a rollout strategy, not a design decision or a post-incident practice.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Why does Google's SRE practice insist postmortems be "blameless"?</p>
+<div class="opts">
+<label>A. So people report problems honestly instead of hiding or downplaying them</label>
+<label>B. It's a courtesy with no effect on outcomes</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Blame drives incidents underground — people minimize or hide what happened. Blameless culture is what makes root-cause data trustworthy in the first place.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://sre.google/sre-book/postmortem-culture/" target="_blank" rel="noopener">Google SRE Book — Postmortem Culture</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>SDLC = plan → build → test → deploy → operate → learn — place a given practice in its phase.</li>
+    <li>A root cause explains why a failure wasn't caught, not just what triggered it.</li>
+    <li>Blameless postmortems exist to keep incident data honest, not as a courtesy.</li>
+    <li>A service catalog standardizes the "approved way" to deploy something, reducing one-off risk.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0018-gcp-programmatic-access.html">&larr; Interacting with GCP programmatically</a>
+  <a href="0020-business-processes.html">Next: Business processes &rarr;</a>
+</div>
+
+</body>
+</html>

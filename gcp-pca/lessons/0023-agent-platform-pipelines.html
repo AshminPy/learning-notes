@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 23 — Agent Platform Pipelines & AI Hypercomputer</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 23 of 24</p>
+<h1>Agent Platform Pipelines &amp; AI Hypercomputer</h1>
+
+<p>Lesson 16 covered the Vertex AI &rarr; Gemini Enterprise Agent Platform rename and Model Garden. This lesson is the operational half the exam guide names separately under provisioning (Section 2.4/2.5): how ML workflows actually get orchestrated and run at scale, not just which model to pick.</p>
+
+<p class="callout"><strong>Simple example:</strong> Model Garden (Lesson 16) is choosing a recipe. Agent Platform Pipelines is the kitchen's actual production line — prep, cook, plate, repeatably, the same way, every time a new batch is ordered.</p>
+
+<h2>Agent Platform Pipelines — orchestrating the ML lifecycle</h2>
+<p>A pipeline defines the ML workflow as a sequence of steps — prepare data, train, evaluate, deploy — as a reproducible, versioned graph, the same underlying idea as Kubeflow Pipelines. The value isn't running one training job once; it's re-running the exact same workflow later with different data and getting a comparable, auditable result.</p>
+<div class="trap"><strong>Exam trap:</strong> "we trained a good model once" is not the same as "we have a reproducible pipeline." If a scenario needs repeatable, auditable retraining — not a one-off experiment — that's a pipelines answer, not just a Model Garden answer.</div>
+
+<h2>AI Hypercomputer</h2>
+<p>Google's term for the integrated system behind large-scale AI workloads — optimized hardware (TPUs and GPUs), the software stack, and flexible consumption models, designed to work together rather than be assembled piece by piece. The exam-relevant takeaway: recognize it as the answer when a scenario needs large-scale training/serving infrastructure, not a specific command or config to memorize.</p>
+
+<h2>Choosing GPUs vs. TPUs</h2>
+<ul>
+<li><strong>TPUs</strong> — Google's own accelerator, optimized for large-scale training of TensorFlow/JAX-style models at high throughput.</li>
+<li><strong>GPUs</strong> — broader framework support (PyTorch and others), often the more flexible default when the workload or team's tooling isn't TPU-specific.</li>
+</ul>
+<p>Consumption model matters as much as the chip: on-demand for unpredictable workloads, reserved for steady long-running training, spot/preemptible for interruption-tolerant batch training at lower cost.</p>
+
+<h2>Prebuilt AI APIs &amp; Gemini Enterprise features</h2>
+<p>For common tasks, Google's prebuilt AI APIs (Vision, Video, Audio, Conversation, Search) skip training entirely — call an API, get a result, no model of your own to manage. Separately, Gemini Enterprise bundles agent-building tools and NotebookLM-style features for teams building on top of the platform rather than training from scratch.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A team needs to retrain a fraud-detection model weekly on fresh data, with a repeatable, auditable process. Model Garden alone, or Agent Platform Pipelines?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Pipelines. Model Garden picks a starting model; a recurring, auditable, repeatable retraining workflow is exactly what pipeline orchestration exists for.</div>
+</div>
+
+<h2>Quiz — Lesson 23</h2>
+<div class="quiz">
+<p>Q1. A scenario just needs to extract text from scanned documents — no custom model, no training data of their own. What's the fastest fit?</p>
+<div class="opts">
+<label>A. A prebuilt AI API (e.g. Vision/Document processing)</label>
+<label>B. Build and train a custom model via Agent Platform Pipelines</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> A common, well-defined task with no custom model requirement is exactly what prebuilt APIs are for — training your own model here would be unnecessary cost and time.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A batch training job can tolerate being interrupted and resumed, and cost matters more than guaranteed availability. Which consumption model fits?</p>
+<div class="opts">
+<label>A. Spot/preemptible</label>
+<label>B. On-demand, standard pricing</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Interruption-tolerant, cost-sensitive batch work is the textbook fit for spot/preemptible capacity.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://cloud.google.com/vertex-ai/docs/pipelines/introduction" target="_blank" rel="noopener">Vertex AI Pipelines documentation</a> (the underlying pipelines product referenced by the exam guide's "Agent Platform Pipelines") and <a href="https://cloud.google.com/ai-hypercomputer/docs" target="_blank" rel="noopener">AI Hypercomputer documentation</a>. Note (as in Lesson 16): naming is actively in flux post-rename — verify current product names against these live docs before the exam, don't rely on this lesson's names alone.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Model Garden picks a model; Pipelines orchestrate the repeatable workflow around it.</li>
+    <li>AI Hypercomputer = the integrated hardware+software+consumption-model system behind large-scale AI, not a single product to configure.</li>
+    <li>TPUs: throughput at scale, Google-framework-optimized. GPUs: broader framework flexibility.</li>
+    <li>A well-defined task with no custom data need often fits a prebuilt API better than training a model.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0022-storage-lifecycle.html">&larr; Storage lifecycle &amp; data protection</a>
+  <a href="0024-production-reliability.html">Next: Reliability in production &rarr;</a>
+</div>
+
+</body>
+</html>

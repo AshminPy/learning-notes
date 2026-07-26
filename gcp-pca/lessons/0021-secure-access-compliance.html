@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 21 — Secure Remote Access & Compliance</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 21 of 24</p>
+<h1>Secure remote access &amp; compliance</h1>
+
+<p>Lessons 10-11 covered IAM and the core security tools. This lesson closes the rest of Section 3: how people and workloads connect in without a VPN, how AI-specific risk gets handled, and what "compliant" actually means as a design constraint, not a checkbox.</p>
+
+<p class="callout"><strong>Simple example:</strong> a VPN is a key to the whole building. IAP is a bouncer at each door who checks your ID and the day's guest list every single time — no standing access, no lingering "I'm already inside" trust.</p>
+
+<h2>Secure remote access — no VPN required</h2>
+<ul>
+<li><strong>Identity-Aware Proxy (IAP)</strong> — puts identity- and context-aware access control in front of an app or VM. Every request is checked against IAM, not just "is this IP on the VPN." This is Google's zero-trust (BeyondCorp) model: trust the request, not the network it came from.</li>
+<li><strong>Workload Identity Federation (WIF)</strong> — lets a workload running <em>outside</em> GCP (another cloud, on-prem, a CI/CD pipeline) authenticate using its own external identity, exchanged for short-lived GCP credentials. No downloaded service account key sitting in a repo or a CI secret store waiting to leak.</li>
+<li><strong>Chrome Enterprise Premium</strong> — browser-level security controls (data-loss prevention, malware protection) as another zero-trust layer, independent of network location.</li>
+</ul>
+<div class="trap"><strong>Exam trap:</strong> if a scenario's problem is "we have long-lived service account keys checked into a CI pipeline," the answer is Workload Identity Federation — eliminating the key entirely — not "rotate the keys more often." Rotation manages the risk; WIF removes it.</div>
+
+<h2>Software supply chain security</h2>
+<p><strong>Binary Authorization</strong> enforces that only signed, trusted container images can deploy to GKE or Cloud Run — a build that wasn't produced and attested by your pipeline is rejected before it ever runs. Combine with Artifact Registry's vulnerability scanning to catch known CVEs before deploy, not after.</p>
+
+<h2>Securing AI</h2>
+<ul>
+<li><strong>Model Armor</strong> — screens prompts and model responses for AI applications (prompt injection, unsafe content) — a security layer specific to AI workloads, not general app security.</li>
+<li><strong>Sensitive Data Protection</strong> (the current name for what was Cloud DLP) — discovers and redacts sensitive data (PII, secrets) in text, structured data, or AI inputs/outputs.</li>
+</ul>
+
+<h2>Designing for compliance</h2>
+<p>Compliance isn't a separate architecture — it's a constraint on the one you're already designing.</p>
+<ul>
+<li><strong>Legislation/regulation</strong> — health data (HIPAA-equivalent handling), children's privacy, data sovereignty (data must stay in a specific region/country).</li>
+<li><strong>Commercial</strong> — PII and payment data (PCI-DSS-style handling) need explicit protection, not just "IAM is configured."</li>
+<li><strong>Industry certifications</strong> — SOC 2 attests to security/availability/confidentiality controls. Google Cloud's infrastructure is independently certified; what <em>you</em> build on top still needs its own controls to inherit that compliance — certification isn't automatic just because it runs on GCP.</li>
+<li><strong>Audits</strong> — Cloud Audit Logs (Admin Activity, Data Access, System Event, Policy Denied) are the evidence trail auditors actually ask for. See Lesson 12 for the logging mechanics.</li>
+</ul>
+<div class="trap"><strong>Exam trap:</strong> "GCP is SOC 2 certified" does not mean your application is automatically compliant. Compliance is a shared responsibility — the platform's certification covers the platform, not your IAM policy, your data handling, or your app code.</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A CI/CD pipeline outside GCP currently authenticates using a downloaded service account key stored as a repo secret. What's the fix, and why is it better than key rotation?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Workload Identity Federation — the pipeline authenticates with its own native identity and gets short-lived GCP credentials, with no long-lived key to leak in the first place. Rotation reduces the exposure window; WIF removes the exposed key entirely.</div>
+</div>
+
+<h2>Quiz — Lesson 21</h2>
+<div class="quiz">
+<p>Q1. What does Binary Authorization actually enforce?</p>
+<div class="opts">
+<label>A. Only signed, attested images from your pipeline can deploy</label>
+<label>B. Only encrypted traffic can reach a service</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> It's a deploy-time gate on image provenance, not a network/traffic control.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. True or false: running on GCP, which is SOC 2 certified, makes your application automatically SOC 2 compliant.</p>
+<div class="opts">
+<label>A. False — compliance is shared responsibility; your app/data controls need their own coverage</label>
+<label>B. True — the platform's certification covers everything built on it</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> The platform being certified is necessary, not sufficient — your own IAM, data handling, and application controls still need to meet the standard.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://cloud.google.com/iap/docs" target="_blank" rel="noopener">Identity-Aware Proxy documentation</a>, <a href="https://cloud.google.com/iam/docs/workload-identity-federation" target="_blank" rel="noopener">Workload Identity Federation documentation</a>, and <a href="https://cloud.google.com/binary-authorization/docs" target="_blank" rel="noopener">Binary Authorization documentation</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>IAP checks identity+context per request, replacing "on the VPN = trusted."</li>
+    <li>Workload Identity Federation removes long-lived service account keys for external workloads, it doesn't just rotate them.</li>
+    <li>Binary Authorization gates deploys on image provenance; Artifact Registry scanning catches known CVEs.</li>
+    <li>Platform certification (SOC 2) ≠ your application's compliance — it's shared responsibility.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0020-business-processes.html">&larr; Business processes</a>
+  <a href="0022-storage-lifecycle.html">Next: Storage lifecycle &amp; data protection &rarr;</a>
+</div>
+
+</body>
+</html>

@@ -8,7 +8,7 @@
 </head>
 <body>
 
-<p class="eyebrow">GCP PCA — Lesson 15 of 17</p>
+<p class="eyebrow">GCP PCA — Lesson 15 of 24</p>
 <h1>Migration strategies: rehost, replatform, refactor</h1>
 
 <p>Every migration to GCP fits one of three levels of change. The exam wants you to match the strategy to the deadline and goal stated in the scenario — not to whichever option sounds most advanced.</p>
@@ -33,6 +33,9 @@
 </table>
 
 <div class="trap"><strong>Exam trap:</strong> a hard deadline ("data center lease ends in 6 weeks") always points at Lift and Shift, even when Refactor looks like the objectively better long-term design. The scenario is testing time-to-exit, not architecture. Refactor is a real best practice — just for a different question, one with no deadline pressure.</div>
+
+<h2>Migration Center — assessing before you pick a strategy</h2>
+<p>Before choosing rehost/replatform/refactor, <strong>Migration Center</strong> is Google's tool for the assessment step: it discovers your existing on-prem/other-cloud footprint, sizes it, and estimates GCP cost across different target configurations — turning "we think we have about 200 VMs" into an actual inventory with a cost estimate attached. If a scenario mentions an unclear or undocumented existing environment as the blocker, Migration Center is the "assess first" answer, before any of the three strategies above get chosen.</p>
 
 <h2>Try it — before looking below</h2>
 <div class="quiz">
@@ -78,6 +81,7 @@
     <li>Replatform = lift it, then upgrade the parts that benefit most.</li>
     <li>Refactor = redesign for cloud-native, highest effort, best long-term.</li>
     <li>A hard deadline in the scenario always points at Lift and Shift.</li>
+    <li>Migration Center is the assessment step — inventory and cost estimate — before picking a strategy.</li>
   </ul>
 </div>
 
