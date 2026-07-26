@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 4 — Networking</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Session 4 of 10 (Day 1)</p>
+<h1>Networking: VPC design, hybrid connectivity, and load balancing</h1>
+
+<p>This session covers exam Section 1.3 (cloud-native networking — VPC, peering, firewalls, load balancers, routing, Shared VPC, Private Service Connect) and Section 2.1 (configuring network topologies — hybrid, multicloud, security, VPC design). Together these are a big slice of the 25% Design &amp; Plan section. You already run Shared VPC and Gateway API daily — skip the "what is a VPC" part, go straight to the GCP-specific naming and the trap zones: VPN vs Interconnect, LB tiers, and network service tiers.</p>
+
+<h2>1. VPC &amp; Shared VPC — foundation you already run</h2>
+
+<h3>VPC</h3>
+<p><strong>What:</strong> global resource, subnets are regional (span all zones in the region) — not zonal like AWS. <strong>AWS analogue:</strong> VPC, but AWS subnets are zonal, GCP subnets are regional.</p>
+<p><strong>Use when:</strong> always — it's the base network object. <strong>Not when:</strong> n/a, every project needs one (default or custom-mode).</p>
+<div class="trap"><strong>Exam trap:</strong> because GCP subnets are regional, "add a subnet in a new zone" is a trick distractor — you don't add subnets per zone, you add subnets per region, and instances in any zone of that region draw from the same subnet's IP range.</div>
+
+<h3>Shared VPC</h3>
+<p><strong>What:</strong> one host project owns the VPC; service projects attach and their resources use the host's subnets with internal IPs, while IAM/billing stay separate per service project. <strong>AWS analogue:</strong> no exact match — closest is AWS RAM VPC subnet sharing, but Shared VPC's host/service-project model is more deeply tied into GCP's org/folder resource hierarchy.</p>
+<p><strong>Use when:</strong> centralized network/security team, multiple app teams needing isolated IAM/billing but shared connectivity (this is your daily Autopilot-cluster pattern). <strong>Not when:</strong> a single team owns both network and workload — plain VPC Peering or one project is simpler.</p>
+<div class="trap"><strong>Exam trap:</strong> attaching a service project requires a Shared VPC Admin holding <code>compute.xpnAdmin</code> <em>and</em> <code>resourcemanager.projectIamAdmin</code> — a scenario granting only one of these and expecting attachment to work is the distractor (verified: <a href="https://cloud.google.com/vpc/docs/shared-vpc" target="_blank" rel="noopener">Shared VPC docs</a>).</div>
+
+<h2>2. Name resolution, NAT, and the routing control plane</h2>
+
+<h3>Cloud DNS</h3>
+<p><strong>What:</strong> managed authoritative DNS with public and private zones; private zones are visible only to the VPCs you authorize. <strong>AWS analogue:</strong> Route 53 (public + private hosted zones).</p>
+<p><strong>Use when:</strong> internal service discovery across a Shared VPC (create the zone in the host project, authorize the shared network), or hybrid resolution via DNS forwarding. <strong>Not when:</strong> you need a third-party registrar's advanced features Cloud DNS doesn't cover — domain registration itself is a separate product (Cloud Domains).</p>
+<div class="trap"><strong>Exam trap:</strong> DNS <em>forwarding</em> (on-prem ↔ GCP over VPN/Interconnect) and DNS <em>peering</em> (GCP network ↔ GCP network) are different mechanisms — a scenario about resolving on-prem records from GCP needs forwarding, not peering, and vice versa (verified: <a href="https://cloud.google.com/dns/docs/overview" target="_blank" rel="noopener">Cloud DNS overview</a>).</div>
+
+<h3>Cloud Router</h3>
+<p><strong>What:</strong> BGP control plane only — it exchanges routes, it does not carry data-plane traffic itself. Backs Cloud VPN (HA VPN requires it), Cloud Interconnect, and Router Appliances (Network Connectivity Center). <strong>AWS analogue:</strong> no single product — closest is the BGP session config on a Direct Connect Gateway or Virtual Private Gateway.</p>
+<p><strong>Use when:</strong> any dynamic routing scenario — HA VPN, Interconnect, or Cloud NAT (NAT needs a Cloud Router even with no BGP configured). <strong>Not when:</strong> Classic VPN with static routes only — Cloud Router isn't required there.</p>
+<div class="trap"><strong>Exam trap:</strong> Cloud NAT requires a Cloud Router purely as the config holder, even though no BGP peering happens for NAT-only use — candidates forget this dependency and think NAT is Router-free (verified: <a href="https://cloud.google.com/nat/docs/overview" target="_blank" rel="noopener">Cloud NAT overview</a>).</div>
+
+<h3>Cloud NAT</h3>
+<p><strong>What:</strong> managed, distributed outbound NAT — no proxy VMs, no bottleneck instance. <strong>AWS analogue:</strong> NAT Gateway.</p>
+<p><strong>Use when:</strong> private instances (no external IP) need outbound internet access, e.g. pulling OS patches. <strong>Not when:</strong> you need inbound connections — Cloud NAT explicitly does not allow unsolicited inbound traffic; use a load balancer for that.</p>
+<div class="trap"><strong>Exam trap:</strong> "Cloud NAT lets external clients reach my private VM" is always false — it only translates outbound-initiated flows and their return traffic, never new inbound connections (verified: <a href="https://cloud.google.com/nat/docs/overview" target="_blank" rel="noopener">Cloud NAT overview</a>).</div>
+
+<h2>3. Hybrid connectivity: Cloud VPN vs Cloud Interconnect</h2>
+
+<h3>Cloud VPN</h3>
+<p><strong>What:</strong> encrypted tunnel over the public internet. HA VPN uses dynamic BGP routing via Cloud Router and gets up to 99.99% SLA for most topologies; Classic VPN is static-route only at 99.9% SLA. Each tunnel handles up to 250,000 pps (roughly 1–3 Gbps depending on packet size). <strong>AWS analogue:</strong> Site-to-Site VPN.</p>
+<p><strong>Use when:</strong> fast to provision, moderate/variable bandwidth, encryption over the public internet is acceptable. <strong>Not when:</strong> you need guaranteed low, consistent latency or sustained throughput above a few Gbps per tunnel — Interconnect wins there.</p>
+<div class="trap"><strong>Exam trap:</strong> "Cloud VPN" isn't one option — a scenario demanding 99.99% availability needs HA VPN specifically (dynamic BGP, redundant interfaces); picking generic "VPN" or Classic VPN under an HA requirement is the wrong answer (verified: <a href="https://cloud.google.com/network-connectivity/docs/vpn/concepts/overview" target="_blank" rel="noopener">Cloud VPN overview</a>).</div>
+
+<h3>Cloud Interconnect</h3>
+<p><strong>What:</strong> private physical connection to Google's network, bypassing the public internet. Dedicated Interconnect is a direct circuit (10 Gbps links, up to 8×10 Gbps; 100 Gbps links, up to 8×100 Gbps; 400 Gbps also available) requiring your own presence in a Google colocation facility. Partner Interconnect goes through a service provider, offering 50 Mbps–50 Gbps VLAN attachments, no colocation presence required. Both support 99.9% or 99.99% SLA depending on topology. <strong>AWS analogue:</strong> Direct Connect (Dedicated ≈ Direct Connect dedicated connection, Partner ≈ Direct Connect through an APN partner).</p>
+<p><strong>Use when:</strong> sustained high throughput, predictable low latency, or compliance requiring traffic to avoid the public internet. <strong>Not when:</strong> you need something live in days, or have no colocation presence and no reason to pay for guaranteed bandwidth — VPN is faster to stand up.</p>
+<div class="trap"><strong>Exam trap:</strong> Dedicated Interconnect requires your own equipment inside a Google colocation facility. A scenario stating "no data center presence near a Google PoP" is explicitly ruling out Dedicated — the answer is Partner Interconnect, not "add more Dedicated circuits" (verified: <a href="https://cloud.google.com/network-connectivity/docs/interconnect/concepts/dedicated-overview" target="_blank" rel="noopener">Dedicated Interconnect overview</a>, <a href="https://cloud.google.com/network-connectivity/docs/interconnect/concepts/partner-overview" target="_blank" rel="noopener">Partner Interconnect overview</a>).</div>
+
+<table>
+<tr><th></th><th>Cloud VPN (HA)</th><th>Dedicated Interconnect</th><th>Partner Interconnect</th></tr>
+<tr><td>Bandwidth</td><td>~1–3 Gbps per tunnel (250k pps cap), stack multiple tunnels</td><td>10 Gbps or 100 Gbps circuits, up to 8x bundled (80 Gbps / 800 Gbps), 400 Gbps also offered</td><td>50 Mbps–50 Gbps per VLAN attachment</td></tr>
+<tr><td>Latency/path</td><td>Public internet, encrypted</td><td>Private, Google network — lowest, most predictable</td><td>Private via provider network</td></tr>
+<tr><td>SLA</td><td>Up to 99.99% (HA VPN, most topologies)</td><td>99.9% or 99.99% depending on topology</td><td>99.9% or 99.99% depending on topology</td></tr>
+<tr><td>Cost shape</td><td>Low fixed cost, pay for tunnel/egress</td><td>Highest — circuit + port cost, needs colo presence</td><td>Lower entry cost — pay provider + Google, no colo needed</td></tr>
+<tr><td>Wins when</td><td>Fast setup, moderate/variable bandwidth</td><td>Sustained high throughput, own colo presence, strictest SLA/latency needs</td><td>High bandwidth needed but no colo presence, or provider relationship already exists</td></tr>
+</table>
+
+<h2>4. Load balancing: internal vs external</h2>
+
+<h3>Internal Load Balancer</h3>
+<p><strong>What:</strong> private frontend IP, backends never exposed externally. Regional internal Application LB (HTTP/HTTPS) and cross-region internal ALB (multi-region) for L7; internal passthrough Network LB (TCP/UDP/ICMP/SCTP/ESP/AH/GRE) for L4, regional only. <strong>AWS analogue:</strong> internal ALB / internal NLB.</p>
+<p><strong>Use when:</strong> service-to-service traffic inside the VPC/Shared VPC, e.g. microservices behind a Gateway API internal listener. <strong>Not when:</strong> you need public internet-facing entry — that's External LB.</p>
+<div class="trap"><strong>Exam trap:</strong> Cloud Armor does not attach to every internal LB type — it covers the regional internal Application LB but not the internal passthrough Network LB. A scenario asking to WAF-protect an internal TCP passthrough LB is a trick; that protection has to happen elsewhere (verified: <a href="https://cloud.google.com/armor/docs/cloud-armor-overview" target="_blank" rel="noopener">Cloud Armor overview</a>).</div>
+
+<h3>External Load Balancer</h3>
+<p><strong>What:</strong> internet-facing. Global external Application LB (HTTP/HTTPS, single anycast IP, multi-region backends) and regional external ALB for L7; global/regional external proxy Network LB (TCP with optional SSL offload) and external passthrough Network LB (TCP/UDP/ESP/GRE/ICMP, regional) for L4. <strong>AWS analogue:</strong> internet-facing ALB/NLB — but note AWS is inherently regional; GCP's global anycast single-IP model needs Global Accelerator in AWS to approximate.</p>
+<p><strong>Use when:</strong> public-facing app needing a single global IP with backends in multiple regions for latency/failover. <strong>Not when:</strong> Standard network tier is in play — global external LB requires Premium Tier.</p>
+<div class="trap"><strong>Exam trap:</strong> "Global load balancer on Standard Tier" cannot exist — global external IPs and global LBs are Premium Tier only. If a scenario demands lowest cost and explicitly picks Standard Tier, a global LB answer is automatically wrong (verified: <a href="https://cloud.google.com/network-tiers/docs/overview" target="_blank" rel="noopener">Network Service Tiers overview</a>).</div>
+
+<table>
+<tr><th></th><th>Internal LB</th><th>External LB</th></tr>
+<tr><td>Scope/tiers</td><td>Regional (Application LB); cross-region internal ALB for multi-region</td><td>Global (Application LB, proxy Network LB) or Regional (Application LB, proxy/passthrough Network LB)</td></tr>
+<tr><td>Protocols</td><td>HTTP/HTTPS (Application LB); TCP/UDP/ICMP/SCTP/ESP/AH/GRE (passthrough Network LB)</td><td>HTTP/HTTPS (Application LB); TCP with SSL offload (proxy Network LB); TCP/UDP/ESP/GRE/ICMP (passthrough Network LB)</td></tr>
+<tr><td>Use case</td><td>Service-to-service traffic inside VPC/Shared VPC</td><td>Public internet entry point, single anycast IP for global apps</td></tr>
+</table>
+
+<h2>5. Edge: Cloud CDN and Cloud Armor</h2>
+
+<h3>Cloud CDN</h3>
+<p><strong>What:</strong> caches content at Google's edge network, fronted only by the global external Application LB (or classic ALB). Backends: Compute Engine, Cloud Storage buckets, GKE Ingress/Gateway, serverless (Cloud Run/Functions/App Engine), and external backends via internet NEGs. <strong>AWS analogue:</strong> CloudFront.</p>
+<p><strong>Use when:</strong> public static/cacheable content needs global low-latency delivery. <strong>Not when:</strong> the app sits behind an internal LB or a regional external ALB — CDN needs the global external (or classic) Application LB specifically.</p>
+<div class="trap"><strong>Exam trap:</strong> a scenario asking to "add Cloud CDN in front of an internal-only service" is unanswerable as stated — CDN requires a global external Application LB, so the real fix is re-architecting the entry point, not just flipping a CDN toggle (verified: <a href="https://cloud.google.com/cdn/docs/overview" target="_blank" rel="noopener">Cloud CDN overview</a>).</div>
+
+<h3>Cloud Armor</h3>
+<p><strong>What:</strong> WAF + DDoS protection at the edge. Always-on Layer 3/4 volumetric and protocol DDoS mitigation requires no configuration; Layer 7 protection (preconfigured WAF rules based on OWASP CRS, custom rules, rate limiting, bot management, Adaptive Protection for L7 DDoS) requires you to attach a security policy. Attaches to external Application LBs (incl. classic), regional internal Application LB, and proxy Network LBs (global/classic). <strong>AWS analogue:</strong> AWS WAF + Shield combined.</p>
+<p><strong>Use when:</strong> internet-facing app needs WAF rules, rate limiting, or geo-blocking. <strong>Not when:</strong> you assume L7 protection is automatic — it isn't, you must attach a policy.</p>
+<div class="trap"><strong>Exam trap:</strong> "Cloud Armor is enabled, so the app is protected from HTTP floods" is false if no security policy with WAF/rate-limiting rules is attached — only L3/4 volumetric DDoS defense is automatic; L7 needs explicit configuration (verified: <a href="https://cloud.google.com/armor/docs/cloud-armor-overview" target="_blank" rel="noopener">Cloud Armor overview</a>).</div>
+
+<h2>6. Network Service Tiers</h2>
+<table>
+<tr><th></th><th>Premium Tier</th><th>Standard Tier</th></tr>
+<tr><td>Routing</td><td>Google's private global backbone, 200+ PoPs</td><td>Public internet / ISP transit</td></tr>
+<tr><td>SLA</td><td>99.99% uptime</td><td>99.9% uptime</td></tr>
+<tr><td>Cost</td><td>Higher</td><td>Lower — includes a free 200GB/month egress allowance per region</td></tr>
+<tr><td>Supported resources</td><td>Global external IPs, global LBs, Cloud CDN, Cloud VPN gateways, plus everything Standard supports</td><td>Regional external IPs, VM instances, Cloud NAT, regional external Application LB, regional external passthrough Network LB</td></tr>
+<tr><td>Wins when</td><td>Global users, performance/availability matters</td><td>Single-region, latency-insensitive, cost is the priority</td></tr>
+</table>
+<p class="callout">Verified: <a href="https://cloud.google.com/network-tiers/docs/overview" target="_blank" rel="noopener">Network Service Tiers overview</a>. Note global load balancing and Cloud CDN are Premium-only — this connects directly back to the External LB trap above.</p>
+
+<h2>Try it — before reading the answer</h2>
+<div class="quiz">
+<p>Scenario: a company runs prod, staging, and shared-services in 3 separate GCP projects and wants centralized network/firewall administration with per-project IAM boundaries preserved. They also need a new on-prem link: average 200 Mbps, spikes to 800 Mbps twice daily, no rack space in any Google colocation facility, and it must be live in 2 weeks. What network topology and what hybrid connectivity option fit, and why?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Topology: Shared VPC, with shared-services (or a dedicated network project) as the host and prod/staging attached as service projects — centralizes firewall/subnet administration while each team keeps its own project-level IAM and billing. Connectivity: Partner Interconnect — it handles the 800 Mbps spikes comfortably within its 50 Mbps–50 Gbps VLAN attachment range, needs no colocation presence (ruling out Dedicated), and turns up faster than building a Dedicated circuit. HA VPN is the fallback if the 2-week deadline can't be met by any provider, but it caps around 1–3 Gbps per tunnel and rides the public internet — Partner Interconnect is the better fit given the stated constraints.</div>
+</div>
+
+<h2>Quiz — Session 4</h2>
+
+<div class="quiz">
+<p>Q1. A company needs sub-3ms latency, sustained 40 Gbps throughput to on-prem, and already has rack space in a Google colocation facility. Which option fits?</p>
+<div class="opts">
+<label>A. Provision a Dedicated Interconnect connection</label>
+<label>B. Provision a Partner Interconnect connection</label>
+<label>C. Provision an HA VPN connection</label>
+<label>D. Provision a Classic VPN connection</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Dedicated Interconnect is built exactly for this: colo presence already exists, and 10/100 Gbps circuits comfortably cover 40 Gbps with the lowest, most predictable latency. B (Partner) is for when there's no colo presence — unnecessary here and often costlier at this scale. C (HA VPN) tops out around 1–3 Gbps per tunnel, far short of 40 Gbps. D (Classic VPN) is even more limited — static routing only, lower SLA, same bandwidth ceiling as HA VPN.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A company has no presence in any Google colocation facility but needs 10 Gbps guaranteed capacity within a month, provisioned by their existing telecom provider. Best option?</p>
+<div class="opts">
+<label>A. Choose Dedicated Interconnect through Google directly</label>
+<label>B. Choose Partner Interconnect through the provider</label>
+<label>C. Choose HA VPN through the internet</label>
+<label>D. Choose Classic VPN through the internet</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>B.</strong> Partner Interconnect needs no colocation presence, supports 50 Mbps–50 Gbps VLAN attachments through a service provider, and provisions faster since there's no physical circuit to build. A (Dedicated) is ruled out — no colo presence. C (HA VPN) doesn't guarantee 10 Gbps — a single tunnel caps around 1–3 Gbps. D (Classic VPN) is strictly worse than HA VPN for this need.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Per the official Shared VPC docs, a Shared VPC Admin needs <code>resourcemanager.projectIamAdmin</code> plus which other IAM role to attach service projects to a host project?</p>
+<div class="opts">
+<label>A. The compute.xpnAdmin role</label>
+<label>B. The compute.networkAdmin role</label>
+<label>C. The compute.securityAdmin role</label>
+<label>D. The compute.instanceAdmin role</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Google's docs specifically name <code>compute.xpnAdmin</code> alongside <code>resourcemanager.projectIamAdmin</code> as the pair needed to enable a host project and attach service projects. B (networkAdmin) manages network resources but doesn't grant Shared VPC attachment rights. C (securityAdmin) is IAM/firewall-policy focused, unrelated. D (instanceAdmin) manages VM instances, not project attachment.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. Which load balancer type is required for a single global anycast IP serving HTTP(S) backends across multiple regions?</p>
+<div class="opts">
+<label>A. Regional external Application Load Balancer</label>
+<label>B. Global external Application Load Balancer</label>
+<label>C. Regional internal Application Load Balancer</label>
+<label>D. Cross-region internal Application Load Balancer</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>B.</strong> Only the global external Application LB gives one anycast IP with multi-region backend routing for public HTTP(S) traffic. A (regional external) is scoped to one region, no single global IP. C (regional internal) isn't internet-facing at all. D (cross-region internal) is multi-region but private, not internet-facing.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. Which statement about Cloud NAT and Cloud Router is correct?</p>
+<div class="opts">
+<label>A. Cloud NAT needs no Cloud Router at all</label>
+<label>B. Cloud NAT is configured on a Cloud Router</label>
+<label>C. Cloud NAT fully replaces Cloud Router for routing</label>
+<label>D. Cloud NAT always only supports static VPN routing</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>B.</strong> Per Google's docs, "you configure a NAT gateway on a Cloud Router" — it's the control-plane holder for NAT config, even without BGP peering. A is directly contradicted by that requirement. C misunderstands the relationship — NAT doesn't replace Router, it depends on it. D confuses Cloud NAT (address translation) with Classic VPN's static-routing limitation — unrelated services.</div>
+</div>
+
+<div class="quiz">
+<p>Q6. What must be true for Cloud CDN to cache content served through a load balancer?</p>
+<div class="opts">
+<label>A. The backend must sit behind a global external Application Load Balancer</label>
+<label>B. The backend must sit behind a regional internal Application Load Balancer</label>
+<label>C. The backend must sit behind an internal passthrough Network Load Balancer</label>
+<label>D. The backend must sit behind an external passthrough Network Load Balancer</label>
+</div>
+<button onclick="document.getElementById('q6').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q6"><strong>A.</strong> Cloud CDN works exclusively with the global external (or classic) Application LB. B is internal — never internet-facing, can't front public cacheable content. C is both internal and Layer 4 — no HTTP caching semantics. D is Layer 4 passthrough — no HTTP layer for CDN to cache against.</div>
+</div>
+
+<div class="quiz">
+<p>Q7. Which Cloud Armor protection layer is "always-on" and needs no security policy configured first?</p>
+<div class="opts">
+<label>A. Layer seven protection against HTTP floods</label>
+<label>B. Layer three protection against volumetric DDoS</label>
+<label>C. Layer seven protection against bot traffic</label>
+<label>D. Layer four protection against port scanning</label>
+</div>
+<button onclick="document.getElementById('q7').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q7"><strong>B.</strong> Google's docs state L3/L4 volumetric and protocol DDoS mitigation is "always-on," automatic, with no policy required. A and C (Layer 7, including HTTP floods and bot traffic) explicitly require a configured security policy with WAF/Adaptive Protection rules. D (Layer 4 port scanning) isn't the always-on guarantee Google documents — L3/4 volumetric DDoS is.</div>
+</div>
+
+<div class="quiz">
+<p>Q8. Under which network service tier can you provision a global external HTTP(S) load balancer with a single anycast IP?</p>
+<div class="opts">
+<label>A. Premium Tier only, using Google's backbone</label>
+<label>B. Standard Tier only, using public internet</label>
+<label>C. Either tier, with identical performance always</label>
+<label>D. Neither tier supports global load balancing</label>
+</div>
+<button onclick="document.getElementById('q8').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q8"><strong>A.</strong> Global external IPs and global load balancers are documented as Premium Tier only, routed over Google's private backbone. B is backwards — Standard Tier is regional-only for LBs. C is false — the tiers differ materially in routing path, SLA (99.99% vs 99.9%), and cost. D is false — global LB does exist, just gated to Premium Tier.</div>
+</div>
+
+<h2>Primary source</h2>
+<p>Best single page for network design across this session: the <a href="https://cloud.google.com/architecture/framework/system-design/networking" target="_blank" rel="noopener">Well-Architected Framework — networking design guidance</a>, plus the two decision-critical pages you'll want open on exam day: <a href="https://cloud.google.com/network-connectivity/docs/how-to/choose-product" target="_blank" rel="noopener">choosing a network connectivity product</a> and the <a href="https://cloud.google.com/load-balancing/docs/load-balancing-overview" target="_blank" rel="noopener">load balancing overview</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Shared VPC = host/service projects, needs <code>compute.xpnAdmin</code> + <code>resourcemanager.projectIamAdmin</code> — no exact AWS equivalent</li>
+    <li>VPN vs Interconnect: bandwidth/latency/SLA needs point to Interconnect; no colo presence or fast turnup points to VPN or Partner Interconnect</li>
+    <li>Dedicated needs your own colo presence; Partner doesn't — this is the #1 connectivity trap</li>
+    <li>Global LB, Cloud CDN, and global external IPs are Premium Tier only — Standard Tier is regional-only</li>
+    <li>Cloud Armor's L3/4 DDoS defense is automatic; L7 WAF/rate-limiting needs an explicit security policy</li>
+  </ul>
+  <p><strong>Try solo:</strong> pick one production system you run today — describe which GCP LB type, network tier, and hybrid connectivity option you'd choose for it, and why, before checking against this lesson.</p>
+</div>
+
+<footer class="teacher-reminder">Something here doesn't click, or you disagree with an answer? Ask directly in chat — I'm your teacher, not just this file.</footer>
+
+<div class="lesson-nav">
+  <a href="0003-storage-databases.html">&larr; Storage &amp; databases</a>
+  <a href="0005-iam-security.html">Next: IAM &amp; security &rarr;</a>
+</div>
+
+</body>
+</html>

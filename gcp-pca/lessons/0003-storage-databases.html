@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3 — Storage &amp; Databases</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Session 3 of 10 (Day 1)</p>
+<h1>Storage &amp; databases: picking the right service under a constraint</h1>
+
+<p>This is the core of exam Section 1.3 (choosing storage/data-processing solutions) and Section 2.2 (configuring individual storage systems — capacity, security, latency, retention, growth, backup) — together a meaningful slice of that 25%-weighted Design &amp; Plan section. You already run Postgres/MySQL on RDS, key-value on DynamoDB, and blobs on S3 in production. The gap is GCP's naming and — more importantly — three services with no clean AWS 1:1 (Spanner, Bigtable, BigQuery) that the exam loves to test against each other.</p>
+
+<h2>1. Object, block, and file storage</h2>
+
+<h3>Cloud Storage — object storage</h3>
+<p><strong>AWS analogue: S3.</strong> Purpose: durable, HTTP-addressable object storage in buckets. Best for static assets, backups, data lake landing zone, ML training data, anything read/written as a whole blob rather than mounted as a filesystem.</p>
+<table>
+<tr><th>Scalability</th><td>Effectively unlimited objects per bucket; hierarchical namespace buckets get up to 8x higher QPS for read/write</td></tr>
+<tr><th>Consistency</th><td>Strong global consistency for read-after-write, read-after-metadata-update, read-after-delete, and bucket/object listing — across all storage classes, including multi-region</td></tr>
+<tr><th>Cost shape</th><td>Per-GB by storage class (Standard/Nearline/Coldline/Archive) + per-operation + egress</td></tr>
+</table>
+<div class="trap"><strong>Exam trap:</strong> older material (and outdated exam-prep sites) still say "GCS is eventually consistent, unlike S3." Both are now strongly consistent for object data (<a href="https://docs.cloud.google.com/storage/docs/consistency" target="_blank" rel="noopener">verified — Cloud Storage consistency</a>). The part that's still <strong>eventually</strong> consistent is IAM/ACL permission grants and revokes — "it typically takes about a minute... in some cases, several minutes longer." A scenario testing "revoke access must take effect instantly" is a trap toward Cloud Storage ACLs.</div>
+
+<h3>Persistent Disk — block storage</h3>
+<p><strong>AWS analogue: EBS.</strong> Purpose: network block storage attached to a Compute Engine VM (or GKE node). Best for VM boot disks and low-latency database storage that needs a real filesystem, not an object API.</p>
+<table>
+<tr><th>Scalability</th><td>Up to 64 TiB per disk, up to 257 TiB combined across up to 127 disks per VM</td></tr>
+<tr><th>Consistency</th><td>Zonal (single zone, redundant across physical drives) vs Regional (synchronous replication across 2 zones in one region)</td></tr>
+<tr><th>Cost shape</th><td>Per-GB-month by type (Standard/Balanced/SSD/Extreme); regional disks cost roughly 2x zonal for the same type</td></tr>
+</table>
+<div class="trap"><strong>Exam trap:</strong> Persistent Disk is <strong>zonal by default</strong> (<a href="https://docs.cloud.google.com/compute/docs/disks/persistent-disks" target="_blank" rel="noopener">verified — Persistent Disk docs</a>). Unlike the assumption "cloud storage just survives failures," a zonal disk is gone if that zone has an outage — you must explicitly provision a Regional PD (or design around snapshots/backups) if the scenario says "must survive a zone failure."</div>
+
+<h3>Filestore — file storage</h3>
+<p><strong>AWS analogue: EFS.</strong> Purpose: managed NFS, mountable by many clients at once. Best for GKE ReadWriteMany volumes, HPC/render farms, and lift-and-shift apps that need a real POSIX filesystem.</p>
+<table>
+<tr><th>Scalability</th><td>Multiple tiers (Basic legacy, Zonal, Regional, Enterprise multishare-for-GKE) spanning GB to 100+ TiB</td></tr>
+<tr><th>Consistency</th><td>Regional/Enterprise tiers use strict consistency — "acknowledging writes only after they are persisted"; Zonal/Basic tiers don't carry that zone-redundancy guarantee</td></tr>
+<tr><th>Cost shape</th><td>Per-GB-hour by tier; Enterprise is priced well above Zonal, which is above Basic</td></tr>
+</table>
+<div class="trap"><strong>Exam trap:</strong> a "mission-critical, multi-zone GKE" scenario paired with the Basic/legacy tier is a mismatch — Basic has no cross-zone redundancy (<a href="https://docs.cloud.google.com/filestore/docs/overview" target="_blank" rel="noopener">verified — Filestore overview</a>). If the scenario says "continuous availability," it's naming the Regional or Enterprise tier, not "any Filestore instance."</div>
+
+<h2>2. Relational databases</h2>
+
+<h3>Cloud SQL</h3>
+<p><strong>AWS analogue: RDS.</strong> Purpose: managed MySQL, PostgreSQL, or SQL Server. Best for single-region OLTP and lift-and-shift of existing relational apps where you don't need global scale.</p>
+<table>
+<tr><th>Scalability</th><td>Vertical (bigger machine) + read replicas for read scaling; no built-in write sharding; storage up to 64 TB on dedicated-core instances</td></tr>
+<tr><th>Consistency</th><td>Strong, single-primary. HA ("regional instance") = synchronous replication to a standby across 2 zones <em>within one region</em></td></tr>
+<tr><th>Cost shape</th><td>Per vCPU/RAM/storage-hour; enabling HA roughly doubles instance cost (you're paying for the standby)</td></tr>
+</table>
+<div class="trap"><strong>Exam trap:</strong> Cloud SQL HA protects against a <strong>zone</strong> failure, not a <strong>region</strong> failure — the primary and standby both live in the same region (<a href="https://docs.cloud.google.com/sql/docs/mysql/high-availability" target="_blank" rel="noopener">verified — Cloud SQL HA docs</a>). A scenario needing multi-region durability or a global write path is signaling Spanner, not "just enable Cloud SQL HA."</div>
+
+<h3>Cloud Spanner</h3>
+<p><strong>AWS analogue: none direct.</strong> Aurora Global Database and DynamoDB Global Tables both trade off either synchronous multi-region writes or strong consistency — Spanner is the one service that gives you both relational SQL <em>and</em> synchronous multi-region strong consistency, which is exactly why it's exam-famous. Purpose: horizontally scalable, globally distributed relational DB.</p>
+<table>
+<tr><th>Scalability</th><td>Horizontal — add nodes/processing units, scales to petabytes without resharding your schema</td></tr>
+<tr><th>Consistency</th><td><strong>External consistency</strong> (stronger than plain "strong consistency") via TrueTime: "the system guarantees that clients can never see a state that includes the effect of the second transaction but not the first" (<a href="https://docs.cloud.google.com/spanner/docs/true-time-external-consistency" target="_blank" rel="noopener">verified — TrueTime &amp; external consistency</a>)</td></tr>
+<tr><th>Cost shape</th><td>Per-node or per-processing-unit-hour + storage — priced for scale; expensive relative to Cloud SQL at small size</td></tr>
+</table>
+<div class="trap"><strong>Exam trap:</strong> Spanner is often the "technically best" answer (global, strongly consistent, relational, ACID) — but if the scenario says single-region and cost-sensitive, that's the Well-Architected Cost Optimization pillar overriding "best" with "right-sized." Don't reflexively pick Spanner just because it can do everything; pick it when the scenario names global scale or global strong consistency as a hard requirement.</div>
+
+<h2>3. NoSQL databases</h2>
+
+<h3>Firestore</h3>
+<p><strong>AWS analogue: DynamoDB</strong> (plus real-time sync, closer to DynamoDB + AppSync combined). Purpose: serverless NoSQL document database. Best for mobile/web apps needing offline sync, real-time collaborative state, user profiles/session data.</p>
+<table>
+<tr><th>Scalability</th><td>Automatic, but new collections should ramp gradually — Google's own "500/50/5" guidance: start at 500 ops/sec, increase 50% every 5 minutes</td></tr>
+<tr><th>Consistency</th><td>Native mode gives "strongly consistent queries across the entire database" (<a href="https://docs.cloud.google.com/firestore/docs/firestore-or-datastore" target="_blank" rel="noopener">verified — Firestore modes</a>)</td></tr>
+<tr><th>Cost shape</th><td>Per-operation (document read/write/delete) + storage</td></tr>
+</table>
+<div class="trap"><strong>Exam trap:</strong> "automatic scaling" doesn't mean instant scaling. A sudden traffic spike against one new collection can hit a hotspot even though Firestore is serverless (<a href="https://docs.cloud.google.com/firestore/native/docs/understand-reads-writes-scale" target="_blank" rel="noopener">verified — reads/writes at scale</a>) — same class of trap as a DynamoDB hot partition. A scenario describing a traffic spike into a brand-new collection is testing whether you know the ramp-up rule, not whether Firestore "can scale."</div>
+
+<h3>Bigtable</h3>
+<p><strong>AWS analogue: no direct equivalent</strong> — closest conceptually is a wide-column store like DynamoDB for key-value access, but Bigtable's linear-with-nodes throughput model and native HBase API have no single AWS match; call it out as GCP-unique on the exam. Purpose: massive-scale, low-latency wide-column NoSQL. Best for time-series, IoT, adtech clickstream, financial tick data, ML feature stores.</p>
+<table>
+<tr><th>Scalability</th><td>Linear with cluster nodes — SSD clusters: up to ~17,000 reads/sec and ~14,000 writes/sec per node (1 KB rows), scans up to 220 MBps/node (<a href="https://docs.cloud.google.com/bigtable/docs/performance" target="_blank" rel="noopener">verified — Bigtable performance</a>)</td></tr>
+<tr><th>Consistency</th><td>Strong on single-cluster instances; multi-cluster instances default to <strong>eventual</strong> consistency (configurable to read-your-writes or strong via app profile)</td></tr>
+<tr><th>Cost shape</th><td>Per-node-hour (cluster is provisioned, not serverless) + per-GB storage</td></tr>
+</table>
+<div class="trap"><strong>Exam trap:</strong> multi-cluster Bigtable is eventually consistent <em>by default</em> — assuming "Google managed = always strongly consistent" is exactly the wrong instinct here. Also: Bigtable has no SQL, no joins, no multi-row ACID — a scenario needing complex queries over a small dataset is not a Bigtable scenario no matter how "high scale" the wording sounds.</div>
+
+<h2>4. Analytics warehouse</h2>
+
+<h3>BigQuery</h3>
+<p><strong>AWS analogue: Redshift + Athena combined</strong> — provisioned-warehouse SQL like Redshift, serverless pay-per-scan like Athena, but with storage and compute natively separated. Purpose: serverless OLAP data warehouse. Best for BI dashboards, ad-hoc SQL analytics, BigQuery ML, log/event analytics at petabyte scale.</p>
+<table>
+<tr><th>Scalability</th><td>Serverless, auto-scaling compute; storage and compute scale independently; "query terabytes in seconds and petabytes in minutes"</td></tr>
+<tr><th>Consistency</th><td>Supports ACID multi-statement transactions with snapshot isolation; automatic replication for availability</td></tr>
+<tr><th>Cost shape</th><td>On-demand = pay per TB scanned, OR flat-rate/Editions = provisioned slot capacity; storage billed separately, with long-term (90-day-unmodified) data discounted (<a href="https://cloud.google.com/bigquery/pricing" target="_blank" rel="noopener">verified — BigQuery pricing</a>)</td></tr>
+</table>
+<div class="trap"><strong>Exam trap:</strong> BigQuery is an <strong>OLAP</strong> engine — query latency is seconds, not milliseconds, and on-demand billing scans whole columns unless the table is partitioned/clustered. A scenario asking for low-latency point lookups, or "frequent small queries, cost-sensitive, unpartitioned," is a trap toward BigQuery: partitioning/clustering isn't optional at that shape, or the cost model blows up.</div>
+
+<h2>Comparison tables</h2>
+
+<h3>Cloud SQL vs Spanner</h3>
+<table>
+<tr><th></th><th>Consistency</th><th>Scale</th><th>Latency</th><th>Typical use case</th><th>Cost shape</th></tr>
+<tr><td><strong>Cloud SQL</strong></td><td>Strong, single-region (zone-level HA only)</td><td>Vertical + read replicas, up to 64 TB</td><td>Single-digit ms, in-region</td><td>Single-region OLTP, lift-and-shift MySQL/Postgres/SQL Server</td><td>Per vCPU/RAM/storage-hr, HA ~2x cost</td></tr>
+<tr><td><strong>Spanner</strong></td><td>External consistency, global (TrueTime)</td><td>Horizontal, petabyte scale, no resharding</td><td>Low ms typical, commit-wait overhead multi-region</td><td>Global/multi-region strong-consistency OLTP</td><td>Per-node/processing-unit-hr + storage, priced for scale</td></tr>
+</table>
+
+<h3>Firestore vs Bigtable</h3>
+<table>
+<tr><th></th><th>Consistency</th><th>Scale</th><th>Latency</th><th>Typical use case</th><th>Cost shape</th></tr>
+<tr><td><strong>Firestore</strong></td><td>Strongly consistent queries (Native mode)</td><td>Automatic, ramp gradually per collection (500/50/5)</td><td>Low ms, point/document reads</td><td>Mobile/web apps, real-time sync, offline-first</td><td>Per-operation (read/write/delete) + storage</td></tr>
+<tr><td><strong>Bigtable</strong></td><td>Strong (single-cluster) / eventual (multi-cluster default)</td><td>Linear with nodes, billions of rows / petabytes</td><td>Single-digit ms at scale</td><td>Time-series, IoT, adtech, high-throughput key-value</td><td>Per-node-hr (provisioned cluster) + storage</td></tr>
+</table>
+
+<h3>Bigtable vs BigQuery</h3>
+<table>
+<tr><th></th><th>Consistency</th><th>Scale</th><th>Latency</th><th>Typical use case</th><th>Cost shape</th></tr>
+<tr><td><strong>Bigtable</strong></td><td>Strong/eventual (see above)</td><td>Linear with nodes, real-time serving</td><td>ms — operational/serving workloads</td><td>High-throughput key-value serving, no SQL/joins</td><td>Per-node-hr + storage</td></tr>
+<tr><td><strong>BigQuery</strong></td><td>ACID transactions, snapshot isolation</td><td>Serverless, auto-scales to petabytes</td><td>Seconds — analytical scans, not point lookups</td><td>OLAP analytics, BI, ad-hoc SQL at scale</td><td>Per-TB-scanned (on-demand) or flat-rate slots + storage</td></tr>
+</table>
+
+<h3>Cloud Storage vs Filestore</h3>
+<table>
+<tr><th></th><th>Consistency</th><th>Scale</th><th>Latency</th><th>Typical use case</th><th>Cost shape</th></tr>
+<tr><td><strong>Cloud Storage</strong></td><td>Strong for data ops; IAM grants eventual (~1 min)</td><td>Effectively unlimited objects/bucket</td><td>~100ms+, HTTP object API, not POSIX</td><td>Static assets, backups, data lake, ML training data</td><td>Per-GB by storage class + ops + egress</td></tr>
+<tr><td><strong>Filestore</strong></td><td>Strict (Regional/Enterprise); no zone-redundancy guarantee (Basic/Zonal)</td><td>GB to 100+ TiB, POSIX filesystem</td><td>Sub-ms to low-ms, NFS mount semantics</td><td>Shared file storage: GKE RWX, HPC/render, lift-and-shift NFS</td><td>Per-GB-hour by tier, Enterprise &gt;&gt; Basic</td></tr>
+</table>
+
+<h2>Try it — before reading the answer</h2>
+<div class="quiz">
+<p>Scenario: "A global ad-bidding platform needs a relational schema with joins, strict transactional consistency between a US region and an EU region, and write throughput beyond what a single primary can handle." Candidate answers: (A) Cloud SQL with cross-region read replicas, (B) Cloud Spanner in a multi-region configuration. Which do you pick, and specifically why does Cloud SQL fail here — not just "Spanner is more scalable"?</p>
+<button onclick="document.getElementById('t1').classList.add('shown')">Reveal</button>
+<div class="answer" id="t1">Pick B, Spanner. The precise reason Cloud SQL fails: its HA model is a synchronous standby <em>within one region</em> — cross-region read replicas are asynchronous, so they can't give you strict transactional consistency across US and EU, and Cloud SQL has no built-in multi-primary write path to scale writes horizontally. Spanner's external consistency (TrueTime-backed) is designed exactly for "relational + globally strong-consistent + horizontally scalable writes" — that three-way combination is the tell.</div>
+</div>
+
+<h2>Quiz — Session 3</h2>
+
+<div class="quiz">
+<p>Q1. Which service fits "global, strongly-consistent, horizontally-scalable relational database"?</p>
+<div class="opts">
+<label>A. Cloud Spanner, multi-region config</label>
+<label>B. Cloud SQL, regional HA</label>
+<label>C. Firestore in Native mode</label>
+<label>D. Bigtable with multi-cluster routing</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Spanner's multi-region configuration is the only option offering horizontal write scaling with external consistency across regions. B is single-region only. C is NoSQL document, not relational/global-write. D is wide-column NoSQL, and multi-cluster defaults to eventual consistency — the opposite of what's asked.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A mission-critical GKE workload across zones needs one shared POSIX filesystem, read-write, by many pods. Best fit?</p>
+<div class="opts">
+<label>A. Filestore Regional or Enterprise tier</label>
+<label>B. Filestore Basic tier, single zone</label>
+<label>C. Persistent Disk, single VM only</label>
+<label>D. Cloud Storage FUSE mounted bucket</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Regional/Enterprise Filestore tiers give strict consistency and cross-zone redundancy for a shared POSIX filesystem. B (Basic) has no zone redundancy — wrong for "mission-critical." C is single-VM block storage, not shareable across pods. D is an object store bolted onto a POSIX-like interface — it isn't built for true low-latency multi-writer NFS semantics.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. A time-series IoT pipeline needs sustained high write throughput, key-value access, low-latency reads at scale. Best fit?</p>
+<div class="opts">
+<label>A. Bigtable with SSD</label>
+<label>B. Firestore in Native</label>
+<label>C. BigQuery with partitioning</label>
+<label>D. Spanner with sharding</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Bigtable's node-linear throughput and wide-column key-value model is purpose-built for exactly this — time-series/IoT is a textbook Bigtable use case. B, C, D are all functionally capable but the wrong shape: Firestore is operational/document, BigQuery is analytical (seconds latency), Spanner is relational OLTP, not tuned for this throughput pattern at this cost.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. Analytics team wants ad-hoc SQL over 50TB of logs, no ops burden, pay only for data scanned. Right service and model?</p>
+<div class="opts">
+<label>A. BigQuery: on-demand per-TB scan pricing</label>
+<label>B. Bigtable: per-node-hour cluster pricing model</label>
+<label>C. Spanner: per-node-hour cluster pricing model</label>
+<label>D. Cloud SQL: per-vCPU instance pricing</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> "Pay only for data scanned, no ops burden" is literally BigQuery's on-demand pricing description. B, C, D are all provisioned-capacity models — you pay for the cluster/instance size regardless of query volume, which is the wrong shape for ad-hoc, bursty analytics.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. In Cloud Storage, which of these is NOT strongly consistent?</p>
+<div class="opts">
+<label>A. IAM permission grant propagation delay</label>
+<label>B. Object read after write operation</label>
+<label>C. Bucket listing after object creation</label>
+<label>D. Object read after delete operation</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> IAM/ACL grants and revokes are explicitly eventually consistent (~1 minute, sometimes longer) per the official consistency docs. B, C, and D — read-after-write, listing, and read-after-delete — are all explicitly called out as strongly consistent.</div>
+</div>
+
+<div class="quiz">
+<p>Q6. Cloud SQL HA (regional instance) protects against which failure — and doesn't protect against which?</p>
+<div class="opts">
+<label>A. Zone failure only, not region failure</label>
+<label>B. Region failure only, not zone failure</label>
+<label>C. Both zone and region failures always</label>
+<label>D. Neither zone nor region failure ever</label>
+</div>
+<button onclick="document.getElementById('q6').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q6"><strong>A.</strong> The regional-instance HA design is a primary + standby synchronously replicated across two zones <em>in one region</em> — it survives a zone outage, not a full region outage. B, C, D all misstate this; C in particular is the trap for anyone who assumes "HA" automatically means region-level.</div>
+</div>
+
+<div class="quiz">
+<p>Q7. What are Bigtable's default consistency behaviors for single-cluster vs multi-cluster instances?</p>
+<div class="opts">
+<label>A. Single-cluster strong, multi-cluster eventual by default</label>
+<label>B. Single-cluster eventual, multi-cluster strong by default</label>
+<label>C. Always strongly consistent across all clusters everywhere</label>
+<label>D. Always eventually consistent across all clusters everywhere</label>
+</div>
+<button onclick="document.getElementById('q7').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q7"><strong>A.</strong> Single-cluster Bigtable instances are strongly consistent; multi-cluster instances default to eventual consistency (configurable to read-your-writes or strong via app profile settings). B reverses this. C and D ignore that the behavior is configuration-dependent, not universal.</div>
+</div>
+
+<div class="quiz">
+<p>Q8. A finance case study needs ad-hoc historical trend analysis over 5 years of transaction logs, hundreds of analysts, SQL. Best fit, and why not Bigtable?</p>
+<div class="opts">
+<label>A. BigQuery: SQL, serverless OLAP engine</label>
+<label>B. Bigtable: NoSQL, wide-column serving engine</label>
+<label>C. Firestore: NoSQL, document serving engine</label>
+<label>D. Spanner: SQL, relational OLTP engine</label>
+</div>
+<button onclick="document.getElementById('q8').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q8"><strong>A.</strong> "Ad-hoc historical SQL analysis, many analysts" is the exact BigQuery shape — serverless OLAP built for scan-heavy queries across large datasets. B (Bigtable) has no SQL/joins and is tuned for low-latency serving, not ad-hoc analytics. C is operational document storage. D (Spanner) supports SQL but is priced and optimized for OLTP, not scan-heavy historical analysis — the wrong cost shape for this job.</div>
+</div>
+
+<h2>Primary source</h2>
+<p>Google's official storage decision guide walks the same questionnaire → comparison table → decision tree structure this session followed: <a href="https://docs.cloud.google.com/architecture/storage-advisor" target="_blank" rel="noopener">Design an optimal storage strategy for your cloud workload (Architecture Center)</a>. For the database side, the product overview and selection framing is at <a href="https://cloud.google.com/products/databases" target="_blank" rel="noopener">Google Cloud databases</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Object/block/file map cleanly to S3/EBS/EFS — the trap is GCS's IAM propagation delay and Persistent Disk's zonal-by-default design</li>
+    <li>Cloud SQL vs Spanner is a region-vs-global and vertical-vs-horizontal question, not a "which is better" question</li>
+    <li>Firestore and Bigtable are both NoSQL but split on consistency defaults and access pattern (document/point-read vs high-throughput wide-column)</li>
+    <li>BigQuery is OLAP, not OLTP — seconds-latency, pay-per-scan, and the wrong answer whenever the scenario wants low-latency point lookups</li>
+    <li>Bigtable has no direct AWS 1:1 — that's a GCP-unique exam signal by itself</li>
+  </ul>
+  <p><strong>Try solo:</strong> pick any two services above and write one sentence each on the exact constraint keyword that would make the exam pick one over the other — do it without re-reading this page.</p>
+  <p><strong>Next:</strong> Session 4 covers networking — VPC, Interconnect, Cloud NAT, load balancer tiers — the other half of the "provisioning" section.</p>
+</div>
+
+<footer class="teacher-reminder">Something here doesn't click, or you disagree with an answer? Ask directly in chat — I'm your teacher, not just this file.</footer>
+
+<div class="lesson-nav">
+  <a href="0002-core-compute.html">&larr; Core compute</a>
+  <a href="0004-networking.html">Next: Networking &rarr;</a>
+</div>
+
+</body>
+</html>

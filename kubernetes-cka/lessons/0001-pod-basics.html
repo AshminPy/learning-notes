@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 — The Pod, bare minimum</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Kubernetes / CKA — Lesson 1 of many</p>
+<h1>The Pod, bare minimum</h1>
+
+<p>Every workload in Kubernetes — Deployment, StatefulSet, Job, whatever sits on top — ultimately runs as one or more <strong>Pods</strong>. This is the smallest thing the scheduler places on a node. Get this one right and every layer above it (Service, Deployment, RBAC…) is just "more fields on top of a Pod."</p>
+
+<p><strong>Tied to your mission:</strong> the CKA's biggest single domain is Troubleshooting (30%), and almost every troubleshooting task starts with "read the Pod spec and figure out what's wrong with it." Fluency here pays off everywhere else.</p>
+
+<h2>The mental model</h2>
+<p>A Pod is a thin wrapper around one or more containers that share a network namespace (same IP, can talk over <code>localhost</code>) and a lifecycle (they start and die together). Most of the time you'll run exactly one container per Pod — multi-container Pods are the exception, not the rule.</p>
+
+<p class="callout">Every Kubernetes object you'll ever write — Pod, Deployment, Service, all of them — starts with the same four top-level fields. Learn them once here, and you never re-learn them.</p>
+
+<h2>Try it first — before reading on</h2>
+<div class="quiz">
+  <p>Q1. What are the four top-level fields every Kubernetes manifest needs (not just Pod)?</p>
+  <input type="text" id="q1" placeholder="type your answer">
+  <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a1">apiVersion, kind, metadata, spec</div>
+</div>
+
+<div class="quiz">
+  <p>Q2. Inside <code>spec</code>, what's the one field a Pod absolutely cannot exist without — the thing that actually runs?</p>
+  <input type="text" id="q2" placeholder="type your answer">
+  <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+  <div class="answer" id="a2">containers (a list, with at least one entry — name + image are required per container)</div>
+</div>
+
+<h2>Now build it — in your terminal, not here</h2>
+<p>Open a terminal (or your editor) and write a Pod manifest by hand — no copy-paste. Give it:</p>
+<ul>
+  <li>a name</li>
+  <li>the <code>nginx</code> image</li>
+  <li>a container name</li>
+</ul>
+<p>Don't peek at the answer below until you've written something — even a wrong attempt teaches more than reading the answer first.</p>
+
+<div class="quiz">
+  <p>Reveal the reference answer</p>
+  <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>apiVersion: v1
+kind: Pod
+metadata:
+  name: my-nginx
+spec:
+  containers:
+    - name: nginx
+      image: nginx
+</code></pre>
+</div>
+
+<p>Bring what you wrote back to your notes — check it field-by-field against the docs above and confirm what's right, what's missing, and why.</p>
+
+<h2>Primary source</h2>
+<p>Read (or at least skim) the official docs on this — it's the exact page you're allowed to search during the real exam: <a href="https://kubernetes.io/docs/concepts/workloads/pods/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/pods</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Every manifest: <code>apiVersion</code>, <code>kind</code>, <code>metadata</code>, <code>spec</code></li>
+    <li>A Pod's <code>spec.containers</code> is the one field it can't live without</li>
+    <li>Most Pods run one container — multi-container is the exception</li>
+  </ul>
+  <p><strong>Try solo:</strong> write a second Pod manifest from memory, this time using the <code>redis</code> image and a different Pod name. Don't reopen this file to check — bring it to chat instead.</p>
+</div>
+
+<footer class="teacher-reminder">Stuck, or something doesn't make sense? Re-read the official docs linked above, or note the question down and come back to it.</footer>
+
+<div class="lesson-nav">
+  <span>&larr; Start</span>
+  <span>Next: Pod + labels &rarr; <em>(not written yet)</em></span>
+</div>
+
+</body>
+</html>

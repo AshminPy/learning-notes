@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 1 — Exam Structure &amp; Well-Architected Framework</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Session 1 of 10 (Day 1)</p>
+<h1>Exam structure, the Well-Architected Framework, and how Google writes questions</h1>
+
+<p>You already know cloud architecture — AWS, GKE, Terraform, IAM, this is your daily job. This session isn't teaching you cloud. It's teaching you <strong>this specific exam's shape</strong>: what it actually weighs, the lens every answer gets filtered through, and the trick to eliminating 2 of 4 options before you've fully worked the problem.</p>
+
+<h2>1. The real exam (verified against the official guide, not memory)</h2>
+<table>
+<tr><th>Duration</th><td>2 hours</td></tr>
+<tr><th>Questions</th><td>50–60, multiple choice + multiple select</td></tr>
+<tr><th>Cost</th><td>$200</td></tr>
+<tr><th>Case studies</th><td>2 of 4 fictitious companies, 20–30% of exam content</td></tr>
+<tr><th>Delivery</th><td>Online-proctored or testing center</td></tr>
+</table>
+
+<p class="callout"><strong>Case studies matter more than you'd think.</strong> Up to 30% of questions reference one of: <em>Altostrat Media, Cymbal Retail, EHR Healthcare, KnightMotives Automotive</em>. Before your exam, skim each one on the <a href="https://cloud.google.com/certification/guides/cloud-architect" target="_blank" rel="noopener">official guides page</a> — 15 minutes now saves you re-reading a full case study cold under time pressure. Fact from the guide: several of these companies are already using Google's generative AI solutions — don't assume a case study company is AI-averse just because the scenario reads "traditional retailer."</p>
+
+<h2>2. The 6 sections — this is your priority order</h2>
+<p>Your original 10-topic list is still how we'll organize sessions 2–10. But time-box your effort by <strong>exam weight</strong>, not by how many sessions a topic gets:</p>
+<table>
+<tr><th>#</th><th>Section</th><th>Weight</th><th>Covered in sessions</th></tr>
+<tr><td>1</td><td>Designing and planning a cloud solution architecture</td><td><strong>25%</strong></td><td>2, 3, 4 (compute/storage/network choices)</td></tr>
+<tr><td>2</td><td>Managing and provisioning infrastructure</td><td>17.5%</td><td>2, 4, 10</td></tr>
+<tr><td>3</td><td>Designing for security and compliance</td><td>17.5%</td><td>5</td></tr>
+<tr><td>4</td><td>Analyzing and optimizing technical &amp; business processes</td><td>15%</td><td>8, 9</td></tr>
+<tr><td>5</td><td>Managing implementation</td><td>12.5%</td><td>9, 10</td></tr>
+<tr><td>6</td><td>Ensuring solution and operations excellence</td><td>12.5%</td><td>6, 7</td></tr>
+</table>
+<p><strong>So what:</strong> Section 1 (design/plan) alone is a quarter of the exam and it's really "given constraints, pick the right service" — which is exactly sessions 2–4. If your 2 days run short, protect time for compute/storage/networking and security over cost-optimization or migration trivia.</p>
+
+<h2>3. The Well-Architected Framework — the lens behind "BEST" answers</h2>
+<p>Nearly every question with 2+ technically-valid options is really asking: <em>which one best fits a specific pillar the scenario is hinting at?</em> Six pillars (verified from <a href="https://docs.cloud.google.com/architecture/framework" target="_blank" rel="noopener">the official framework docs</a> — note this is 6, not 5, a recent addition):</p>
+<table>
+<tr><th>Pillar</th><th>What it's really asking</th></tr>
+<tr><td>Operational Excellence</td><td>Does this minimize ongoing ops burden on your team?</td></tr>
+<tr><td>Security, Privacy &amp; Compliance</td><td>Least privilege, encryption, data residency respected?</td></tr>
+<tr><td>Reliability</td><td>Survives a zone/region failure at the stated SLA?</td></tr>
+<tr><td>Cost Optimization</td><td>Business value per dollar — not just "cheapest"</td></tr>
+<tr><td>Performance Optimization</td><td>Latency/throughput tuned to the actual workload</td></tr>
+<tr><td>Sustainability</td><td>Region/resource choice minimizes carbon footprint</td></tr>
+</table>
+<p class="trap"><strong>Exam trap:</strong> an answer can be technically correct and still be wrong on this exam, because it optimizes the wrong pillar for the scenario. A self-managed VM cluster with custom HA logic is "correct" — but if the scenario says "small team, minimize operations," the managed/serverless option wins even if it's marginally more expensive or less flexible.</p>
+
+<h2>4. Elimination algorithm — do this before you fully solve the question</h2>
+<ol>
+<li><strong>Underline the constraint keywords</strong> in the scenario: "minimal ops," "strict compliance," "existing on-prem," "unpredictable traffic," "lowest cost." These name the pillar being tested.</li>
+<li><strong>Eliminate options that violate that pillar outright</strong> — even if they're technically functional. A compliant-but-overkill answer and a cheap-but-non-compliant answer both die here.</li>
+<li><strong>Eliminate options solving the wrong problem</strong> — e.g. the scenario asks about data consistency and an option only addresses cost. PCA questions often include one answer that's a real GCP best practice, just for a different scenario.</li>
+<li><strong>Between the last two:</strong> default to the option requiring less custom engineering, unless the scenario explicitly demands the control that only the more complex option provides (e.g. multi-region active-active, customer-managed keys).</li>
+</ol>
+
+<h2>Try it — before reading the answer</h2>
+<div class="quiz">
+<p>Scenario: "A retail company needs to store product images. They have a small ops team and want the cheapest option that still supports global low-latency reads." Two candidate answers: (A) Cloud Storage with a multi-region bucket, (B) a Compute Engine VM running an NFS server they manage. Using the algorithm above, which do you eliminate first and why?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Eliminate B first — step 2: "small ops team" is the constraint keyword, and self-managing an NFS server on a VM directly violates Operational Excellence (patching, scaling, HA are now your job). Cloud Storage is managed, has multi-region built in, and is the standard answer for "global low-latency object reads, minimal ops."</div>
+</div>
+
+<h2>Quiz — Session 1</h2>
+
+<div class="quiz">
+<p>Q1. How many questions are on the standard PCA exam?</p>
+<div class="opts">
+<label>A. Fifty to sixty questions</label>
+<label>B. Forty to fifty questions</label>
+<label>C. Sixty to seventy questions</label>
+<label>D. Thirty to forty questions</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> 50–60, per the official certification page. B/C/D are plausible-sounding but wrong — Google doesn't publish a range that wide, and guessing here costs you pacing math on exam day (2 hours ÷ ~55 questions ≈ 2 min/question).</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Which exam section carries the highest weight?</p>
+<div class="opts">
+<label>A. Designing and planning solutions</label>
+<label>B. Managing cloud implementation tasks</label>
+<label>C. Ensuring operations and reliability</label>
+<label>D. Analyzing optimizing business processes</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Section 1 (Design &amp; plan) is 25%, the single largest section. B (Implementation, 12.5%) and C (Ops excellence, 12.5%) are each half the weight. D (15%) is close but still lower. This is why sessions 2–4 (compute/storage/network selection) get the most of your remaining time.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. A question hinges on "least privilege" and "customer-managed encryption keys." Which Well-Architected pillar is being tested?</p>
+<div class="opts">
+<label>A. Security privacy and compliance</label>
+<label>B. Cost optimization and efficiency</label>
+<label>C. Performance optimization and tuning</label>
+<label>D. Sustainability and environmental impact</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Least privilege and key management are textbook Security/Privacy/Compliance signals. None of B/C/D relate to access control or encryption — if you see those keywords, don't get pulled toward a cost- or performance-framed distractor answer.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. A scenario has a strict budget constraint. Two answers are both technically correct. One requires your team to own ongoing patching and scaling. Per the elimination algorithm, what do you do?</p>
+<div class="opts">
+<label>A. Eliminate the higher operational overhead</label>
+<label>B. Eliminate the higher data consistency</label>
+<label>C. Eliminate the multi region replication</label>
+<label>D. Eliminate the managed backup service</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> Step 4 of the algorithm: between two valid answers, default to less custom engineering/ops burden — that's also the cheaper option once you count engineer-hours, which is what "strict budget" is really asking about. B/C/D describe properties that aren't the deciding factor here.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. What should you assume about the fictitious companies in PCA case studies?</p>
+<div class="opts">
+<label>A. They already use generative AI</label>
+<label>B. They only use on-premises infrastructure</label>
+<label>C. They forbid managed cloud services</label>
+<label>D. They require zero cloud spending</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> Directly from the official guide: "Several of the businesses are using Google Cloud's generative AI solutions to solve real-world challenges." Don't assume a case study is legacy/on-prem-only just because its industry (retail, automotive) sounds traditional.</div>
+</div>
+
+<div class="quiz">
+<p>Q6. An option is technically valid but means your team owns ongoing patching. No explicit budget or compliance constraint is stated. What's the default move?</p>
+<div class="opts">
+<label>A. Prefer the more managed alternative</label>
+<label>B. Prefer the cheapest hourly price</label>
+<label>C. Prefer the highest performance option</label>
+<label>D. Prefer the newest beta feature</label>
+</div>
+<button onclick="document.getElementById('q6').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q6"><strong>A.</strong> Absent an explicit reason to hand-roll infrastructure, Google's implicit bias (and Operational Excellence pillar) favors the managed service. This is a general default, not a rule — an explicit requirement (e.g. custom kernel modules) can override it.</div>
+</div>
+
+<div class="quiz">
+<p>Q7. Which section covers SDLC, CI/CD, and stakeholder management together?</p>
+<div class="opts">
+<label>A. Analyzing and optimizing processes</label>
+<label>B. Designing and planning architecture</label>
+<label>C. Managing cloud solution provisioning</label>
+<label>D. Ensuring solution operations excellence</label>
+</div>
+<button onclick="document.getElementById('q7').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q7"><strong>A.</strong> Section 4 splits into 4.1 (technical processes: SDLC, CI/CD, troubleshooting) and 4.2 (business processes: stakeholder management, change management). It's the section people underestimate because it feels "soft," but it's 15% — more than Implementation or Ops Excellence alone.</div>
+</div>
+
+<div class="quiz">
+<p>Q8. How do Section 5 (Managing implementation, 12.5%) and Section 6 (Ops excellence, 12.5%) compare in weight?</p>
+<div class="opts">
+<label>A. They are weighted exactly equal</label>
+<label>B. Implementation carries much more weight</label>
+<label>C. Operations excellence carries much more</label>
+<label>D. Neither section appears on exam</label>
+</div>
+<button onclick="document.getElementById('q8').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q8"><strong>A.</strong> Both are 12.5% per the official guide — an easy fact to misremember under pressure, and exactly the kind of thing a distractor answer will bait you on.</div>
+</div>
+
+<h2>Primary source</h2>
+<p>Read the actual exam guide — it's short (7 pages) and every session this week traces back to it: <a href="https://services.google.com/fh/files/misc/professional_cloud_architect_exam_guide_english.pdf" target="_blank" rel="noopener">official PCA exam guide (PDF)</a>. Also skim the <a href="https://docs.cloud.google.com/architecture/framework" target="_blank" rel="noopener">Well-Architected Framework overview</a> — 10 minutes, not the whole thing.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>6 sections, weighted 25/17.5/17.5/15/12.5/12.5 — Design &amp; Security carry the most points</li>
+    <li>6 WAF pillars are the lens behind every "BEST answer" question</li>
+    <li>Elimination algorithm: constraint keywords → kill pillar violations → kill wrong-problem answers → default to less ops burden</li>
+    <li>Read the 4 case studies before exam day — up to 30% of questions reference them</li>
+  </ul>
+  <p><strong>Next:</strong> Session 2 applies this directly — GCE vs GKE vs Cloud Run vs App Engine vs Functions, framed as "which constraint keyword points to which service."</p>
+</div>
+
+<footer class="teacher-reminder">Something here doesn't click, or you disagree with an answer? Ask directly in chat — I'm your teacher, not just this file.</footer>
+
+<div class="lesson-nav">
+  <span>&larr; Start</span>
+  <span>Next: Core compute &rarr; <em>(session 2)</em></span>
+</div>
+
+</body>
+</html>

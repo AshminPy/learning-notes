@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 — AeroSpace: the tree behind your config</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 1 of 4</p>
+<h1>AeroSpace, from first principles</h1>
+
+<p>You already have a working AeroSpace config, copied from a video. This lesson isn't about new commands — it's about understanding <em>why</em> the commands you already have work the way they do, so you can extend them yourself instead of hunting for another tutorial. Everything below quotes your actual <code>~/.aerospace.toml</code>.</p>
+
+<h2>The one idea that explains everything else</h2>
+<p>Most window managers (including stock macOS) treat windows as independent floating objects you drag around. AeroSpace doesn't. It's a <strong>tiling</strong> window manager: every window lives inside a <strong>tree</strong>, and the tree — not you — decides each window's exact position and size. Your job is to tell the tree how to arrange itself; you never drag a window by its edges.</p>
+
+<p class="callout">Tree, top to bottom: <strong>Workspace</strong> (the root — like a virtual desktop) → <strong>Container</strong> (a box that holds either windows or more nested containers, and has an orientation) → <strong>Window</strong> (a leaf — it holds nothing else). A workspace can have many containers nested inside each other; most people's setups stay shallow (one or two levels).</p>
+
+<h2>Your config's two big decisions</h2>
+<p>Two lines in your config decide almost everything about how new windows appear:</p>
+<pre><code>default-root-container-layout = 'accordion'
+default-root-container-orientation = 'horizontal'</code></pre>
+<p><strong>Layout</strong> answers "when two windows share a container, how are they arranged?" There are two options:</p>
+<ul>
+<li><strong>tiles</strong> — the container splits into a grid. Two windows side by side (or stacked), each getting a visible slice. This is what most tiling WMs default to.</li>
+<li><strong>accordion</strong> — what you have. Only <em>one</em> window in the container is fully visible at a time; the rest collapse to a thin strip along the edge (like a stack of file folders, or browser tabs turned sideways). Your <code>accordion-padding = 30</code> line controls how wide that collapsed strip is.</li>
+</ul>
+<p><strong>Orientation</strong> answers "which direction does a container split in?" — <code>horizontal</code> means new splits happen left/right. This interacts with layout: in accordion mode, orientation decides whether the collapsed-window strip sits on the side (horizontal) or top/bottom (vertical).</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it — on your real desktop, right now</p>
+<p>Open two windows in the same workspace. Press <code>alt-slash</code> (your config's <code>layout tiles horizontal vertical</code> toggle) and watch them switch from accordion-stacked to side-by-side tiles. Press it again to go back. This is the single fastest way to build intuition for what "layout" actually controls.</p>
+</div>
+
+<h2>Focus and move: navigating the tree, not "next window"</h2>
+<p>Your config binds:</p>
+<pre><code>ctrl-alt-h = 'focus left'
+ctrl-alt-j = 'focus down'
+ctrl-alt-k = 'focus up'
+ctrl-alt-l = 'focus right'</code></pre>
+<p>This isn't "cycle to the next window" (like <code>Cmd-\`</code> on stock macOS) — it's <strong>spatial</strong>. AeroSpace looks at the tree, figures out which window is physically to the left/right/up/down of the one you're on, and jumps there. <code>ctrl-alt-shift-h/j/k/l</code> does the same thing but <em>moves the window itself</em> in that direction instead of just moving focus — which can restructure the tree (e.g. pulling a window out of an accordion stack into a tiled split next to it).</p>
+
+<div class="quiz">
+<p>Q1. In your config, what does <code>ctrl-alt-shift-l</code> do, based on the pattern above?</p>
+<div class="opts">
+<label>A. Moves the focused window right</label>
+<label>B. Moves focus to the right window</label>
+<label>C. Resizes the window larger right</label>
+<label>D. Switches to workspace on right</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> The <code>shift</code> modifier is what turns a focus-direction binding into a move-direction binding — same direction key, different verb. Your config uses this exact pattern for all four directions (see the "Move windows" section of your file).</div>
+</div>
+
+<h2>Modes: a keybinding namespace switch</h2>
+<p>Your config has <code>[mode.main.binding]</code> and <code>[mode.service.binding]</code>. Think of a <strong>mode</strong> like Vim's normal/insert modes: it's a completely separate set of keybindings that only apply while that mode is active. You're in <code>main</code> mode almost all the time. Your service mode binding (usually triggered by a key you'd bind to <code>mode service</code>) gives you access to <code>esc</code> (reload config + return to main), <code>r</code> (flatten the tree + return to main), <code>f</code> (toggle the focused window floating/tiling), and <code>backspace</code> (close every window except the current one).</p>
+<p class="callout">"Floating" is the escape hatch: a floating window ignores the tree entirely and behaves like a normal draggable macOS window. Some apps (system dialogs, small utility windows) work better floating — that's what your service-mode <code>f</code> binding is for.</p>
+
+<h2>Workspace-to-monitor: pinning, not just switching</h2>
+<p>Your config forces every workspace 1–10 onto a specific physical display:</p>
+<pre><code>[workspace-to-monitor-force-assignment]
+"1" = "Built-in Retina Display"
+"2" = "LG ULTRAGEAR+"
+...</code></pre>
+<p>This means workspace 1 <em>always</em> lives on your laptop screen and workspace 2+ always lives on your external monitor — regardless of which one you're actively looking at. Combined with your <code>on-window-detected</code> rules (Chrome → workspace 1, Warp → workspace 4, etc.), the effect is: every app has a fixed home, every time, without you deciding where it goes.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Quit and relaunch one of the apps in your <code>on-window-detected</code> list (e.g. Warp). Watch which workspace it lands in — then check that against the rule in your config that names its <code>app-id</code>. This is how you'll debug or extend these rules later: find the app's bundle ID (Raycast can show you this — covered in Lesson 2) and add a matching <code>[[on-window-detected]]</code> block.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q2. What's the key difference between "tiles" and "accordion" layout?</p>
+<div class="opts">
+<label>A. Accordion shows one window at once</label>
+<label>B. Tiles only works with two monitors</label>
+<label>C. Accordion requires floating window mode</label>
+<label>D. Tiles cannot split horizontally ever</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Tiles gives every window in the container a visible slice simultaneously; accordion shows only the focused window fully, collapsing the rest to a thin strip. B/C/D describe things that aren't true of either layout.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Your config sets <code>default-root-container-orientation = 'horizontal'</code>. What does this control?</p>
+<div class="opts">
+<label>A. The direction new splits happen</label>
+<label>B. Whether windows can float freely</label>
+<label>C. Which monitor workspace one uses</label>
+<label>D. How fast window animations play</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Orientation is purely about split direction (left/right vs top/bottom) — it has nothing to do with floating, monitor assignment, or animation.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. What is "service mode" in your config, conceptually?</p>
+<div class="opts">
+<label>A. A separate, temporary keybinding namespace</label>
+<label>B. A background process for AeroSpace itself</label>
+<label>C. A cloud sync feature for configs</label>
+<label>D. A macOS System Settings integration panel</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> Modes are just alternate sets of keybindings, active only while you're "in" that mode — the same idea as Vim's normal vs insert mode, applied to window management instead of text editing.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. If you move Warp to workspace 7 manually, then quit and relaunch it, where will it open per your config?</p>
+<div class="opts">
+<label>A. Workspace four, per the auto rule</label>
+<label>B. Workspace seven, where you left it</label>
+<label>C. Whichever workspace is active now</label>
+<label>D. A new floating window, unpinned</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> The <code>on-window-detected</code> rule for <code>dev.warp.Warp</code> forces it to workspace 4 every time a new window is detected — it doesn't remember where you last moved an existing instance to.</div>
+</div>
+
+<div class="quiz">
+<p>Q6. What does <code>ctrl-alt-h</code> (no shift) actually do?</p>
+<div class="opts">
+<label>A. Moves focus to the left window</label>
+<label>B. Moves the window itself left</label>
+<label>C. Switches to the left workspace</label>
+<label>D. Resizes the current window smaller</label>
+</div>
+<button onclick="document.getElementById('q6').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q6"><strong>A.</strong> No-shift bindings in your config are all "focus" (move your attention), while the shift versions are "move" (relocate the window). This pairing is consistent across all four directions.</div>
+</div>
+
+<h2>Primary source</h2>
+<p>Read the official guide for the full mental model, including layout trees in more depth: <a href="https://nikitabobko.github.io/AeroSpace/guide" target="_blank" rel="noopener">AeroSpace Guide</a>. Full command reference: <a href="https://nikitabobko.github.io/AeroSpace/commands" target="_blank" rel="noopener">AeroSpace Commands</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Windows live in a <strong>tree</strong>: workspace → container → window. You arrange the tree; you don't drag windows.</li>
+    <li><strong>Layout</strong> (tiles vs accordion) controls how windows in a container share space. <strong>Orientation</strong> controls split direction.</li>
+    <li><strong>Focus</strong> moves your attention spatially; <strong>move</strong> (shift+) relocates the window, restructuring the tree.</li>
+    <li><strong>Modes</strong> are alternate keybinding namespaces — like Vim modes, for windows.</li>
+    <li><code>workspace-to-monitor-force-assignment</code> pins workspaces to physical displays; <code>on-window-detected</code> auto-routes apps to workspaces.</li>
+  </ul>
+  <p><strong>Try solo:</strong> add one new <code>[[on-window-detected]]</code> rule for an app not currently in your config (pick one you use often), reload with your service-mode <code>esc</code> binding, and confirm it lands where you expect.</p>
+</div>
+
+<footer class="teacher-reminder">Something not clicking, or your desktop is doing something the lesson didn't cover? Ask me directly — bring your actual config or the exact behavior you're seeing.</footer>
+
+<div class="lesson-nav">
+  <span>&larr; Start</span>
+  <span>Next: Raycast &rarr; <em>(not written yet)</em></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 9 — Migration Strategies &amp; Programmatic Tooling</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Session 9 of 10 (Day 2)</p>
+<h1>Migration strategies, Migration Center, and the programmatic-tooling facts (Section 5.2)</h1>
+
+<p>This session covers exam Section 1.4, "Creating a migration plan" (part of the 25%-weighted Design &amp; plan section), plus a compact pass through Section 5.2, "Interacting with Google Cloud programmatically" (12.5% weight). <strong>5.2 has no dedicated session in the original 10-topic plan</strong> — migration tooling is the closest conceptual fit, so it's folded in here rather than skipped. Keep the two halves mentally separate: migration strategy is scenario-judgment, 5.2 is pure fact-recall.</p>
+
+<h2>1. Migration strategies — the exam's core three, plus a fourth</h2>
+<p>You already know AWS's "6 Rs" (Rehost, Replatform, Repurchase, Refactor, Retire, Retain). Google's own framework is close cousin: rehost, replatform, refactor, re-architect, rebuild, repurchase (verified at <a href="https://docs.cloud.google.com/architecture/migration-to-gcp-getting-started" target="_blank" rel="noopener">Migrate to Google Cloud: Get started</a>). The PCA exam mostly tests you on three tiers, and a fourth strategy that isn't a tier at all:</p>
+<ul>
+<li><strong>Lift and Shift / Rehost</strong> — move the workload "with minor or no modifications." Fastest, uses skills your team already has, but the workload isn't optimized for cloud once it lands.</li>
+<li><strong>Replatform (Lift and Optimize)</strong> — lift it, then optimize for the cloud environment — e.g. swap a self-managed DB for Cloud SQL, containerize without a full rewrite. Google's framing: "take advantage of all the core competencies of the cloud, including elastic computing, redundancy, improved performance, and security."</li>
+<li><strong>Refactor (Rearchitect)</strong> — modify the workload to genuinely take advantage of cloud capabilities: "improve each workload for performance, features, cost, and user experience."</li>
+<li><strong>Hybrid/multicloud coexistence</strong> — not a migration phase, a deliberate long-term architecture. Google defines <em>hybrid</em> as public cloud + at least one private environment (on-prem/colo), and <em>multicloud</em> as 2+ public CSPs together (<a href="https://docs.cloud.google.com/architecture/hybrid-multicloud-patterns-and-practices" target="_blank" rel="noopener">Hybrid and multicloud architecture patterns</a>). Drivers the exam cares about: data sovereignty/regulatory residency, business continuity/DR across providers, and avoiding vendor lock-in — not "we haven't finished migrating yet."</li>
+</ul>
+<p>All four bullets can be true in the same scenario: "different application layers might use different strategies — a database might get replatformed while the application layer gets rehosted" (same source). Don't assume one scenario has one answer.</p>
+
+<div class="trap"><strong>Exam trap — the "obviously better" answer is often the wrong one.</strong> If a scenario states a hard deadline ("data center lease ends in 6 weeks," "must exit by end of quarter") with no long-term cost goal mentioned, the exam wants <strong>Rehost</strong> — even when Refactor is technically the architecturally superior long-term choice. This is the same elimination algorithm from Session 1: the constraint keyword ("hard deadline") points at the pillar being tested (time-to-migrate, not cost optimization). Picking Refactor here is a classic distractor — it's a real Google best practice, just for a different scenario (no deadline pressure, team has engineering capacity, long-term TCO stated as the goal).</p>
+</div>
+
+<h2>2. Google Cloud Migration Center — the assessment tool</h2>
+<p>Migration Center is the named tool the exam expects you to recognize for Section 1.4's "assessing and migrating systems... e.g., Google Cloud Migration Center." Verified capabilities (<a href="https://docs.cloud.google.com/migration-center/docs/migration-center-overview" target="_blank" rel="noopener">Migration Center overview</a>):</p>
+<ul>
+<li><strong>Discovery</strong> — inventories servers, VMs, and MySQL/PostgreSQL/SQL Server databases via automatic scanning or manual import, using a discovery client.</li>
+<li><strong>Cost estimation</strong> — rapid and detailed cost estimates, plus formal <strong>TCO (total cost of ownership) reports</strong> for building a migration business case.</li>
+<li><strong>Assessment</strong> — technical-fit recommendations for which Google Cloud product to target, application/network dependency mapping, and migration risk assessment run in parallel with discovery.</li>
+<li><strong>Planning</strong> — organizes work into <strong>migration waves</strong> (apps sharing characteristics/interdependencies) and <strong>move groups</strong>, sequenced across environments (R&amp;D → pre-production → production) (<a href="https://docs.cloud.google.com/migration-center/docs/migration-planning-overview" target="_blank" rel="noopener">migration planning overview</a>). Migration Center's own strategy list is the six-way one: rehost, replatform, refactor, re-architect, replace, retire.</li>
+</ul>
+<p class="callout">Exam framing: Migration Center does discovery/assessment/planning <strong>without making changes to your applications or workloads</strong> — it's an assessment tool, not a migration-execution tool. If an option describes Migration Center actually moving data, that's wrong.</p>
+
+<h2>3. Migration methodology basics</h2>
+<p>Google's 4-phase framework is Assess → Plan → Deploy → Optimize (<a href="https://docs.cloud.google.com/architecture/migration-to-gcp-getting-started" target="_blank" rel="noopener">source</a>). Inside "Assess/Plan," four things the exam names explicitly:</p>
+<ul>
+<li><strong>Workload testing</strong> — validate the migrated workload behaves correctly before cutover; part of the Deploy phase's iterative approach.</li>
+<li><strong>Network and dependency planning</strong> — Migration Center's dependency mapping exists precisely because you can't safely rehost App A if you haven't mapped that it talks to Database B over a path that won't exist post-migration.</li>
+<li><strong>License implications (BYOL)</strong> — per-core/per-processor licenses (classic case: Windows Server, SQL Server) with dedicated-hardware requirements need <strong>sole-tenant nodes</strong> on Compute Engine. Not all licensing needs this — Linux BYOS (RHEL/SLES) and most Microsoft application licensing don't require sole tenancy, but Windows Server BYOL does (<a href="https://docs.cloud.google.com/compute/docs/nodes/bringing-your-own-licenses" target="_blank" rel="noopener">Bringing your own licenses</a>).</li>
+<li><strong>Financial impact (TCO)</strong> — Migration Center's TCO reports are the named mechanism for this; it's assessed early (Assess phase) and tracked into the business case, not bolted on after the fact.</li>
+</ul>
+
+<h2>4. Lift and Shift vs Replatform vs Refactor — comparison</h2>
+<table>
+<tr><th>Dimension</th><th>Lift and Shift (Rehost)</th><th>Replatform</th><th>Refactor (Rearchitect)</th></tr>
+<tr><td>Effort</td><td>Low — same tools/skills, minimal code change</td><td>Medium — targeted changes (e.g. containerize, swap to managed DB)</td><td>High — redesign for cloud-native (e.g. microservices, managed services throughout)</td></tr>
+<tr><td>Risk</td><td>Low — known-working system, fewest surprises</td><td>Medium — new managed services introduce some new failure modes</td><td>Higher near-term (bigger change surface), lower long-term (more resilient design)</td></tr>
+<tr><td>Cost</td><td>Higher ongoing run cost — no cloud-native savings, may still be oversized</td><td>Medium — partial savings from managed services and elasticity</td><td>Highest upfront engineering cost, lowest long-term TCO once complete</td></tr>
+<tr><td>Exam picks this when...</td><td>Hard deadline, data center exit, "minimize migration risk/time," requirements still unclear</td><td>Want managed-service wins without a full rewrite, moderate timeline</td><td>"Long-term cost optimization," "cloud-native scalability" explicitly stated, no hard deadline, team has capacity</td></tr>
+</table>
+
+<h2>5. Section 5.2 — programmatic interaction tooling (folded in here, exam-fact recall only)</h2>
+<p class="callout">Why it's here: Section 5.2 (12.5% of the exam) has no dedicated session in the original plan. It's grouped with migration because "data and system migration and management tooling" sits in the same exam area (Section 5.1). Ashmin uses Terraform daily — this section is deliberately brief, it's testing recall of tool names and purposes, not teaching Terraform.</p>
+<ul>
+<li><strong>Cloud Shell Terminal</strong> — free browser-based shell, pre-authenticated with your identity, gcloud/gsutil/bq pre-installed.</li>
+<li><strong>Cloud Shell Editor</strong> — the built-in code editor inside Cloud Shell, based on Theia; browse/edit files while keeping terminal access (<a href="https://docs.cloud.google.com/shell/docs/editor-overview" target="_blank" rel="noopener">editor overview</a>).</li>
+<li><strong>Cloud Code</strong> — IDE extension (built into Cloud Shell Editor, also available for VS Code/IntelliJ) giving IDE support for the full GKE/Cloud Run dev cycle without leaving the editor (<a href="https://docs.cloud.google.com/code/docs/shell/overview" target="_blank" rel="noopener">Cloud Code overview</a>).</li>
+<li><strong>gcloud CLI</strong> — the primary CLI for Google Cloud administrative tasks (<a href="https://docs.cloud.google.com/sdk/docs/overview" target="_blank" rel="noopener">Cloud SDK overview</a>).</li>
+<li><strong>gsutil</strong> — the legacy Cloud Storage CLI. Current official guidance: <strong>use `gcloud storage` instead</strong> — gsutil doesn't support newer features like soft delete and managed folders (<a href="https://docs.cloud.google.com/storage/docs/gsutil" target="_blank" rel="noopener">gsutil tool docs</a>). If a question asks for the current recommended CLI for Cloud Storage, gsutil is the trap answer, not the right one.</li>
+<li><strong>bq</strong> — the BigQuery command-line tool.</li>
+<li><strong>Emulators</strong> — Bigtable, Spanner, Pub/Sub, and Firestore all ship local emulators so client code can be developed/tested without touching production billing or quota.</li>
+<li><strong>IaC / Terraform</strong> — Google's own docs call Terraform "the most commonly used tool to provision and automate Google Cloud infrastructure," with two providers: `google` (GA APIs) and `google-beta` (beta APIs) (<a href="https://docs.cloud.google.com/docs/terraform/terraform-overview" target="_blank" rel="noopener">Terraform on Google Cloud overview</a>).</li>
+<li><strong>API client libraries</strong> — Cloud Client Libraries in Python, Java, Node.js, Go, Ruby, C++, PHP, .NET for idiomatic programmatic access, alongside documented API best practices.</li>
+<li><strong>Gemini Cloud Assist</strong> (Section 5.1) — AI assistant across design/deploy/troubleshoot/optimize, currently in preview and free (<a href="https://docs.cloud.google.com/cloud-assist/overview" target="_blank" rel="noopener">Gemini Cloud Assist overview</a>).</li>
+</ul>
+
+<h2>Try it — before reading the answer</h2>
+<div class="quiz">
+<p>Scenario: A retailer runs 200 VMs on VMware for a monolithic Java app. The on-prem data center contract ends in 8 weeks — hard deadline, no extension possible. Leadership separately wants to eventually break the monolith into microservices, but that's an unfunded "phase 2" with no timeline. Which migration strategy do you pick for phase 1, and why doesn't "refactor is architecturally better" win here?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Rehost (lift and shift). The constraint keyword is "8 weeks, hard deadline" — that's a time-to-exit pillar, not a cost-optimization or architecture pillar. Refactor is real, valid, and probably true long-term, but it doesn't fit the stated constraint, and the exam always prioritizes the constraint actually given over a generically "better" answer. Phase 2 (refactor to microservices) can happen later, once the workload is safely off VMware and the deadline pressure is gone — that's literally why Google's own guidance says different layers/phases can use different strategies over time.</div>
+</div>
+
+<h2>Quiz — Session 9</h2>
+
+<div class="quiz">
+<p>Q1. Google's official migration framework names three core strategies most tested on the exam. Which set matches Google's own terms?</p>
+<div class="opts">
+<label>A. Rehost, replatform, and refactor strategies</label>
+<label>B. Migrate, modernize, and monitor strategies</label>
+<label>C. Extract, transform, and load strategies</label>
+<label>D. Backup, restore, and archive strategies</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Rehost, replatform, refactor are the three tiers the exam drills, drawn directly from Google's "Migrate to Google Cloud" framework. B is invented (not Google's naming). C is a data-pipeline concept (ETL), unrelated to migration strategy. D describes backup/DR operations, not a migration path.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What is Google Cloud Migration Center primarily used for?</p>
+<div class="opts">
+<label>A. Discovery, assessment, and cost estimation</label>
+<label>B. Container orchestration and cluster scaling</label>
+<label>C. Real time application performance monitoring</label>
+<label>D. Billing invoice generation and payment</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Confirmed from the official overview: Migration Center does asset discovery, technical-fit assessment, dependency mapping, and cost/TCO estimation — without touching your actual workloads. B describes GKE, not Migration Center. C describes Cloud Monitoring/Ops. D describes Cloud Billing, a separate product.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Which statement best describes a Rehost (lift and shift) migration?</p>
+<div class="opts">
+<label>A. Same workload moves with minimal changes</label>
+<label>B. Workload is fully rewritten as microservices</label>
+<label>C. Workload is replaced by SaaS product</label>
+<label>D. Workload gains new cloud native features</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Google's own wording: rehost moves workloads "with minor or no modifications." B describes Rebuild/Refactor. C describes Repurchase (moving to a SaaS equivalent). D describes Replatform or Refactor, both of which intentionally adopt cloud-native capabilities — rehost explicitly does not.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. A scenario states a hard 6-week deadline to exit a data center lease, with no mention of long-term cost goals. Which strategy does the exam want?</p>
+<div class="opts">
+<label>A. Rehost for fastest migration</label>
+<label>B. Refactor for lowest cost</label>
+<label>C. Rebuild for cloud native</label>
+<label>D. Repurchase for SaaS replacement</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> The constraint keyword is the hard deadline, which points at speed, not cost or architecture. B and C are real strategies but solve a different stated problem (long-term cost/architecture) that this scenario never mentions — classic distractor pattern. D assumes a SaaS equivalent exists, which isn't stated and isn't a safe assumption.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. Which Compute Engine feature supports per-core BYOL licenses that require dedicated hardware?</p>
+<div class="opts">
+<label>A. Sole tenant nodes</label>
+<label>B. Preemptible spot instances</label>
+<label>C. Committed use discounts</label>
+<label>D. Custom machine types</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> Per official docs, per-core/per-processor licenses with dedicated-hardware requirements (e.g. Windows Server BYOL) need sole-tenant nodes. B and C are cost-optimization mechanisms, unrelated to licensing compliance. D lets you size a VM's vCPU/memory, not a licensing feature.</div>
+</div>
+
+<div class="quiz">
+<p>Q6. A regulated bank must keep certain data on-premises permanently while running new analytics workloads in Google Cloud. Which strategy fits best?</p>
+<div class="opts">
+<label>A. Hybrid architecture built for data sovereignty</label>
+<label>B. Full rehost migration of every workload</label>
+<label>C. Complete repurchase using SaaS products only</label>
+<label>D. Multicloud strategy for vendor price negotiation</label>
+</div>
+<button onclick="document.getElementById('q6').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q6"><strong>A.</strong> "Permanently on-prem for some data" plus "new workloads in cloud" is the textbook hybrid driver: data sovereignty/regulatory residency. B contradicts the stated constraint (some data must stay on-prem forever). C doesn't fit a regulated bank with data-residency needs. D is about cost leverage, not the compliance constraint actually stated.</div>
+</div>
+
+<div class="quiz">
+<p>Q7. Which Google Cloud emulators let you test client code locally without connecting to production?</p>
+<div class="opts">
+<label>A. Bigtable, Spanner, and Pub/Sub</label>
+<label>B. Compute Engine and GKE</label>
+<label>C. BigQuery, Looker, and Dataflow</label>
+<label>D. Cloud Run and Functions</label>
+</div>
+<button onclick="document.getElementById('q7').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q7"><strong>A.</strong> Bigtable, Spanner, Pub/Sub, and Firestore all ship official local emulators for exactly this. B, C, and D name real services, but none of them ship a local emulator in the way these data/messaging services do.</div>
+</div>
+
+<div class="quiz">
+<p>Q8. Which official Google guidance applies to gsutil today?</p>
+<div class="opts">
+<label>A. Use gcloud storage commands instead</label>
+<label>B. Use gsutil for all transfers</label>
+<label>C. Use bq for object storage</label>
+<label>D. Use Cloud Code for storage</label>
+</div>
+<button onclick="document.getElementById('q8').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q8"><strong>A.</strong> Official Cloud Storage docs now recommend `gcloud storage` over gsutil — it's faster and supports newer features (soft delete, managed folders) that gsutil doesn't. B is the outdated recommendation. C is wrong tool (bq is for BigQuery). D is an IDE extension for GKE/Cloud Run, unrelated to object storage.</div>
+</div>
+
+<h2>Primary source</h2>
+<p>Start here for migration planning — it's the framework every other migration doc builds on: <a href="https://docs.cloud.google.com/architecture/migration-to-gcp-getting-started" target="_blank" rel="noopener">Migrate to Google Cloud: Get started</a>. For the assessment tool itself, skim the <a href="https://docs.cloud.google.com/migration-center/docs/migration-center-overview" target="_blank" rel="noopener">Migration Center overview</a> — 10 minutes, enough to recognize its capabilities on sight.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Three core strategies: Rehost (fast, unoptimized) → Replatform (optimize without rewrite) → Refactor (full cloud-native redesign) — plus hybrid/multicloud as a deliberate 4th strategy, not a leftover migration phase</li>
+    <li>Migration Center = discovery + assessment + cost/TCO + dependency mapping, all <em>before</em> touching workloads — it plans, it doesn't migrate</li>
+    <li>Exam trap: a hard deadline overrides "architecturally better" every time — match the strategy to the stated constraint, not to best practice in the abstract</li>
+    <li>BYOL with dedicated-hardware requirements (e.g. Windows Server) → sole-tenant nodes; not all BYOL needs this</li>
+    <li>Section 5.2 tooling (folded in here): Cloud Shell/Cloud Code, gcloud (not gsutil), bq, emulators, Terraform (`google`/`google-beta` providers), client libraries, Gemini Cloud Assist — recall the names, not the syntax</li>
+  </ul>
+  <p><strong>Try solo:</strong> pick one system you actually run today (even something at your day job) and decide, out loud, which of Rehost/Replatform/Refactor you'd choose if GCP gave you a 4-week deadline vs. a 12-month runway. Notice how the answer flips purely on the timeline, not on which is "objectively best."</p>
+  <p><strong>Next:</strong> Session 10 covers AI &amp; modern services — the last topic session before final review.</p>
+</div>
+
+<footer class="teacher-reminder">Something here doesn't click, or you disagree with an answer? Ask directly in chat — I'm your teacher, not just this file.</footer>
+
+<div class="lesson-nav">
+  <a href="0008-cost-optimization.html">&larr; Cost optimization</a>
+  <a href="0010-ai-modern-services.html">Next: AI &amp; modern services &rarr;</a>
+</div>
+
+</body>
+</html>
