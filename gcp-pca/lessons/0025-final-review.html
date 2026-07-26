@@ -8,10 +8,12 @@
 </head>
 <body>
 
-<p class="eyebrow">GCP PCA — Final Review</p>
+<p class="eyebrow">GCP PCA — Lesson 25 of 25 (Final Review)</p>
 <h1>Final review: the morning-of cheat sheet</h1>
 
-<p>Reference doc, not a lesson — no new content, no quiz. Every line compresses something already covered across Lessons 1-24. Skim tonight, scan again the morning of the exam.</p>
+<p>Reference doc, not a new lesson — no new content, no quiz. Every line compresses something already covered across Lessons 1-24. Skim tonight, scan again the morning of the exam.</p>
+
+<div class="trap"><strong>Volatile facts warning:</strong> this page contains many exact numbers — prices, discount percentages, SLAs, quotas, retention periods, machine specs. Spot VM discount ("up to 91%") and Cloud Storage Coldline minimum duration ("90 days") were re-verified against current official docs on 2026-07-26. The remaining specific figures below reflect the state of the docs when each lesson was researched, not a fresh re-verification of every number on this page — treat exact numbers as a study aid, and re-confirm anything decision-critical against <a href="https://cloud.google.com/pricing" target="_blank" rel="noopener">cloud.google.com/pricing</a> or the relevant product's docs before relying on it for the exam or in production.</div>
 
 <h2>1. Cheat sheet — keyword → service</h2>
 <p>Scan for the phrase closest to the scenario, jump to the answer.</p>
@@ -228,7 +230,7 @@
 <tr><td>7</td><td>A multi-/dual-region Cloud Storage bucket alone is not a DR strategy — says nothing about your compute or DB tier's recovery plan.</td></tr>
 <tr><td>8</td><td>WAF Cost pillar means max value per dollar, not least spend — an all-Spot fleet ignoring a stated SLA is a trap even though it's cheapest.</td></tr>
 <tr><td>9</td><td>A hard deadline overrides "architecturally better" — Rehost beats Refactor when the scenario states a time constraint.</td></tr>
-<tr><td>10</td><td>Vertex AI was renamed Gemini Enterprise Agent Platform (April 2026) — answer by what the service does, not which brand name appears in the stem.</td></tr>
+<tr><td>10</td><td>The 2026 AI branding shift (Gemini Enterprise/Agent Platform) isn't a clean rename — it adds agent orchestration/governance scope on top of Vertex AI, and "Vertex AI" is still live in current docs/SDKs. Answer by what the service does, not which brand name appears in the stem.</td></tr>
 </table>
 
 <h2>9. Frequently confused services</h2>
@@ -253,7 +255,7 @@
 <p><strong>Format:</strong> 2 hours, 50–60 questions, $200, online-proctored or testing center.</p>
 <p><strong>6 section weights:</strong> Design &amp; plan 25% · Managing/provisioning infra 17.5% · Security &amp; compliance 17.5% · Analyzing/optimizing processes 15% · Managing implementation 12.5% · Ops excellence 12.5%.</p>
 <p><strong>6 WAF pillars:</strong> Operational Excellence · Security, Privacy &amp; Compliance · Reliability · Cost Optimization · Performance Optimization · Sustainability (6, not 5 — recent addition).</p>
-<p><strong>4 case studies:</strong> Altostrat Media · Cymbal Retail · EHR Healthcare · KnightMotives Automotive. Up to 20–30% of questions reference one. Several already use Google's generative AI — don't assume "traditional industry" = AI-averse.</p>
+<p><strong>4 case studies:</strong> Altostrat Media · Cymbal Retail · EHR Healthcare · KnightMotives Automotive. The official guide only says some questions may refer to one — no confirmed count or percentage. Several already use Google's generative AI — don't assume "traditional industry" = AI-averse.</p>
 <p><strong>Elimination algorithm:</strong></p>
 <ol>
 <li>Underline constraint keywords ("minimal ops," "strict compliance," "unpredictable traffic") — they name the WAF pillar being tested.</li>
@@ -344,7 +346,7 @@
 
 <h3>AI &amp; eventing</h3>
 <ul>
-<li>Vertex AI renamed Gemini Enterprise Agent Platform in April 2026 — same platform, both names may appear on the exam.</li>
+<li>Gemini Enterprise/Agent Platform (2026) is not purely a Vertex AI rename — it's expanded scope (agent orchestration, governance) layered on top; "Vertex AI" persists in current docs/SDKs. Both terms may appear on the exam.</li>
 <li>Model Garden: catalog of 200+ foundation models (Gemini, Claude, Gemma, Llama).</li>
 <li>Agent Builder bundles the Agent Development Kit, Agent Studio, Agent Garden, and Model Garden.</li>
 <li>AI Hypercomputer is the infrastructure layer (TPUs/GPUs, networking, storage, frameworks) under large-scale training — not provisioned per app.</li>
@@ -399,7 +401,7 @@
 <p>Resource-based or spend-based Committed Use Discount (plus automatic SUD) for the always-on, SLA-bound API; Spot VMs for the checkpointable, fault-tolerant nightly ETL batch. Never the reverse.</p>
 </div>
 
-<div class="callout"><strong>Before you walk in:</strong> skim the 4 case studies one more time — Altostrat Media, Cymbal Retail, EHR Healthcare, KnightMotives Automotive. Up to 20–30% of questions reference one of them.</div>
+<div class="callout"><strong>Before you walk in:</strong> skim the 4 case studies one more time — Altostrat Media, Cymbal Retail, EHR Healthcare, KnightMotives Automotive. The official guide only says some questions may refer to one, with no confirmed count — prepare by knowing all 4, not by betting on a number.</div>
 
 <p><strong>You're ready.</strong> This document is the whole course compressed into decision tables and traps. Trust the elimination algorithm, watch for the constraint keyword, don't second-guess a fact you drilled twice. Good luck.</p>
 

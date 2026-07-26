@@ -4,6 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ashmin's Learning Notes</title>
+<meta name="description" content="Free rapid-revision and active-recall lessons for the CKA and Google Cloud Professional Cloud Architect exams — 24 CKA lessons and 25 PCA lessons, each with an exam-objectives tracker. Independent study resource, not affiliated with Google, Google Cloud, CNCF, or the Linux Foundation.">
+<link rel="canonical" href="https://ashminpy.github.io/learning-notes/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Learning Notes — CKA & GCP PCA revision companion">
+<meta property="og:description" content="Free rapid-revision and active-recall lessons for the CKA and Google Cloud Professional Cloud Architect exams, with exam-objectives trackers. Independent study resource.">
+<meta property="og:url" content="https://ashminpy.github.io/learning-notes/">
+<meta property="og:image" content="https://ashminpy.github.io/learning-notes/assets/social-preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Learning Notes — CKA & GCP PCA revision companion">
+<meta name="twitter:description" content="Free rapid-revision and active-recall lessons for the CKA and Google Cloud Professional Cloud Architect exams, with exam-objectives trackers.">
+<meta name="twitter:image" content="https://ashminpy.github.io/learning-notes/assets/social-preview.png">
 <style>
   :root { --bg:#fdfcf9; --fg:#1b1b18; --muted:#6b6558; --accent:#a4501f; --rule:#d9d3c4; }
   @media (prefers-color-scheme: dark) {
@@ -20,12 +33,34 @@
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
   .status { color: var(--muted); font-size: 0.85rem; }
+  .positioning { margin-top: 0.75rem; }
+  .disclaimer {
+    border-left: 3px solid var(--rule);
+    background: rgba(0,0,0,0.02);
+    padding: 0.6rem 1rem;
+    margin-top: 1.25rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+    border-radius: 0 4px 4px 0;
+  }
+  @media (prefers-color-scheme: dark) {
+    .disclaimer { background: rgba(255,255,255,0.04); }
+  }
+  .meta-line { font-size: 0.78rem; color: var(--muted); margin-top: 0.4rem; }
+  .feedback-link { font-size: 0.85rem; margin-top: 0.4rem; }
 </style>
 </head>
 <body>
 
 <h1>Learning Notes</h1>
 <p class="sub">Short, simple lessons — one idea, one example, per page.</p>
+<p class="positioning">A free rapid-revision and active-recall companion for CKA and Google Cloud Professional Cloud Architect candidates. It helps identify knowledge gaps but does not replace hands-on labs, official documentation, case-study practice, or full exam preparation. The CKA is performance-based — practise commands and troubleshooting in a real Kubernetes environment. The PCA exam requires architecture judgement and scenario-based decision-making — memorizing service definitions alone is not sufficient.</p>
+
+<div class="disclaimer">
+  This is an independent study resource and is not affiliated with, endorsed by, or sponsored by Google, Google Cloud, CNCF, or the Linux Foundation. Exam objectives, products, and services may change. Always verify details using the official exam guides and documentation.
+  <div class="meta-line" id="last-reviewed">Exam outline last reviewed: July 26, 2026</div>
+</div>
+<p class="feedback-link"><a href="https://github.com/AshminPy/learning-notes/issues/new?title=Learning%20notes%20correction%3A%20Homepage" target="_blank" rel="noopener">Report an issue / suggest a correction &rarr;</a></p>
 
 <h2>Keyboard Workflow (AeroSpace / Raycast / Warp / CLI toolkit)</h2>
 <p class="status">Complete — 8 of 8 lessons</p>
@@ -41,8 +76,8 @@
 </ul>
 
 <h2>GCP Professional Cloud Architect</h2>
-<p class="status">Complete — 24 of 24 lessons</p>
-<p><a href="gcp-pca/objectives.html">Exam objectives tracker &rarr;</a> — lessons grouped by official PCA section, with progress checkboxes.</p>
+<p class="status">25 lessons published</p>
+<p><a href="gcp-pca/objectives.html">Exam objectives tracker &rarr;</a> — lessons grouped by official PCA section, with progress checkboxes. "Lessons published" is not the same as "every official objective covered" — check the tracker for actual domain coverage.</p>
 <ul>
   <li><a href="gcp-pca/lessons/0001-exam-structure.html">Lesson 1 — Exam structure</a></li>
   <li><a href="gcp-pca/lessons/0002-well-architected-framework.html">Lesson 2 — Well-Architected Framework</a></li>
@@ -72,8 +107,8 @@
 </ul>
 
 <h2>Kubernetes (CKA)</h2>
-<p class="status">Complete — 24 of 24 lessons</p>
-<p><a href="kubernetes-cka/objectives.html">Exam objectives tracker &rarr;</a> — lessons grouped by official CKA domain, with progress checkboxes.</p>
+<p class="status">24 lessons published</p>
+<p><a href="kubernetes-cka/objectives.html">Exam objectives tracker &rarr;</a> — lessons grouped by official CKA domain, with progress checkboxes. "Lessons published" is not the same as "every official objective covered" — check the tracker for actual domain coverage.</p>
 <ul>
   <li><a href="kubernetes-cka/lessons/0001-pod-basics.html">Lesson 1 — The Pod</a></li>
   <li><a href="kubernetes-cka/lessons/0002-pod-labels.html">Lesson 2 — Pod + labels</a></li>

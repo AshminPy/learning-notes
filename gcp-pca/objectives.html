@@ -64,14 +64,51 @@
     font-size: 0.9rem;
     color: var(--muted);
   }
+  .overall-note {
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-style: italic;
+    margin-top: 0.25rem;
+  }
+  .disclaimer {
+    border-left: 3px solid var(--rule);
+    background: var(--code-bg);
+    padding: 0.6rem 1rem;
+    margin: 1.25rem 0;
+    font-size: 0.82rem;
+    color: var(--muted);
+    border-radius: 0 4px 4px 0;
+  }
+  .meta-line { font-size: 0.78rem; color: var(--muted); margin-top: 0.4rem; }
+  .feedback-link { font-size: 0.85rem; }
+  .reset-btn {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .reset-btn:hover { border-color: var(--accent); color: var(--accent); }
 </style>
 </head>
 <body>
 
 <p class="eyebrow">GCP Professional Cloud Architect</p>
 <h1>Exam objectives tracker</h1>
-<p>Your 24 lessons, grouped by the <a href="https://services.google.com/fh/files/misc/professional_cloud_architect_exam_guide_english.pdf" target="_blank" rel="noopener">official PCA exam guide</a>'s 6 sections and weights (confirmed 2026-07-26). Every curriculum subtopic now has a lesson — nothing left unflagged. Check off a lesson once you can rebuild it from memory. Progress is saved in this browser only.</p>
+<p>Your 25 lessons, grouped by the <a href="https://services.google.com/fh/files/misc/professional_cloud_architect_exam_guide_english.pdf" target="_blank" rel="noopener">official PCA exam guide</a>'s 6 sections and weights (exam outline last reviewed 2026-07-26). Most exam-guide subtopics have at least one lesson touching them, but not all — each section below lists what's still not covered. That is not the same as exhaustive coverage or exam readiness. Check off a lesson once you can rebuild it from memory. Progress is saved in this browser only.</p>
 <p class="overall" id="overall"></p>
+<p class="overall-note">This is an unofficial study-progress estimate based on which lessons you've checked off. It does not predict exam readiness or exam results — lessons within a section aren't necessarily equally weighted toward the real exam.</p>
+<button class="reset-btn" id="reset-progress" type="button" aria-label="Reset PCA tracker progress">Reset progress</button>
+
+<div class="disclaimer">
+  This is an independent study resource and is not affiliated with, endorsed by, or sponsored by Google or Google Cloud. Exam objectives and product names may change. Always verify against the official PCA exam guide.
+  <div class="meta-line">Exam outline last reviewed: July 26, 2026</div>
+</div>
+<p class="feedback-link"><a href="https://github.com/AshminPy/learning-notes/issues/new?title=Learning%20notes%20correction%3A%20PCA%20objectives%20tracker" target="_blank" rel="noopener">Report an issue / suggest a correction &rarr;</a></p>
 
 <div id="domains"></div>
 
@@ -80,7 +117,7 @@
 <ul class="item-list" id="foundations"></ul>
 
 <div class="lesson-nav">
-  <a href="index.html">&larr; Back to lessons</a>
+  <a href="../index.html">&larr; Back to lessons</a>
   <span></span>
 </div>
 
@@ -99,9 +136,9 @@ const DOMAINS = [
       { id: "0007", title: "Firestore vs Bigtable vs BigQuery", href: "lessons/0007-nosql-and-analytics.html" },
       { id: "0013", title: "HA and disaster recovery", href: "lessons/0013-ha-and-disaster-recovery.html" },
       { id: "0015", title: "Migration strategies: rehost, replatform, refactor", href: "lessons/0015-migration-strategies.html" },
-      { id: "0016", title: "AI platform rename, and the event-driven glue", href: "lessons/0016-ai-and-modern-services.html" }
+      { id: "0016", title: "AI platform naming shift, and the event-driven glue", href: "lessons/0016-ai-and-modern-services.html" }
     ],
-    gaps: []
+    gaps: ["Business use cases and product strategy; functional vs non-functional requirements", "Integration patterns with external systems; movement of data between systems", "Workload disposition strategies (build, buy, modify, or deprecate)", "Envisioning future solution improvements / cloud-first design approach (1.5)"]
   },
   {
     key: "provision",
@@ -113,7 +150,7 @@ const DOMAINS = [
       { id: "0022", title: "Storage lifecycle & data protection", href: "lessons/0022-storage-lifecycle.html" },
       { id: "0023", title: "Agent Platform Pipelines & AI Hypercomputer", href: "lessons/0023-agent-platform-pipelines.html" }
     ],
-    gaps: []
+    gaps: ["Google Cloud VMware Engine (as a compute/network target)", "Patch management as an explicit provisioning topic", "Intrusion protection specifically (Cloud Armor covers WAF/DDoS in Lesson 9, not full IDS/IPS framing)"]
   },
   {
     key: "security-compliance",
@@ -124,7 +161,7 @@ const DOMAINS = [
       { id: "0011", title: "Security tools: Secret Manager, KMS, VPC-SC, Org Policy", href: "lessons/0011-security-tools.html" },
       { id: "0021", title: "Secure remote access & compliance", href: "lessons/0021-secure-access-compliance.html" }
     ],
-    gaps: []
+    gaps: ["Separation of duties as an explicit design topic (implied by IAM/RBAC content, not directly taught)"]
   },
   {
     key: "analyze-optimize",
@@ -248,7 +285,7 @@ function updateOverall() {
     return sum + domainPct * d.weight;
   }, 0);
   document.getElementById("overall").textContent =
-    `${done} of ${all.length} scored lessons checked off — ~${Math.round(weightedDone)}% of exam weight reviewed (Section 5 excluded — it has no lessons yet, so it can't contribute).`;
+    `${done} of ${all.length} scored lessons checked off — Estimated weighted review progress: ~${Math.round(weightedDone)}%.`;
 }
 
 const container = document.getElementById("domains");
@@ -268,6 +305,13 @@ FOUNDATIONS.forEach(l => {
   li.appendChild(cb);
   li.appendChild(a);
   foundationsList.appendChild(li);
+});
+
+document.getElementById("reset-progress").addEventListener("click", () => {
+  if (confirm("Reset all PCA tracker progress? This only clears this tracker's checkboxes in this browser — it does not affect the CKA tracker or any other site.")) {
+    localStorage.removeItem(STORE_KEY);
+    location.reload();
+  }
 });
 </script>
 
