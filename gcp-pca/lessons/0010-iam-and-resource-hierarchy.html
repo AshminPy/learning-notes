@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 10 — IAM &amp; Resource Hierarchy</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 10 of 17</p>
+<h1>IAM basics and resource hierarchy</h1>
+
+<p>IAM answers one question: who can do what to which resource. GCP organizes all resources into a tree, and permissions flow down that tree.</p>
+
+<p class="callout"><strong>Simple example:</strong> think of a company org chart. The CEO's rules apply to everyone below. A department head's rules apply to their department only. GCP's resource tree works the same way — rules set higher up apply to everything underneath.</p>
+
+<h2>IAM: who can do what</h2>
+<p>An IAM policy binds a <strong>principal</strong> (a person, group, or service account) to a <strong>role</strong> (a bundle of permissions) on a <strong>resource</strong>. Three kinds of roles:</p>
+<ul>
+<li><strong>Basic roles</strong> — Owner, Editor, Viewer. Broad, old-style. Avoid unless nothing else fits.</li>
+<li><strong>Predefined roles</strong> — made by Google, scoped to one service. The usual right answer.</li>
+<li><strong>Custom roles</strong> — you pick the exact permissions. Only when predefined roles are too broad.</li>
+</ul>
+
+<h2>Resource hierarchy</h2>
+<p>GCP resources sit in a strict tree: <strong>Organization &rarr; Folder &rarr; Project &rarr; Resource</strong>. A permission granted at a higher level applies to everything below it. Grant a role at the Organization, and it reaches every folder, project, and resource underneath — automatically.</p>
+
+<div class="trap"><strong>Exam trap:</strong> permissions only ever ADD as they flow down — a project can never take away a permission granted at the Organization above it. If a scenario needs to block one project from an org-wide grant, "just don't assign the role there" doesn't work — you need a deny policy, or a different hierarchy.</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A role is granted at the Organization level. Does it reach a project three levels down?</p>
+<div class="opts">
+<label>A. Yes, permissions flow down the hierarchy automatically</label>
+<label>B. No, each project needs its own separate grant</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal</button>
+<div class="answer" id="q1"><strong>A.</strong> The hierarchy is Organization &rarr; Folder &rarr; Project &rarr; Resource, and grants flow down to everything underneath.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A scenario needs "least privilege, low ongoing maintenance." Which role type usually wins?</p>
+<div class="opts">
+<label>A. Basic roles</label>
+<label>B. Predefined roles</label>
+<label>C. Custom roles</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal</button>
+<div class="answer" id="q2"><strong>B.</strong> Predefined roles are scoped and maintained by Google. Basic roles are too broad; custom roles need someone to keep updating them by hand.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. A project needs to block a permission that was granted at the Organization level above it. Can a project-level policy remove that permission?</p>
+<div class="opts">
+<label>A. Yes, a lower level can always override a higher one</label>
+<label>B. No, lower levels can only add — blocking needs a deny policy</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal</button>
+<div class="answer" id="q3"><strong>B.</strong> IAM policy inheritance is a one-way union going down. A project can add permissions, never subtract ones granted higher up — a deny policy is the tool for that.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://cloud.google.com/iam/docs/roles-overview" target="_blank" rel="noopener">cloud.google.com/iam/docs/roles-overview</a> and <a href="https://cloud.google.com/iam/docs/resource-hierarchy-access-control" target="_blank" rel="noopener">cloud.google.com/iam/docs/resource-hierarchy-access-control</a></p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>IAM = who (principal) gets what (role) on which resource.</li>
+    <li>Resource hierarchy: Organization &rarr; Folder &rarr; Project &rarr; Resource — permissions flow down.</li>
+    <li>Lower levels can only add permissions, never remove ones from above — use a deny policy to block.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0009-load-balancing-cdn-armor.html">&larr; Load balancing, CDN &amp; Cloud Armor</a>
+  <a href="0011-security-tools.html">Next: Security tools &rarr;</a>
+</div>
+
+</body>
+</html>

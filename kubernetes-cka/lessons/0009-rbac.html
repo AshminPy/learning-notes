@@ -11,64 +11,66 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 9 of 17</p>
 <h1>RBAC — ServiceAccount, Role, RoleBinding</h1>
 
-<p>Every manifest so far has assumed permissions just work. They don't — something has to say who is allowed to do what. <strong>RBAC (Role-Based Access Control)</strong> is that layer: four object kinds that answer "who" (ServiceAccount, User, Group), "what's allowed" (Role), and "who gets it" (RoleBinding).</p>
+<p>Every manifest so far assumed permissions just work. They don't. RBAC (Role-Based Access Control) is the layer that says who is allowed to do what.</p>
 
-<p><strong>Tied to your mission:</strong> you already run this exact model daily, just under different names. A Kubernetes <strong>ServiceAccount</strong> is the direct equivalent of a <strong>GCP Service Account</strong> — a non-human identity a workload acts as, which is precisely what Workload Identity Federation binds together (GCP SA &harr; Kubernetes SA). A <strong>Role</strong> is a GCP <strong>IAM Role</strong> — a named bundle of permitted actions on specific resource types. A <strong>RoleBinding</strong> is an <strong>IAM binding</strong> — the thing that actually grants the role to a principal. Same three-part shape, same reasoning, different YAML.</p>
+<p class="callout"><strong>Simple example:</strong> think of RBAC like a keycard system. A <strong>ServiceAccount</strong> is the badge a Pod wears. A <strong>Role</strong> is the list of doors a badge type may open. A <strong>RoleBinding</strong> is what actually hands the badge those keys — no binding, no access, no matter what the Role allows.</p>
 
-<h2>The mental model</h2>
-<p>A <strong>ServiceAccount</strong> is an identity a Pod can act as — distinct from you, the human <code>kubectl</code> user. When a Pod's <code>spec.serviceAccountName</code> is set, every API call that Pod makes (via the mounted token) is authenticated as that ServiceAccount, not as you.</p>
-
-<p>A <strong>Role</strong> is a namespaced list of permissions: which <strong>verbs</strong> (<code>get</code>, <code>list</code>, <code>watch</code>, <code>create</code>, <code>update</code>, <code>patch</code>, <code>delete</code>, …) are allowed on which <strong>resources</strong> (<code>pods</code>, <code>configmaps</code>, <code>secrets</code>, …). A Role by itself grants nothing — it's a definition sitting on a shelf, like an IAM role you defined but never attached to anyone.</p>
-
-<p>A <strong>RoleBinding</strong> is what actually grants it — it links a Role to one or more <strong>subjects</strong> (a ServiceAccount, a User, or a Group). No binding, no access, no matter how the Role is written.</p>
-
-<p class="callout">Role/RoleBinding are namespace-scoped — same shape as everything since Lesson 2. <strong>ClusterRole</strong> and <strong>ClusterRoleBinding</strong> are their cluster-scoped twins: same fields, no <code>namespace</code> on the object, and they can grant access across every namespace at once (or to genuinely cluster-scoped things like <code>nodes</code>). Once Role/RoleBinding click, ClusterRole/ClusterRoleBinding are the same pattern with the namespace boundary removed — the naming makes it obvious.</p>
-
-<h2>Try it first — before reading on</h2>
-<div class="quiz">
-  <p>Q1. In your GCP IAM mental model, what is the Kubernetes equivalent of an IAM binding — the object that actually grants a role to a principal, as opposed to just defining what the role can do?</p>
-  <input type="text" id="q1" placeholder="type your answer">
-  <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a1">RoleBinding (or ClusterRoleBinding) — the Role/ClusterRole only defines permissions, the (Cluster)RoleBinding is what attaches it to a subject</div>
-</div>
-
-<div class="quiz">
-  <p>Q2. A Pod is running as ServiceAccount <code>ci-bot</code> in namespace <code>ci</code>. What single <code>kubectl</code> command tells you whether it's allowed to <code>delete</code> <code>pods</code> in that namespace — without actually creating the Pod and watching it fail?</p>
-  <input type="text" id="q2" placeholder="type your answer">
-  <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a2"><code>kubectl auth can-i delete pods --as=system:serviceaccount:ci:ci-bot -n ci</code> — the <code>--as</code> flag impersonates the ServiceAccount using its full <code>system:serviceaccount:&lt;namespace&gt;:&lt;name&gt;</code> identity string; you need permission to impersonate to run it</div>
-</div>
-
-<div class="quiz">
-  <p>Q3. What are the two fields inside a Role's <code>rules</code> entry, besides <code>resources</code>, that together define what's permitted?</p>
-  <input type="text" id="q3" placeholder="type your answer">
-  <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a3"><code>apiGroups</code> (which API group the resource belongs to — <code>""</code> for the core group that <code>pods</code> lives in) and <code>verbs</code> (the allowed actions, e.g. <code>get</code>, <code>list</code>, <code>watch</code>)</div>
-</div>
-
-<h2>Now build it — in your terminal, not here</h2>
-<p>Write three manifests by hand — no copy-paste. Together they should let a workload read Pods and nothing else:</p>
+<h2>The three pieces</h2>
+<p>A Role lists what's allowed:</p>
+<pre><code>apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-reader
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+</code></pre>
 <ul>
-  <li>a <strong>ServiceAccount</strong>, any name, in a namespace of your choice</li>
-  <li>a <strong>Role</strong> in the same namespace that allows <code>get</code> and <code>list</code> on <code>pods</code> only</li>
-  <li>a <strong>RoleBinding</strong> in the same namespace that connects your ServiceAccount to your Role</li>
+<li><strong>ServiceAccount</strong> — an identity a Pod can act as, instead of you</li>
+<li><strong>Role</strong> — which <code>verbs</code> are allowed on which <code>resources</code>, in one namespace (shown above)</li>
+<li><strong>RoleBinding</strong> — grants the Role to a subject (ServiceAccount, User, or Group)</li>
 </ul>
-<p>Apply all three, then before checking the answer below, run <code>kubectl auth can-i get pods --as=system:serviceaccount:&lt;namespace&gt;:&lt;your-sa-name&gt; -n &lt;namespace&gt;</code> yourself and confirm it says <code>yes</code>. Then try <code>kubectl auth can-i delete pods --as=...</code> the same way and confirm it says <code>no</code> — that's the "additive only, nothing implied" nature of RBAC proving itself.</p>
+<p><strong>ClusterRole</strong> / <strong>ClusterRoleBinding</strong> are the same two objects, just cluster-scoped instead of namespaced.</p>
+
+<p class="callout">RBAC is additive only. There are no deny rules. A missing grant means no access — full stop.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. What actually grants a Role to someone — as opposed to just defining what it allows?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">A RoleBinding (or ClusterRoleBinding). The Role only defines permissions — the binding attaches it to a subject.</div>
+</div>
 
 <div class="quiz">
-  <p>Reveal the reference answer</p>
-  <button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a4"><code>apiVersion: v1
+<p>Q2. What command checks if ServiceAccount <code>ci-bot</code> in namespace <code>ci</code> can delete pods — without actually testing it?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>kubectl auth can-i delete pods --as=system:serviceaccount:ci:ci-bot -n ci</code></div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Write three manifests by hand (no copy-paste) that together let a workload read Pods and nothing else:</p>
+<ul>
+<li>a <strong>ServiceAccount</strong>, any name, in a namespace of your choice</li>
+<li>a <strong>Role</strong> in the same namespace allowing <code>get</code> and <code>list</code> on <code>pods</code> only</li>
+<li>a <strong>RoleBinding</strong> connecting the two</li>
+</ul>
+<p>Apply all three, then confirm with <code>kubectl auth can-i</code> before checking the answer below.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: pod-reader-sa
-  namespace: default
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: pod-reader
-  namespace: default
 rules:
   - apiGroups: [""]
     resources: ["pods"]
@@ -78,11 +80,9 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: read-pods
-  namespace: default
 subjects:
   - kind: ServiceAccount
     name: pod-reader-sa
-    namespace: default
 roleRef:
   kind: Role
   name: pod-reader
@@ -90,25 +90,19 @@ roleRef:
 </code></pre>
 </div>
 
-<p>Note the RoleBinding's <code>roleRef</code> — it points at the Role by name, and it's immutable: change your mind about which Role to bind, and you delete/recreate the RoleBinding rather than edit it in place. Also note <code>apiGroups: [""]</code> — that empty string is the "core" API group that <code>pods</code>, <code>configmaps</code>, and <code>secrets</code> live in; things like Deployments live under <code>"apps"</code> instead.</p>
-
-<h2>Primary source</h2>
-<p>Read (or at least skim) the official docs — the exact page you're allowed to search during the real exam: <a href="https://kubernetes.io/docs/reference/access-authn-authz/rbac/" target="_blank" rel="noopener">kubernetes.io/docs/reference/access-authn-authz/rbac</a>. For ServiceAccounts specifically: <a href="https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/" target="_blank" rel="noopener">kubernetes.io/docs/tasks/configure-pod-container/configure-service-account</a>. For the <code>can-i</code> command: <a href="https://kubernetes.io/docs/reference/kubectl/generated/kubectl_auth/kubectl_auth_can-i/" target="_blank" rel="noopener">kubernetes.io/docs/reference/kubectl/generated/kubectl_auth/kubectl_auth_can-i</a>.</p>
+<h2>Source</h2>
+<p><a href="https://kubernetes.io/docs/reference/access-authn-authz/rbac/" target="_blank" rel="noopener">kubernetes.io/docs/reference/access-authn-authz/rbac</a> — the exact page you can search in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>ServiceAccount = a non-human identity a Pod acts as (GCP IAM equivalent: Service Account)</li>
-    <li>Role = a namespaced bundle of allowed verbs on specific resources (GCP IAM equivalent: IAM Role)</li>
-    <li>RoleBinding = grants a Role to a subject — ServiceAccount, User, or Group (GCP IAM equivalent: IAM binding)</li>
-    <li>ClusterRole / ClusterRoleBinding = the same two objects, cluster-scoped instead of namespaced</li>
-    <li>RBAC is additive only — no deny rules; a missing grant means no access, full stop</li>
-    <li><code>kubectl auth can-i &lt;verb&gt; &lt;resource&gt; --as=system:serviceaccount:&lt;ns&gt;:&lt;sa&gt;</code> is the exam-core command for testing/debugging permissions</li>
+    <li>ServiceAccount = an identity a Pod acts as. Role = allowed verbs on resources. RoleBinding = what grants the Role.</li>
+    <li>ClusterRole / ClusterRoleBinding are the same pair, cluster-scoped.</li>
+    <li>RBAC is additive only — no deny rules, and no grant means no access.</li>
   </ul>
-  <p><strong>Try solo:</strong> add <code>watch</code> to your Role's verbs and re-apply — no need to touch the RoleBinding. Then create a second Role that allows <code>get</code>/<code>list</code> on <code>configmaps</code> too, and bind it with a second RoleBinding to the same ServiceAccount. Confirm with <code>can-i</code> that permissions from both bindings now apply. Don't reopen this file to check — bring what you observed to your notes instead.</p>
 </div>
 
-<footer class="teacher-reminder">Stuck, or something doesn't make sense? Re-read the official docs linked above, or note the question down and come back to it.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0008-ingress.html">&larr; Ingress &rarr; Service</a>

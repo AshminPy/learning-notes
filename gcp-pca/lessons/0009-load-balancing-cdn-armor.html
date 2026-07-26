@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 9 — Load Balancing, CDN &amp; Cloud Armor</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 9 of 17</p>
+<h1>Load balancing, CDN, and Cloud Armor</h1>
+
+<p>A load balancer spreads traffic across backends. Some load balancers face the public internet, some stay private inside your network. CDN and Cloud Armor both sit in front of the public-facing kind.</p>
+
+<p class="callout"><strong>Simple example:</strong> think of a reception desk. An <strong>external</strong> load balancer is the front desk anyone off the street can walk up to. An <strong>internal</strong> load balancer is a desk only staff (other services in your network) can reach — the public never sees it.</p>
+
+<h2>Internal vs external load balancer</h2>
+<p><strong>Internal load balancer:</strong> private IP only. Used for service-to-service traffic inside your network — one app calling another app.</p>
+<p><strong>External load balancer:</strong> public IP. Used for traffic coming in from the internet — users hitting your website or API.</p>
+
+<h2>Cloud CDN</h2>
+<p>Cloud CDN caches your content at Google's edge locations, closer to users, so pages load faster and your backend does less work. It only works in front of the external (internet-facing) load balancer — never the internal one.</p>
+
+<h2>Cloud Armor</h2>
+<p>Cloud Armor is a firewall for web traffic (a WAF) plus DDoS protection. It blocks bad requests — attacks, bots, unwanted countries — before they reach your app.</p>
+<ul>
+<li>Basic flood/DDoS defense is on automatically.</li>
+<li>Custom rules (block an IP, block a country, rate limits) need you to attach a security policy — they are not automatic.</li>
+</ul>
+
+<div class="trap"><strong>Exam trap:</strong> "Cloud Armor is enabled, so we're protected from attacks" is a trap answer. Basic DDoS defense is automatic, but blocking specific attacks (like a flood of bad HTTP requests) needs a security policy you configure yourself. Enabled alone is not the same as configured.</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A team wants to cache their public website's images at the edge for faster loading worldwide. Which service?</p>
+<div class="opts">
+<label>A. Cloud Armor</label>
+<label>B. Cloud CDN</label>
+<label>C. Internal load balancer</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal</button>
+<div class="answer" id="q1"><strong>B.</strong> Cloud CDN caches content at Google's edge, closest to users — exactly what "faster loading worldwide" needs.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Two microservices inside the same network need to talk to each other. Which load balancer type fits?</p>
+<div class="opts">
+<label>A. External load balancer</label>
+<label>B. Internal load balancer</label>
+<label>C. Neither, they don't need one</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal</button>
+<div class="answer" id="q2"><strong>B.</strong> Internal load balancers handle private, service-to-service traffic — no public exposure needed.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. A team turns on Cloud Armor but adds no custom rules. Are they protected from a flood of malicious HTTP requests?</p>
+<div class="opts">
+<label>A. Yes, everything is automatic once enabled</label>
+<label>B. Only basic DDoS defense is automatic — HTTP-level attacks need a security policy</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal</button>
+<div class="answer" id="q3"><strong>B.</strong> Basic volumetric DDoS defense is on by default. Blocking specific attack patterns at the HTTP layer needs a security policy attached — that step isn't automatic.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://cloud.google.com/load-balancing/docs/load-balancing-overview" target="_blank" rel="noopener">cloud.google.com/load-balancing/docs/load-balancing-overview</a> and <a href="https://cloud.google.com/armor/docs/cloud-armor-overview" target="_blank" rel="noopener">cloud.google.com/armor/docs/cloud-armor-overview</a></p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Internal load balancer = private, service-to-service. External load balancer = public, internet-facing.</li>
+    <li>Cloud CDN only works with the external load balancer.</li>
+    <li>Cloud Armor's basic DDoS defense is automatic; custom rules need a security policy you configure.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0008-vpc-and-hybrid-connectivity.html">&larr; VPC &amp; hybrid connectivity</a>
+  <a href="0010-iam-and-resource-hierarchy.html">Next: IAM &amp; resource hierarchy &rarr;</a>
+</div>
+
+</body>
+</html>

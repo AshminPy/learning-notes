@@ -11,97 +11,67 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 16 of 17</p>
 <h1>Troubleshooting: application &amp; workload level</h1>
 
-<p>Lesson 15 was the cluster and node layer — the plane you rarely touch on GKE Autopilot because Google owns it. This lesson is the other half of Troubleshooting (still the exam's single largest domain, 30%): a Pod that's scheduled, on a healthy node, in a healthy cluster — and still broken. This is the layer you already live in every day. It's also the last content lesson — Lesson 17 is a final review and cheat sheet, not new material.</p>
+<p>Lesson 15 was the node layer. This is the other half of Troubleshooting (still 30% of the exam): a Pod that's scheduled, on a healthy node — and still broken. Last content lesson; Lesson 17 is a cheat-sheet review.</p>
 
-<p><strong>Tied to your mission:</strong> you already reach for <code>kubectl describe</code> and <code>kubectl logs</code> the moment a Deployment goes sideways in production — that instinct is correct and it's the whole exam domain. What the exam adds is speed and completeness under a clock: naming the failure signature on sight (<code>ImagePullBackOff</code> vs <code>CrashLoopBackOff</code> vs a stuck <code>Pending</code>) instead of reasoning it out from scratch, and reflexively reaching for <code>--previous</code> and <code>get endpoints</code> — the two flags that are easy to forget under pressure and that change what you find.</p>
+<p class="callout"><strong>Simple example:</strong> three tools, always in this order — <code>describe</code> (what happened), <code>logs</code> (what the app said), <code>exec</code> (go look yourself, last resort). Jumping straight to <code>exec</code> wastes time; the first two usually hand you the answer.</p>
 
-<h2>The mental model — a fixed order of moves</h2>
-<p>Almost every workload problem resolves through the same three tools, in the same order. Skipping straight to <code>exec</code> because it feels more "hands on" wastes time — <code>describe</code> and <code>logs</code> usually hand you the answer without going anywhere near a shell.</p>
-
+<h2>The three moves</h2>
 <ol>
-  <li><strong><code>kubectl describe pod &lt;name&gt;</code> — always first.</strong> The <strong>Events</strong> section at the bottom is a chronological log of what the control plane and kubelet actually did to this Pod: scheduling decisions, image pulls, probe failures, container starts and restarts, and the reason string attached to each. For scheduling and image problems, this is usually the entire investigation.</li>
-  <li><strong><code>kubectl logs &lt;pod&gt; [-c &lt;container&gt;]</code> — what the app itself said.</strong> Once a container has actually started, its own stdout/stderr is here. Add <code>--previous</code> (short: <code>-p</code>) to read the log of the <em>last</em> container instance before it died — this is the one flag people forget, and it's the difference between seeing the actual crash and seeing nothing, because a restarted container's current log is often empty or just starting up again.</li>
-  <li><strong><code>kubectl exec</code> or <code>kubectl debug</code> — get inside, last resort.</strong> For when the first two don't explain it: check env vars, DNS resolution, file contents, or network reachability from inside the Pod's own network namespace.</li>
+<li><strong><code>kubectl describe pod &lt;name&gt;</code></strong> — always first. The <strong>Events</strong> section is a timeline: scheduling, image pulls, probe failures, restarts.</li>
+<li><strong><code>kubectl logs &lt;pod&gt; [-c &lt;container&gt;]</code></strong> — the app's own stdout/stderr. Add <code>--previous</code> to read the log of the last crashed instance — the current log may be empty if it just restarted.</li>
+<li><strong><code>kubectl exec</code> / <code>kubectl debug</code></strong> — get inside the container. Check env vars, DNS, files, network reachability.</li>
 </ol>
 
-<p class="callout">Same shape as Lesson 15's node-level ladder (SSH → <code>journalctl</code>/<code>crictl</code> → live inspection), one layer up: describe (the "what happened" log) → logs (the app's own account) → exec (go look yourself). Same ladder, different altitude.</p>
-
-<h2>Try it first — before reading on</h2>
-<div class="quiz">
-  <p>Q1. A Pod shows <code>CrashLoopBackOff</code>. What two commands do you run first, and why those two specifically?</p>
-  <input type="text" id="q1" placeholder="type your answer">
-  <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a1"><code>kubectl describe pod</code> (Events section — how many restarts, last state, exit code/reason) and <code>kubectl logs --previous</code> (the crashed container's own output, since the current instance may not have logged anything useful yet). <code>describe</code> tells you <em>that</em> and <em>how</em> it died; <code>logs --previous</code> tells you <em>why</em>, from the app's own mouth.</div>
-</div>
-
-<div class="quiz">
-  <p>Q2. A Service isn't routing to any Pods. What single command confirms this, and what's the most likely root cause?</p>
-  <input type="text" id="q2" placeholder="type your answer">
-  <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a2"><code>kubectl get endpoints &lt;service&gt;</code> (or <code>get endpointslices -l kubernetes.io/service-name=&lt;service&gt;</code>) — if it shows <code>&lt;none&gt;</code> or is empty, the Service has no Pods to send traffic to. Most likely cause: <code>spec.selector</code> on the Service doesn't match the labels actually on the Pods (typo, or the Pods were relabeled) — ties back to Lesson 3/5, where the selector was the only thing wiring the two objects together in the first place.</div>
-</div>
-
-<div class="quiz">
-  <p>Q3. A Deployment's Pods all show <code>0/1 Ready</code> but the container is not restarting and not crashing. What's the mechanism, and which lesson does it tie back to?</p>
-  <input type="text" id="q3" placeholder="type your answer">
-  <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a3">A failing <strong>readiness probe</strong> (Lesson 11) — the container is genuinely running (so no crash, no restart) but Kubernetes doesn't consider it ready to receive traffic, so it's pulled out of Service endpoints while still alive. Confirm with <code>describe pod</code> — the Events section shows repeated "Readiness probe failed" entries with the actual HTTP status/exit code returned.</div>
-</div>
-
-<div class="quiz">
-  <p>Q4. You see <code>ImagePullBackOff</code> on a fresh Pod. Name two distinct root causes it could be, and the one place you'd look to tell them apart.</p>
-  <input type="text" id="q4" placeholder="type your answer">
-  <button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a4">Wrong image name/tag (typo, or a tag that was never pushed) vs. missing/incorrect registry authentication (private registry, no <code>imagePullSecrets</code>). Both surface as the same status; <code>kubectl describe pod</code>'s Events section shows the actual error string from the kubelet (e.g. "manifest not found" vs. "unauthorized"/"pull access denied"), which tells you which one it is.</div>
-</div>
-
-<h2>The failure signatures, at a glance</h2>
-<p>Not a fix-it list to memorize — a map from "what you see" to "what to check next." The actual cause is always confirmed via Events or logs, never guessed from the status string alone.</p>
-
+<h2>Failure signatures at a glance</h2>
 <ul>
-  <li><strong><code>ImagePullBackOff</code> / <code>ErrImagePull</code></strong> — kubelet can't pull the image. Wrong name/tag, image never pushed, or missing/wrong registry auth (<code>imagePullSecrets</code>). Check: <code>describe pod</code> Events.</li>
-  <li><strong><code>CrashLoopBackOff</code></strong> — container starts, then exits, repeatedly; Kubernetes backs off between restarts. Check: <code>logs --previous</code> for the app's own error, <code>describe pod</code> for the exit code and "Last State" block.</li>
-  <li><strong><code>Pending</code> forever</strong> — never made it past scheduling. Check: <code>describe pod</code> Events for the scheduler's own reason — insufficient CPU/memory across all nodes, no node matches a nodeSelector/affinity rule, or an unsatisfied taint/toleration.</li>
-  <li><strong><code>0/1 Ready</code>, container otherwise fine</strong> — readiness probe failing (Lesson 11). Pod is up, just not accepting traffic.</li>
-  <li><strong>Service has no working Pods behind it</strong> — usually a selector/label mismatch (Lesson 3/5). Confirmed via <code>kubectl get endpoints</code>, not by staring at the Service spec.</li>
+<li><strong><code>ImagePullBackOff</code> / <code>ErrImagePull</code></strong> — wrong image name/tag, or missing registry auth. Check: <code>describe</code> Events.</li>
+<li><strong><code>CrashLoopBackOff</code></strong> — starts, then dies, repeatedly. Check: <code>logs --previous</code> plus exit code in <code>describe</code>.</li>
+<li><strong><code>Pending</code> forever</strong> — never got scheduled. Check: <code>describe</code> Events for the scheduler's reason (no CPU/memory fits, unmatched nodeSelector, unsatisfied taint).</li>
+<li><strong><code>0/1 Ready</code>, not crashing</strong> — readiness probe failing (Lesson 11). Pod is up, just not getting traffic.</li>
+<li><strong>Service has no working Pods</strong> — check <code>kubectl get endpoints</code>. Usually a selector/label mismatch (Lesson 3/5).</li>
 </ul>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A Pod shows <code>CrashLoopBackOff</code>. What two commands first, and why?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>kubectl describe pod</code> (restarts, exit code, last state) and <code>kubectl logs --previous</code> (the crashed container's own output — the current instance may not have logged anything yet).</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A Deployment's Pods show <code>0/1 Ready</code> but aren't restarting. What's happening?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">A failing readiness probe (Lesson 11). The container is genuinely running — no crash — but Kubernetes won't send it traffic. Confirm with <code>describe pod</code>: repeated "Readiness probe failed" events.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. You see <code>ImagePullBackOff</code> on a fresh Pod. Name two different root causes, and where you'd tell them apart.</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">Wrong image name/tag, or missing/wrong registry auth (no <code>imagePullSecrets</code>). Both look identical as a status string — <code>kubectl describe pod</code> Events shows the real error ("manifest not found" vs. "unauthorized"), which tells you which one it is.</div>
+</div>
 
 <h2>Getting inside the container</h2>
-<p><code>kubectl exec -it &lt;pod&gt; -- sh</code> (or <code>bash</code>, if the image has it) drops you into a shell inside a running container — same network namespace, same filesystem, same view the app itself has. Good for checking env vars, DNS resolution, config file contents, or reaching another service directly with <code>curl</code>/<code>wget</code>.</p>
+<p><code>kubectl exec -it &lt;pod&gt; -- sh</code> drops you into a running container — same network, same filesystem. Only works if the image has a shell. Minimal/distroless images often don't — use <code>kubectl debug &lt;pod&gt; -it --image=busybox --target=&lt;container&gt;</code> instead, which attaches a temporary debug container without needing a shell in the production image.</p>
 
-<p>It only works if the container image has a shell. Minimal and distroless images (increasingly common — smaller attack surface, faster pulls) often don't. For those, <code>kubectl debug &lt;pod&gt; -it --image=busybox --target=&lt;container&gt;</code> attaches a temporary <strong>ephemeral debug container</strong> to the running Pod, sharing its network namespace (and, with <code>--target</code>, its process namespace) — full debugging access without a shell ever having to exist in the production image.</p>
+<h2>Now try it yourself</h2>
+<p>On a scratch namespace, break three things on purpose: a bad image tag, a container that <code>exit 1</code>s immediately, and a Service whose selector doesn't match its Pod's labels. For each, use only <code>describe</code> → <code>logs --previous</code> → <code>get endpoints</code> to name the failure before fixing it.</p>
 
-<h2>Now try it yourself — break something on purpose</h2>
-<p>On a scratch cluster or namespace, create three separate Pods/Deployments, each broken a different way, without telling yourself in advance which is which:</p>
-<ul>
-  <li>one with an image tag that doesn't exist</li>
-  <li>one whose container command exits immediately (e.g. <code>command: ["sh", "-c", "exit 1"]</code>)</li>
-  <li>one with a Service pointing at it, where you deliberately set the Service's selector to not match the Pod's labels</li>
-</ul>
-<p>For each, use only the ladder above — <code>describe</code>, then <code>logs</code> (with <code>--previous</code> where relevant), then <code>get endpoints</code> for the Service case — to name the failure signature and root cause before fixing it. Don't look at what you built to "cheat" the diagnosis; treat it like you don't know.</p>
-
-<h2>Primary sources</h2>
-<p>All exam-allowed pages — the exact ones you'd search on the day:</p>
-<ul>
-  <li><a href="https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/" target="_blank" rel="noopener">kubernetes.io/docs/tasks/debug/debug-application/debug-pods</a> — <code>describe pod</code>, Events, and the Pending/Waiting/Terminating status breakdown</li>
-  <li><a href="https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/" target="_blank" rel="noopener">kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod</a> — <code>exec</code> and ephemeral debug containers</li>
-  <li><a href="https://kubernetes.io/docs/tasks/debug/debug-application/debug-service/" target="_blank" rel="noopener">kubernetes.io/docs/tasks/debug/debug-application/debug-service</a> — Service/Endpoints debugging</li>
-  <li><a href="https://kubernetes.io/docs/reference/kubectl/generated/kubectl_logs/" target="_blank" rel="noopener">kubernetes.io/docs/reference/kubectl/generated/kubectl_logs</a> — full <code>kubectl logs</code> flag reference, including <code>--previous</code></li>
-</ul>
+<h2>Source</h2>
+<p><a href="https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/" target="_blank" rel="noopener">kubernetes.io/docs/tasks/debug/debug-application/debug-pods</a> and <a href="https://kubernetes.io/docs/reference/kubectl/generated/kubectl_logs/" target="_blank" rel="noopener">kubectl logs reference</a> — exam-allowed pages.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Fixed order: <code>describe pod</code> (Events) → <code>logs</code> (add <code>--previous</code> for a crashed container) → <code>exec</code>/<code>debug</code> as the last resort</li>
-    <li><code>ImagePullBackOff</code>/<code>ErrImagePull</code> = can't pull (name/tag/auth); <code>CrashLoopBackOff</code> = starts then dies (check exit code + previous logs)</li>
-    <li><code>Pending</code> forever = scheduling failure, root cause is in Events; <code>0/1 Ready</code> = readiness probe failing, not a crash (Lesson 11)</li>
-    <li>Service routing nothing = check <code>kubectl get endpoints</code> first, root cause is almost always a selector/label mismatch (Lesson 3/5)</li>
-    <li><code>kubectl exec</code> needs a shell in the image; <code>kubectl debug</code> (ephemeral containers) works even when the image is shell-less/distroless</li>
+    <li>Fixed order: <code>describe pod</code> (Events) &rarr; <code>logs</code> (<code>--previous</code> for a crash) &rarr; <code>exec</code>/<code>debug</code> last.</li>
+    <li>Same status can have different causes — <code>describe</code> Events (not the status string) tells you which.</li>
+    <li>Service routing nothing &rarr; check <code>kubectl get endpoints</code> first; usually a label mismatch.</li>
   </ul>
-  <p><strong>Try solo:</strong> pick one real Pod restart you've actually seen in production (GKE Autopilot counts) and write down, from memory, the exact sequence of commands you'd run today to diagnose it from scratch — before checking it against this lesson.</p>
 </div>
 
-<footer class="teacher-reminder">Stuck, or something doesn't make sense? Re-read the official docs linked above, or note the question down and come back to it.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0015-troubleshooting-cluster-node.html">&larr; Troubleshooting: cluster &amp; node</a>

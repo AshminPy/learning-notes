@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3 — Compute Engine vs GKE</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 3 of 17</p>
+<h1>Compute Engine vs GKE</h1>
+
+<p>Both run your code on servers. The exam question is never "can this work" — both usually can. It's "which one needs the least babysitting for this scenario."</p>
+
+<p class="callout"><strong>Simple example:</strong> Compute Engine is an empty apartment — you get full control, but you fix your own leaks. GKE is a serviced building — staff (Google, especially in Autopilot mode) patch and manage the common parts, you still furnish and run your own unit.</p>
+
+<h2>Compute Engine — plain VMs</h2>
+<p>This is GCP's raw virtual machine (IaaS). AWS equivalent: EC2.</p>
+<ul>
+<li><strong>Use when:</strong> you need OS/kernel-level control, per-core licensed software, dedicated/sole-tenant hardware for compliance, or long-running stateful processes.</li>
+<li><strong>You own:</strong> OS patching, scaling (via Managed Instance Groups), and high availability.</li>
+<li><strong>Cost shape:</strong> per-second billing. Spot VMs give up to 91% off with no fixed runtime cap. Sustained- and committed-use discounts exist too.</li>
+</ul>
+
+<h2>GKE — managed Kubernetes</h2>
+<p>GKE runs containers for you, orchestrated by Kubernetes.</p>
+<ul>
+<li><strong>Use when:</strong> the workload genuinely needs Kubernetes features — StatefulSets, DaemonSets, sidecars, custom schedulers, CRDs — or must be portable across clouds.</li>
+<li><strong>Autopilot:</strong> Google manages the nodes; you pay per Pod resource request.</li>
+<li><strong>Standard:</strong> you provision and pay for nodes directly, whether Pods are using them or not.</li>
+<li><strong>Cost shape:</strong> a flat $0.10/cluster/hour management fee applies to every cluster, both modes. The free tier gives $74.40/month credit, covering one zonal cluster's fee.</li>
+</ul>
+
+<div class="trap"><strong>Exam trap:</strong> "pick the managed option" is not a safe default. If the scenario names a constraint only a VM can solve — custom kernel modules, per-core licensing, sole-tenant compliance — Compute Engine is correct, and GKE (even Autopilot) is the wrong, over-managed answer.</div>
+
+<h2>Compute Engine vs GKE — at a glance</h2>
+<table>
+<tr><th>Dimension</th><th>Compute Engine</th><th>GKE</th></tr>
+<tr><td>Ops burden</td><td>You own OS, patching, scaling.</td><td>K8s-abstracted; Autopilot removes node ops almost entirely.</td></tr>
+<tr><td>Scaling model</td><td>Manual or Managed Instance Group, at the VM level.</td><td>Pod and node autoscaling, at the K8s level.</td></tr>
+<tr><td>Typical use case</td><td>Stateful/legacy apps, custom OS, licensed software, sole-tenant needs.</td><td>Containerized microservices needing real orchestration.</td></tr>
+<tr><td>Cost shape</td><td>Per-second VM billing; Spot up to 91% off.</td><td>$0.10/cluster/hr + node cost (Standard) or per-Pod cost (Autopilot).</td></tr>
+</table>
+
+<h2>Quiz — Lesson 3</h2>
+
+<div class="quiz">
+<p>Q1. A scenario requires per-core licensed software that must run on dedicated hardware for compliance. What's the correct pick?</p>
+<div class="opts">
+<label>A. Compute Engine</label>
+<label>B. GKE Autopilot</label>
+<label>C. GKE Standard</label>
+<label>D. Whichever is cheaper that month</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Sole-tenant hardware and per-core licensing are constraints only Compute Engine solves directly. Managed platforms don't give you that level of hardware control.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. In GKE Autopilot, what are you billed for?</p>
+<div class="opts">
+<label>A. The Pod resources you request</label>
+<label>B. The nodes you provision</label>
+<label>C. A flat monthly fee only</label>
+<label>D. Disk snapshots only</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Autopilot bills per Pod resource request. Standard mode is the opposite — you pay for provisioned nodes, whether Pods use them or not.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Which clusters pay the $0.10/hour GKE cluster management fee?</p>
+<div class="opts">
+<label>A. Every GKE cluster, both modes</label>
+<label>B. Autopilot clusters only</label>
+<label>C. Standard clusters only</label>
+<label>D. Only clusters over 10 nodes</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> The fee is flat and applies to every cluster regardless of mode or size. One zonal cluster's fee is covered by the $74.40/month free-tier credit.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. How does a Spot VM's runtime cap compare to the older preemptible VM?</p>
+<div class="opts">
+<label>A. Spot VMs have no fixed runtime cap</label>
+<label>B. Spot VMs cap at 24 hours, same as preemptible</label>
+<label>C. Spot VMs cap at 1 hour</label>
+<label>D. Spot VMs cap at 6 hours</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> Spot VMs removed the fixed runtime cap that preemptible VMs had. The old 24-hour limit doesn't carry over — don't assume it still applies.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/compute/docs/instances/spot" target="_blank" rel="noopener">Spot VM docs</a> and <a href="https://docs.cloud.google.com/kubernetes-engine/docs/concepts/autopilot-overview" target="_blank" rel="noopener">GKE Autopilot overview</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Compute Engine = full control, you patch and scale it yourself. Right answer only when a stated constraint needs VM-level control.</li>
+    <li>GKE = right when the scenario genuinely needs Kubernetes features or portability. Autopilot bills per Pod, Standard bills per node — both pay the same flat cluster fee.</li>
+    <li>"Managed is usually better" is a bias, not a rule — read the constraint sentence first.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck on a question? Re-read the section above before checking the answer — that's the habit the real exam rewards.</footer>
+
+<div class="lesson-nav">
+  <a href="0002-well-architected-framework.html">&larr; Well-Architected Framework</a>
+  <a href="0004-serverless-compute.html">Next: Serverless compute &rarr;</a>
+</div>
+
+</body>
+</html>

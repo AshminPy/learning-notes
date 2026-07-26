@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 8 — VPC &amp; Hybrid Connectivity</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 8 of 17</p>
+<h1>VPC, Shared VPC, and hybrid connectivity</h1>
+
+<p>A VPC is your private network in GCP. Shared VPC lets multiple teams use one network safely. Hybrid connectivity links that network back to your on-prem data center.</p>
+
+<p class="callout"><strong>Simple example:</strong> a VPC is like a private office building. Shared VPC is one building with several company floors — everyone uses the same front door and hallways, but each floor keeps its own keys and budget. Cloud VPN is a locked tunnel through the public street. Cloud Interconnect is a private road straight into the building — no public street at all.</p>
+
+<h2>VPC</h2>
+<p>A VPC is a global resource. Its subnets are <strong>regional</strong>, not zonal — one subnet covers every zone in that region. Every project needs one, default or custom.</p>
+
+<h2>Shared VPC (short)</h2>
+<p>One "host" project owns the network. Other "service" projects attach to it and use its subnets, while each service project keeps its own IAM and billing. Good fit: one network team, many app teams.</p>
+
+<h2>Hybrid connectivity: Cloud VPN vs Cloud Interconnect</h2>
+<p>Both connect GCP to your on-prem network. Cloud VPN goes over the public internet, encrypted. Cloud Interconnect is a private physical link straight to Google's network.</p>
+<table>
+<tr><th></th><th>Cloud VPN (HA)</th><th>Cloud Interconnect</th></tr>
+<tr><td>Path</td><td>Public internet, encrypted</td><td>Private link, bypasses internet</td></tr>
+<tr><td>Bandwidth</td><td>~1–3 Gbps per tunnel</td><td>10–400 Gbps circuits</td></tr>
+<tr><td>Setup time</td><td>Fast — minutes to hours</td><td>Slow — needs a physical circuit</td></tr>
+<tr><td>Wins when</td><td>Fast setup, moderate bandwidth</td><td>Sustained high throughput, lowest latency</td></tr>
+</table>
+
+<div class="trap"><strong>Exam trap:</strong> Dedicated Interconnect needs your own equipment inside a Google colocation facility. If the scenario says "no data center presence near a Google site," Dedicated is ruled out — the answer is Partner Interconnect (goes through a provider, no colo needed), not "add more Dedicated circuits."</div>
+
+<h2>Quiz — Lesson 8</h2>
+
+<div class="quiz">
+<p>Q1. In GCP, is a VPC subnet zonal or regional?</p>
+<div class="opts">
+<label>A. Zonal — one subnet per zone</label>
+<label>B. Regional — one subnet covers all zones in the region</label>
+<label>C. Global — one subnet covers every region</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>B.</strong> Unlike AWS, GCP subnets are regional — they span every zone in that region.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A company needs a link live in 2 weeks, moderate bandwidth, no colocation presence. Best fit?</p>
+<div class="opts">
+<label>A. Dedicated Interconnect</label>
+<label>B. Cloud VPN (HA)</label>
+<label>C. Partner Interconnect only</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>B.</strong> Cloud VPN is the fastest to stand up and needs no colocation presence — the right fit for moderate bandwidth on a tight deadline.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Why would a company choose Shared VPC over giving each team its own separate VPC?</p>
+<div class="opts">
+<label>A. To centralize network administration while keeping per-team IAM and billing separate</label>
+<label>B. To give every team a fully separate network with no shared connectivity</label>
+<label>C. To avoid needing any IAM roles at all</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> That's exactly Shared VPC's purpose — one network, centrally managed, with each service project keeping its own IAM and billing.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. A company has rack space in a Google colocation facility and needs sustained 40 Gbps to on-prem. Best fit?</p>
+<div class="opts">
+<label>A. Dedicated Interconnect</label>
+<label>B. Cloud VPN (HA)</label>
+<label>C. Neither — this bandwidth isn't supported</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> They already have colo presence, and Dedicated Interconnect circuits (10–100 Gbps, bundled higher) comfortably cover 40 Gbps with the lowest latency. Cloud VPN tops out around 1–3 Gbps per tunnel — far short.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://cloud.google.com/network-connectivity/docs/how-to/choose-product" target="_blank" rel="noopener">cloud.google.com/network-connectivity/docs/how-to/choose-product</a> — official connectivity decision guide.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>VPC = global resource, subnets are regional.</li>
+    <li>Shared VPC = one network, many teams, separate IAM/billing per team.</li>
+    <li>Cloud VPN = fast setup, public internet, moderate bandwidth.</li>
+    <li>Cloud Interconnect = private link, high bandwidth, needs colo presence (or a partner if you don't have one).</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0007-nosql-and-analytics.html">&larr; Firestore, Bigtable, BigQuery</a>
+  <a href="0009-load-balancing-cdn-armor.html">Next: Load balancing, CDN &amp; Armor &rarr;</a>
+</div>
+
+</body>
+</html>

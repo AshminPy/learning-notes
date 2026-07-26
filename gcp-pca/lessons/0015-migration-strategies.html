@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 15 — Migration Strategies</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 15 of 17</p>
+<h1>Migration strategies: rehost, replatform, refactor</h1>
+
+<p>Every migration to GCP fits one of three levels of change. The exam wants you to match the strategy to the deadline and goal stated in the scenario — not to whichever option sounds most advanced.</p>
+
+<p class="callout"><strong>Simple example:</strong> think of moving house. Lift-and-shift is throwing your boxes straight in the truck. Replatform is packing smarter — new shelves, same stuff. Refactor is throwing half your stuff out and buying furniture built for the new place.</p>
+
+<h2>Lift and Shift (Rehost)</h2>
+<p>Move the workload with little or no change. Fastest option, uses skills your team already has. The workload still isn't optimized for cloud once it lands.</p>
+
+<h2>Replatform</h2>
+<p>Lift it, then make targeted upgrades — swap a self-managed database for Cloud SQL, containerize without a full rewrite. Some cloud-native wins, without a redesign.</p>
+
+<h2>Refactor (Rearchitect)</h2>
+<p>Redesign the workload to actually use cloud capabilities — microservices, managed services throughout. Best long-term result, biggest short-term effort.</p>
+
+<h2>Compare</h2>
+<table>
+<tr><th>Strategy</th><th>Effort</th><th>Risk</th><th>Exam picks this when...</th></tr>
+<tr><td>Lift and Shift</td><td>Low</td><td>Low — known-working system</td><td>Hard deadline, data center exit, requirements unclear</td></tr>
+<tr><td>Replatform</td><td>Medium</td><td>Medium — new managed services</td><td>Moderate timeline, wants managed-service wins</td></tr>
+<tr><td>Refactor</td><td>High</td><td>Higher near-term, lower long-term</td><td>"Long-term cost" or "cloud-native scale" stated, no deadline</td></tr>
+</table>
+
+<div class="trap"><strong>Exam trap:</strong> a hard deadline ("data center lease ends in 6 weeks") always points at Lift and Shift, even when Refactor looks like the objectively better long-term design. The scenario is testing time-to-exit, not architecture. Refactor is a real best practice — just for a different question, one with no deadline pressure.</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A scenario has a hard 8-week data center exit deadline and no stated cost goal. Which strategy?</p>
+<div class="opts">
+<label>A. Refactor, for the best long-term design</label>
+<label>B. Lift and Shift, to hit the deadline</label>
+<label>C. Replatform, as a middle ground</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal</button>
+<div class="answer" id="q1"><strong>B.</strong> The deadline is the constraint keyword. Refactor is a real strategy, just not the one this scenario is testing.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A team wants managed-service wins (e.g. Cloud SQL) without a full rewrite, on a moderate timeline. Which strategy?</p>
+<div class="opts">
+<label>A. Lift and Shift</label>
+<label>B. Refactor</label>
+<label>C. Replatform</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal</button>
+<div class="answer" id="q2"><strong>C.</strong> Replatform is exactly this: targeted upgrades, no ground-up redesign.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Which strategy carries the highest up-front effort but the lowest long-term cost?</p>
+<div class="opts">
+<label>A. Lift and Shift</label>
+<label>B. Replatform</label>
+<label>C. Refactor</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal</button>
+<div class="answer" id="q3"><strong>C.</strong> Refactor redesigns for cloud-native — most work now, best TCO once it's done.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/architecture/migration-to-gcp-getting-started" target="_blank" rel="noopener">docs.cloud.google.com/architecture/migration-to-gcp-getting-started</a></p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Lift and Shift = move as-is, fast, low risk, not optimized.</li>
+    <li>Replatform = lift it, then upgrade the parts that benefit most.</li>
+    <li>Refactor = redesign for cloud-native, highest effort, best long-term.</li>
+    <li>A hard deadline in the scenario always points at Lift and Shift.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0014-cost-optimization.html">&larr; Cost optimization</a>
+  <a href="0016-ai-and-modern-services.html">Next: AI &amp; modern services &rarr;</a>
+</div>
+
+</body>
+</html>

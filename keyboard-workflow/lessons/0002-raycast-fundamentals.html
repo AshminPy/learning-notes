@@ -11,51 +11,48 @@
 <p class="eyebrow">Keyboard Workflow — Lesson 2 of 4</p>
 <h1>Raycast, beyond app launching</h1>
 
-<p>You installed Raycast after a video, and you use it the same way you used Spotlight: hit a hotkey, type an app name, hit Enter. That's maybe 10% of what it does. This lesson covers the other 90% — the built-in commands that replace Finder and the Dock too, the Extension Store (the actual power-user unlock), and how to skip typing entirely for the handful of things you do dozens of times a day.</p>
+<p>You use Raycast like Spotlight: hotkey, type an app name, Enter. That's maybe 10% of it. This lesson covers the rest: built-in commands, the Extension Store, and skipping typing entirely for the things you do dozens of times a day.</p>
 
 <h2>The one idea that explains everything else</h2>
-<p>Spotlight, the Dock, and Finder all share the same mental model: <strong>browse, then click</strong>. You look at icons, scan a folder, find the thing, then act on it. Raycast replaces all three with a different model: <strong>type your intent, act immediately</strong>. You never scan — you state what you want ("open X", "convert Y", "paste Z") and the first result is almost always correct.</p>
+<p>Spotlight, Dock, and Finder all work the same way: <strong>browse, then click</strong> — scan icons, find the thing, act. Raycast flips this: <strong>type your intent, act immediately</strong>. You never scan — you state what you want and the first result is almost always right.</p>
 
-<p class="callout">Default hotkey to open Raycast is <code>⌥ Space</code> (Option-Space) — set in Raycast Settings → General. You can also rebind it to <code>⌘ Space</code>, which fully takes over the shortcut Spotlight normally owns, so there's no muscle-memory conflict between the two.</p>
+<p class="callout">Default hotkey: <code>⌥ Space</code> (Raycast Settings → General). You can rebind to <code>⌘ Space</code> to fully take over Spotlight's shortcut.</p>
 
 <h2>Built-in commands beyond app launching</h2>
-<p>These ship with Raycast — no extension install needed.</p>
 
-<p><strong>Clipboard History.</strong> This is the single biggest "zero mouse" win. Normally, copy-paste chains break the moment you need something you copied two steps ago — you have to go find it again with the mouse. Clipboard History keeps a searchable list of everything you've copied: text, images, files, links, colors. Open it from Root Search, use <code>⌘P</code> to filter by type, <code>⌘K</code> for an action panel with more options (like "Paste as plain text"), and <strong>Enter</strong> to paste the highlighted entry straight into whatever field you were in. Free tier keeps 1 month of history; Pro extends that to 6 months, a year, or unlimited.</p>
+<p><strong>Clipboard History</strong> — the biggest zero-mouse win. Keeps a searchable list of everything you've copied: text, images, files, links, colors. <code>⌘P</code> filters by type, <code>⌘K</code> opens the action panel, Enter pastes. Free tier keeps 1 month; Pro extends that.</p>
 
-<p><strong>Window management.</strong> Raycast ships its own window commands — halves, quarters, sixths, maximize, center, move-to-next-display. <strong>Since AeroSpace already owns tiling on your machine, don't run both</strong> — two tiling systems fighting over the same window is worse than either alone. Go to Raycast Settings → Extensions → Window Management and disable the individual commands (every command has its own enable/disable toggle) — keep Raycast for launching and clipboard, let AeroSpace keep the tree.</p>
+<p><strong>Window management</strong> — Raycast has its own tiling commands (halves, quarters, maximize). <strong>Since AeroSpace already tiles, disable these</strong> — two tiling systems fighting over one window is worse than either alone. Raycast Settings → Extensions → Window Management, toggle each command off.</p>
 
-<p><strong>Calculator.</strong> Type math straight into Root Search — no separate app. It handles more than arithmetic: unit conversions (<code>10ft in m</code>), time zones (<code>5pm ldn in sf</code>), dates (<code>days until 31 Mar</code>), percentages, and currency (including crypto). Enter copies the answer to your clipboard.</p>
+<p><strong>Calculator</strong> — type math into Root Search. Handles unit conversions (<code>10ft in m</code>), time zones (<code>5pm ldn in sf</code>), dates, percentages, currency. Enter copies the answer.</p>
 
-<p><strong>Quicklinks.</strong> Turn a URL, file path, folder, or app deeplink into a named, searchable shortcut — e.g. type "prod dashboard" instead of navigating to a bookmark. Create one with the <em>Create Quicklink</em> command; Raycast can autofill from your active browser tab.</p>
+<p><strong>Quicklinks</strong> — turn a URL, file, folder, or app deeplink into a named shortcut. Create via <em>Create Quicklink</em>; can autofill from your active browser tab.</p>
 
-<p><strong>Snippets.</strong> Stored text you insert with a few keystrokes — either by searching for it manually, or by typing a keyword trigger (like <code>;;sig</code>) that auto-expands anywhere on your Mac, not just inside Raycast.</p>
+<p><strong>Snippets</strong> — stored text inserted by search or a keyword trigger (like <code>;;sig</code>) that expands anywhere on your Mac.</p>
 
 <div class="tryit">
-<p class="eyebrow">Try it — on your real desktop, right now</p>
-<p>Copy three different things in a row — a sentence from a doc, a filename, a short line from your terminal. Now open Raycast (<code>⌥ Space</code>), type "Clipboard History", press Enter. Use the down arrow to move to the <strong>third</strong> item from the top (the first thing you copied), press Enter to paste it into a blank field. You never touched the mouse and you never lost something two copies back — that's the whole point of this command.</p>
+<p class="eyebrow">Try it</p>
+<p>Copy three different things in a row. Open Raycast (<code>⌥ Space</code>) → Clipboard History → Enter. Arrow down to the third item (the first thing you copied), Enter to paste it. No mouse, nothing lost.</p>
 </div>
 
-<h2>The Extension Store — the real power-user unlock</h2>
-<p>Built-in commands are the floor. The Extension Store is where Raycast stops being "a faster Spotlight" and starts being a control surface for everything you actually do all day. Extensions are community or vendor-published mini-apps that install with one click and then behave exactly like built-in commands — same Root Search, same keyboard-only flow. Searching the live Store for your stack (cloud/DevOps: GCP, AWS, Kubernetes, Terraform) turned up:</p>
-
+<h2>The Extension Store</h2>
+<p>Built-ins are the floor. Extensions are community/vendor mini-apps that install in one click and behave like built-in commands. For your stack:</p>
 <ul>
-<li><strong>Amazon AWS</strong> (by Falcon, ~9,700 installs) — search and open EC2 instances, S3 buckets, ECR repos, DynamoDB tables, CloudWatch log groups, Secrets Manager and Parameter Store entries, Lambda logs, across multiple AWS profiles, without opening the console in a browser.</li>
-<li><strong>Kubernetes</strong> (by justin0u0, ~960 installs) — browse cluster resources and switch contexts/namespaces from Raycast. Worth flagging honestly: pod logs, port-forwarding, and delete actions are listed as planned, not shipped yet — check the Store page before relying on it for anything beyond browsing.</li>
-<li><strong>Terraform Doc</strong> (by ShoppingJaws, ~590 installs) — jumps straight to Terraform resource documentation instead of a browser search.</li>
+<li><strong>Amazon AWS</strong> (Falcon, ~9,700 installs) — EC2, S3, ECR, DynamoDB, CloudWatch, Secrets Manager, Lambda logs, across profiles, no browser needed.</li>
+<li><strong>Kubernetes</strong> (justin0u0, ~960 installs) — browse resources, switch context/namespace. Logs, port-forwarding, delete are still planned, not shipped — check the Store page before relying on it.</li>
+<li><strong>Terraform Doc</strong> (ShoppingJaws, ~590 installs) — jumps to Terraform resource docs.</li>
+<li><strong>Google Cloud Platform Search</strong> (klaa97) — searches GCP products and your projects, opens the right console page.</li>
 </ul>
-<p>Also worth a look since you're GCP-heavy: <strong>Google Cloud Platform Search</strong> (by klaa97) — searches GCP products and your own projects, and opens straight to the right console page or docs.</p>
 
-<h2>Hotkey customization: skip the search step entirely</h2>
-<p>Typing "Clipboard History" and pressing Enter is already fast. But for the 2-3 things you do dozens of times a day, even that's one step too many. Raycast lets you bind a command straight to its own global hotkey, bypassing Root Search completely:</p>
-<pre><code>Select the command in Root Search → ⌘, → Configure Command → Set Hotkey
-(or: Raycast Settings → Shortcuts → find the command → Record Hotkey)</code></pre>
-<p>This is different from an <strong>alias</strong> (a short keyword that just ranks a command higher when Root Search is already open). A hotkey works globally, even with Raycast closed — press the combo, the command fires immediately. Good candidates for you: Clipboard History, and whichever AWS/Kubernetes lookup command you'd otherwise type out every time.</p>
+<h2>Hotkeys: skip the search step</h2>
+<pre><code>Root Search → ⌘, → Configure Command → Set Hotkey
+(or: Raycast Settings → Shortcuts → Record Hotkey)</code></pre>
+<p>A <strong>hotkey</strong> fires a command globally, even with Raycast closed. An <strong>alias</strong> just ranks a command higher inside Root Search — it still needs the search step. Good hotkey candidates: Clipboard History, your most-used AWS/Kubernetes lookup.</p>
 
 <h2>Quiz</h2>
 
 <div class="quiz">
-<p>Q1. What best describes Raycast's core mental model, compared to Spotlight, Dock, and Finder?</p>
+<p>Q1. What best describes Raycast's core model, vs Spotlight/Dock/Finder?</p>
 <div class="opts">
 <label>A. One hotkey, type intent, act immediately</label>
 <label>B. One hotkey, browse folders, click icons</label>
@@ -63,11 +60,11 @@
 <label>D. No hotkey, click Dock, then search</label>
 </div>
 <button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q1"><strong>A.</strong> Raycast's whole design is stating intent and acting, not browsing — you never scan icons the way Dock/Finder require. B and D describe browse-then-click, the exact model Raycast replaces. C is wrong on mechanics: Raycast uses one hotkey, not two, and it launches commands, not drag operations.</div>
+<div class="answer" id="q1"><strong>A.</strong> Raycast is state-intent-and-act, not browse-then-click. The others describe browse-then-click or invented mechanics.</div>
 </div>
 
 <div class="quiz">
-<p>Q2. By default, how long does Raycast's free tier keep clipboard history?</p>
+<p>Q2. How long does Raycast's free tier keep clipboard history?</p>
 <div class="opts">
 <label>A. One month of clipboard history retained</label>
 <label>B. Six months of clipboard history retained</label>
@@ -75,98 +72,59 @@
 <label>D. Forever, clipboard history never gets deleted</label>
 </div>
 <button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q2"><strong>A.</strong> Free tier retention is capped at one month. B, C, and D are all Pro-tier options (6 months, 1 year, unlimited) — none of them are what you get without upgrading.</div>
+<div class="answer" id="q2"><strong>A.</strong> One month free. B/C/D are all Pro-only options.</div>
 </div>
 
 <div class="quiz">
-<p>Q3. Inside Clipboard History, which key pastes the highlighted entry into your active field?</p>
-<div class="opts">
-<label>A. Return pastes it</label>
-<label>B. Command-P filters types</label>
-<label>C. Command-K opens actions</label>
-<label>D. Escape closes window</label>
-</div>
-<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q3"><strong>A.</strong> Return is the paste action. B and C are real shortcuts in the same command, but they do different jobs — filter by type, and open the action panel — neither pastes anything. D just closes the window with nothing pasted.</div>
-</div>
-
-<div class="quiz">
-<p>Q4. Why should you disable Raycast's window-management commands if you already use AeroSpace?</p>
+<p>Q3. Why disable Raycast's window-management commands if you use AeroSpace?</p>
 <div class="opts">
 <label>A. AeroSpace already tiles windows, both would conflict</label>
 <label>B. Raycast tiles better, so AeroSpace becomes unnecessary</label>
 <label>C. Window management needs a paid Pro plan</label>
 <label>D. AeroSpace cannot run beside any other launcher</label>
 </div>
-<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q4"><strong>A.</strong> Two systems trying to own the same window's position and size will fight each other — that's the actual reason to turn one off. B has it backwards; you're keeping AeroSpace, not replacing it. C is false — window management is a free built-in feature. D is false too — AeroSpace and Raycast run fine side by side; it's specifically the overlapping window-sizing commands that conflict, not the apps themselves.</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Two systems owning the same window's size/position will fight. It's free (not C), and AeroSpace runs fine beside Raycast otherwise (not D).</div>
 </div>
 
 <div class="quiz">
-<p>Q5. What does Raycast's built-in Calculator support, beyond basic arithmetic?</p>
+<p>Q4. What does Raycast's built-in Calculator support beyond basic arithmetic?</p>
 <div class="opts">
 <label>A. Time zones, dates, currency, unit conversions</label>
 <label>B. Only integers, no decimals or fractions</label>
 <label>C. Only US dollars, no other currencies</label>
 <label>D. Only addition and subtraction, nothing else</label>
 </div>
-<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q5"><strong>A.</strong> The calculator handles time zone math, date arithmetic, currency (including crypto), and unit conversion, all typed straight into Root Search. B, C, and D each describe a calculator far more limited than what's actually built in.</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> Time zone math, dates, currency (incl. crypto), and unit conversion, typed straight into Root Search.</div>
 </div>
 
 <div class="quiz">
-<p>Q6. What is the real difference between a Quicklink and a Snippet in Raycast?</p>
+<p>Q5. What's the real difference between a Quicklink and a Snippet?</p>
 <div class="opts">
 <label>A. Quicklink opens a place, Snippet inserts text</label>
 <label>B. Quicklink inserts text, Snippet opens a place</label>
 <label>C. Both only work for websites, never files</label>
 <label>D. Both require a paid Raycast Pro account</label>
 </div>
-<button onclick="document.getElementById('q6').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q6"><strong>A.</strong> A Quicklink navigates you to a saved location (URL, file, folder, deeplink); a Snippet inserts stored text into whatever you're typing. B swaps the two definitions. C is wrong — Quicklinks work for file paths and folders too, not just websites. D is wrong — both are free, no Pro account needed.</div>
-</div>
-
-<div class="quiz">
-<p>Q7. How do you skip the type-to-search step and jump straight to one command?</p>
-<div class="opts">
-<label>A. Assign that command its own global hotkey</label>
-<label>B. Pin the app permanently to the Dock</label>
-<label>C. Turn on Spotlight instead of using Raycast</label>
-<label>D. Disable every other extension in the store</label>
-</div>
-<button onclick="document.getElementById('q7').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q7"><strong>A.</strong> A hotkey bound directly to a command fires it instantly, with Root Search never opening at all — that's the actual mechanism. B reintroduces the Dock, which is the exact browse-then-click habit this lesson is replacing. C abandons Raycast entirely. D would remove other useful commands without giving the one you want its own trigger.</div>
-</div>
-
-<div class="quiz">
-<p>Q8. Which extension from the live Raycast Store search lets you browse EC2, S3, and CloudWatch resources?</p>
-<div class="opts">
-<label>A. The Amazon AWS extension</label>
-<label>B. The Kubernetes client extension</label>
-<label>C. The Terraform Doc extension</label>
-<label>D. The GCP Search extension</label>
-</div>
-<button onclick="document.getElementById('q8').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q8"><strong>A.</strong> The Amazon AWS extension (by Falcon) covers EC2, S3, ECR, DynamoDB, CloudWatch, Secrets Manager, and more. B covers Kubernetes clusters, not AWS resources. C only opens Terraform documentation pages. D searches Google Cloud, a different provider entirely.</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> Quicklink navigates to a saved location; Snippet inserts stored text. Both are free and work with files too.</div>
 </div>
 
 <h2>Primary source</h2>
-<p>Read the official manual for full detail: <a href="https://manual.raycast.com/clipboard-history" target="_blank" rel="noopener">Clipboard History</a>, <a href="https://manual.raycast.com/window-management" target="_blank" rel="noopener">Window Management</a>, <a href="https://manual.raycast.com/command-aliases-and-hotkeys" target="_blank" rel="noopener">Command Aliases & Hotkeys</a>, <a href="https://manual.raycast.com/settings" target="_blank" rel="noopener">Settings</a> (per-command enable/disable toggles), and the <a href="https://www.raycast.com/store" target="_blank" rel="noopener">Extension Store</a> itself for the AWS, Kubernetes, Terraform Doc, and GCP Search extensions named above.</p>
+<p><a href="https://manual.raycast.com/clipboard-history" target="_blank" rel="noopener">Clipboard History</a> · <a href="https://manual.raycast.com/window-management" target="_blank" rel="noopener">Window Management</a> · <a href="https://manual.raycast.com/command-aliases-and-hotkeys" target="_blank" rel="noopener">Aliases & Hotkeys</a> · <a href="https://manual.raycast.com/settings" target="_blank" rel="noopener">Settings</a> · <a href="https://www.raycast.com/store" target="_blank" rel="noopener">Extension Store</a></p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Raycast's model is <strong>type intent, act</strong> — not browse-then-click like Spotlight, Dock, or Finder.</li>
-    <li><strong>Clipboard History</strong> is the biggest zero-mouse win — search and paste anything you copied, not just the last thing.</li>
-    <li><strong>Window management</strong> ships built in, but disable it command-by-command since AeroSpace already owns tiling — don't run two systems fighting for the same window.</li>
-    <li><strong>Calculator, Quicklinks, Snippets</strong> cover math/conversions, saved locations, and reusable text — all built in, no install needed.</li>
-    <li>The <strong>Extension Store</strong> is where Raycast becomes a control surface for your actual stack — AWS, Kubernetes, Terraform, and GCP extensions all exist and install with one click.</li>
-    <li><strong>Hotkeys</strong> (global, work anywhere) beat <strong>aliases</strong> (only rank higher inside Root Search) for the handful of commands you run dozens of times a day.</li>
+    <li>Raycast's model: <strong>type intent, act</strong> — not browse-then-click.</li>
+    <li><strong>Clipboard History</strong> is the biggest zero-mouse win; disable Raycast's window management since AeroSpace already owns tiling.</li>
+    <li>The <strong>Extension Store</strong> turns Raycast into a control surface for AWS, Kubernetes, Terraform, GCP; <strong>hotkeys</strong> beat aliases for your most-used commands.</li>
   </ul>
-  <p><strong>Try solo:</strong> install the AWS or Kubernetes extension (whichever matches something you touch today), find one command inside it you'd use often, and bind it to its own hotkey via <code>⌘,</code> → Configure Command → Set Hotkey.</p>
+  <p><strong>Try solo:</strong> install the AWS or Kubernetes extension, find one command you'd use often, bind it to its own hotkey.</p>
 </div>
 
-<footer class="teacher-reminder">Something not clicking, or your desktop is doing something the lesson didn't cover? Ask me directly — bring your actual config or the exact behavior you're seeing.</footer>
+<footer class="teacher-reminder">Something not clicking, or your desktop doing something the lesson didn't cover? Bring your actual config or the exact behavior you're seeing.</footer>
 
 <div class="lesson-nav">
   <a href="0001-aerospace-mental-model.html">&larr; AeroSpace</a>

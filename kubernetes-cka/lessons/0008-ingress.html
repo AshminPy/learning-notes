@@ -11,71 +11,62 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 8 of 17</p>
 <h1>Ingress &rarr; Service</h1>
 
-<p>Lesson 5 gave a Deployment a stable ClusterIP Service. That Service is reachable from inside the cluster — other Pods can hit it by name — but it has no path in from outside. This lesson is about that last hop: how traffic from outside the cluster reaches the right Service.</p>
+<p>A Service gives you a stable address inside the cluster. It has no path in from outside. Ingress is that last hop — it routes outside traffic to the right Service.</p>
 
-<p><strong>Tied to your mission:</strong> Services & Networking is 20% of the exam, and the current CNCF curriculum (v1.35) lists both "know how to use Ingress controllers and Ingress resources" and "use the Gateway API to manage Ingress traffic" as separate competencies — so Ingress is still directly examinable even though your day job runs on Gateway API. More on that at the end.</p>
-
-<h2>The mental model — why Ingress exists on top of Service</h2>
-<p>Start from what a Service alone gives you, and where each type stops being enough:</p>
-<ul>
-  <li><strong>ClusterIP</strong> (the default, and what you built in Lesson 5) — has an IP that only exists <em>inside</em> the cluster's network. Nothing outside the cluster can reach it at all, full stop.</li>
-  <li><strong>LoadBalancer</strong> — provisions a real cloud load balancer (on GKE, an actual forwarding rule + external IP) dedicated to that one Service. It works, but every LoadBalancer Service is its own billable cloud resource. Ten HTTP services behind ten LoadBalancers is ten load balancers, most of them sitting mostly idle.</li>
-</ul>
-<p><strong>Ingress</strong> solves the LoadBalancer problem for HTTP(S) traffic specifically: one entry point, one external IP, one load balancer — and it routes incoming requests to many different Services behind it based on the hostname and path in the request. Instead of ten load balancers, you run one, and Ingress rules decide which Service each request goes to.</p>
-
-<p class="callout">The single most important thing in this lesson: <strong>an Ingress resource is only a set of routing rules.</strong> It is not, itself, a running process, a proxy, or a load balancer. Kubernetes stores your Ingress object in etcd the same as any other object — but nothing reads it and acts on it unless something called an <strong>Ingress controller</strong> is also running in the cluster, watching Ingress objects and actually configuring a proxy or cloud load balancer to match. "I applied an Ingress and nothing happened" is almost always "there is no Ingress controller installed" — the resource did exactly what it's supposed to do, which is nothing by itself.</p>
-
-<p>GKE Autopilot, which you run daily, ships a default Ingress controller (GKE's own, backed by Google Cloud Load Balancing) — which is likely why you've never hit this gap in production. On a bare kubeadm cluster (closer to what the exam gives you), there usually isn't one until you install it (e.g. ingress-nginx). That's the trap: the manifest can be perfect and still do nothing.</p>
+<p class="callout"><strong>Simple example:</strong> think of Ingress like a building receptionist. One door, one address. The receptionist reads where you want to go and sends you to the right room — the right Service — based on the hostname and path you asked for.</p>
 
 <h2>The shape of an Ingress</h2>
-<p>An Ingress is a list of <code>rules</code>. Each rule says: for this <code>host</code>, when the request path matches this <code>path</code>, send it to this <code>backend</code> Service.</p>
+<p>An Ingress is a list of rules. Each rule says: for this host and path, send traffic to this Service.</p>
+<pre><code>rules:
+  - host: nginx.example.com
+    http:
+      paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: nginx-service
+              port:
+                number: 80
+</code></pre>
 <ul>
-  <li><code>rules[].host</code> — the hostname to match (e.g. <code>shop.example.com</code>). Omit it and the rule matches any host.</li>
-  <li><code>rules[].http.paths[].path</code> + <code>pathType</code> — the URL path to match, and how strictly (<code>Exact</code>, <code>Prefix</code>, or <code>ImplementationSpecific</code>).</li>
-  <li><code>rules[].http.paths[].backend.service.name</code> and <code>backend.service.port.number</code> — which Service, and which of its ports, gets the traffic that matches.</li>
+<li><code>host</code> — the hostname this rule matches</li>
+<li><code>path</code> / <code>pathType</code> — the URL path, and how strictly it must match</li>
+<li><code>backend.service</code> — which Service, and which port, gets the traffic</li>
 </ul>
-<p>Notice what's <em>not</em> in there: no Pod IPs, no Deployment name. An Ingress rule only ever points at a Service — the same indirection you already trust from Lesson 5. The Ingress hands off to the Service, and the Service does what it always does: match its selector against Pod labels.</p>
+<p>Notice: an Ingress rule only ever points at a Service, never at Pods directly.</p>
 
-<h2><code>ingressClassName</code> — which controller handles this Ingress</h2>
-<p>A cluster can have more than one Ingress controller installed at once (e.g. ingress-nginx for internal traffic, GKE's controller for public traffic). <code>spec.ingressClassName</code> is how a given Ingress object says which controller is responsible for it — it names an <code>IngressClass</code> object, which in turn maps to a specific controller implementation. Leave it unset and the cluster falls back to whichever <code>IngressClass</code> is marked default (if any) — same "there has to be a default, or nothing happens" trap as StorageClass in Lesson 7.</p>
+<p class="callout"><strong>The trap:</strong> an Ingress is only routing rules. It does nothing by itself. Something called an <strong>Ingress controller</strong> has to run in the cluster and read those rules. Apply an Ingress with no controller installed, and nothing happens — no error, just silence.</p>
 
-<h2>Try it first — before reading on</h2>
+<h2>Try it — before looking below</h2>
 <div class="quiz">
-  <p>Q1. You write and apply a correct Ingress manifest. Nothing happens — no traffic is routed. What is the most likely reason, and what actually needs to exist in the cluster for an Ingress resource to do anything at all?</p>
-  <input type="text" id="q1" placeholder="type your answer">
-  <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a1">An Ingress controller must be running in the cluster. The Ingress object is just a set of routing rules stored in etcd — it does nothing by itself. A controller has to be watching Ingress objects and configuring a real proxy/load balancer to match them. No controller = a perfectly valid Ingress that does nothing.</div>
+<p>Q1. You apply a correct Ingress. No traffic gets routed. What's missing?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">An Ingress controller. The Ingress object is just rules — a controller has to be running to read them and configure a real proxy or load balancer.</div>
 </div>
 
 <div class="quiz">
-  <p>Q2. What field tells Kubernetes which Ingress controller should handle a given Ingress, and what does that field actually point at?</p>
-  <input type="text" id="q2" placeholder="type your answer">
-  <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a2"><code>spec.ingressClassName</code> — it names an <code>IngressClass</code> object, which in turn maps to a specific controller implementation. Without it (and without a default IngressClass configured), it's ambiguous which controller, if any, should pick up the Ingress.</div>
+<p>Q2. What field says which controller should handle a given Ingress?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>spec.ingressClassName</code> — it names an <code>IngressClass</code>, which maps to a specific controller.</div>
 </div>
 
-<div class="quiz">
-  <p>Q3. Why would you reach for Ingress instead of just giving every Service a <code>type: LoadBalancer</code>?</p>
-  <input type="text" id="q3" placeholder="type your answer">
-  <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a3">Every LoadBalancer Service provisions its own dedicated cloud load balancer — expensive and wasteful when you have many HTTP services. Ingress gives you one entry point (one load balancer, in front of the Ingress controller) that routes to many Services behind it based on hostname/path.</div>
-</div>
-
-<h2>Now build it — in your terminal, not here</h2>
-<p>Write an Ingress by hand, no copy-paste, that routes a hostname to the <code>nginx-service</code> Service from Lesson 5. Requirements only:</p>
+<h2>Now write your own</h2>
+<p>Write an Ingress by hand (no copy-paste) that routes to a Service called <code>nginx-service</code>, with:</p>
 <ul>
-  <li><code>kind: Ingress</code>, API group <code>networking.k8s.io/v1</code></li>
-  <li>an <code>ingressClassName</code> (use <code>nginx</code>, or whatever controller your cluster actually has installed — check with <code>kubectl get ingressclass</code>)</li>
-  <li>one rule with a <code>host</code> of your choosing (e.g. <code>nginx.example.com</code> — it doesn't need to resolve anywhere real for this exercise)</li>
-  <li>under that host, one path rule: path <code>/</code>, <code>pathType: Prefix</code></li>
-  <li>a backend pointing at <code>nginx-service</code>, port <code>80</code> — the same name and port you gave the Service in Lesson 5</li>
+<li><code>kind: Ingress</code>, API group <code>networking.k8s.io/v1</code></li>
+<li>an <code>ingressClassName</code> of your choice</li>
+<li>one rule: any <code>host</code>, path <code>/</code>, <code>pathType: Prefix</code></li>
+<li>a backend pointing at <code>nginx-service</code>, port <code>80</code></li>
 </ul>
-<p>Don't peek at the answer below until you've written something.</p>
+<p>Try it before you look at the answer below.</p>
 
 <div class="quiz">
-  <p>Reveal the reference answer</p>
-  <button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a4"><code>apiVersion: networking.k8s.io/v1
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: nginx-ingress
@@ -95,28 +86,19 @@ spec:
 </code></pre>
 </div>
 
-<p>Check it field-by-field: does <code>backend.service.name</code> match the Service's <code>metadata.name</code> exactly? Does <code>backend.service.port.number</code> match a port the Service actually exposes? Those two links are where this breaks in practice — the Ingress side is almost never the bug, the reference to the Service is.</p>
-
-<h2>Ingress vs. Gateway API — what the exam actually tests</h2>
-<p>You already know Gateway API from GKE Autopilot at work — it's the newer, more expressive replacement for Ingress (separate <code>GatewayClass</code>/<code>Gateway</code>/<code>HTTPRoute</code> objects instead of one flat Ingress resource, with cleaner support for things like traffic splitting). Verified directly against the official CNCF CKA Curriculum v1.35 (the current exam version): the Services & Networking domain lists <strong>both</strong> "know how to use Ingress controllers and Ingress resources" <strong>and</strong> "use the Gateway API to manage Ingress traffic" as separate, explicit competencies. So the exam still tests this older Ingress API in its own right — it has not been dropped or folded into Gateway API coverage — even though your day job runs on the newer one. Gateway API itself is a later lesson.</p>
-
-<h2>Primary source</h2>
-<p>Read (or at least skim) the official docs — the exact page you're allowed to search during the real exam: <a href="https://kubernetes.io/docs/concepts/services-networking/ingress/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/ingress</a>.</p>
-<p>Curriculum verified against: <a href="https://github.com/cncf/curriculum/blob/master/CKA_Curriculum_v1.35.pdf" target="_blank" rel="noopener">CNCF CKA_Curriculum_v1.35.pdf</a> (Services & Networking, 20%).</p>
+<h2>Source</h2>
+<p><a href="https://kubernetes.io/docs/concepts/services-networking/ingress/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/ingress</a> — the exact page you can search in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>ClusterIP isn't reachable from outside the cluster at all. LoadBalancer gives every Service its own cloud load balancer — works, but expensive at scale. Ingress is one entry point that routes by host/path to many Services behind it.</li>
-    <li>An Ingress resource is only routing rules. It does nothing without an Ingress controller running in the cluster to implement it — "I applied it and nothing happened" almost always means no controller.</li>
-    <li><code>rules[].host</code>, <code>rules[].http.paths[].path</code>, and <code>backend.service.name</code>/<code>port</code> define the routing. An Ingress rule only ever points at a Service, never at Pods directly.</li>
-    <li><code>ingressClassName</code> picks which controller (via its IngressClass) handles a given Ingress, when a cluster runs more than one.</li>
-    <li>Both classic Ingress and Gateway API are explicitly in the current (v1.35) CKA curriculum — this lesson covers the one still most likely to appear in manifest-writing form.</li>
+    <li>Ingress routes outside traffic to Services by host and path — it never points at Pods directly.</li>
+    <li>An Ingress does nothing without an Ingress controller running in the cluster.</li>
+    <li><code>ingressClassName</code> picks which controller handles a given Ingress.</li>
   </ul>
-  <p><strong>Try solo:</strong> from memory, add a second host to the same Ingress, routing a different hostname to a different Service name/port of your choosing. Don't reopen this file to check — write it down and self-check against the docs next session instead.</p>
 </div>
 
-<footer class="teacher-reminder">Stuck, or something doesn't make sense? Re-read the official docs linked above, or note the question down and come back to it.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0007-pvc.html">&larr; PVC &rarr; Pod</a>

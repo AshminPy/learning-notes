@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 6 — Cloud SQL vs Spanner</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 6 of 17</p>
+<h1>Cloud SQL vs Spanner</h1>
+
+<p>Both are relational databases. The exam question is never "which is better" — it's "does this scenario need global scale, or not."</p>
+
+<p class="callout"><strong>Simple example:</strong> Cloud SQL is one strong database in one region — like one HQ office. Spanner is the same data kept in sync, correctly, across many regions at once — like several offices that always agree, instantly.</p>
+
+<h2>Cloud SQL</h2>
+<p>AWS analogue: RDS. Managed MySQL, PostgreSQL, or SQL Server. One primary, scales up (bigger machine) or out with read replicas. Good for a normal app in one region.</p>
+<p>High availability (HA) means a standby copy in a second zone, <strong>same region</strong>. Roughly doubles the cost.</p>
+
+<h2>Cloud Spanner</h2>
+<p>No direct AWS match. Relational SQL that scales horizontally and stays strongly consistent across regions at the same time — most databases only give you one of those two. Built for global scale, not for small single-region apps.</p>
+<p>Costs more than Cloud SQL at small size. Pick it only when the scenario truly needs global, strongly-consistent writes.</p>
+
+<h2>When each wins</h2>
+<table>
+<tr><th></th><th>Scale</th><th>Consistency</th><th>Cost</th></tr>
+<tr><td><strong>Cloud SQL</strong></td><td>One region, vertical + read replicas</td><td>Strong, single region</td><td>Cheaper, simple</td></tr>
+<tr><td><strong>Spanner</strong></td><td>Global, horizontal, no resharding</td><td>Strong, across regions</td><td>Higher, priced for scale</td></tr>
+</table>
+
+<div class="trap"><strong>Exam trap:</strong> Cloud SQL HA survives a <strong>zone</strong> failure, not a <strong>region</strong> failure — primary and standby are both in the same region. "Must survive a region outage" or "global write path" points to Spanner, not "just enable HA."</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. App needs a relational database in one region, normal traffic, lowest cost. Pick one.</p>
+<div class="opts">
+<label>A. Cloud SQL</label>
+<label>B. Cloud Spanner</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal</button>
+<div class="answer" id="q1"><strong>A.</strong> Cloud SQL. Single region, normal scale — Spanner's global strength is not needed and costs more.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Scenario says "must keep serving strongly-consistent writes even if a whole region goes down." Pick one.</p>
+<div class="opts">
+<label>A. Cloud SQL with HA enabled</label>
+<label>B. Cloud Spanner, multi-region config</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal</button>
+<div class="answer" id="q2"><strong>B.</strong> Cloud SQL HA only covers a zone failure inside one region. A region failure needs Spanner's multi-region design.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. True or false: Cloud SQL HA replicates the standby to a different region.</p>
+<div class="opts">
+<label>A. True</label>
+<label>B. False</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal</button>
+<div class="answer" id="q3"><strong>B. False.</strong> The standby is a second zone in the same region — this is the exact exam trap above.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/sql/docs/mysql/high-availability" target="_blank" rel="noopener">docs.cloud.google.com/sql/docs/mysql/high-availability</a> and <a href="https://docs.cloud.google.com/spanner/docs/true-time-external-consistency" target="_blank" rel="noopener">docs.cloud.google.com/spanner/docs/true-time-external-consistency</a></p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Cloud SQL = one region, cheaper, simpler. Spanner = global, horizontal, strongly consistent, pricier.</li>
+    <li>Cloud SQL HA protects against a zone failure only — not a region failure. That gap is the classic exam trap.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0005-storage-basics.html">&larr; Storage basics</a>
+  <a href="0007-nosql-and-analytics.html">Next: NoSQL and analytics &rarr;</a>
+</div>
+
+</body>
+</html>

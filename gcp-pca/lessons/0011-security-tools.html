@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 11 — Security Tools</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 11 of 17</p>
+<h1>Security tools: Secret Manager, KMS, VPC-SC, Org Policy</h1>
+
+<p>Four tools, four different jobs. Mixing them up is the exam's favorite trap.</p>
+
+<p class="callout"><strong>Simple example:</strong> think of a house. Secret Manager is a locked drawer holding your spare key — you can open the drawer and take the key out. KMS is a locksmith — he encrypts and decrypts for you, but he never hands you the key itself. VPC Service Controls is a fence around the yard — even someone allowed inside the house can't carry things past the fence. Organization Policy is a house rule that applies even to the owner — like "no smoking indoors," no exceptions.</p>
+
+<h2>Secret Manager vs KMS</h2>
+<p><strong>Secret Manager</strong> stores a value — a password, an API key, a certificate. If you're allowed to read it, you get the real value back.</p>
+<p><strong>KMS</strong> (Key Management Service) stores encryption keys. You never get the key itself back — you only ask it to encrypt or decrypt something for you.</p>
+<ul>
+<li>Rotating a database password? Secret Manager.</li>
+<li>Encrypting a whole Cloud Storage bucket with a key you control? KMS.</li>
+</ul>
+
+<h2>VPC Service Controls (VPC-SC)</h2>
+<p>VPC-SC draws a boundary around your GCP services (like Cloud Storage or BigQuery). Even a user with valid access cannot copy data out across that boundary.</p>
+<p>This is different from IAM. IAM says <em>who can read the data</em>. VPC-SC says <em>data cannot leave this fence</em> — it stops an authorized person from walking off with it.</p>
+
+<h2>Organization Policy vs IAM</h2>
+<p>IAM controls <strong>who</strong> can do something. Organization Policy controls <strong>what configurations are allowed</strong>, no matter who you are.</p>
+<table>
+<tr><th></th><th>IAM</th><th>Org Policy</th></tr>
+<tr><td>Question</td><td>Who can act?</td><td>What's allowed, for everyone?</td></tr>
+<tr><td>Applies to the Owner too?</td><td>No — an Owner can do anything IAM allows</td><td>Yes — blocks even the Owner</td></tr>
+<tr><td>Example</td><td>Grant a role to a person</td><td>"No one may create service account keys"</td></tr>
+</table>
+
+<div class="trap"><strong>Exam trap:</strong> "stop an authorized user from copying data out, even though their IAM access is correct" always means VPC-SC — not a tighter IAM role. IAM already said yes to reading the data; only VPC-SC can still say no to it leaving.</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A scenario needs to stop anyone — even project Owners — from creating service account keys. What do you use?</p>
+<div class="opts">
+<label>A. An Organization Policy constraint</label>
+<label>B. A tighter IAM role</label>
+<label>C. A VPC Service Controls perimeter</label>
+<label>D. Secret Manager</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Org Policy blocks the action for everyone, including Owners. IAM roles only control who has access — they can't block the action itself.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Which tool lets an authorized caller read back the actual plaintext value?</p>
+<div class="opts">
+<label>A. Secret Manager</label>
+<label>B. Cloud KMS</label>
+<label>C. Both, equally</label>
+<label>D. Neither</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Secret Manager returns the real value. KMS only encrypts/decrypts on request — the key itself never leaves KMS.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. A contractor has valid read access to a BigQuery dataset but must never export the results outside the org. What closes that gap?</p>
+<div class="opts">
+<label>A. A VPC Service Controls perimeter</label>
+<label>B. A stricter IAM role</label>
+<label>C. A firewall rule</label>
+<label>D. Cloud KMS</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> IAM already grants the read. VPC-SC is the only one of these that blocks data leaving the boundary, regardless of valid IAM access.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/vpc-service-controls/docs/overview" target="_blank" rel="noopener">docs.cloud.google.com/vpc-service-controls/docs/overview</a></p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Secret Manager stores a value you can read back. KMS manages keys you never see.</li>
+    <li>VPC-SC blocks data from crossing a boundary, even for an authorized user.</li>
+    <li>Org Policy controls what's allowed for everyone, including Owners. IAM controls who.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0010-iam-and-resource-hierarchy.html">&larr; IAM &amp; resource hierarchy</a>
+  <a href="0012-observability.html">Next: Observability &rarr;</a>
+</div>
+
+</body>
+</html>

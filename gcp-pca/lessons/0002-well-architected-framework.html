@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2 — Well-Architected Framework</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 2 of 17</p>
+<h1>Well-Architected Framework</h1>
+
+<p>Most exam questions have 2 or more answers that are technically correct. The Well-Architected Framework is the lens that picks the "best" one.</p>
+
+<p class="callout"><strong>Simple example:</strong> think of it like a restaurant menu with a dietary filter turned on. Every dish (answer) is edible (technically valid) — but only one fits the filter (the pillar) the scenario is hinting at.</p>
+
+<h2>The 6 pillars</h2>
+<table>
+<tr><th>Pillar</th><th>What it's really asking</th></tr>
+<tr><td>Operational Excellence</td><td>Low ongoing ops burden on your team?</td></tr>
+<tr><td>Security, Privacy &amp; Compliance</td><td>Least privilege, encryption, data residency?</td></tr>
+<tr><td>Reliability</td><td>Survives a zone/region failure at the stated SLA?</td></tr>
+<tr><td>Cost Optimization</td><td>Business value per dollar, not just "cheapest"</td></tr>
+<tr><td>Performance Optimization</td><td>Latency/throughput matched to the workload?</td></tr>
+<tr><td>Sustainability</td><td>Region/resource choice minimizes carbon footprint?</td></tr>
+</table>
+
+<p class="trap"><strong>Exam trap:</strong> a technically correct answer can still be wrong — it just optimizes the wrong pillar for the scenario.</p>
+
+<h2>Elimination algorithm</h2>
+<ol>
+<li>Underline the constraint keywords ("minimal ops," "strict compliance," "lowest cost") — they name the pillar.</li>
+<li>Eliminate options that violate that pillar, even if they work technically.</li>
+<li>Eliminate options solving the wrong problem (e.g. only addressing cost when the question is about consistency).</li>
+<li>Between what's left, default to less custom engineering — unless the scenario explicitly demands the extra control.</li>
+</ol>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Scenario: a small ops team needs the cheapest storage for product images, with global low-latency reads. Option A: Cloud Storage multi-region bucket. Option B: a self-managed NFS server on a VM. Which do you eliminate first?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">B. "Small ops team" is the constraint keyword — self-managing an NFS server violates Operational Excellence. Cloud Storage is managed and built for exactly this.</div>
+</div>
+
+<h2>Quiz — Lesson 2</h2>
+
+<div class="quiz">
+<p>Q1. A question hinges on "least privilege" and "customer-managed encryption keys." Which pillar is being tested?</p>
+<div class="opts">
+<label>A. Security, privacy and compliance</label>
+<label>B. Cost optimization</label>
+<label>C. Performance optimization</label>
+<label>D. Sustainability</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Least privilege and key management are Security/Privacy/Compliance signals, not cost, performance, or sustainability.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Two answers are technically correct. One means your team owns ongoing patching, and there's a strict budget. What do you eliminate?</p>
+<div class="opts">
+<label>A. The one with higher operational overhead</label>
+<label>B. The one with higher data consistency</label>
+<label>C. The one with multi-region replication</label>
+<label>D. The one with a managed backup service</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Step 4 of the algorithm: default to less ops burden — that's also cheaper once you count engineer-hours, which is what "strict budget" is really asking.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. No budget or compliance constraint is stated. One option is self-managed, one is managed. What's the default move?</p>
+<div class="opts">
+<label>A. Prefer the managed alternative</label>
+<label>B. Prefer the cheapest hourly price</label>
+<label>C. Prefer the highest performance option</label>
+<label>D. Prefer the newest beta feature</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Absent an explicit reason to self-manage, the Operational Excellence pillar favors the managed service by default.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. How many Well-Architected pillars does Google define today?</p>
+<div class="opts">
+<label>A. Six</label>
+<label>B. Five</label>
+<label>C. Four</label>
+<label>D. Seven</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> Six — Sustainability was added later, so older material listing five is out of date.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/architecture/framework" target="_blank" rel="noopener">Well-Architected Framework overview</a> — the source for the 6 pillars above.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>6 pillars: Operational Excellence, Security, Reliability, Cost, Performance, Sustainability.</li>
+    <li>Algorithm: constraint keywords → kill pillar violations → kill wrong-problem answers → default to less ops burden.</li>
+    <li>A technically correct answer can still be wrong if it optimizes the wrong pillar.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Unsure of an answer? Re-read the framework link above, or note the question and come back to it.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0001-exam-structure.html">&larr; Prev: Exam structure</a></span>
+  <span><a href="0003-compute-engine-vs-gke.html">Next: Compute Engine vs GKE &rarr;</a></span>
+</div>
+
+</body>
+</html>

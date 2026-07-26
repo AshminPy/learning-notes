@@ -11,76 +11,66 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 10 of 17</p>
 <h1>NetworkPolicy</h1>
 
-<p>Everything so far — Service, Ingress, RBAC — controls who can <em>call an API</em> or <em>reach a stable address</em>. NetworkPolicy is different: it's the only object in this course that controls raw Pod-to-Pod network traffic, at the packet level, inside the cluster.</p>
+<p>Service, Ingress, and RBAC all control who can reach an address or call an API. NetworkPolicy is different — it controls raw Pod-to-Pod traffic, at the packet level.</p>
 
-<p><strong>Tied to your mission:</strong> you already think in GCP VPC firewall rules — default deny, explicit allow. Kubernetes Pod networking starts from the opposite default, and that gap is exactly where CKA exam questions and real production incidents live.</p>
+<p class="callout"><strong>Simple example:</strong> with zero NetworkPolicy objects, every Pod can talk to every other Pod, on any port, in any namespace. This is the opposite of a firewall — Kubernetes starts wide open, and a NetworkPolicy is what you write to close paths.</p>
 
-<h2>The default nobody expects</h2>
-<p>With zero NetworkPolicy objects in a cluster, every Pod can talk to every other Pod, on any port, in any namespace — no restriction at all. The official docs call this "non-isolated": <em>"By default, a pod is non-isolated for egress; all outbound connections are allowed. ... By default, a pod is non-isolated for ingress; all inbound connections are allowed."</em></p>
-
-<p class="callout">This is the reverse of a GCP VPC. A VPC firewall is default-deny — you write rules to <em>open</em> a path. A fresh Kubernetes cluster is default-allow — every Pod is flat-open to every other Pod until you write a NetworkPolicy to <em>close</em> paths. Walking into the CKA exam still thinking "firewall = deny by default" will cost you marks.</p>
-
-<h2>The catch: your CNI has to enforce it</h2>
-<p>A NetworkPolicy is just an API object — it does nothing by itself. Enforcement is done by the cluster's network plugin (CNI), and the plugin has to specifically implement the NetworkPolicy API. The docs are blunt about this: <em>"Creating a NetworkPolicy resource without a controller that implements it will have no effect."</em></p>
-
-<p>This is the same trap as Ingress needing an Ingress controller. You <code>kubectl apply</code> the NetworkPolicy, it's accepted, <code>kubectl get networkpolicy</code> shows it — and traffic keeps flowing exactly as before, with no error anywhere, because the CNI silently ignores it. On the exam, and in production, this is a real gotcha to check first when a NetworkPolicy "isn't working."</p>
-
-<p>Where you run daily — GKE Autopilot — this is handled for you: Autopilot defaults to GKE Dataplane V2 (Cilium-based), which enforces NetworkPolicy out of the box. GKE Standard does not enforce it until you explicitly enable the add-on. Don't assume every cluster you'll ever touch (including exam clusters) behaves like your Autopilot one.</p>
-
-<h2>The three fields that make up a policy</h2>
-<p><strong><code>podSelector</code></strong> — which Pods this policy applies to, in the same namespace as the NetworkPolicy. Same label-matching mechanism as Service and Deployment. An empty <code>podSelector: {}</code> means "all Pods in this namespace."</p>
-
-<p><strong><code>policyTypes</code></strong> — a list containing <code>Ingress</code>, <code>Egress</code>, or both. This declares which traffic direction(s) the policy governs for the selected Pods. If you write an <code>ingress</code> block but forget <code>policyTypes: [Ingress]</code>, Kubernetes infers it for you — but don't rely on inference, write it explicitly so the policy says what it means.</p>
-
-<p><strong><code>ingress.from</code></strong> / <strong><code>egress.to</code></strong> — the allow-list for that direction. Each entry can be one of three selector types:</p>
+<h2>The shape of a policy</h2>
+<pre><code>apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: nginx
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              role: frontend-client
+</code></pre>
 <ul>
-  <li><code>podSelector</code> — Pods in the <em>same</em> namespace as the policy, matched by label</li>
-  <li><code>namespaceSelector</code> — all Pods in namespaces matched by label</li>
-  <li><code>ipBlock</code> — a CIDR range (for traffic outside the cluster, e.g. an external database)</li>
+<li><code>podSelector</code> — which Pods this policy applies to (empty <code>{}</code> = all Pods in the namespace)</li>
+<li><code>policyTypes</code> — <code>Ingress</code>, <code>Egress</code>, or both — which direction this policy governs</li>
+<li><code>ingress.from</code> / <code>egress.to</code> — the allow-list: <code>podSelector</code>, <code>namespaceSelector</code>, or <code>ipBlock</code></li>
 </ul>
-<p>Combining <code>podSelector</code> and <code>namespaceSelector</code> in the <em>same</em> list entry ANDs them ("this label, in that namespace"). Listing them as <em>separate</em> entries ORs them ("this label, OR that namespace"). This is a common exam trap — one YAML indent level changes AND into OR.</p>
+<p>Put <code>podSelector</code> and <code>namespaceSelector</code> in the <em>same</em> list entry and they AND together. List them as separate entries and they OR. One indent level flips the meaning.</p>
 
-<h2>Once a policy touches a Pod, that direction flips to deny</h2>
-<p>A Pod is "isolated" for a direction the moment <em>any</em> NetworkPolicy selects it with that direction in <code>policyTypes</code>. From that point on, only what the applicable policy or policies explicitly allow gets through in that direction — everything else is dropped.</p>
+<p class="callout"><strong>The trap:</strong> a NetworkPolicy does nothing unless the cluster's CNI implements it. Apply it, and <code>kubectl get</code> shows it — but if the CNI doesn't enforce NetworkPolicy, traffic flows exactly as before, with no error anywhere.</p>
 
-<p class="callout">Multiple NetworkPolicies on the same Pod are <strong>additive</strong> — a union (OR), never an AND. If Policy A allows ingress from <code>role: frontend</code> and Policy B allows ingress from <code>role: monitoring</code>, the Pod accepts traffic from either. You cannot use a second policy to narrow what a first policy already allowed. Also remember: a connection needs both sides to agree — the source Pod's egress policy AND the destination Pod's ingress policy must both allow it.</p>
+<p>Once any policy selects a Pod for a direction, that direction becomes deny-by-default except what's explicitly allowed. Multiple policies on the same Pod are additive (OR) — never AND.</p>
 
-<h2>Try it first — before reading on</h2>
+<h2>Try it — before looking below</h2>
 <div class="quiz">
-  <p>Q1. With no NetworkPolicy objects anywhere in the cluster, what is the default Pod-to-Pod traffic behavior?</p>
-  <input type="text" id="q1" placeholder="type your answer">
-  <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a1">Fully open — every Pod can send to and receive from every other Pod, any port, any namespace. Pods are "non-isolated" for both ingress and egress by default.</div>
+<p>Q1. With no NetworkPolicy anywhere in the cluster, what's the default Pod-to-Pod traffic behavior?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Fully open — every Pod can reach every other Pod, any port, any namespace.</div>
 </div>
 
 <div class="quiz">
-  <p>Q2. What has to be true about the CNI for a NetworkPolicy to actually do anything?</p>
-  <input type="text" id="q2" placeholder="type your answer">
-  <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a2">The cluster's network plugin must implement the NetworkPolicy API. If it doesn't, the object applies successfully with no error, but enforces nothing — traffic flows exactly as before.</div>
+<p>Q2. Two NetworkPolicies both select the same Pod for Ingress, each allowing a different source. Do they AND or OR?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">OR. The Pod accepts anything allowed by either policy — policies never narrow each other.</div>
 </div>
 
-<div class="quiz">
-  <p>Q3. Two NetworkPolicies both select the same Pod for Ingress, each allowing a different source. Do they combine with AND (must satisfy both) or OR (either is enough)?</p>
-  <input type="text" id="q3" placeholder="type your answer">
-  <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-  <div class="answer" id="a3">OR — additive/union. The Pod accepts anything allowed by either policy. Policies never narrow each other.</div>
-</div>
-
-<h2>Now build it — in your terminal, not here</h2>
-<p>Write a NetworkPolicy by hand — no copy-paste. It needs to:</p>
+<h2>Now write your own</h2>
+<p>Write a NetworkPolicy by hand (no copy-paste) that:</p>
 <ul>
-  <li>apply to the Pods from your Lesson 4 Deployment (match them by the label their Pod template carries, e.g. <code>app: nginx</code> — not by the Deployment's name, NetworkPolicy only ever selects Pods)</li>
-  <li>govern <code>Ingress</code> only — leave <code>Egress</code> out of <code>policyTypes</code></li>
-  <li>allow ingress only from Pods carrying one specific label of your choosing (e.g. <code>role: frontend-client</code>) — pick a label, then use a <code>podSelector</code> inside <code>ingress.from</code> to match it</li>
-  <li>optionally restrict it further to a single port (the port your nginx container actually listens on)</li>
+<li>applies to Pods labeled <code>app: nginx</code></li>
+<li>governs <code>Ingress</code> only</li>
+<li>allows traffic only from Pods labeled <code>role: frontend-client</code>, on port <code>80</code></li>
 </ul>
-<p>Apply it, then test both sides: run a throwaway Pod <em>without</em> the allowed label and confirm it can no longer reach your Deployment's Pods, then run one <em>with</em> the label and confirm it can. Don't peek at the answer below until you've written something.</p>
+<p>Apply it, then test with a throwaway Pod that has the label, and one that doesn't.</p>
 
 <div class="quiz">
-  <p>Reveal the reference answer</p>
-  <button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a4"><code>apiVersion: networking.k8s.io/v1
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: nginx-allow-frontend
@@ -101,24 +91,19 @@ spec:
 </code></pre>
 </div>
 
-<p>This assumes your Lesson 4 Deployment's Pods carry the label <code>app: nginx</code> and listen on port 80. If yours differ, the <code>podSelector</code> and <code>port</code> must match what you actually wrote — same rule as every selector so far: exact match, no fallback.</p>
-
-<h2>Primary source</h2>
-<p>Read (or at least skim) the official docs on this — it's the exact page you're allowed to search during the real exam: <a href="https://kubernetes.io/docs/concepts/services-networking/network-policies/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/network-policies</a>.</p>
+<h2>Source</h2>
+<p><a href="https://kubernetes.io/docs/concepts/services-networking/network-policies/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/network-policies</a> — the exact page you can search in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Default with no NetworkPolicy: fully open, every Pod reaches every Pod — opposite of a GCP VPC firewall's default-deny</li>
-    <li>NetworkPolicy does nothing unless the CNI implements it — no controller, no enforcement, no error either</li>
-    <li><code>podSelector</code> = which Pods the policy applies to; <code>policyTypes</code> = which direction(s) it governs</li>
-    <li><code>ingress.from</code> / <code>egress.to</code> use <code>podSelector</code>, <code>namespaceSelector</code>, or <code>ipBlock</code> — same entry ANDs them, separate entries OR them</li>
-    <li>Once any policy selects a Pod for a direction, that direction becomes default-deny except what policies allow — and multiple policies are additive (OR), never AND</li>
+    <li>Default with no NetworkPolicy: every Pod reaches every Pod — the opposite of a firewall's default-deny.</li>
+    <li>A NetworkPolicy does nothing unless the CNI implements it — no error either way.</li>
+    <li><code>podSelector</code> + <code>policyTypes</code> pick the Pods and direction; multiple policies are additive (OR), never AND.</li>
   </ul>
-  <p><strong>Try solo:</strong> add a second NetworkPolicy that allows ingress to the same Pods from a different label, and confirm both sources work at once (proving the additive/OR behavior yourself, not just from the answer above). Don't reopen this file to check — bring what you observed back to your notes instead.</p>
 </div>
 
-<footer class="teacher-reminder">Stuck, or something doesn't make sense? Re-read the official docs linked above, or note the question down and come back to it.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0009-rbac.html">&larr; RBAC</a>

@@ -11,70 +11,53 @@
 <p class="eyebrow">Keyboard Workflow — Lesson 3 of 4</p>
 <h1>Warp, from first principles</h1>
 
-<p>You already run Warp as your daily terminal, pinned to its own AeroSpace workspace. This lesson is about the three features that turn Warp from "a terminal that looks nicer" into a terminal that actually saves you keystrokes on the commands you already run every day: <strong>Blocks</strong>, <strong>Command Search</strong> / the <strong>Command Palette</strong>, and <strong>Workflows</strong>. Workflows is the one that matters most for you — it's the direct answer to "how do I stop retyping the same SSH command, kubectl context switch, and terraform plan flags."</p>
+<p>You run Warp as your daily terminal, pinned to its own AeroSpace workspace. This lesson covers three features that save keystrokes: <strong>Blocks</strong>, <strong>Command Search</strong> / <strong>Command Palette</strong>, and <strong>Workflows</strong> — the direct fix for retyping the same SSH command, kubectl context switch, and terraform plan flags.</p>
 
 <h2>Blocks: the mental model departure</h2>
-<p>A traditional terminal is one undifferentiated scroll of text. Command output and the next command's output run together with nothing marking where one ends and the next begins — if you want to copy just one command's result, you click-drag a selection across a wall of text and hope you got the boundaries right.</p>
-<p class="callout">Warp groups every command and its output into a <strong>Block</strong> — a distinct, addressable unit. Each block can be individually copied (command only, output only, or both), shared, bookmarked, re-run, or jumped to directly — without touching anything before or after it.</p>
-<p>This matters most right after a command that produces a lot of output — <code>terraform plan</code>, a verbose <code>kubectl describe</code>, a long build log. Instead of scrolling past pages of plan output to find the command you ran before it, you jump straight to the block boundary.</p>
+<p>A normal terminal is one long scroll of text — command output runs into the next command with no boundary. Copying just one result means click-dragging and hoping you got the edges right.</p>
+<p class="callout">Warp groups every command and its output into a <strong>Block</strong> — one addressable unit. Copy, share, bookmark, re-run, or jump to it directly.</p>
+<p>This matters most after a noisy command — <code>terraform plan</code>, a long <code>kubectl describe</code>, a build log. Jump straight to the block boundary instead of scrolling past pages of output.</p>
 <table>
 <tr><th>Shortcut (macOS)</th><th>What it does</th></tr>
-<tr><td><code>Cmd-Up</code> / <code>Cmd-Down</code></td><td>Select the previous / next block</td></tr>
-<tr><td><code>Shift-Cmd-Up</code> / <code>Shift-Cmd-Down</code></td><td>Scroll to the top / bottom of a long block's output</td></tr>
-<tr><td><code>Alt-Up</code> / <code>Alt-Down</code></td><td>Jump between your bookmarked blocks specifically</td></tr>
-<tr><td><code>Shift-Up</code> / <code>Shift-Down</code></td><td>Expand the current block selection</td></tr>
+<tr><td><code>Cmd-Up</code> / <code>Cmd-Down</code></td><td>Previous / next block</td></tr>
+<tr><td><code>Shift-Cmd-Up</code> / <code>Down</code></td><td>Top / bottom of a long block</td></tr>
+<tr><td><code>Alt-Up</code> / <code>Down</code></td><td>Jump between bookmarked blocks</td></tr>
+<tr><td><code>Shift-Up</code> / <code>Down</code></td><td>Expand block selection</td></tr>
 </table>
 
-<h2>Command Search and the Command Palette: two related search tools</h2>
-<p>These sound like the same thing. They're not — and knowing the difference is what makes both fast.</p>
-<p><strong>Command Search</strong> (<code>Ctrl-R</code> — yes, the same muscle memory as bash/zsh reverse-search) is a fuzzy search scoped to things you've <em>done or saved</em>: command history, Workflows, environment variables, Notebooks, and Prompts, all in one search box. This is your fast path to "I ran something like this last week, what was it."</p>
-<p><strong>Command Palette</strong> (<code>Cmd-P</code>) is broader: it's Warp's global search for finding and launching <em>any</em> Warp action — Workflows, Notebooks, keyboard shortcuts, file search, settings — not just things tied to your history. Prefix your search with <code>workflows:</code>, <code>notebook:</code>, or <code>actions:</code> to scope it directly.</p>
-<div class="callout">Rule of thumb: reaching for something you've <strong>run before</strong> → <code>Ctrl-R</code>. Reaching for a Warp <strong>feature or setting</strong> (or you're not sure which search has it) → <code>Cmd-P</code>. Both get you there without the mouse.</div>
+<h2>Command Search vs Command Palette</h2>
+<p>They sound the same. They're not. <strong>Command Search</strong> (<code>Ctrl-R</code>, same muscle memory as bash reverse-search) is fuzzy search over things you've <em>done or saved</em>: history, Workflows, env vars, Notebooks, Prompts. <strong>Command Palette</strong> (<code>Cmd-P</code>) is broader — any Warp action or setting, not just history. Prefix with <code>workflows:</code>, <code>notebook:</code>, or <code>actions:</code> to scope it.</p>
+<div class="callout">Rule of thumb: something you've <strong>run before</strong> → <code>Ctrl-R</code>. A Warp <strong>feature or setting</strong> → <code>Cmd-P</code>.</div>
 
 <h2>Workflows: the highest-value feature for you</h2>
-<p>A Workflow is a saved, named command with a description and optional arguments. This is the direct fix for "I keep retyping the same SSH command, kubectl context switch, and terraform plan flags."</p>
+<p>A Workflow is a saved, named command with optional arguments — the fix for retyping SSH, kubectl, and terraform commands.</p>
 
-<h3>Three ways to save a command as a Workflow</h3>
-<ol>
-<li><strong>From a block's action menu</strong> — after running a command, open the block's actions and choose "Save as Workflow." Fastest option: you just ran the exact command, so Warp starts the editor pre-filled with it.</li>
-<li><strong>From the Command Palette</strong> (<code>Cmd-P</code>) — search "Create a New Personal Workflow" and build one from scratch, no prior run required.</li>
-<li><strong>Directly in Warp Drive</strong> — Warp's storage/organization panel for saved items — via "+ &gt; New workflow."</li>
-</ol>
+<p>Three ways to save one: a block's action menu ("Save as Workflow," pre-filled), the Command Palette ("Create a New Personal Workflow," from scratch), or Warp Drive (Warp's storage panel, "+ &gt; New workflow").</p>
 
 <h3>Parameterized arguments</h3>
-<p>Wrap the variable part of a command in double curly braces: <code>{{argument_name}}</code>. Save <code>ssh {{host}}</code> once, and every time you pull that Workflow up, Warp pastes the full command into your input line with the cursor sitting on <code>host</code>, ready for you to type the value and hit enter. Argument names can use letters, numbers, hyphens, and underscores, but can't start with a number.</p>
-<p>Two details worth knowing:</p>
+<p>Wrap the variable part in <code>{{argument_name}}</code>. Save <code>ssh {{host}}</code> once — next time, Warp pastes it into your input line with the cursor on <code>host</code>. Names use letters, numbers, hyphens, underscores; can't start with a number.</p>
 <ul>
-<li><strong>Default values.</strong> Give an argument a default so pressing enter with no changes still runs something sensible — useful for a host or context you use most often.</li>
-<li><strong>Enum arguments.</strong> Instead of free text, restrict an argument to a fixed list of values (static, or generated from a shell command's output — e.g. your actual list of kubectl contexts). Press <code>Shift-Tab</code> while the Workflow is loaded to cycle through suggestions.</li>
+<li><strong>Default values</strong> — enter runs something sensible even with no changes.</li>
+<li><strong>Enum arguments</strong> — restrict to a fixed list (static, or generated from a shell command, e.g. your kubectl contexts). <code>Shift-Tab</code> cycles suggestions.</li>
 </ul>
-<p class="callout">A Workflow never runs silently. Selecting it <strong>pastes the full command into your input line</strong> — you see exactly what will execute, with your argument values filled in, before you press enter. For something like a <code>terraform apply</code> or <code>kubectl delete</code> pattern, that pause-to-review is a feature, not friction.</p>
+<p class="callout">A Workflow never runs silently — it <strong>pastes into your input line</strong> for review before you press enter. For a <code>terraform apply</code> or <code>kubectl delete</code>, that pause is a feature.</p>
 
-<h3>Save these three, specifically</h3>
-<p>Based on what you actually run daily, these are the three to save first:</p>
+<h3>Save these three first</h3>
 <table>
 <tr><th>What you retype now</th><th>Save it as</th></tr>
-<tr><td>An SSH connection</td><td><code>ssh {{user}}@{{host}}</code></td></tr>
-<tr><td>A kubectl context switch</td><td><code>kubectl config use-context {{context}}</code> — give <code>context</code> an enum sourced from <code>kubectl config get-contexts -o name</code></td></tr>
-<tr><td>A terraform plan with flags</td><td><code>terraform plan -var-file={{varfile}} -out={{planfile}}</code></td></tr>
+<tr><td>SSH connection</td><td><code>ssh {{user}}@{{host}}</code></td></tr>
+<tr><td>kubectl context switch</td><td><code>kubectl config use-context {{context}}</code> — enum from <code>kubectl config get-contexts -o name</code></td></tr>
+<tr><td>terraform plan with flags</td><td><code>terraform plan -var-file={{varfile}} -out={{planfile}}</code></td></tr>
 </table>
-<p>Once the kubectl one exists as a Workflow, you can also create <strong>Workflow Aliases</strong> from it — personal shortcuts with their own default argument values, so "switch to prod" and "switch to staging" become two separate fast entries built on the same underlying Workflow, synced across your machines.</p>
+<p>Once the kubectl Workflow exists, build <strong>Workflow Aliases</strong> on top — "switch to prod" and "switch to staging" as separate fast entries with their own default values.</p>
 
 <div class="tryit">
-<p class="eyebrow">Try it — right now, on a real command</p>
-<p>Pick one command you actually retype often (your real SSH connection, kubectl context switch, or terraform plan). Run it in a block, open the block's action menu, choose "Save as Workflow," and wrap at least one part of it in <code>{{ }}</code> to make it an argument. Then open the Command Palette (<code>Cmd-P</code>), search for the Workflow by name, and run it once to confirm the argument fills in correctly.</p>
+<p class="eyebrow">Try it</p>
+<p>Run a command you actually retype (SSH, kubectl context, or terraform plan). Block action menu → "Save as Workflow," wrap one part in <code>{{ }}</code>. Open Command Palette (<code>Cmd-P</code>), find it, run it once.</p>
 </div>
 
-<h2>Tabs and panes: brief note</h2>
-<p>AeroSpace gives Warp its own workspace; inside that workspace, tabs and panes are your finer-grained split — useful when you don't want a whole new AeroSpace workspace just to keep a second shell open.</p>
-<table>
-<tr><th>Shortcut (macOS)</th><th>What it does</th></tr>
-<tr><td><code>Cmd-T</code></td><td>New tab</td></tr>
-<tr><td><code>Cmd-1</code> … <code>Cmd-9</code></td><td>Jump directly to tab 1–9</td></tr>
-<tr><td><code>Shift-Cmd-{</code> / <code>Shift-Cmd-}</code></td><td>Cycle to previous / next tab</td></tr>
-<tr><td><code>Ctrl-Shift-D</code></td><td>Split the current pane</td></tr>
-<tr><td><code>Alt-Cmd</code> + arrow keys</td><td>Move focus between panes</td></tr>
-</table>
+<h2>Tabs and panes</h2>
+<p>AeroSpace gives Warp its own workspace; tabs/panes are the finer split inside it: <code>Cmd-T</code> new tab, <code>Cmd-1</code>…<code>9</code> jump to tab, <code>Shift-Cmd-{</code>/<code>}</code> previous/next tab, <code>Ctrl-Shift-D</code> split pane, <code>Alt-Cmd</code>+arrows move focus between panes.</p>
 
 <h2>Quiz</h2>
 
@@ -87,11 +70,11 @@
 <label>D. Each terminal tab gets a fresh theme</label>
 </div>
 <button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q1"><strong>A.</strong> This is Warp's core departure from a traditional terminal — command and output are grouped into one distinct, addressable unit. B is wrong: history is a separate feature (Command Search), not what defines a block. C describes the old undifferentiated-scroll behavior Blocks specifically replace. D is unrelated — themes are an appearance setting, not what a block is.</div>
+<div class="answer" id="q1"><strong>A.</strong> Command and output are grouped into one addressable unit — Warp's core departure from a normal scroll.</div>
 </div>
 
 <div class="quiz">
-<p>Q2. On macOS, which shortcut jumps you between blocks?</p>
+<p>Q2. Which shortcut jumps you between blocks?</p>
 <div class="opts">
 <label>A. Cmd-Up and Cmd-Down jump straight between blocks</label>
 <label>B. Ctrl-R opens a fuzzy search of history</label>
@@ -99,7 +82,7 @@
 <label>D. Cmd-T always opens a brand new tab</label>
 </div>
 <button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q2"><strong>A.</strong> Cmd-Up/Cmd-Down select the previous/next block directly. B is a real shortcut but it's for Command Search, not block navigation. C is real but opens the Command Palette, a different tool entirely. D is real but opens a new tab, not related to blocks at all.</div>
+<div class="answer" id="q2"><strong>A.</strong> B, C, D are real shortcuts, just for different tools (search, palette, new tab).</div>
 </div>
 
 <div class="quiz">
@@ -111,7 +94,7 @@
 <label>D. Search replaces Blocks entirely in new Warp</label>
 </div>
 <button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q3"><strong>A.</strong> The Command Palette is the broad, global search for any Warp feature or setting — not limited to things you've run before. B is false — Command Search isn't tool-specific, it searches history/Workflows/Notebooks/Prompts generally. C is false — you search and select, you don't retype full commands. D is false — Command Search and Blocks are separate features that coexist.</div>
+<div class="answer" id="q3"><strong>A.</strong> Palette is the broad, global search for any feature; Search is scoped to history/Workflows/Notebooks/Prompts.</div>
 </div>
 
 <div class="quiz">
@@ -123,7 +106,7 @@
 <label>D. Only by asking in Warp community Discord</label>
 </div>
 <button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q4"><strong>A.</strong> All three are documented entry points: a block's "Save as Workflow" action, the Command Palette's "Create a New Personal Workflow," and Warp Drive's "+ &gt; New workflow." B, C, and D describe paths that don't exist — no config-file editing, no paid gate, and no need to ask anyone.</div>
+<div class="answer" id="q4"><strong>A.</strong> All three are documented entry points — no config editing, no paid gate needed.</div>
 </div>
 
 <div class="quiz">
@@ -135,49 +118,23 @@
 <label>D. Type the word ARG before the value</label>
 </div>
 <button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q5"><strong>A.</strong> Warp's argument syntax is <code>{{argument_name}}</code> — double curly braces around the variable part. B describes shell variable syntax, not Warp's Workflow syntax. C describes a different bracket style Warp doesn't use for this. D is an invented convention that isn't how Warp parses arguments.</div>
-</div>
-
-<div class="quiz">
-<p>Q6. You save <code>ssh {{host}}</code> as a Workflow. What happens when you run it later?</p>
-<div class="opts">
-<label>A. Warp lets you fill host before running</label>
-<label>B. Warp always reuses the very last host</label>
-<label>C. Warp silently runs the previous saved host</label>
-<label>D. Warp deletes the placeholder and asks nothing</label>
-</div>
-<button onclick="document.getElementById('q6').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q6"><strong>A.</strong> The command pastes into your input line with the cursor on the <code>host</code> placeholder, waiting for your value (or a default, if you set one). B and C both wrongly imply Warp auto-fills from memory without asking. D is wrong — the placeholder stays until you fill it or accept a default.</div>
-</div>
-
-<div class="quiz">
-<p>Q7. Why does running a Workflow paste it into the input line instead of executing it right away?</p>
-<div class="opts">
-<label>A. So you can review it before executing</label>
-<label>B. Because Warp cannot execute commands directly ever</label>
-<label>C. Because Workflows exist only as saved documentation</label>
-<label>D. So the terminal history stays completely empty</label>
-</div>
-<button onclick="document.getElementById('q7').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q7"><strong>A.</strong> Pasting instead of auto-running means you see the exact command, with arguments filled in, before it executes — important for anything with real consequences like <code>terraform apply</code> or <code>kubectl delete</code>. B is false — Warp executes commands constantly, that's its whole job. C is false — Workflows are runnable commands, not passive docs. D is false and unrelated to how Workflows behave.</div>
+<div class="answer" id="q5"><strong>A.</strong> Warp's syntax is <code>{{argument_name}}</code> — not shell <code>$var</code> or any other convention.</div>
 </div>
 
 <h2>Primary source</h2>
-<p>Verified against Warp's official docs: <a href="https://docs.warp.dev/terminal/blocks/block-basics/" target="_blank" rel="noopener">Terminal Block Basics</a>, <a href="https://docs.warp.dev/terminal/command-palette/" target="_blank" rel="noopener">Command Palette</a>, <a href="https://docs.warp.dev/terminal/entry/command-search/" target="_blank" rel="noopener">Command Search</a>, <a href="https://docs.warp.dev/knowledge-and-collaboration/warp-drive/workflows/" target="_blank" rel="noopener">Warp Drive Workflows</a>, and the <a href="https://docs.warp.dev/getting-started/keyboard-shortcuts/" target="_blank" rel="noopener">Keyboard Shortcuts</a> reference.</p>
+<p><a href="https://docs.warp.dev/terminal/blocks/block-basics/" target="_blank" rel="noopener">Block Basics</a> · <a href="https://docs.warp.dev/terminal/command-palette/" target="_blank" rel="noopener">Command Palette</a> · <a href="https://docs.warp.dev/terminal/entry/command-search/" target="_blank" rel="noopener">Command Search</a> · <a href="https://docs.warp.dev/knowledge-and-collaboration/warp-drive/workflows/" target="_blank" rel="noopener">Workflows</a> · <a href="https://docs.warp.dev/getting-started/keyboard-shortcuts/" target="_blank" rel="noopener">Keyboard Shortcuts</a></p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li><strong>Blocks</strong> group each command with its output into one navigable, copyable, shareable unit. <code>Cmd-Up</code>/<code>Cmd-Down</code> jumps between them.</li>
-    <li><strong>Command Search</strong> (<code>Ctrl-R</code>) searches things you've done or saved. <strong>Command Palette</strong> (<code>Cmd-P</code>) searches any Warp action or setting.</li>
-    <li><strong>Workflows</strong> save a command with a name and optional <code>{{argument}}</code> placeholders — save from a block's action menu, the Command Palette, or Warp Drive directly.</li>
-    <li>Running a Workflow pastes it into your input line for review, it never executes silently.</li>
-    <li>Your first three: an SSH connection, a kubectl context switch, a terraform plan — parameterize the part that actually changes.</li>
+    <li><strong>Blocks</strong> group each command with its output into one navigable unit (<code>Cmd-Up</code>/<code>Down</code>).</li>
+    <li><strong>Command Search</strong> (<code>Ctrl-R</code>) searches what you've done; <strong>Command Palette</strong> (<code>Cmd-P</code>) searches any Warp action.</li>
+    <li><strong>Workflows</strong> save a command with <code>{{argument}}</code> placeholders and paste for review — never run silently.</li>
   </ul>
-  <p><strong>Try solo:</strong> save all three of your real repeat commands (SSH, kubectl context, terraform plan) as Workflows this week, each with at least one parameterized argument, and run each once from the Command Palette.</p>
+  <p><strong>Try solo:</strong> save your SSH, kubectl context, and terraform plan commands as Workflows this week, each with one parameterized argument.</p>
 </div>
 
-<footer class="teacher-reminder">Something not clicking, or your terminal is doing something the lesson didn't cover? Ask me directly — bring the actual command or block you're stuck on.</footer>
+<footer class="teacher-reminder">Something not clicking, or your terminal doing something the lesson didn't cover? Bring the actual command or block you're stuck on.</footer>
 
 <div class="lesson-nav">
   <a href="0002-raycast-fundamentals.html">&larr; Raycast</a>

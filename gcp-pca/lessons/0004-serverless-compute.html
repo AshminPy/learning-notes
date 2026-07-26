@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 4 — Serverless Compute</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 4 of 17</p>
+<h1>Serverless compute: Cloud Run, App Engine, Cloud Run functions</h1>
+
+<p>No servers to manage on any of these three. The exam question is which one fits the shape of the workload — a full service, a whole app, or one small event-triggered task.</p>
+
+<p class="callout"><strong>Simple example:</strong> Cloud Run is a food truck — show up, serve, pack up when there's no line (scale to zero). App Engine Flexible is a restaurant with the lights always on, even with no customers. Cloud Run functions is a vending machine — one small job, triggered by one event, nothing else.</p>
+
+<h2>Cloud Run — serverless containers</h2>
+<p>AWS equivalent: App Runner / Fargate.</p>
+<ul>
+<li><strong>Use when:</strong> stateless HTTP(S) or gRPC services, bursty traffic, you want true scale-to-zero, and you want to bring any language in a container.</li>
+<li><strong>Cost shape:</strong> scale-to-zero by default, up to 60-minute request timeout, concurrency up to 1000 requests/instance. Default billing throttles CPU right after the response is sent — switch to instance-based billing for background work.</li>
+</ul>
+
+<h2>App Engine — the original PaaS</h2>
+<p>AWS equivalent: Elastic Beanstalk. Two environments, very different:</p>
+<ul>
+<li><strong>Standard:</strong> sandboxed runtime, cold start in seconds, true scale-to-zero.</li>
+<li><strong>Flexible:</strong> runs your Docker container on VMs, cold start in minutes, <strong>no scale-to-zero — minimum 1 instance always on.</strong></li>
+</ul>
+
+<h2>Cloud Run functions (formerly Cloud Functions)</h2>
+<p>Renamed from Cloud Functions on August 21, 2024 — same product, same APIs, new name.</p>
+<ul>
+<li><strong>Use when:</strong> small, single-purpose, event-triggered code — a file lands in Cloud Storage, a Pub/Sub message arrives, glue code with no Dockerfile needed.</li>
+<li><strong>Limit:</strong> event-triggered runs are capped at 9 minutes, a hard ceiling. HTTP-triggered functions can go up to 60 minutes.</li>
+</ul>
+
+<div class="trap"><strong>Exam trap:</strong> App Engine Flexible runs Docker, so it looks like the "managed, container-friendly" answer — but it cannot scale to zero. If a scenario says "minimize cost for a rarely-used containerized app," the correct answer is Cloud Run, not App Engine Flexible.</div>
+
+<h2>The three at a glance</h2>
+<table>
+<tr><th>Dimension</th><th>Cloud Run</th><th>App Engine</th><th>Cloud Run functions</th></tr>
+<tr><td>Ops burden</td><td>Bring any container.</td><td>Standard: sandboxed. Flexible: VM-backed Docker.</td><td>Deploy from source, no Dockerfile.</td></tr>
+<tr><td>Cold start</td><td>Seconds, container-dependent.</td><td>Standard: seconds. Flexible: minutes.</td><td>Comparable to Cloud Run — container-based.</td></tr>
+<tr><td>Use case</td><td>Stateless HTTP/gRPC services.</td><td>Legacy App Engine apps, simple PaaS deploys.</td><td>Single-purpose event-triggered glue code.</td></tr>
+</table>
+
+<h2>Quiz — Lesson 4</h2>
+
+<div class="quiz">
+<p>Q1. By default, what happens to a Cloud Run service with no traffic?</p>
+<div class="opts">
+<label>A. It scales down to zero</label>
+<label>B. It stays at one instance</label>
+<label>C. It pauses without releasing memory</label>
+<label>D. It shifts to batch mode</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Scale-to-zero is Cloud Run's default. It's the main cost-shape difference from App Engine Flexible, which always keeps at least one instance on.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Which App Engine environment can scale all the way down to zero instances?</p>
+<div class="opts">
+<label>A. Standard only</label>
+<label>B. Flexible only</label>
+<label>C. Both</label>
+<label>D. Neither</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Standard scales to zero. Flexible is VM-backed and always keeps a minimum of 1 instance running.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. An event-triggered Cloud Run function needs more than 9 minutes to finish. What's the fix?</p>
+<div class="opts">
+<label>A. Use an HTTP-triggered function or a Cloud Run service instead</label>
+<label>B. Raise the event-trigger timeout setting</label>
+<label>C. Switch to App Engine Standard</label>
+<label>D. Nothing — the limit doesn't apply to Storage triggers</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> The 9-minute event-trigger cap isn't tunable. An HTTP-triggered function (up to 60 min) or a full Cloud Run service/job is the correct fix, not raising a setting that doesn't exist.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. What is the current official name for the former Cloud Functions product?</p>
+<div class="opts">
+<label>A. Cloud Run functions</label>
+<label>B. Cloud Function Suite</label>
+<label>C. Serverless Functions Engine</label>
+<label>D. App Engine Functions</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> Renamed to Cloud Run functions on August 21, 2024. If an older question bank still says "Cloud Functions," it's the same product.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/run/docs/about-instance-autoscaling" target="_blank" rel="noopener">Cloud Run autoscaling docs</a> and <a href="https://cloud.google.com/blog/products/serverless/google-cloud-functions-is-now-cloud-run-functions" target="_blank" rel="noopener">Cloud Functions is now Cloud Run functions</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Cloud Run = scale-to-zero by default, 60-min timeout, any container.</li>
+    <li>App Engine Flexible cannot scale to zero (min 1 instance); only Standard can.</li>
+    <li>Cloud Run functions = single-purpose event glue code, 9-min cap on event triggers, renamed from Cloud Functions in Aug 2024.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck on a question? Re-read the section above before checking the answer — that's the habit the real exam rewards.</footer>
+
+<div class="lesson-nav">
+  <a href="0003-compute-engine-vs-gke.html">&larr; Compute Engine vs GKE</a>
+  <a href="0005-storage-basics.html">Next: Storage basics &rarr;</a>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 13 — HA and Disaster Recovery</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 13 of 17</p>
+<h1>HA and disaster recovery</h1>
+
+<p>HA and DR solve two different problems. HA keeps you running through a small failure. DR gets you back after a big one — with some data loss and downtime allowed.</p>
+
+<p class="callout"><strong>Simple example:</strong> HA is a spare tire already mounted on the car. DR is the tow truck and repair shop you call when the whole car is gone.</p>
+
+<h2>HA basics</h2>
+<ul>
+<li><strong>Multi-zone</strong> — survives one zone failing. Example: Cloud SQL HA (synchronous replica in another zone, ~60s failover), regional Persistent Disk, GKE regional clusters.</li>
+<li><strong>Multi-region</strong> — survives a whole region failing. Example: Spanner multi-region config, multi-region Cloud Storage buckets, global load balancing.</li>
+</ul>
+<p>Multi-zone protects against a zone outage. Multi-region protects against a region outage. Pick based on what the scenario says you must survive.</p>
+
+<h2>The 4 DR patterns</h2>
+<p>Same 4 patterns as AWS. Cost and speed move together: faster recovery costs more.</p>
+<table>
+<tr><th>Pattern</th><th>Approx. RPO</th><th>Approx. RTO</th><th>Cost</th></tr>
+<tr><td>Backup &amp; restore</td><td>Hours</td><td>Hours</td><td>$</td></tr>
+<tr><td>Pilot light</td><td>Minutes–hours</td><td>Tens of minutes</td><td>$$</td></tr>
+<tr><td>Warm standby</td><td>Minutes</td><td>Minutes</td><td>$$$</td></tr>
+<tr><td>Multi-site active-active</td><td>Near-zero</td><td>Near-zero</td><td>$$$$</td></tr>
+</table>
+<p>RPO = how much data you can afford to lose. RTO = how long you can afford to be down. Read those two numbers in the scenario first — they tell you which row to pick.</p>
+
+<div class="trap"><strong>Exam trap:</strong> a multi-region Cloud Storage bucket is <strong>not</strong> a DR plan by itself. It only protects your files. Your compute and your database still need their own backup or standby plan.</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A workload can lose at most 5 minutes of data and must be back within 10 minutes after a regional outage. Which pattern?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Warm standby. Too tight for pilot light (needs "tens of minutes" to scale up), but doesn't need the full cost of multi-site active-active.</div>
+</div>
+
+<h2>Quiz — Lesson 13</h2>
+
+<div class="quiz">
+<p>Q1. Which pattern has the lowest RPO and RTO but the highest cost?</p>
+<div class="opts">
+<label>A. Backup and restore</label>
+<label>B. Pilot light</label>
+<label>C. Warm standby</label>
+<label>D. Multi-site active-active</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>D.</strong> Multi-site active-active runs infrastructure continuously in multiple regions, so recovery is near-instant — but you pay for that capacity all the time.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. True or false: a dual-region Cloud Storage bucket alone counts as a full DR plan.</p>
+<div class="opts">
+<label>A. False — compute and DB still need a plan</label>
+<label>B. True — storage covers everything</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Storage replication protects objects only. Compute Engine, GKE, and Cloud SQL need their own DR mechanism.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. What does Cloud SQL HA protect against, and what does it NOT protect against?</p>
+<div class="opts">
+<label>A. Zone failure only, not a full region outage</label>
+<label>B. Region failure and zone failure both</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Cloud SQL HA replicates synchronously to a standby in another zone — that's HA, not DR. A full region outage needs a cross-region replica or backup plan.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/architecture/dr-scenarios-planning-guide" target="_blank" rel="noopener">Disaster recovery planning guide</a> — Cloud Architecture Center.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>HA = survive a small failure. DR = recover from a big one, with a plan.</li>
+    <li>4 DR patterns, in order of speed and cost: backup &amp; restore → pilot light → warm standby → multi-site active-active.</li>
+    <li>Read the scenario's RPO/RTO numbers first — they point to the pattern.</li>
+    <li>Exam trap: replicated storage alone is not a full DR plan.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0012-observability.html">&larr; Observability</a>
+  <a href="0014-cost-optimization.html">Next: Cost optimization &rarr;</a>
+</div>
+
+</body>
+</html>

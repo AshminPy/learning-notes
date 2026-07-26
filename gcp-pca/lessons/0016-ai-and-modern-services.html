@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 16 — AI &amp; Modern Services</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 16 of 17</p>
+<h1>AI platform rename, and the event-driven glue</h1>
+
+<p><strong>Flag this clearly:</strong> Google renamed Vertex AI to the <strong>Gemini Enterprise Agent Platform</strong> in April 2026. Same platform, new name. Study material and search results may still say "Vertex AI" — don't let that confuse you, answer by what the service does, not by which name is used.</p>
+
+<p class="callout"><strong>Simple example:</strong> same restaurant, new sign. Vertex AI got a new sign — Gemini Enterprise Agent Platform. Same kitchen (train and deploy models), same menu (Model Garden of foundation models), just a new name on the door.</p>
+
+<h2>Vertex AI became Gemini Enterprise Agent Platform</h2>
+<table>
+<tr><th>What it is (unchanged)</th><th>What to call it now</th></tr>
+<tr><td>Managed ML platform: train, deploy, predict</td><td>Still the core of Gemini Enterprise Agent Platform</td></tr>
+<tr><td>Catalog of foundation models (Gemini, Claude, Gemma, Llama)</td><td>Model Garden</td></tr>
+<tr><td>Toolkit to build agents (SDK, low-code, templates)</td><td>Agent Builder</td></tr>
+</table>
+
+<h2>Model Garden vs Agent Builder</h2>
+<p><strong>Model Garden</strong> — pick a ready-made foundation model, no training needed. <strong>Agent Builder</strong> — build something that reasons, calls tools, and does multi-step work, not just one prompt in, one answer out.</p>
+
+<h2>Pub/Sub vs Eventarc vs Cloud Scheduler</h2>
+<table>
+<tr><th>Service</th><th>Trigger type</th><th>Typical use case</th></tr>
+<tr><td>Pub/Sub</td><td>Message, published by your app</td><td>Decouple services; fan out one event to many consumers</td></tr>
+<tr><td>Eventarc</td><td>Event, from a GCP service</td><td>React to a resource change (file uploaded) with no custom polling</td></tr>
+<tr><td>Cloud Scheduler</td><td>Time, cron schedule</td><td>Nightly batch job, recurring cleanup</td></tr>
+</table>
+<p><strong>Fast filter:</strong> named moment in time &rarr; Scheduler. Something happened to a GCP resource &rarr; Eventarc. Your own app publishing data &rarr; Pub/Sub.</p>
+
+<div class="trap"><strong>Exam trap:</strong> "trigger a Cloud Run function when a file lands in Cloud Storage" is Eventarc, not raw Pub/Sub — even though Eventarc uses Pub/Sub as transport underneath. You didn't build that plumbing, so it's not the Pub/Sub answer.</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. What happened to the name "Vertex AI"?</p>
+<div class="opts">
+<label>A. Discontinued with no replacement</label>
+<label>B. Renamed to Gemini Enterprise Agent Platform</label>
+<label>C. Merged into BigQuery ML</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal</button>
+<div class="answer" id="q1"><strong>B.</strong> Same platform, new brand, as of April 2026. Expect both names on the exam.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A scenario needs a multi-step agent that calls tools and reasons over documents. Best fit?</p>
+<div class="opts">
+<label>A. Model Garden</label>
+<label>B. Cloud Scheduler</label>
+<label>C. Agent Builder</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal</button>
+<div class="answer" id="q2"><strong>C.</strong> Agent Builder is for tool-using, multi-step agents. Model Garden just gives you a model to call.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. A file lands in Cloud Storage and must trigger a Cloud Run function automatically, no custom polling. Best fit?</p>
+<div class="opts">
+<label>A. Cloud Scheduler</label>
+<label>B. Eventarc</label>
+<label>C. A hand-built poller</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal</button>
+<div class="answer" id="q3"><strong>B.</strong> Eventarc standardizes the Storage event and routes it for you, retries included.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://cloud.google.com/products/gemini-enterprise-agent-platform" target="_blank" rel="noopener">cloud.google.com/products/gemini-enterprise-agent-platform</a> and <a href="https://docs.cloud.google.com/eventarc/docs/overview" target="_blank" rel="noopener">docs.cloud.google.com/eventarc/docs/overview</a></p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Vertex AI was renamed to Gemini Enterprise Agent Platform (April 2026) — same platform, expect both names.</li>
+    <li>Model Garden = pick a model. Agent Builder = build a multi-step agent.</li>
+    <li>Pub/Sub = message you publish. Eventarc = GCP resource event. Scheduler = fixed time.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0015-migration-strategies.html">&larr; Migration strategies</a>
+  <a href="0017-final-review.html">Next: Final review &rarr;</a>
+</div>
+
+</body>
+</html>

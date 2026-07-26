@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 17 — Final Review</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Kubernetes / CKA — Final Review</p>
+<h1>Final Review — Cheat Sheet</h1>
+
+<p>This is a reference page, not a lesson — no new material, no quiz. It pulls together the commands and traps from Lessons 1–16 into one place to skim before the exam.</p>
+
+<h2>kubectl command cheat sheet</h2>
+
+<h3>Pods, labels &amp; Deployments</h3>
+<ul>
+<li><code>kubectl get pods --show-labels</code> — show labels on every Pod</li>
+<li><code>kubectl get pods -l tier=frontend</code> — filter Pods by label</li>
+<li><code>kubectl get deploy</code> / <code>kubectl get rs</code> — see Deployments and the ReplicaSets they own</li>
+<li><code>kubectl rollout status deployment/&lt;name&gt;</code> — watch a rollout finish</li>
+<li><code>kubectl rollout undo deployment/&lt;name&gt;</code> — roll back to the previous ReplicaSet</li>
+<li><code>kubectl rollout history deployment/&lt;name&gt;</code> — list revisions</li>
+</ul>
+
+<h3>Services &amp; networking</h3>
+<ul>
+<li><code>kubectl get endpoints &lt;service&gt;</code> — confirm a Service actually found Pods (empty = selector mismatch)</li>
+<li><code>kubectl get ingressclass</code> — which Ingress controller(s) exist in the cluster</li>
+<li><code>kubectl get networkpolicy</code> — list NetworkPolicies (existing ≠ enforced — CNI must implement it)</li>
+</ul>
+
+<h3>Config, storage &amp; RBAC</h3>
+<ul>
+<li><code>kubectl exec &lt;pod&gt; -- env</code> — confirm an env var from a ConfigMap/Secret landed</li>
+<li><code>kubectl get storageclass</code> — check what a PVC will dynamically provision against</li>
+<li><code>kubectl auth can-i &lt;verb&gt; &lt;resource&gt; --as=system:serviceaccount:&lt;ns&gt;:&lt;sa&gt;</code> — test RBAC permissions without triggering the real action</li>
+</ul>
+
+<h3>Workloads (Job/CronJob)</h3>
+<ul>
+<li><code>kubectl get jobs</code> — completions vs. target</li>
+<li><code>kubectl get cronjobs,jobs,pods</code> — watch a CronJob spawn Jobs over time</li>
+</ul>
+
+<h3>Cluster &amp; node troubleshooting</h3>
+<ul>
+<li><code>kubectl get nodes</code> — cluster-wide node health, first look</li>
+<li><code>kubectl describe node &lt;name&gt;</code> — Conditions (Ready/MemoryPressure/DiskPressure/PIDPressure) + Events</li>
+<li><code>kubectl get events --sort-by=.metadata.creationTimestamp -A</code> — cheap, chronological, cluster-wide first look</li>
+<li><code>systemctl status kubelet</code> / <code>journalctl -u kubelet -n 100 --no-pager</code> — kubelet health, on the node itself</li>
+<li><code>crictl ps -a</code> — container state straight from the runtime, works even if the API server is down</li>
+</ul>
+
+<h3>Application &amp; workload troubleshooting</h3>
+<ul>
+<li><code>kubectl describe pod &lt;name&gt;</code> — always first; Events section explains scheduling/image/probe failures</li>
+<li><code>kubectl logs &lt;pod&gt; --previous</code> — the last crashed container's own output</li>
+<li><code>kubectl exec -it &lt;pod&gt; -- sh</code> — shell into a running container (needs a shell in the image)</li>
+<li><code>kubectl debug &lt;pod&gt; -it --image=busybox --target=&lt;container&gt;</code> — debug shell-less/distroless images</li>
+</ul>
+
+<h3>etcd, upgrades &amp; certs</h3>
+<ul>
+<li><code>ETCDCTL_API=3 etcdctl --endpoints --cacert --cert --key snapshot save &lt;file&gt;</code> — back up etcd</li>
+<li><code>etcdutl --data-dir &lt;new-dir&gt; snapshot restore &lt;file&gt;</code> — restore into a new directory, never in place</li>
+<li><code>kubeadm upgrade plan</code> / <code>kubeadm upgrade apply v1.x.y</code> / <code>kubeadm upgrade node</code> — upgrade control plane, then each node</li>
+<li><code>kubectl drain &lt;node&gt; --ignore-daemonsets</code> / <code>kubectl uncordon &lt;node&gt;</code> — safely take a node out and back in during upgrades</li>
+<li><code>kubeadm certs check-expiration</code> / <code>kubeadm certs renew all</code> — check and renew control-plane TLS certs</li>
+</ul>
+
+<h2>Top 5 exam traps</h2>
+<ol>
+<li>An Ingress or NetworkPolicy object does nothing by itself — it needs a controller (Ingress) or a CNI that implements it (NetworkPolicy), or it's silently a no-op. See <a href="0008-ingress.html">Lesson 8</a> and <a href="0010-networkpolicy.html">Lesson 10</a>.</li>
+<li>A fresh cluster is default-<strong>allow</strong> for Pod-to-Pod traffic — the opposite of a firewall's default-deny. See <a href="0010-networkpolicy.html">Lesson 10</a>.</li>
+<li>A Deployment's <code>spec.selector.matchLabels</code> must exactly match <code>spec.template.metadata.labels</code>, or the Deployment is invalid. See <a href="0004-deployment.html">Lesson 4</a>.</li>
+<li>A Kubernetes Secret is base64-<strong>encoded</strong>, not encrypted — anyone with etcd/API access reads it as plain text unless <code>EncryptionConfiguration</code> is explicitly turned on. See <a href="0006-configmap-secret.html">Lesson 6</a>.</li>
+<li>A failed readiness probe never restarts a container — it only pulls the Pod out of Service routing. Only a failed liveness probe restarts it. See <a href="0011-resource-limits-probes.html">Lesson 11</a>.</li>
+</ol>
+
+<h2>Domain weights (CKA exam)</h2>
+<ul>
+<li>Troubleshooting — 30%</li>
+<li>Cluster Architecture, Installation &amp; Configuration — 25%</li>
+<li>Services &amp; Networking — 20%</li>
+<li>Workloads &amp; Scheduling — 15%</li>
+<li>Storage — 10%</li>
+</ul>
+
+<h2>Source</h2>
+<p><a href="https://training.linuxfoundation.org/certification/certified-kubernetes-administrator-cka/" target="_blank" rel="noopener">Linux Foundation — CKA exam overview</a> (domain weights) and <a href="https://kubernetes.io/docs/" target="_blank" rel="noopener">kubernetes.io/docs</a> — the only reference allowed in the real exam.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Troubleshooting is worth more than any other domain — practice the command ladders, not just the objects.</li>
+    <li>Most exam traps are "it applied with no error but does nothing" — controller/CNI missing, or a label mismatch.</li>
+    <li>When stuck, search kubernetes.io/docs directly — that's the one tool you get in the real exam.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">End of course. Re-read any linked lesson above if a trap doesn't click yet.</footer>
+
+<div class="lesson-nav">
+  <a href="0016-troubleshooting-application-workload.html">&larr; Troubleshooting: application &amp; workload</a>
+  <span>End of course</span>
+</div>
+
+</body>
+</html>

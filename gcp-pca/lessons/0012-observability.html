@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 12 — Observability</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 12 of 17</p>
+<h1>Observability: Monitoring, Logging, Trace</h1>
+
+<p>Three tools that answer three different questions about your system.</p>
+
+<p class="callout"><strong>Simple example:</strong> think of a doctor checking a patient. Cloud Monitoring is the heart rate monitor — is the patient okay right now? Cloud Logging is the patient's diary — what happened, and when? Cloud Trace is an X-ray of one visit — which part of the body (or which service call) is slow.</p>
+
+<h2>Cloud Monitoring — "is it healthy?"</h2>
+<p>Metrics, dashboards, uptime checks, alerts. Use it for latency, error rate, and "is the system up right now."</p>
+
+<h2>Cloud Logging — "what happened?"</h2>
+<p>Stores and searches log entries — the audit trail. Use it to find out why something broke, or who did what.</p>
+
+<h2>Cloud Trace — "where's the slow part?"</h2>
+<p>Follows one request as it hops between services, timing each hop. Use it to find which service is slow in a chain of calls.</p>
+
+<table>
+<tr><th></th><th>Monitoring</th><th>Logging</th><th>Trace</th></tr>
+<tr><td>Answers</td><td>Is it healthy?</td><td>What happened?</td><td>Where's the delay?</td></tr>
+<tr><td>Use when you need</td><td>A dashboard or alert</td><td>To search past events</td><td>The slow hop in a call chain</td></tr>
+</table>
+
+<div class="trap"><strong>Exam trap:</strong> Cloud Trace does not capture every single request — it samples. On Cloud Run the default is about one request every 10 seconds. If a scenario needs a guaranteed trace of one specific critical request, the answer is "force-trace that request," not "Trace already logs everything."</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your team wants to know if the app is up and check latency right now. Which tool?</p>
+<div class="opts">
+<label>A. Cloud Monitoring</label>
+<label>B. Cloud Logging</label>
+<label>C. Cloud Trace</label>
+<label>D. Secret Manager</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> "Is it healthy right now" is exactly what Monitoring's metrics, dashboards, and alerts are for.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A request is slow, and you need to find which one of five microservices is causing the delay. Which tool?</p>
+<div class="opts">
+<label>A. Cloud Trace</label>
+<label>B. Cloud Monitoring</label>
+<label>C. Cloud Logging</label>
+<label>D. VPC Service Controls</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Trace times each hop across services, so it's the tool that finds the slow one.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. A scenario needs a guaranteed trace of one specific rare, critical request. What's the catch with Cloud Trace's default behavior?</p>
+<div class="opts">
+<label>A. It samples, so that request might be missed</label>
+<label>B. It traces every request automatically</label>
+<label>C. It only works on Compute Engine</label>
+<label>D. It requires Secret Manager first</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Trace samples by default (e.g. roughly one request per 10 seconds on Cloud Run) — you must force-trace the specific request to guarantee it's captured.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/docs/observability" target="_blank" rel="noopener">docs.cloud.google.com/docs/observability</a></p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Monitoring = is it healthy. Logging = what happened. Trace = where's the delay.</li>
+    <li>Trace samples requests by default — it does not capture everything.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0011-security-tools.html">&larr; Security tools</a>
+  <a href="0013-ha-and-disaster-recovery.html">Next: HA &amp; disaster recovery &rarr;</a>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 7 — Firestore, Bigtable, BigQuery</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 7 of 17</p>
+<h1>Firestore vs Bigtable vs BigQuery</h1>
+
+<p>Three GCP data services with similar-sounding names, different jobs. The exam loves testing them against each other.</p>
+
+<p class="callout"><strong>Simple example:</strong> Firestore is a filing cabinet for one app's user data — fast, small lookups. Bigtable is a conveyor belt built for a firehose of incoming data — sensors, clicks, ticks. BigQuery is a research library — ask a big question over huge piles of data, wait a few seconds for the answer.</p>
+
+<h2>Firestore</h2>
+<p>Serverless NoSQL <strong>document</strong> database. Built for mobile and web apps — user profiles, sessions, real-time sync, works offline. Strongly consistent queries. You pay per read/write/delete, not per server.</p>
+
+<h2>Bigtable</h2>
+<p>Wide-column NoSQL database for massive scale. Built for time-series, IoT, adtech clickstreams — anything with huge write volume and simple key-value lookups. No SQL, no joins. You provision nodes, and throughput scales linearly with node count.</p>
+
+<h2>BigQuery</h2>
+<p>Serverless data warehouse. Built for SQL analytics over huge datasets — dashboards, ad-hoc queries, logs at petabyte scale. Query latency is seconds, not milliseconds. You pay per byte scanned (or a flat rate for reserved capacity).</p>
+
+<h2>Quick comparison</h2>
+<table>
+<tr><th></th><th>Best for</th><th>Query style</th><th>Scale model</th></tr>
+<tr><td><strong>Firestore</strong></td><td>App data, real-time sync</td><td>Point/document reads</td><td>Automatic, ramp gradually</td></tr>
+<tr><td><strong>Bigtable</strong></td><td>Time-series, IoT, high write volume</td><td>Key-value, no SQL</td><td>Linear with nodes</td></tr>
+<tr><td><strong>BigQuery</strong></td><td>Analytics, BI, ad-hoc SQL</td><td>Full SQL, scans lots of data</td><td>Serverless, auto-scaling</td></tr>
+</table>
+
+<div class="trap"><strong>Exam trap:</strong> a scenario asking for "fast, low-latency point lookups" is never a BigQuery answer — BigQuery is built for scanning, not point lookups, and its latency is seconds. If the scenario also says "no SQL/joins needed, just raw throughput," that's pointing at Bigtable, not BigQuery.</div>
+
+<h2>Quiz — Lesson 7</h2>
+
+<div class="quiz">
+<p>Q1. A mobile app needs offline sync and real-time updates for user profiles. Which service fits?</p>
+<div class="opts">
+<label>A. Firestore</label>
+<label>B. Bigtable</label>
+<label>C. BigQuery</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Firestore is built exactly for this — mobile/web apps, offline support, real-time sync.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. An IoT pipeline needs to ingest millions of sensor writes per second with simple key lookups. Which service fits?</p>
+<div class="opts">
+<label>A. BigQuery</label>
+<label>B. Bigtable</label>
+<label>C. Firestore</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>B.</strong> Bigtable's node-linear throughput and key-value model is built for exactly this write volume.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. An analytics team wants ad-hoc SQL over 50TB of logs, no servers to manage. Which service fits?</p>
+<div class="opts">
+<label>A. Bigtable</label>
+<label>B. Firestore</label>
+<label>C. BigQuery</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>C.</strong> Ad-hoc SQL, no ops burden, large scale — that's BigQuery's on-demand model.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. Which of these three does <strong>not</strong> support SQL or joins?</p>
+<div class="opts">
+<label>A. BigQuery</label>
+<label>B. Bigtable</label>
+<label>C. Both Firestore and BigQuery</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>B.</strong> Bigtable has no SQL and no joins — it's pure key-value at scale.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://cloud.google.com/products/databases" target="_blank" rel="noopener">cloud.google.com/products/databases</a> — official service overview and selection guide.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Firestore = app data, document reads, real-time sync.</li>
+    <li>Bigtable = huge write volume, key-value, no SQL.</li>
+    <li>BigQuery = SQL analytics over huge datasets, seconds latency, pay per scan.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0006-cloud-sql-vs-spanner.html">&larr; Cloud SQL vs Spanner</a>
+  <a href="0008-vpc-and-hybrid-connectivity.html">Next: VPC &amp; hybrid connectivity &rarr;</a>
+</div>
+
+</body>
+</html>

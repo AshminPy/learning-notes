@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 14 — Cost Optimization</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 14 of 17</p>
+<h1>Cost optimization</h1>
+
+<p>Three levers matter most for this exam: Committed Use Discounts, Sustained Use Discounts, and Spot VMs. Each trades something (flexibility, or reliability) for a lower price.</p>
+
+<p class="callout"><strong>Simple example:</strong> a CUD is a phone contract — commit for a year, pay less per month. Sustained use is a loyalty discount — use it a lot, price drops automatically, no contract. A Spot VM is a stand-by flight ticket — cheap, but you can get bumped.</p>
+
+<h2>Committed Use Discounts (CUDs)</h2>
+<ul>
+<li>You commit to 1 or 3 years. In return, you get a big discount.</li>
+<li><strong>Resource-based</strong> — commit to a specific machine shape/region. Up to ~55% off (70% for memory-optimized, 3yr). Least flexible, biggest discount.</li>
+<li><strong>Spend-based (Flexible)</strong> — commit to a $/hour spend. Applies automatically across Compute Engine, GKE, Cloud Run. No region lock-in.</li>
+</ul>
+
+<h2>Sustained Use Discounts (SUDs)</h2>
+<p class="callout">Still active today — do not assume this was removed.</p>
+<p>No commitment needed. If a machine runs more than ~25% of the month, GCP discounts it automatically. Up to 30% (older families like N1) or 20% (N2/N2D/C2). Free money on always-on workloads.</p>
+
+<h2>Spot VMs</h2>
+<ul>
+<li>Up to 91% off on-demand price.</li>
+<li>Google can reclaim the machine anytime — short notice, no uptime guarantee.</li>
+<li>No 24-hour runtime cap (unlike the old "preemptible VM" product).</li>
+<li>Best for: stateless, checkpointable, fault-tolerant work — batch jobs, CI runners, ML training. Never for a database or anything needing constant uptime.</li>
+</ul>
+
+<div class="trap"><strong>Exam trap:</strong> "cheapest" is not the same as "best." The Cost Optimization pillar means <em>most value per dollar</em>, not lowest bill. If a scenario states an uptime/SLA requirement, an all-Spot-VM answer that ignores it is a trap — even though it's the cheapest option on the page.</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A nightly batch ETL job can restart from a checkpoint if interrupted. A customer-facing API must stay up 24/7. Which lever goes where?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">ETL job → Spot VM (checkpointable, interruption is cheap). API → CUD (steady, predictable, needs uptime — Spot would risk the SLA).</div>
+</div>
+
+<h2>Quiz — Lesson 14</h2>
+
+<div class="quiz">
+<p>Q1. A workload runs 24/7 with steady, predictable needs for 3 years. Best discount lever?</p>
+<div class="opts">
+<label>A. Resource-based CUD</label>
+<label>B. Spot VM</label>
+<label>C. Sustained use discount alone</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> A 3-year resource-based CUD gives the deepest discount for genuinely predictable, steady-state usage.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. True or false: Sustained Use Discounts have been fully removed from GCP.</p>
+<div class="opts">
+<label>A. False — SUDs are still active</label>
+<label>B. True — replaced entirely by Spot VMs</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> SUDs are still active, just narrower than before (mainly N1, N2/N2D, C2, M1/M2 families). Don't work from stale material here.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. A scenario has both a cost goal and an explicit uptime SLA. What should you pick?</p>
+<div class="opts">
+<label>A. The cheapest option regardless of the SLA</label>
+<label>B. An option that meets the SLA, even if not cheapest</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>B.</strong> The Cost Optimization pillar means best value, not lowest price. A stated SLA is a hard constraint — the cheapest answer must still satisfy it.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/compute/docs/instances/committed-use-discounts-overview" target="_blank" rel="noopener">Committed use discounts — official docs</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>CUD = commit for a discount (resource-based or spend-based).</li>
+    <li>SUD = automatic discount for heavy use, no commitment, still active.</li>
+    <li>Spot VM = up to 91% off, but can be reclaimed anytime — fault-tolerant work only.</li>
+    <li>Exam trap: cheapest is not automatically best — a stated SLA always wins.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0013-ha-and-disaster-recovery.html">&larr; HA and disaster recovery</a>
+  <a href="0015-migration-strategies.html">Next: Migration strategies &rarr;</a>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 5 — Storage Basics</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 5 of 17</p>
+<h1>Storage basics: object, block, and file</h1>
+
+<p>GCP has three storage types. Pick by how the app needs to read the data — as objects, as a raw disk, or as a shared folder.</p>
+
+<p class="callout"><strong>Simple example:</strong> object storage is a mailroom — you ask for a package by name. Block storage is a hard drive bolted to one computer. File storage is a shared folder many computers can open at the same time.</p>
+
+<h2>Cloud Storage — object storage</h2>
+<p>AWS analogue: S3. Whole files ("objects") in buckets, reached over HTTP. Good for backups, static assets, and ML training data — anything read as one blob, not mounted as a disk.</p>
+
+<h2>Persistent Disk — block storage</h2>
+<p>AWS analogue: EBS. A raw disk attached to one Compute Engine VM. Good for VM boot disks and databases that need a real filesystem.</p>
+
+<h2>Filestore — file storage</h2>
+<p>AWS analogue: EFS. Managed NFS that many VMs or Pods can mount at once. Good for GKE shared volumes and lift-and-shift apps that expect a normal filesystem.</p>
+
+<h2>Compare</h2>
+<table>
+<tr><th>Type</th><th>AWS analogue</th><th>Best for</th></tr>
+<tr><td>Cloud Storage (object)</td><td>S3</td><td>Backups, static files, data lake</td></tr>
+<tr><td>Persistent Disk (block)</td><td>EBS</td><td>VM boot disk, single-VM database</td></tr>
+<tr><td>Filestore (file)</td><td>EFS</td><td>Shared filesystem, many clients</td></tr>
+</table>
+
+<div class="trap"><strong>Exam trap:</strong> Persistent Disk is <strong>zonal by default</strong>. If the scenario says "must survive a zone failure," a normal disk is not enough — you need a Regional Persistent Disk, or backups/snapshots in another zone.</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. An app needs a shared filesystem that 20 GKE Pods can write to at once. Which service?</p>
+<div class="opts">
+<label>A. Cloud Storage</label>
+<label>B. Persistent Disk</label>
+<label>C. Filestore</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal</button>
+<div class="answer" id="q1"><strong>C.</strong> Filestore is the only one of the three built for many clients reading and writing the same filesystem at once.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A scenario says "must keep running if one zone fails." Plain Persistent Disk — safe or not?</p>
+<div class="opts">
+<label>A. Safe, Persistent Disk always survives a zone failure</label>
+<label>B. Not safe, it is zonal by default — use Regional PD instead</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal</button>
+<div class="answer" id="q2"><strong>B.</strong> A normal Persistent Disk lives in one zone. Losing that zone loses the disk unless you chose Regional PD.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Which storage type is closest to AWS S3?</p>
+<div class="opts">
+<label>A. Persistent Disk</label>
+<label>B. Cloud Storage</label>
+<label>C. Filestore</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal</button>
+<div class="answer" id="q3"><strong>B.</strong> Cloud Storage is object storage, same shape as S3 — buckets full of named objects, read over HTTP.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/storage/docs/consistency" target="_blank" rel="noopener">docs.cloud.google.com/storage/docs/consistency</a> and <a href="https://docs.cloud.google.com/compute/docs/disks/persistent-disks" target="_blank" rel="noopener">docs.cloud.google.com/compute/docs/disks/persistent-disks</a></p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Object = whole files by name (Cloud Storage). Block = raw disk on one VM (Persistent Disk). File = shared folder for many clients (Filestore).</li>
+    <li>Persistent Disk is zonal by default — Regional PD is the answer when a zone must be allowed to fail.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0004-serverless-compute.html">&larr; Serverless compute</a>
+  <a href="0006-cloud-sql-vs-spanner.html">Next: Cloud SQL vs Spanner &rarr;</a>
+</div>
+
+</body>
+</html>
