@@ -65,7 +65,7 @@
 
 <p class="eyebrow">Kubernetes / CKA</p>
 <h1>Exam objectives tracker</h1>
-<p>Your 17 lessons, grouped by the <a href="https://github.com/cncf/curriculum" target="_blank" rel="noopener">official CNCF CKA curriculum</a> domains and weights (v1.35, confirmed 2026-07-26). Check off a lesson once you can rebuild it from memory — not just once you've read it. Progress is saved in this browser only.</p>
+<p>Your 24 lessons, grouped by the <a href="https://github.com/cncf/curriculum" target="_blank" rel="noopener">official CNCF CKA curriculum</a> domains and weights (v1.35, confirmed 2026-07-26). Every curriculum subtopic now has a lesson — nothing left unflagged. Check off a lesson once you can rebuild it from memory — not just once you've read it. Progress is saved in this browser only.</p>
 <p class="overall" id="overall"></p>
 
 <div id="domains"></div>
@@ -87,9 +87,10 @@ const DOMAINS = [
     weight: 30,
     lessons: [
       { id: "0015", title: "Troubleshooting: cluster & node", href: "lessons/0015-troubleshooting-cluster-node.html" },
-      { id: "0016", title: "Troubleshooting: application & workload", href: "lessons/0016-troubleshooting-application-workload.html" }
+      { id: "0016", title: "Troubleshooting: application & workload", href: "lessons/0016-troubleshooting-application-workload.html" },
+      { id: "0023", title: "Resource monitoring (kubectl top, metrics-server)", href: "lessons/0023-resource-monitoring.html" }
     ],
-    gaps: ["Monitor cluster/application resource usage (kubectl top, metrics-server)"]
+    gaps: []
   },
   {
     key: "cluster-arch",
@@ -98,9 +99,13 @@ const DOMAINS = [
     lessons: [
       { id: "0009", title: "RBAC", href: "lessons/0009-rbac.html" },
       { id: "0013", title: "Cluster architecture: kubeadm & static pods", href: "lessons/0013-cluster-architecture-kubeadm.html" },
-      { id: "0014", title: "etcd backup, upgrades & TLS", href: "lessons/0014-cluster-architecture-etcd-upgrades-tls.html" }
+      { id: "0014", title: "etcd backup, upgrades & TLS", href: "lessons/0014-cluster-architecture-etcd-upgrades-tls.html" },
+      { id: "0017", title: "Helm & Kustomize", href: "lessons/0017-helm-kustomize.html" },
+      { id: "0018", title: "Extension interfaces: CNI, CSI, CRI", href: "lessons/0018-extension-interfaces.html" },
+      { id: "0019", title: "CRDs & Operators", href: "lessons/0019-crds-operators.html" },
+      { id: "0020", title: "Highly-available control plane", href: "lessons/0020-ha-control-plane.html" }
     ],
-    gaps: ["Helm & Kustomize", "CSI (storage extension interface)", "CRDs & operators", "Highly-available control plane (multiple control-plane nodes)"]
+    gaps: []
   },
   {
     key: "services-networking",
@@ -110,9 +115,10 @@ const DOMAINS = [
       { id: "0003", title: "Service → Pod", href: "lessons/0003-service-to-pod.html" },
       { id: "0005", title: "Service → Deployment", href: "lessons/0005-service-to-deployment.html" },
       { id: "0008", title: "Ingress → Service", href: "lessons/0008-ingress.html" },
-      { id: "0010", title: "NetworkPolicy", href: "lessons/0010-networkpolicy.html" }
+      { id: "0010", title: "NetworkPolicy", href: "lessons/0010-networkpolicy.html" },
+      { id: "0021", title: "CoreDNS & Gateway API", href: "lessons/0021-coredns-gateway-api.html" }
     ],
-    gaps: ["Gateway API", "CoreDNS"]
+    gaps: []
   },
   {
     key: "workloads-scheduling",
@@ -122,25 +128,26 @@ const DOMAINS = [
       { id: "0004", title: "Deployment", href: "lessons/0004-deployment.html" },
       { id: "0006", title: "ConfigMap & Secret", href: "lessons/0006-configmap-secret.html" },
       { id: "0011", title: "Resource limits & probes", href: "lessons/0011-resource-limits-probes.html" },
-      { id: "0012", title: "StatefulSet, DaemonSet, Job, CronJob", href: "lessons/0012-statefulset-daemonset-job-cronjob.html" }
+      { id: "0012", title: "StatefulSet, DaemonSet, Job, CronJob", href: "lessons/0012-statefulset-daemonset-job-cronjob.html" },
+      { id: "0022", title: "Workload autoscaling (HPA)", href: "lessons/0022-workload-autoscaling.html" }
     ],
-    gaps: ["Workload autoscaling (HorizontalPodAutoscaler)"]
+    gaps: []
   },
   {
     key: "storage",
     name: "Storage",
     weight: 10,
     lessons: [
-      { id: "0007", title: "PVC → Pod", href: "lessons/0007-pvc.html" }
+      { id: "0007", title: "PVC → Pod (includes reclaim policies)", href: "lessons/0007-pvc.html" }
     ],
-    gaps: ["Reclaim policies (Retain / Delete / Recycle)"]
+    gaps: []
   }
 ];
 
 const FOUNDATIONS = [
   { id: "0001", title: "The Pod", href: "lessons/0001-pod-basics.html" },
   { id: "0002", title: "Pod + labels", href: "lessons/0002-pod-labels.html" },
-  { id: "0017", title: "Final review & cheat sheet", href: "lessons/0017-final-review.html" }
+  { id: "0024", title: "Final review & cheat sheet", href: "lessons/0024-final-review.html" }
 ];
 
 const STORE_KEY = "cka-objectives-progress";

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 22 — Workload autoscaling</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Kubernetes / CKA — Lesson 22 of 23</p>
+<h1>Workload autoscaling</h1>
+
+<p>Lesson 4's Deployment holds replica count fixed until you edit it by hand. A <strong>HorizontalPodAutoscaler (HPA)</strong> edits that number for you, based on real load — more Pods when busy, fewer when idle.</p>
+
+<p class="callout"><strong>Simple example:</strong> the HPA is a thermostat, not a temperature sensor. It doesn't measure CPU itself — it reads numbers from metrics-server (Lesson 23) and adjusts <code>spec.replicas</code> on your Deployment to hit a target. Same reconcile-loop idea as everything else in this course: watch, compare, adjust.</p>
+
+<h2>Creating one</h2>
+<pre><code>kubectl autoscale deployment my-app --cpu-percent=50 --min=1 --max=10
+</code></pre>
+<p>Or the manifest form, which is what the exam usually expects you to write:</p>
+<pre><code>apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-app
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+</code></pre>
+<p><code>scaleTargetRef</code> is the only part that points at your Deployment — everything else describes the target and the bounds. This only ever changes <em>replica count</em> (horizontal) — it never changes a single Pod's CPU/memory requests. Resizing an individual Pod's resources is a different, separate feature (Vertical Pod Autoscaler), not part of this lesson.</p>
+
+<h2>Reading it</h2>
+<pre><code>kubectl get hpa
+NAME     REFERENCE          TARGETS   MINPODS   MAXPODS   REPLICAS
+my-app   Deployment/my-app  35%/50%   1         10        2
+</code></pre>
+<p>If <code>TARGETS</code> shows <code>&lt;unknown&gt;/50%</code> instead of a real number, the HPA has nothing to read from — metrics-server (Lesson 23) isn't installed or isn't reporting yet. That's the single most common HPA failure, and it looks nothing like an error.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You create an HPA and traffic spikes hard, but <code>kubectl get hpa</code> shows <code>&lt;unknown&gt;/50%</code> and replica count never moves. What's actually broken?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Nothing about the HPA object itself — it's waiting on metrics it never receives. Check <code>kubectl top pods</code> works at all; if it doesn't, metrics-server isn't installed or isn't healthy, and the HPA has no data to act on.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Write an HPA manifest by hand for a Deployment called <code>web</code>, targeting 70% CPU, min 2 / max 6 replicas. Try it before revealing.</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/" target="_blank" rel="noopener">kubernetes.io/docs — Horizontal Pod Autoscaling</a> — exam-allowed page.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>An HPA only adjusts replica count — it reads metrics, it doesn't produce them.</li>
+    <li><code>scaleTargetRef</code> points at the Deployment; <code>metrics</code> defines what to watch and the target.</li>
+    <li><code>TARGETS</code> showing <code>&lt;unknown&gt;</code> means metrics-server is missing or unhealthy — not a bug in the HPA.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0021-coredns-gateway-api.html">&larr; CoreDNS &amp; Gateway API</a>
+  <a href="0023-resource-monitoring.html">Next: Resource monitoring &rarr;</a>
+</div>
+
+</body>
+</html>

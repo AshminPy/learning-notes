@@ -8,7 +8,7 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 7 of 17</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 7 of 23</p>
 <h1>PersistentVolumeClaim &rarr; Pod</h1>
 
 <p>A container's filesystem dies with the container. Anything that must survive a restart needs real, persistent storage. Kubernetes splits this into three layers.</p>
@@ -37,6 +37,17 @@ spec:
 
 <p>Most clusters (GKE included) auto-create the PV for you — this is <strong>dynamic provisioning</strong>, triggered by <code>storageClassName</code>. The older pattern, <strong>static provisioning</strong>, is an admin hand-creating PVs ahead of time.</p>
 
+<h2>What happens when the PVC is deleted</h2>
+<p>A PV's <code>persistentVolumeReclaimPolicy</code> decides what happens to the underlying storage once its PVC is gone:</p>
+<ul>
+<li><strong>Delete</strong> — the PV <em>and</em> the real storage behind it are deleted too. The default for dynamically-provisioned volumes.</li>
+<li><strong>Retain</strong> — the PV is kept (status <code>Released</code>), data intact, but it won't bind to a new PVC automatically. An admin has to manually reclaim or delete it. Use this for anything you can't afford to lose to a mistaken <code>kubectl delete pvc</code>.</li>
+<li><strong>Recycle</strong> — deprecated, don't use it.</li>
+</ul>
+<pre><code>kubectl get pv                                    # STATUS column: Bound / Released / Available
+kubectl patch pv &lt;name&gt; -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
+</code></pre>
+
 <h2>Try it — before looking below</h2>
 <div class="quiz">
 <p>Q1. Does a Pod's <code>spec.volumes</code> reference a PV or a PVC?</p>
@@ -50,6 +61,13 @@ spec:
 <input type="text" id="q2" placeholder="type your answer">
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
 <div class="answer" id="a2">ReadWriteMany (RWX) — most cloud block storage only supports ReadWriteOnce, so this needs a backend like NFS.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. A PVC holding a production database is accidentally deleted. Its PV's reclaim policy is <code>Retain</code>. Is the data gone?</p>
+<input type="text" id="q3b" placeholder="type your answer">
+<button onclick="document.getElementById('a3b').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3b">No. The PV moves to <code>Released</code>, not deleted — the underlying disk and its data are untouched. An admin has to manually re-bind or clean it up; nothing happens automatically. If the policy had been <code>Delete</code>, the data would already be gone.</div>
 </div>
 
 <h2>Now write your own</h2>
@@ -89,6 +107,7 @@ spec:
     <li>PV = real storage, cluster-scoped. PVC = namespaced request. Pod mounts the PVC, never the PV.</li>
     <li>Dynamic provisioning (PVC + StorageClass) auto-creates the PV — the default on GKE/cloud.</li>
     <li><code>accessModes</code>: ReadWriteOnce (one node), ReadOnlyMany (many, read-only), ReadWriteMany (many, read-write).</li>
+    <li><code>reclaimPolicy</code>: Delete (default, storage goes with the PVC) vs. Retain (storage survives, needs manual cleanup).</li>
   </ul>
 </div>
 

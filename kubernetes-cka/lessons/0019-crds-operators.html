@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 19 — CRDs & Operators</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Kubernetes / CKA — Lesson 19 of 23</p>
+<h1>CRDs &amp; Operators</h1>
+
+<p><code>Pod</code>, <code>Deployment</code>, <code>Service</code> — every <code>kind</code> you've written so far is one Kubernetes ships with. A <strong>CustomResourceDefinition (CRD)</strong> lets someone add a brand new <code>kind</code> to your cluster's API, as if it were built in.</p>
+
+<p class="callout"><strong>Simple example:</strong> a CRD is a blank order form — it defines the fields a new object type accepts, nothing more. An <strong>Operator</strong> is the person who reads submitted forms and actually does the work. Install the CRD and nothing happens; you need an Operator watching it to act.</p>
+
+<h2>CRD — a new kind, defined</h2>
+<p>Installing a CRD teaches the API server a new <code>kind</code> — e.g. cert-manager installs a <code>Certificate</code> CRD. You can create objects of that kind immediately, they just do nothing until something is watching them.</p>
+<pre><code>kubectl get crds                       # every custom kind installed in this cluster
+kubectl explain certificate.spec       # CRDs support explain, same as built-in kinds
+</code></pre>
+
+<h2>Operator — the controller that acts on it</h2>
+<p>An Operator is ordinary code, running as an ordinary Deployment/Pod in your cluster, doing the exact same thing <code>kube-controller-manager</code> does for built-in objects: watch for a desired state, compare to actual state, reconcile the difference. Create a <code>Certificate</code> object — the cert-manager Operator notices, requests a cert, and writes the result into a Secret. You never told it how; the CRD only described the shape of the request.</p>
+<pre><code>kubectl get pods -n cert-manager       # the Operator is just a Pod
+kubectl logs -n cert-manager deploy/cert-manager   # troubleshoot it like any workload
+</code></pre>
+<p>This is the same reconcile-loop pattern from Lesson 4 (a Deployment's controller keeps replica count matching spec) — CRDs and Operators just let you extend that pattern to things Kubernetes didn't ship with.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You create a custom-kind object and nothing happens — no error, no result. What's the most likely reason?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The CRD is installed (so the API server accepted the object), but no Operator is running to watch and act on it. Check <code>kubectl get pods</code> in the namespace the Operator should be in.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. An Operator's Pod crashed an hour ago and just restarted. What happens to custom objects created during that hour?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Nothing is lost — they're stored in etcd like any other object. Once the Operator's Pod is Running again, its reconcile loop picks up every object that doesn't yet match desired state, same as a Deployment controller catching up after a restart.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/" target="_blank" rel="noopener">kubernetes.io/docs — Custom Resources</a> and <a href="https://kubernetes.io/docs/concepts/extend-kubernetes/operator/" target="_blank" rel="noopener">kubernetes.io/docs — Operator pattern</a> — exam-allowed pages.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A CRD only defines a new <code>kind</code> — it doesn't act on it.</li>
+    <li>An Operator is a normal Pod running a reconcile loop, the same pattern as built-in controllers.</li>
+    <li>Custom objects persist in etcd even if the Operator is down — it catches up once it's back.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0018-extension-interfaces.html">&larr; Extension interfaces: CNI, CSI, CRI</a>
+  <a href="0020-ha-control-plane.html">Next: Highly-available control plane &rarr;</a>
+</div>
+
+</body>
+</html>
