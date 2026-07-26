@@ -8,7 +8,7 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 20 of 23</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 20 of 24</p>
 <h1>Highly-available control plane</h1>
 
 <p>Lesson 13 built a cluster with one control-plane node. If that node dies, the cluster can't be changed — existing Pods keep running (kubelets don't need the API server minute to minute), but nothing can be scheduled, healed, or modified until it's back. A highly-available (HA) control plane runs multiple control-plane nodes so no single machine is that critical.</p>

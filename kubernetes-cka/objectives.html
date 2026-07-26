@@ -59,14 +59,51 @@
     font-size: 0.9rem;
     color: var(--muted);
   }
+  .overall-note {
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-style: italic;
+    margin-top: 0.25rem;
+  }
+  .disclaimer {
+    border-left: 3px solid var(--rule);
+    background: var(--code-bg);
+    padding: 0.6rem 1rem;
+    margin: 1.25rem 0;
+    font-size: 0.82rem;
+    color: var(--muted);
+    border-radius: 0 4px 4px 0;
+  }
+  .meta-line { font-size: 0.78rem; color: var(--muted); margin-top: 0.4rem; }
+  .feedback-link { font-size: 0.85rem; }
+  .reset-btn {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .reset-btn:hover { border-color: var(--accent); color: var(--accent); }
 </style>
 </head>
 <body>
 
 <p class="eyebrow">Kubernetes / CKA</p>
 <h1>Exam objectives tracker</h1>
-<p>Your 24 lessons, grouped by the <a href="https://github.com/cncf/curriculum" target="_blank" rel="noopener">official CNCF CKA curriculum</a> domains and weights (v1.35, confirmed 2026-07-26). Every curriculum subtopic now has a lesson — nothing left unflagged. Check off a lesson once you can rebuild it from memory — not just once you've read it. Progress is saved in this browser only.</p>
+<p>Your 24 lessons, grouped by the <a href="https://github.com/cncf/curriculum" target="_blank" rel="noopener">official CNCF CKA curriculum</a> domains and weights (v1.35, exam outline last reviewed 2026-07-26). Every curriculum subtopic identified as of that review has at least one lesson touching it — that is not the same as exhaustive coverage or exam readiness. Check off a lesson once you can rebuild it from memory — not just once you've read it. Progress is saved in this browser only.</p>
 <p class="overall" id="overall"></p>
+<p class="overall-note">This is an unofficial study-progress estimate based on which lessons you've checked off. It does not predict exam readiness or exam results — lessons within a domain aren't necessarily equally weighted toward the real exam.</p>
+<button class="reset-btn" id="reset-progress" type="button" aria-label="Reset CKA tracker progress">Reset progress</button>
+
+<div class="disclaimer">
+  This is an independent study resource and is not affiliated with, endorsed by, or sponsored by Google, CNCF, or the Linux Foundation. Exam objectives may change. Always verify against the official CKA curriculum.
+  <div class="meta-line">Exam outline last reviewed: July 26, 2026</div>
+</div>
+<p class="feedback-link"><a href="https://github.com/AshminPy/learning-notes/issues/new?title=Learning%20notes%20correction%3A%20CKA%20objectives%20tracker" target="_blank" rel="noopener">Report an issue / suggest a correction &rarr;</a></p>
 
 <div id="domains"></div>
 
@@ -75,7 +112,7 @@
 <ul class="item-list" id="foundations"></ul>
 
 <div class="lesson-nav">
-  <a href="index.html">&larr; Back to lessons</a>
+  <a href="../index.html">&larr; Back to lessons</a>
   <span></span>
 </div>
 
@@ -227,7 +264,7 @@ function updateOverall() {
     return sum + domainPct * d.weight;
   }, 0);
   document.getElementById("overall").textContent =
-    `${done} of ${all.length} scored lessons checked off — ~${Math.round(weightedDone)}% of exam weight reviewed.`;
+    `${done} of ${all.length} scored lessons checked off — Estimated weighted review progress: ~${Math.round(weightedDone)}%.`;
 }
 
 const container = document.getElementById("domains");
@@ -247,6 +284,13 @@ FOUNDATIONS.forEach(l => {
   li.appendChild(cb);
   li.appendChild(a);
   foundationsList.appendChild(li);
+});
+
+document.getElementById("reset-progress").addEventListener("click", () => {
+  if (confirm("Reset all CKA tracker progress? This only clears this tracker's checkboxes in this browser — it does not affect the PCA tracker or any other site.")) {
+    localStorage.removeItem(STORE_KEY);
+    location.reload();
+  }
 });
 </script>
 

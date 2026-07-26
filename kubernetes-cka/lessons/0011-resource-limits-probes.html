@@ -8,7 +8,7 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 11 of 23</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 11 of 24</p>
 <h1>Resource limits + probes</h1>
 
 <p>Two topics that always show up together: how much CPU/memory a container may use, and how Kubernetes checks if a container is healthy.</p>
@@ -40,6 +40,21 @@
 </ul>
 <p class="callout">Most confused pair: readiness failing never restarts anything — it only stops traffic. Liveness failing is the one that restarts.</p>
 
+<h2>Pod admission and scheduling constraints</h2>
+<p>Requests/limits (above) constrain <em>resources</em>. Two more mechanisms constrain <em>where</em> a Pod runs and <em>whether it's allowed to exist at all</em>:</p>
+<ul>
+<li><strong>Pod Security Admission</strong> — a built-in admission controller that rejects (or just warns about) Pods violating a security standard, enforced per-namespace via a label: <code>pod-security.kubernetes.io/enforce: restricted</code>. The three standards are <code>privileged</code>, <code>baseline</code>, and <code>restricted</code> (least permissive). This replaced the older, now-removed PodSecurityPolicy.</li>
+<li><strong>Node affinity</strong> — <code>spec.affinity.nodeAffinity</code> constrains which nodes a Pod can land on, by matching node labels. <code>requiredDuringSchedulingIgnoredDuringExecution</code> is a hard requirement (won't schedule without a match); <code>preferredDuringSchedulingIgnoredDuringExecution</code> is a soft preference (schedules elsewhere if no match).</li>
+</ul>
+<pre><code>apiVersion: v1
+kind: Namespace
+metadata:
+  name: secure-ns
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+</code></pre>
+<div class="trap"><strong>Exam trap:</strong> a Pod rejected by Pod Security Admission never shows up in <code>kubectl get pods</code> at all — the create request itself is denied. If <code>kubectl apply</code> errors immediately with an admission message and nothing gets created, that's this, not a scheduling failure (which would create the Pod in a <code>Pending</code> state instead).</div>
+
 <h2>Try it — before looking below</h2>
 <div class="quiz">
 <p>Q1. A Pod's readiness probe starts failing. Does the container restart?</p>
@@ -53,6 +68,13 @@
 <input type="text" id="q2" placeholder="type your answer">
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
 <div class="answer" id="a2">Memory: OOMKilled, then restarted. CPU: throttled, keeps running slower — never killed.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. <code>kubectl apply</code> on a Pod manifest fails instantly with an admission error, and <code>kubectl get pods</code> shows nothing was created. Is this a scheduling problem?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3q').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3q">No — a scheduling failure still creates the Pod object, just stuck <code>Pending</code>. Nothing being created at all, with an immediate admission error, points to Pod Security Admission (or another admission controller) rejecting the request outright.</div>
 </div>
 
 <h2>Now write your own</h2>
@@ -101,7 +123,7 @@ spec:
 </div>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/" target="_blank" rel="noopener">manage-resources-containers</a> and <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/" target="_blank" rel="noopener">pod-lifecycle</a> (probes) — the exact pages you can search in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/" target="_blank" rel="noopener">manage-resources-containers</a>, <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/" target="_blank" rel="noopener">pod-lifecycle</a> (probes), and <a href="https://kubernetes.io/docs/concepts/security/pod-security-admission/" target="_blank" rel="noopener">Pod Security Admission</a> — exact pages you can search in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
@@ -109,6 +131,8 @@ spec:
     <li><code>requests</code> places the Pod (scheduler). <code>limits</code> caps it once running (kubelet).</li>
     <li>Memory limit exceeded &rarr; OOMKilled + restart. CPU limit exceeded &rarr; throttled, no restart.</li>
     <li>Liveness fails &rarr; restart. Readiness fails &rarr; removed from Service, no restart. startupProbe delays both for slow-starting apps.</li>
+    <li>Pod Security Admission rejects non-compliant Pods at creation time (per-namespace label) — nothing gets created, unlike a scheduling failure which creates a <code>Pending</code> Pod.</li>
+    <li>Node affinity constrains which nodes a Pod can land on — <code>required...</code> is a hard rule, <code>preferred...</code> is a soft one.</li>
   </ul>
 </div>
 

@@ -8,19 +8,20 @@
 </head>
 <body>
 
-<p class="eyebrow">GCP PCA — Lesson 16 of 24</p>
-<h1>AI platform rename, and the event-driven glue</h1>
+<p class="eyebrow">GCP PCA — Lesson 16 of 25</p>
+<h1>AI platform naming shift, and the event-driven glue</h1>
 
-<p><strong>Flag this clearly:</strong> Google renamed Vertex AI to the <strong>Gemini Enterprise Agent Platform</strong> in April 2026. Same platform, new name. Study material and search results may still say "Vertex AI" — don't let that confuse you, answer by what the service does, not by which name is used.</p>
+<p><strong>Flag this clearly:</strong> Google's AI platform branding changed in 2026 — but it is not just a rename. Google Cloud's own materials describe <strong>Gemini Enterprise</strong> and <strong>Agent Platform</strong> as new offerings for agent development, orchestration, and governance, built on top of Vertex AI's existing capabilities (train/deploy/predict, Model Garden) rather than a like-for-like swap of one name for another. "Vertex AI" still appears throughout the current technical docs and SDK/API names — it hasn't disappeared, it's now positioned as the underlying layer under the newer umbrella branding. (Verified against docs.cloud.google.com/vertex-ai and Google Cloud's Gemini Enterprise announcement, 2026-07-26 — verify again before the exam, as this naming is still actively evolving.)</p>
 
-<p class="callout"><strong>Simple example:</strong> same restaurant, new sign. Vertex AI got a new sign — Gemini Enterprise Agent Platform. Same kitchen (train and deploy models), same menu (Model Garden of foundation models), just a new name on the door.</p>
+<p class="callout"><strong>Simple example:</strong> not a new sign on the same restaurant — more like the restaurant added a new tasting menu and a maître d' (agent orchestration, governance), while keeping the original kitchen (Vertex AI's train/deploy/predict) running underneath. Don't assume everything just got relabeled; some of it is genuinely new scope.</p>
 
-<h2>Vertex AI became Gemini Enterprise Agent Platform</h2>
+<h2>Vertex AI, Gemini Enterprise, and Agent Platform</h2>
 <table>
-<tr><th>What it is (unchanged)</th><th>What to call it now</th></tr>
-<tr><td>Managed ML platform: train, deploy, predict</td><td>Still the core of Gemini Enterprise Agent Platform</td></tr>
-<tr><td>Catalog of foundation models (Gemini, Claude, Gemma, Llama)</td><td>Model Garden</td></tr>
-<tr><td>Toolkit to build agents (SDK, low-code, templates)</td><td>Agent Builder</td></tr>
+<tr><th>Layer</th><th>What it covers</th></tr>
+<tr><td>Vertex AI (still the underlying term in docs/SDKs)</td><td>Managed ML platform: train, deploy, predict; still referenced directly in API/SDK names</td></tr>
+<tr><td>Model Garden</td><td>Catalog of foundation models (Gemini, Claude, Gemma, Llama) — part of Vertex AI's original scope</td></tr>
+<tr><td>Agent Builder / Agent Platform</td><td>Toolkit and orchestration layer to build, run, and govern multi-step agents — the newer, expanded scope</td></tr>
+<tr><td>Gemini Enterprise</td><td>The broader enterprise umbrella (agents + Workspace integration + governance) announced alongside Agent Platform</td></tr>
 </table>
 
 <h2>Model Garden vs Agent Builder</h2>
@@ -39,14 +40,14 @@
 
 <h2>Try it — before looking below</h2>
 <div class="quiz">
-<p>Q1. What happened to the name "Vertex AI"?</p>
+<p>Q1. Is "Vertex AI" simply a retired name that's been fully replaced by "Gemini Enterprise Agent Platform"?</p>
 <div class="opts">
-<label>A. Discontinued with no replacement</label>
-<label>B. Renamed to Gemini Enterprise Agent Platform</label>
-<label>C. Merged into BigQuery ML</label>
+<label>A. Yes — it's purely a rename, nothing else changed</label>
+<label>B. No — Vertex AI still appears in current docs/SDKs; the new branding adds agent orchestration and governance scope on top of it</label>
+<label>C. No — Vertex AI was discontinued with no replacement</label>
 </div>
 <button onclick="document.getElementById('q1').classList.add('shown')">Reveal</button>
-<div class="answer" id="q1"><strong>B.</strong> Same platform, new brand, as of April 2026. Expect both names on the exam.</div>
+<div class="answer" id="q1"><strong>B.</strong> Treating this as "just a rename" is the trap — the branding expanded to cover agent development and governance, and "Vertex AI" is still live terminology in the technical docs. Expect multiple names on the exam; answer by what the service does.</div>
 </div>
 
 <div class="quiz">
@@ -77,7 +78,7 @@
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Vertex AI was renamed to Gemini Enterprise Agent Platform (April 2026) — same platform, expect both names.</li>
+    <li>Not just a rename — Gemini Enterprise/Agent Platform adds agent orchestration and governance scope on top of Vertex AI's original train/deploy/predict capabilities; "Vertex AI" is still live terminology in current docs and SDKs.</li>
     <li>Model Garden = pick a model. Agent Builder = build a multi-step agent.</li>
     <li>Pub/Sub = message you publish. Eventarc = GCP resource event. Scheduler = fixed time.</li>
   </ul>

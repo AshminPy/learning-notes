@@ -1,0 +1,30 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fdfcf9"/>
+      <stop offset="100%" stop-color="#f2efe6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <rect x="0" y="0" width="1200" height="10" fill="#a4501f"/>
+  <rect x="0" y="620" width="1200" height="10" fill="#1a56b0"/>
+
+  <text x="90" y="180" font-family="-apple-system, 'Segoe UI', sans-serif" font-size="64" font-weight="700" fill="#1b1b18">Learning Notes</text>
+  <text x="90" y="230" font-family="-apple-system, 'Segoe UI', sans-serif" font-size="28" fill="#6b6558">Rapid-revision &amp; active-recall companion</text>
+
+  <rect x="90" y="300" width="480" height="150" rx="10" fill="#ffffff" stroke="#d9d3c4" stroke-width="2"/>
+  <rect x="90" y="300" width="8" height="150" fill="#a4501f"/>
+  <text x="130" y="360" font-family="-apple-system, 'Segoe UI', sans-serif" font-size="34" font-weight="700" fill="#1b1b18">CKA</text>
+  <text x="130" y="400" font-family="-apple-system, 'Segoe UI', sans-serif" font-size="22" fill="#6b6558">24 lessons · objectives tracker</text>
+  <text x="130" y="430" font-family="-apple-system, 'Segoe UI', sans-serif" font-size="18" fill="#9a9488">Certified Kubernetes Administrator</text>
+
+  <rect x="610" y="300" width="500" height="150" rx="10" fill="#ffffff" stroke="#d9d3c4" stroke-width="2"/>
+  <rect x="610" y="300" width="8" height="150" fill="#1a56b0"/>
+  <text x="650" y="360" font-family="-apple-system, 'Segoe UI', sans-serif" font-size="34" font-weight="700" fill="#1b1b18">GCP PCA</text>
+  <text x="650" y="400" font-family="-apple-system, 'Segoe UI', sans-serif" font-size="22" fill="#6b6558">25 lessons · objectives tracker</text>
+  <text x="650" y="430" font-family="-apple-system, 'Segoe UI', sans-serif" font-size="18" fill="#9a9488">Professional Cloud Architect</text>
+
+  <text x="90" y="530" font-family="-apple-system, 'Segoe UI', sans-serif" font-size="22" fill="#6b6558">ashminpy.github.io/learning-notes</text>
+  <text x="90" y="565" font-family="-apple-system, 'Segoe UI', sans-serif" font-size="16" fill="#9a9488">Independent study resource — not affiliated with Google, Google Cloud, CNCF, or the Linux Foundation</text>
+</svg>
