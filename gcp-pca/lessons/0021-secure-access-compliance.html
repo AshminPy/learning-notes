@@ -8,7 +8,7 @@
 </head>
 <body>
 
-<p class="eyebrow">GCP PCA — Lesson 21 of 25</p>
+<p class="eyebrow">GCP PCA — Lesson 21 of 28</p>
 <h1>Secure remote access &amp; compliance</h1>
 
 <p>Lessons 10-11 covered IAM and the core security tools. This lesson closes the rest of Section 3: how people and workloads connect in without a VPN, how AI-specific risk gets handled, and what "compliant" actually means as a design constraint, not a checkbox.</p>
@@ -22,6 +22,10 @@
 <li><strong>Chrome Enterprise Premium</strong> — browser-level security controls (data-loss prevention, malware protection) as another zero-trust layer, independent of network location.</li>
 </ul>
 <div class="trap"><strong>Exam trap:</strong> if a scenario's problem is "we have long-lived service account keys checked into a CI pipeline," the answer is Workload Identity Federation — eliminating the key entirely — not "rotate the keys more often." Rotation manages the risk; WIF removes it.</div>
+
+<h2>Separation of duties</h2>
+<p>No single identity should hold end-to-end control over a sensitive process. The engineer who writes deployment code shouldn't be the same identity that approves and executes the production deploy; the person managing billing shouldn't also control security policy. In GCP this is implemented with IAM, not a separate product: distinct predefined or custom roles per responsibility, so no one role bundles "write code" and "approve to prod" together. A design that grants one broad Owner-equivalent role to a whole team fails this even if every other control (encryption, IAP, WIF) is correctly configured.</p>
+<div class="trap"><strong>Exam trap:</strong> "one team, one shared service account with broad permissions, for simplicity" is a separation-of-duties violation dressed up as an operational convenience — the exam rewards recognizing that even when nothing else about the scenario looks broken.</div>
 
 <h2>Software supply chain security</h2>
 <p><strong>Binary Authorization</strong> enforces that only signed, trusted container images can deploy to GKE or Cloud Run — a build that wasn't produced and attested by your pipeline is rejected before it ever runs. Combine with Artifact Registry's vulnerability scanning to catch known CVEs before deploy, not after.</p>
@@ -70,6 +74,16 @@
 <div class="answer" id="q2"><strong>A.</strong> The platform being certified is necessary, not sufficient — your own IAM, data handling, and application controls still need to meet the standard.</div>
 </div>
 
+<div class="quiz">
+<p>Q3. A small team shares one service account with broad Owner-equivalent permissions "to keep things simple." Every other control (encryption, IAP, WIF) is configured correctly. Is this design sound?</p>
+<div class="opts">
+<label>A. No — one identity holding end-to-end control is a separation-of-duties violation, regardless of other controls</label>
+<label>B. Yes — as long as encryption and access controls are correct elsewhere, shared broad access is fine</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Separation of duties is its own control, independent of encryption or network access — a single identity with end-to-end power is a gap even when everything else is configured well.</div>
+</div>
+
 <h2>Source</h2>
 <p><a href="https://cloud.google.com/iap/docs" target="_blank" rel="noopener">Identity-Aware Proxy documentation</a>, <a href="https://cloud.google.com/iam/docs/workload-identity-federation" target="_blank" rel="noopener">Workload Identity Federation documentation</a>, and <a href="https://cloud.google.com/binary-authorization/docs" target="_blank" rel="noopener">Binary Authorization documentation</a>.</p>
 
@@ -80,6 +94,7 @@
     <li>Workload Identity Federation removes long-lived service account keys for external workloads, it doesn't just rotate them.</li>
     <li>Binary Authorization gates deploys on image provenance; Artifact Registry scanning catches known CVEs.</li>
     <li>Platform certification (SOC 2) ≠ your application's compliance — it's shared responsibility.</li>
+    <li>Separation of duties: no single identity should hold end-to-end control over a sensitive process — a gap even when every other control is correctly configured.</li>
   </ul>
 </div>
 

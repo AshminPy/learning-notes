@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 27 — VMware Engine, Patch Management & Intrusion Protection</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 27 of 27</p>
+<h1>VMware Engine, patch management &amp; intrusion protection</h1>
+
+<p>Three named-but-narrow exam-guide items that don't fit neatly into earlier lessons: a service for VMware shops, an operational feature for patching fleets of VMs, and a network-layer threat detector distinct from Cloud Armor (Lesson 9).</p>
+
+<p class="callout"><strong>Simple example:</strong> Cloud Armor is the bouncer at the front door, checking who comes in. Cloud IDS is a guard walking the halls once people are already inside, watching for anyone acting suspiciously.</p>
+
+<h2>Google Cloud VMware Engine (GCVE)</h2>
+<p>A fully managed service that runs the actual VMware stack — vSphere, vCenter, vSAN, NSX, HCX — on Google Cloud infrastructure. The point isn't performance or cost, it's operational continuity: your existing VMware-based applications, security procedures, DR backups, audit practices, and compliance tooling keep working unchanged, because it's genuinely VMware underneath, not an emulation.</p>
+<div class="trap"><strong>Exam trap:</strong> "we have a huge VMware estate and can't re-platform right now, but need to exit the data center" is a VMware Engine scenario, not a Compute Engine rehost. Compute Engine means converting every VM and retraining ops on a new toolchain; VMware Engine means the same vSphere skills and tools, just pointed at Google's infrastructure.</div>
+
+<h2>Patch management (VM Manager)</h2>
+<p>Part of VM Manager, this automates OS-level patching across a fleet of Compute Engine VMs (Windows and Linux) — schedule one-time or recurring patch jobs, and get compliance reporting that categorizes each VM's patch status by severity (Critical, Important/Security, Other, Up to date) in a central dashboard. This is fleet-wide OS hygiene, distinct from Lesson 17's Cloud Build/Cloud Deploy (which patches your application, not the underlying OS).</p>
+
+<h2>Cloud IDS — network-layer threat detection</h2>
+<p>Cloud IDS monitors network traffic inside your VPC and alerts on malicious activity — it's powered by Palo Alto Networks' threat detection engine. The distinction that matters for the exam:</p>
+<table>
+<tr><th></th><th>Cloud Armor (Lesson 9)</th><th>Cloud IDS</th></tr>
+<tr><td>Layer</td><td>Application (L7), at the edge</td><td>Network, inside the VPC</td></tr>
+<tr><td>Job</td><td>Blocks/allows traffic (WAF, DDoS)</td><td>Detects and alerts on threats already past the edge</td></tr>
+<tr><td>Typical traffic</td><td>North-south (internet-facing)</td><td>East-west (service-to-service) and north-south</td></tr>
+</table>
+<p>Cloud Armor stops known-bad traffic at the door. Cloud IDS watches for suspicious behavior once traffic is already inside — they answer different questions and a mature design often uses both.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A company has 2,000 VMs on vSphere, tight compliance requirements tied to their existing VMware tooling, and a data-center-exit deadline. Rehost to Compute Engine, or VMware Engine?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">VMware Engine. A hard deadline plus compliance tooling tied to VMware itself means re-platforming 2,000 VMs to Compute Engine is both slower and riskier — VMware Engine hits the deadline while keeping the existing tools and audit trail intact.</div>
+</div>
+
+<h2>Quiz — Lesson 27</h2>
+<div class="quiz">
+<p>Q1. What does Cloud IDS actually do that Cloud Armor doesn't?</p>
+<div class="opts">
+<label>A. Detects suspicious activity in traffic already inside the VPC, not just at the internet-facing edge</label>
+<label>B. Blocks Layer 7 web attacks before they reach a backend</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> That's Cloud Armor's job. Cloud IDS's distinct value is internal/east-west visibility — traffic that never touches the edge at all.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A fleet of 500 Compute Engine VMs needs OS-level security patches applied on a monthly schedule, with a compliance report afterward. What closes this gap?</p>
+<div class="opts">
+<label>A. VM Manager's patch management</label>
+<label>B. Cloud Build</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Cloud Build handles application CI, not OS-level patching across a VM fleet — that's exactly what VM Manager's patch deployment and compliance reporting are for.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/vmware-engine/docs/overview" target="_blank" rel="noopener">VMware Engine overview</a>, <a href="https://docs.cloud.google.com/compute/docs/os-patch-management" target="_blank" rel="noopener">OS patch management (VM Manager)</a>, and <a href="https://docs.cloud.google.com/intrusion-detection-system/docs" target="_blank" rel="noopener">Cloud IDS documentation</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>VMware Engine runs the real VMware stack on GCP for operational continuity, not a re-platform to Compute Engine.</li>
+    <li>VM Manager's patch management is fleet-wide OS patching + compliance reporting, distinct from application CI/CD.</li>
+    <li>Cloud Armor guards the edge (L7, north-south). Cloud IDS watches traffic already inside the VPC (network layer, east-west too) — powered by Palo Alto Networks.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0026-future-proofing.html">&larr; Future-proofing the architecture</a>
+  <a href="0028-final-review.html">Next: Final review &rarr;</a>
+</div>
+
+</body>
+</html>
