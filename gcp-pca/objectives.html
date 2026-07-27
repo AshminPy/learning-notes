@@ -112,7 +112,7 @@
 
 <p class="eyebrow">GCP Professional Cloud Architect</p>
 <h1>Exam objectives tracker</h1>
-<p>Your 25 lessons, grouped by the <a href="https://services.google.com/fh/files/misc/professional_cloud_architect_exam_guide_english.pdf" target="_blank" rel="noopener">official PCA exam guide</a>'s 6 sections and weights (exam outline last reviewed 2026-07-26). Most exam-guide subtopics have at least one lesson touching them, but not all — each section below lists what's still not covered. That is not the same as exhaustive coverage or exam readiness. Check off a lesson once you can rebuild it from memory. Progress is saved in this browser only.</p>
+<p>Your 28 lessons — 26 scored across the 6 exam sections below, plus 2 foundational lessons (exam structure and the final review, not tied to a single section) — grouped by the <a href="https://services.google.com/fh/files/misc/professional_cloud_architect_exam_guide_english.pdf" target="_blank" rel="noopener">official PCA exam guide</a>'s 6 sections and weights (exam outline last reviewed 2026-07-26). Every exam-guide subtopic identified as of that review now has at least one lesson touching it — that is not the same as exhaustive coverage or exam readiness. No lesson resource, including this one, can guarantee you'll pass; use it to review and find gaps, not as a substitute for hands-on practice. Check off a lesson once you can rebuild it from memory. Progress is saved in this browser only.</p>
 <p class="overall" id="overall"></p>
 <p class="overall-note">This is an unofficial study-progress estimate based on which lessons you've checked off. It does not predict exam readiness or exam results — lessons within a section aren't necessarily equally weighted toward the real exam.</p>
 <button class="reset-btn" id="reset-progress" type="button" aria-label="Reset PCA tracker progress">Reset progress</button>
@@ -149,9 +149,11 @@ const DOMAINS = [
       { id: "0007", title: "Firestore vs Bigtable vs BigQuery", href: "lessons/0007-nosql-and-analytics.html" },
       { id: "0013", title: "HA and disaster recovery", href: "lessons/0013-ha-and-disaster-recovery.html" },
       { id: "0015", title: "Migration strategies: rehost, replatform, refactor", href: "lessons/0015-migration-strategies.html" },
-      { id: "0016", title: "AI platform naming shift, and the event-driven glue", href: "lessons/0016-ai-and-modern-services.html" }
+      { id: "0016", title: "AI platform naming shift, and the event-driven glue", href: "lessons/0016-ai-and-modern-services.html" },
+      { id: "0025", title: "Business requirements, integration & workload disposition", href: "lessons/0025-business-requirements.html" },
+      { id: "0026", title: "Future-proofing the architecture", href: "lessons/0026-future-proofing.html" }
     ],
-    gaps: ["Business use cases and product strategy; functional vs non-functional requirements", "Integration patterns with external systems; movement of data between systems", "Workload disposition strategies (build, buy, modify, or deprecate)", "Envisioning future solution improvements / cloud-first design approach (1.5)"]
+    gaps: []
   },
   {
     key: "provision",
@@ -161,9 +163,10 @@ const DOMAINS = [
       { id: "0008", title: "VPC, Shared VPC, and hybrid connectivity", href: "lessons/0008-vpc-and-hybrid-connectivity.html" },
       { id: "0009", title: "Load balancing, CDN, and Cloud Armor", href: "lessons/0009-load-balancing-cdn-armor.html" },
       { id: "0022", title: "Storage lifecycle & data protection", href: "lessons/0022-storage-lifecycle.html" },
-      { id: "0023", title: "Agent Platform Pipelines & AI Hypercomputer", href: "lessons/0023-agent-platform-pipelines.html" }
+      { id: "0023", title: "Agent Platform Pipelines & AI Hypercomputer", href: "lessons/0023-agent-platform-pipelines.html" },
+      { id: "0027", title: "VMware Engine, patch management & intrusion protection", href: "lessons/0027-vmware-patch-ids.html" }
     ],
-    gaps: ["Google Cloud VMware Engine (as a compute/network target)", "Patch management as an explicit provisioning topic", "Intrusion protection specifically (Cloud Armor covers WAF/DDoS in Lesson 9, not full IDS/IPS framing)"]
+    gaps: []
   },
   {
     key: "security-compliance",
@@ -174,7 +177,7 @@ const DOMAINS = [
       { id: "0011", title: "Security tools: Secret Manager, KMS, VPC-SC, Org Policy", href: "lessons/0011-security-tools.html" },
       { id: "0021", title: "Secure remote access & compliance", href: "lessons/0021-secure-access-compliance.html" }
     ],
-    gaps: ["Separation of duties as an explicit design topic (implied by IAM/RBAC content, not directly taught)"]
+    gaps: []
   },
   {
     key: "analyze-optimize",
@@ -211,7 +214,7 @@ const DOMAINS = [
 
 const FOUNDATIONS = [
   { id: "0001", title: "Exam structure", href: "lessons/0001-exam-structure.html" },
-  { id: "0025", title: "Final review: the morning-of cheat sheet", href: "lessons/0025-final-review.html" }
+  { id: "0028", title: "Final review: the morning-of cheat sheet", href: "lessons/0028-final-review.html" }
 ];
 
 const STORE_KEY = "pca-objectives-progress";

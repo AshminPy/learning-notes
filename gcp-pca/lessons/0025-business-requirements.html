@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 25 — Business Requirements, Integration & Workload Disposition</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 25 of 27</p>
+<h1>Business requirements, integration &amp; workload disposition</h1>
+
+<p>Every lesson so far started from "here's the technical requirement, pick the service." This lesson is one step earlier — before you can pick anything, you have to translate a business conversation into requirements a design can actually satisfy.</p>
+
+<p class="callout"><strong>Simple example:</strong> "make the app faster" is not a requirement — it's a feeling. "P95 latency under 200ms for the checkout API" is a requirement. Half of this lesson is that translation step.</p>
+
+<h2>Functional vs. non-functional requirements</h2>
+<ul>
+<li><strong>Functional</strong> — what the system does. "Users can check out with a saved card." "Orders sync to the warehouse system within 5 minutes."</li>
+<li><strong>Non-functional</strong> — how well it does it. Performance, availability, security, scalability, cost — the "ilities." A design can be functionally perfect and still fail the exam's "best answer" test because it ignores a stated non-functional constraint (the WAF pillars from Lesson 2 are exactly this).</li>
+</ul>
+<div class="trap"><strong>Exam trap:</strong> a scenario listing "must integrate with the existing CRM" is a functional requirement. A scenario listing "must survive a zone failure" is non-functional. Confusing the two means you eliminate the wrong answers in Lesson 2's elimination algorithm.</div>
+
+<h2>Integration patterns &amp; moving data between systems</h2>
+<p>Once you know what the system must do, you need a pattern for how it talks to everything else:</p>
+<ul>
+<li><strong>Synchronous request/response</strong> — REST/gRPC APIs. Caller waits for an answer. Simple, but couples the two systems' uptime together.</li>
+<li><strong>Asynchronous messaging</strong> — Pub/Sub (Lesson 16). Caller fires and moves on; decouples uptime and load between systems.</li>
+<li><strong>Bulk/batch data movement</strong> — Storage Transfer Service (scheduled bulk copy into Cloud Storage from another cloud or on-prem), Datastream (change-data-capture replication from a live database), Dataflow (streaming/batch ETL pipelines).</li>
+</ul>
+<p>The exam question is usually "sync or async," then "batch or streaming" — read the latency and coupling tolerance in the scenario before picking.</p>
+
+<h2>Workload disposition: build, buy, modify, or deprecate</h2>
+<p>Before Lesson 15's rehost/replatform/refactor decision (how to move something), there's an earlier decision: whether to move it at all.</p>
+<ul>
+<li><strong>Build</strong> — no adequate solution exists; build it cloud-native.</li>
+<li><strong>Buy</strong> — a SaaS/managed product already solves this; building your own is wasted effort (e.g., don't build a CRM).</li>
+<li><strong>Modify</strong> — the existing system is close, needs targeted change (this is where Lesson 15's replatform applies).</li>
+<li><strong>Deprecate</strong> — the workload no longer earns its keep; retire it instead of migrating it.</li>
+</ul>
+<div class="trap"><strong>Exam trap:</strong> "migrate everything" is rarely the best answer when a scenario mentions a legacy system nobody uses anymore. Deprecating it is a valid, sometimes correct, disposition — migration isn't automatically the right move just because the case study mentions a system exists.</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A case study says "the internal timesheet tool has had no updates requested in 3 years and usage has dropped 90%." What disposition fits, and why isn't migrating it automatically correct?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Deprecate. Low, declining usage and no active development are signals the workload isn't earning its keep — migrating dead weight into the cloud just moves the cost, it doesn't fix the underlying problem. Not every existing system deserves a destination.</div>
+</div>
+
+<h2>Quiz — Lesson 25</h2>
+<div class="quiz">
+<p>Q1. "The new service must integrate with the existing on-prem inventory database, with changes reflected in near-real time." Which integration pattern fits best?</p>
+<div class="opts">
+<label>A. Datastream (change-data-capture replication)</label>
+<label>B. Storage Transfer Service (scheduled bulk copy)</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> "Near-real time" plus "changes reflected" is a change-data-capture signal — Datastream streams DB changes as they happen. Storage Transfer Service is for scheduled bulk moves, not continuous replication.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A requirement says "the checkout flow must remain available during a single-zone outage." Functional or non-functional?</p>
+<div class="opts">
+<label>A. Non-functional — it's about how well the system holds up, not what it does</label>
+<label>B. Functional — it describes a feature</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Availability under failure is a quality attribute, not a feature — classic non-functional requirement.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://services.google.com/fh/files/misc/professional_cloud_architect_exam_guide_english.pdf" target="_blank" rel="noopener">Official PCA exam guide (PDF)</a>, Section 1.1, and <a href="https://cloud.google.com/architecture/dscape" target="_blank" rel="noopener">Cloud Architecture Center</a> for integration and data-movement service references.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Functional = what it does. Non-functional = how well it does it under load, failure, and constraint.</li>
+    <li>Integration choice is sync-vs-async first, then batch-vs-streaming — read latency/coupling tolerance in the scenario.</li>
+    <li>Workload disposition (build/buy/modify/deprecate) is a decision that comes before rehost/replatform/refactor, not the same decision.</li>
+    <li>A low-usage, unmaintained system is a deprecate signal, not an automatic migration candidate.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0024-production-reliability.html">&larr; Reliability in production</a>
+  <a href="0026-future-proofing.html">Next: Future-proofing the architecture &rarr;</a>
+</div>
+
+</body>
+</html>
