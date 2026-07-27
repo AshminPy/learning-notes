@@ -4,7 +4,13 @@ Self-paced study notes — one workspace per topic, lessons numbered in order.
 
 **Live site:** https://ashminpy.github.io/learning-notes/
 
+An independent, free rapid-revision and active-recall companion for CKA and Google Cloud Professional Cloud Architect candidates. Not affiliated with, endorsed by, or sponsored by Google, Google Cloud, CNCF, or the Linux Foundation. Not a replacement for hands-on labs, official documentation, or full exam preparation.
+
 ## Topics
-- `gcp-pca/` — Google Professional Cloud Architect exam prep (complete: 10 sessions + final review)
-- `kubernetes-cka/` — Kubernetes CKA prep (in progress)
-- `keyboard-workflow/` — AeroSpace / Raycast / Warp keyboard-first productivity (in progress)
+- `gcp-pca/` — Google Professional Cloud Architect exam prep — 28 lessons + [exam objectives tracker](https://ashminpy.github.io/learning-notes/gcp-pca/objectives.html)
+- `kubernetes-cka/` — Kubernetes CKA prep — 24 lessons + [exam objectives tracker](https://ashminpy.github.io/learning-notes/kubernetes-cka/objectives.html)
+- `keyboard-workflow/` — AeroSpace / Raycast / Warp keyboard-first productivity — 8 lessons
+
+Found something inaccurate or outdated? [Open an issue](https://github.com/AshminPy/learning-notes/issues/new) — corrections are welcome.
+
+See [ROADMAP.md](ROADMAP.md) for planned future improvements.
