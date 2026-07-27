@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 26 — Future-Proofing the Architecture</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">GCP PCA — Lesson 26 of 27</p>
+<h1>Future-proofing the architecture</h1>
+
+<p>Every lesson so far solves today's stated requirement. This one is about the requirement nobody stated yet — the exam guide calls it "envisioning future solution improvements," and it shows up as scenarios that reward the design that ages well over the one that's merely correct today.</p>
+
+<p class="callout"><strong>Simple example:</strong> a lift-and-shifted VM that runs fine today is a photograph — accurate the moment it was taken, wrong the moment anything changes. A managed, cloud-native design is more like a live feed — it keeps adapting because the platform underneath it keeps improving.</p>
+
+<h2>Cloud-first design, not cloud-shaped on-prem design</h2>
+<p>The trap: designing a cloud architecture that's really just your on-prem architecture with GCP logos on it — a single big VM instead of a mainframe, manual backups instead of automation. A cloud-first design defaults to managed/serverless services (Cloud Run over self-managed VMs, Cloud SQL over self-managed databases) specifically because those services get faster, cheaper, and more capable over time <em>without you doing anything</em> — Google upgrades the platform underneath you.</p>
+<div class="trap"><strong>Exam trap:</strong> "we already run it this way on-prem, so replicate it in GCP" is almost never the best answer when the scenario is asking about future improvements or long-term evolution. Recognizing "this design cannot benefit from platform improvements" is itself the signal to pick the more managed option.</div>
+
+<h2>Designing for evolving business needs</h2>
+<p>Requirements gathered today (Lesson 25) describe today's business. A future-proofed design has headroom for the business to change shape — new regions, new product lines, 10x growth — without a full redesign. This is why Lesson 1.3-style "choose the platform that maps to GKE/Cloud Run" decisions favor horizontally scalable, loosely coupled services over anything with a hard ceiling baked into the architecture.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A scenario says a design works today but the case study also mentions aggressive growth plans and frequent new market entry. What should that change about your service choice, even if nothing else in the requirements changed?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Favor the more elastic, less operationally-capped option even if a simpler one would technically satisfy today's load — "aggressive growth" and "frequent expansion" are future-proofing signals, not just current-state requirements. This is the WAF Reliability/Performance pillars applied forward in time, not just to today.</div>
+</div>
+
+<h2>Quiz — Lesson 26</h2>
+<div class="quiz">
+<p>Q1. A design replicates the on-prem architecture exactly, one-to-one, in GCP VMs. What's the risk the exam is testing when future improvements are mentioned?</p>
+<div class="opts">
+<label>A. It can't benefit from platform-level improvements the way a managed service would</label>
+<label>B. It will definitely be more expensive than any alternative</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Cost isn't guaranteed either way — the real risk is architectural stagnation: a self-managed VM doesn't get faster or gain new capabilities on its own, a managed service does.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://services.google.com/fh/files/misc/professional_cloud_architect_exam_guide_english.pdf" target="_blank" rel="noopener">Official PCA exam guide (PDF)</a>, Section 1.5, and <a href="https://cloud.google.com/architecture/framework" target="_blank" rel="noopener">Google Cloud Architecture Framework</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Cloud-first means defaulting to managed/serverless so the platform's own improvements benefit you automatically — not replicating on-prem patterns in GCP.</li>
+    <li>Growth and expansion signals in a scenario justify a more elastic choice, even if a simpler option meets today's stated load.</li>
+    <li>"It works today" and "it's future-proofed" are different bars — the exam tests whether you notice which one a scenario is asking about.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+
+<div class="lesson-nav">
+  <a href="0025-business-requirements.html">&larr; Business requirements, integration &amp; workload disposition</a>
+  <a href="0027-vmware-patch-ids.html">Next: VMware Engine, patch management &amp; intrusion protection &rarr;</a>
+</div>
+
+</body>
+</html>
