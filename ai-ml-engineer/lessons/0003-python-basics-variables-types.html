@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3 — Python basics: variables, types, print/input</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 3 of 34</p>
+<h1>Python basics: variables, types, print/input</h1>
+
+<p>Every AI model, at the bottom, is just numbers and text being stored and passed around. A <strong>variable</strong> is a labeled box that holds one of those values. This lesson: create boxes, look inside them, and ask the user for input.</p>
+
+<h2>Variables</h2>
+<p class="callout"><strong>Simple example:</strong> a variable is like a sticky note on a box. The note is the name, the box holds the value. <code>age = 25</code> means "put 25 in a box, and stick a note on it that says <code>age</code>."</p>
+
+<pre><code>age = 25
+name = "Priya"
+is_learning = True
+
+print(age)
+print(name)
+print(is_learning)</code></pre>
+
+<p>Run this in your Colab notebook from Lesson 2. You should see three lines printed: <code>25</code>, <code>Priya</code>, <code>True</code>.</p>
+
+<h2>The four types you'll use constantly</h2>
+<table>
+<tr><th>Type</th><th>Example</th><th>Used for</th></tr>
+<tr><td><code>int</code></td><td><code>25</code></td><td>Whole numbers — counts, ages, pixel positions</td></tr>
+<tr><td><code>float</code></td><td><code>3.14</code></td><td>Decimal numbers — almost everything in ML math is a float</td></tr>
+<tr><td><code>str</code></td><td><code>"Priya"</code></td><td>Text — quotes required, single or double</td></tr>
+<tr><td><code>bool</code></td><td><code>True</code> / <code>False</code></td><td>Yes/no, on/off — capital T and F, always</td></tr>
+</table>
+
+<p>Python figures out the type automatically from how you write the value — you never have to declare it yourself. Check a variable's type with the built-in <code>type()</code> function:</p>
+<pre><code>print(type(age))        # &lt;class 'int'&gt;
+print(type(name))       # &lt;class 'str'&gt;</code></pre>
+
+<h2>print() and input()</h2>
+<p><code>print()</code> shows a value. <code>input()</code> asks the person running the program to type something, and gives you back what they typed — always as a string.</p>
+<pre><code>your_name = input("What's your name? ")
+print("Hello, " + your_name)</code></pre>
+
+<p class="callout"><strong>Common trap:</strong> <code>input()</code> always returns a string, even if the person types a number. <code>input("Enter your age: ")</code> gives you the string <code>"25"</code>, not the number <code>25</code>. Fix it with <code>int(...)</code>: <code>age = int(input("Enter your age: "))</code>.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. What type is the value <code>17.5</code>?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>float</code> — it has a decimal point.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You write <code>age = input("Age: ")</code> and the person types <code>30</code>. What type is stored in <code>age</code> right now?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>str</code> — <code>"30"</code>, not the number 30. <code>input()</code> always returns text, no matter what was typed.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook, write a program that:</p>
+<ul>
+<li>asks the user for their name and their age (as a number)</li>
+<li>stores each answer in a variable with a sensible name</li>
+<li>prints a sentence combining both, e.g. <code>Priya is 25 years old.</code></li>
+</ul>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>name = input("What's your name? ")
+age = int(input("What's your age? "))
+
+print(name + " is " + str(age) + " years old.")</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.python.org/3/tutorial/introduction.html" target="_blank" rel="noopener">docs.python.org/3/tutorial/introduction</a> — the official Python tutorial's first chapter, covers everything above plus more.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A variable is a named box for a value: <code>name = value</code>.</li>
+    <li>Four core types: <code>int</code>, <code>float</code>, <code>str</code>, <code>bool</code>.</li>
+    <li><code>input()</code> always returns a string — convert with <code>int(...)</code> or <code>float(...)</code> when you need a number.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Python's error messages is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0002-tools-setup-python-git.html">&larr; Back: Tools setup</a></span>
+  <span>Next: Control flow (coming soon)</span>
+</div>
+
+</body>
+</html>
