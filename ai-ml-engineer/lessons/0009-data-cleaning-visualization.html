@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 9 — Data cleaning &amp; visualization</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 9 of 34</p>
+<h1>Data cleaning &amp; visualization</h1>
+
+<p>Real-world data is never as clean as the example tables in Lesson 8. Sensors fail, people skip survey questions, systems log the same event twice. Before any of that data goes into a model, you need to find the mess and either fix it or remove it — and you need to <strong>look</strong> at the data with your own eyes, not just trust the numbers.</p>
+
+<div class="callout"><strong>Simple example:</strong> imagine a class attendance sheet where a few students forgot to sign in (missing values) and one student accidentally signed in twice (a duplicate). If you count attendance without checking for these, your count is wrong. Data cleaning is checking the sheet before you trust the count.</div>
+
+<h2>Why real data is messy</h2>
+<table>
+<tr><th>Problem</th><th>What it looks like</th><th>Why it happens</th></tr>
+<tr><td>Missing values</td><td>an empty cell, or <code>NaN</code> (Not a Number)</td><td>a sensor dropped a reading, a form field was left blank, a join found no match</td></tr>
+<tr><td>Duplicates</td><td>the exact same row appears more than once</td><td>a file was imported twice, an event was logged twice, a form was submitted twice</td></tr>
+</table>
+<p>Pandas represents a missing value as <code>NaN</code> (or <code>None</code> for text/object columns). It behaves differently from a normal value — for example, <code>NaN == NaN</code> is actually <code>False</code> — so you always use pandas' own tools to find it, never a plain <code>==</code> comparison.</p>
+
+<h2>Finding missing values: .isna()</h2>
+<p><code>df.isna()</code> returns a same-shaped table of <code>True</code>/<code>False</code>, where <code>True</code> means "this cell is missing." Combine it with <code>.sum()</code> to count missing values per column:</p>
+<pre><code>import pandas as pd
+import numpy as np
+
+data = {
+    "name": ["Priya", "Alex", "Sam", "Noor", "Lee"],
+    "score": [88, 92, np.nan, 79, 95]
+}
+df = pd.DataFrame(data)
+
+print(df.isna())
+print(df.isna().sum())   # count of missing values per column</code></pre>
+
+<h2>Fixing missing values: .dropna() and .fillna()</h2>
+<p>Once you find missing values, you have two basic options:</p>
+<table>
+<tr><th>Method</th><th>What it does</th><th>Use when</th></tr>
+<tr><td><code>df.dropna()</code></td><td>removes any row that has at least one missing value</td><td>you have plenty of rows and can afford to lose a few</td></tr>
+<tr><td><code>df.fillna(value)</code></td><td>replaces missing values with something — a fixed number, or a computed one like the column average</td><td>you don't want to lose rows, and a reasonable "fill-in" value exists</td></tr>
+</table>
+<pre><code>df_dropped = df.dropna()               # rows with any NaN are gone
+df_filled = df.fillna(df["score"].mean())   # fill NaN with the average score</code></pre>
+<p>Neither method changes <code>df</code> itself unless you pass <code>inplace=True</code> or reassign it (<code>df = df.fillna(...)</code>) — by default, both return a new DataFrame.</p>
+
+<p>Duplicates get a similar pair of tools: <code>df.duplicated()</code> flags repeated rows as <code>True</code>/<code>False</code>, and <code>df.drop_duplicates()</code> removes them. Same pattern as missing values — find first, then decide how to fix. (Full details on missing-data handling: <a href="https://pandas.pydata.org/docs/user_guide/missing_data.html" target="_blank" rel="noopener">pandas.pydata.org/docs/user_guide/missing_data</a>.)</p>
+
+<h2>You can't fix what you can't see</h2>
+<p><code>.describe()</code> gives you numbers, but numbers hide shapes. A dataset can have the same average as another dataset and look completely different when plotted — one smooth, one with a wild outlier. This is why every data scientist plots data before modeling it: a chart shows a spike, a gap, or a weird cluster in a way a table of numbers never will.</p>
+
+<p><strong>Matplotlib</strong> is Python's foundational plotting library. You can use it two ways: call <code>plt.plot()</code> directly on raw values, or call <code>.plot()</code> straight on a DataFrame or Series (pandas uses matplotlib under the hood, so the result is the same).</p>
+<pre><code>import matplotlib.pyplot as plt
+
+scores = [88, 92, 85, 79, 95]
+
+plt.plot(scores)
+plt.title("Scores")
+plt.xlabel("Student index")
+plt.ylabel("Score")
+plt.show()</code></pre>
+<p>The DataFrame shortcut is even shorter — good for a quick look while exploring:</p>
+<pre><code>df["score"].plot()
+plt.show()</code></pre>
+
+<div class="callout"><strong>Simple example:</strong> <code>plt.plot()</code> is like drawing a line connecting dots on graph paper, one dot per value, left to right. It's the simplest possible chart — and often the fastest way to spot something wrong in your data before you waste time training a model on it.</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You run <code>df.isna().sum()</code> and the <code>age</code> column shows <code>3</code>. What does that <code>3</code> mean?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">3 rows have a missing (<code>NaN</code>) value in the <code>age</code> column. <code>.isna()</code> marks each cell <code>True</code>/<code>False</code> for "is this missing", and <code>.sum()</code> adds up the <code>True</code>s per column (Python treats <code>True</code> as 1).</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You run <code>df.fillna(0)</code> but then print <code>df</code> and the missing values are still there. Why?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>.fillna()</code> returns a <em>new</em> DataFrame by default — it doesn't change <code>df</code> in place. You need to reassign it: <code>df = df.fillna(0)</code>, or pass <code>inplace=True</code>.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook:</p>
+<ul>
+<li>build a small DataFrame from a dict with a <code>day</code> column (e.g. 1 to 5) and a <code>temperature</code> column, where one temperature value is missing (use <code>None</code> or <code>float('nan')</code> in the list)</li>
+<li>run <code>.isna()</code> on it to confirm you can see the missing value</li>
+<li>fill the missing value with <code>.fillna()</code> using the average of the column</li>
+<li>plot the <code>temperature</code> column with <code>.plot()</code></li>
+</ul>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>import pandas as pd
+import matplotlib.pyplot as plt
+
+data = {
+    "day": [1, 2, 3, 4, 5],
+    "temperature": [21.5, 22.0, None, 23.5, 24.0]
+}
+df = pd.DataFrame(data)
+
+print(df.isna())                 # shows True on the missing row
+
+df["temperature"] = df["temperature"].fillna(df["temperature"].mean())
+print(df)                        # missing value replaced with the average
+
+df["temperature"].plot(title="Temperature by day")
+plt.show()</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://matplotlib.org/stable/tutorials/pyplot.html" target="_blank" rel="noopener">matplotlib.org/stable/tutorials/pyplot.html</a> — the official Matplotlib pyplot tutorial, covers <code>plt.plot()</code> and the basics used in this lesson.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Real data has missing values (<code>NaN</code>) and duplicates — always check before modeling.</li>
+    <li><code>df.isna()</code> finds missing values, <code>df.dropna()</code> removes rows with them, <code>df.fillna(value)</code> replaces them.</li>
+    <li>Both <code>.dropna()</code> and <code>.fillna()</code> return a new DataFrame by default — reassign or use <code>inplace=True</code> to keep the change.</li>
+    <li>Plot before you model: <code>plt.plot()</code> or <code>df["col"].plot()</code> shows shapes and outliers a table of numbers hides.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Python's error messages is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0008-pandas-basics.html">&larr; Back: Lesson 8 — Pandas</a></span>
+  <span><a href="0010-vectors-matrices.html">Next: Lesson 10 — Vectors &amp; matrices &rarr;</a></span>
+</div>
+
+</body>
+</html>

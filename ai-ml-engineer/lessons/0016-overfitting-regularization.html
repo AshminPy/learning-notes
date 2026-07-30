@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 16 — Train/test split, overfitting & regularization</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 16 of 34</p>
+<h1>Train/test split, overfitting & regularization</h1>
+
+<p>You've trained a model. It scores 99% accuracy. Great news — except if you measured that accuracy on the same data you trained it on, that number means almost nothing. This lesson explains why, and gives you the fix every ML project uses: splitting your data before you train.</p>
+
+<h2>Why you can't trust accuracy on training data</h2>
+<p>Imagine a student who memorizes the answer key for a specific exam, word for word, instead of learning the subject. Give them that exact exam, they score 100%. Give them a new exam on the same topic, they fail — because they never learned the underlying ideas, just the answers.</p>
+<p>A model can do the same thing. If it's complex enough, it can "memorize" quirks and noise in the training data instead of learning the real pattern. When you then test it on that same training data, it looks brilliant. But that score tells you nothing about how it performs on data it hasn't seen — which is the only case that matters in the real world.</p>
+
+<div class="callout"><strong>Simple example:</strong> testing a model on its own training data is like grading a student using the exact homework questions they already saw the answers to. Of course they'll score well. It proves nothing about whether they understood the topic.</div>
+
+<h2>The fix: train/test split</h2>
+<p>Before training, split your dataset into two separate pieces:</p>
+<table>
+<tr><th>Set</th><th>Used for</th></tr>
+<tr><td>Training set</td><td>The model learns from this data — sees inputs and correct outputs, adjusts itself</td></tr>
+<tr><td>Test set</td><td>Held back, never shown during training — used only afterward, to check how the model does on new data</td></tr>
+</table>
+<p>Scikit-learn gives you a function for this: <code>train_test_split</code>. It randomly shuffles your data and splits it into the two pieces for you.</p>
+<pre><code>from sklearn.model_selection import train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)</code></pre>
+<p><code>test_size=0.2</code> means 20% of the data goes into the test set, 80% into training. <code>random_state=42</code> just makes the random split reproducible — run it again and you get the same split, which makes debugging and comparisons fair.</p>
+
+<h2>Overfitting vs underfitting</h2>
+<p>Once you can measure accuracy on unseen data (the test set) separately from training data, you can spot two opposite problems:</p>
+<table>
+<tr><th>Problem</th><th>What's happening</th><th>Signs</th></tr>
+<tr><td>Overfitting</td><td>Model memorized the training data instead of learning the general pattern</td><td>Great score on training data, poor score on test data</td></tr>
+<tr><td>Underfitting</td><td>Model is too simple to capture the pattern at all</td><td>Poor score on <em>both</em> training and test data</td></tr>
+</table>
+<p>Overfitting is the more common trap for beginners, because a high training accuracy feels like success — until you check the test set and the gap shows up.</p>
+
+<h2>Regularization, in plain English</h2>
+<p>Regularization is a way to discourage a model from memorizing too much. During training, it nudges the model toward simpler, smoother patterns instead of chasing every tiny detail (including noise) in the training data. You don't need the formula yet — just the idea: it's a knob that fights overfitting by keeping the model from getting too "confident" about quirks in the training set. You'll meet specific regularization techniques (like L2) later in the course.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A model scores 98% accuracy on training data and 61% on test data. What's going on?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Overfitting — the model memorized the training data instead of learning a pattern that generalizes to new data.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A model scores 55% accuracy on training data and 53% on test data. Both are low. Is this overfitting or underfitting?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Underfitting — the model is too simple to capture the pattern, so it does poorly on both training and test data.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook, build a small toy dataset (same style as Lesson 15) and split it with <code>train_test_split</code>:</p>
+<ul>
+<li>create a small feature array <code>X</code> and a matching label array <code>y</code> (10-20 rows is enough)</li>
+<li>split them with <code>test_size=0.2</code> and a <code>random_state</code> of your choice</li>
+<li>print the shape of <code>X_train</code>, <code>X_test</code>, <code>y_train</code>, and <code>y_test</code> to confirm the split sizes</li>
+</ul>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>import numpy as np
+from sklearn.model_selection import train_test_split
+
+# toy dataset: 20 samples, 1 feature (e.g. hours studied), label = pass/fail
+X = np.array([[h] for h in range(1, 21)])
+y = np.array([0 if h < 10 else 1 for h in range(1, 21)])
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+print("X_train shape:", X_train.shape)
+print("X_test shape:", X_test.shape)
+print("y_train shape:", y_train.shape)
+print("y_test shape:", y_test.shape)
+
+# Expected: X_train (16, 1), X_test (4, 1), y_train (16,), y_test (4,)</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html" target="_blank" rel="noopener">scikit-learn.org — sklearn.model_selection.train_test_split</a> — official documentation for the function used in this lesson.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Never trust accuracy measured on the same data a model trained on — split first, with <code>train_test_split</code>.</li>
+    <li>Overfitting: great on training data, bad on test data — the model memorized instead of generalizing.</li>
+    <li>Underfitting: bad on both — the model is too simple to capture the pattern.</li>
+    <li>Regularization discourages a model from memorizing too much, fighting overfitting.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Python's error messages is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0015-logistic-regression.html">&larr; Back: Lesson 15 — Logistic regression</a></span>
+  <span><a href="0017-evaluation-metrics.html">Next: Lesson 17 — Evaluation metrics &rarr;</a></span>
+</div>
+
+</body>
+</html>

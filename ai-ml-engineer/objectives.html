@@ -91,7 +91,7 @@
 
 <p class="eyebrow">AI/ML Engineer — Zero to Job-Ready</p>
 <h1>Course roadmap tracker</h1>
-<p>The full planned curriculum — <strong>34 lessons across 10 phases</strong>, Python fundamentals through a job-ready portfolio. Lessons with a link are published; the rest are planned and will be added over future sessions (see <a href="RESOURCES.md">RESOURCES.md</a> for the certification path this maps to). Check off a lesson once you can rebuild/explain it from memory — progress is saved in this browser only.</p>
+<p>The complete curriculum — <strong>34 of 34 lessons published</strong>, Python fundamentals through a job-ready portfolio, across 10 phases. Check off a lesson once you can rebuild/explain it from memory — progress is saved in this browser only. Certification path this maps to: DeepLearning.AI ML Specialization, AWS Certified AI Practitioner, IBM AI Engineering Professional Certificate (see Lesson 1).</p>
 <p class="overall" id="overall"></p>
 <button class="reset-btn" id="reset-progress" type="button" aria-label="Reset AI/ML Engineer tracker progress">Reset progress</button>
 
@@ -114,8 +114,8 @@ const PHASES = [
     key: "orientation",
     name: "A. Orientation & Setup",
     lessons: [
-      { id: "0001", title: "Your roadmap: from zero to AI/ML engineer job", href: "lessons/0001-roadmap-and-cert-plan.html" },
-      { id: "0002", title: "Tools setup: Python, Jupyter/Colab, Git & GitHub", href: "lessons/0002-tools-setup-python-git.html" }
+      { id: "0001", title: "Your roadmap: zero to AI/ML engineer job", href: "lessons/0001-roadmap-and-cert-plan.html" },
+      { id: "0002", title: "Tools setup: Python, notebooks, Git & GitHub", href: "lessons/0002-tools-setup-python-git.html" }
     ]
   },
   {
@@ -123,85 +123,85 @@ const PHASES = [
     name: "B. Python Foundations",
     lessons: [
       { id: "0003", title: "Python basics: variables, types, print/input", href: "lessons/0003-python-basics-variables-types.html" },
-      { id: "0004", title: "Control flow: if/else, loops" },
-      { id: "0005", title: "Functions & reusable code" },
-      { id: "0006", title: "Data structures: lists, dicts, tuples, sets" },
-      { id: "0007", title: "NumPy: arrays & vectorized math" }
+      { id: "0004", title: "Control flow: if/else and loops", href: "lessons/0004-control-flow.html" },
+      { id: "0005", title: "Functions & reusable code", href: "lessons/0005-functions.html" },
+      { id: "0006", title: "Data structures: lists, dicts, tuples, sets", href: "lessons/0006-data-structures.html" },
+      { id: "0007", title: "NumPy: arrays & vectorized math", href: "lessons/0007-numpy-basics.html" }
     ]
   },
   {
     key: "data",
     name: "C. Data Handling",
     lessons: [
-      { id: "0008", title: "Pandas: loading & exploring data" },
-      { id: "0009", title: "Data cleaning & visualization" }
+      { id: "0008", title: "Pandas: loading & exploring data", href: "lessons/0008-pandas-basics.html" },
+      { id: "0009", title: "Data cleaning & visualization", href: "lessons/0009-data-cleaning-visualization.html" }
     ]
   },
   {
     key: "math",
     name: "D. Math & Stats You Actually Need",
     lessons: [
-      { id: "0010", title: "Vectors, matrices, dot product — the intuition" },
-      { id: "0011", title: "Probability & statistics essentials" }
+      { id: "0010", title: "Vectors, matrices, dot product — the intuition", href: "lessons/0010-vectors-matrices.html" },
+      { id: "0011", title: "Probability & statistics essentials", href: "lessons/0011-probability-statistics.html" }
     ]
   },
   {
     key: "core-ml",
     name: "E. Core Machine Learning",
     lessons: [
-      { id: "0012", title: "What is ML? Supervised vs unsupervised vs reinforcement" },
-      { id: "0013", title: "Linear regression from scratch" },
-      { id: "0014", title: "Cost function & gradient descent" },
-      { id: "0015", title: "Logistic regression & classification" },
-      { id: "0016", title: "Train/test split, overfitting, regularization" },
-      { id: "0017", title: "Evaluation metrics: accuracy, precision, recall, F1" },
-      { id: "0018", title: "Hands-on project 1: scikit-learn classifier end to end" }
+      { id: "0012", title: "What is machine learning?", href: "lessons/0012-what-is-ml.html" },
+      { id: "0013", title: "Linear regression from scratch", href: "lessons/0013-linear-regression.html" },
+      { id: "0014", title: "Cost function & gradient descent", href: "lessons/0014-cost-function-gradient-descent.html" },
+      { id: "0015", title: "Logistic regression & classification", href: "lessons/0015-logistic-regression.html" },
+      { id: "0016", title: "Train/test split, overfitting & regularization", href: "lessons/0016-overfitting-regularization.html" },
+      { id: "0017", title: "Evaluation metrics: accuracy, precision, recall, F1", href: "lessons/0017-evaluation-metrics.html" },
+      { id: "0018", title: "Project 1 — your first end-to-end classifier", href: "lessons/0018-project-1-classifier.html" }
     ]
   },
   {
     key: "deep-learning",
     name: "F. Neural Networks & Deep Learning",
     lessons: [
-      { id: "0019", title: "Neural networks: neurons, layers, activation functions" },
-      { id: "0020", title: "How training works: forward pass, backprop intuition" },
-      { id: "0021", title: "Building your first neural net (TensorFlow/Keras)" },
-      { id: "0022", title: "Decision trees & ensembles (Random Forest, XGBoost)" },
-      { id: "0023", title: "Hands-on project 2: neural net image classifier" }
+      { id: "0019", title: "Neural networks: neurons, layers, activation functions", href: "lessons/0019-neural-networks-basics.html" },
+      { id: "0020", title: "How training works: forward pass & backprop intuition", href: "lessons/0020-backpropagation.html" },
+      { id: "0021", title: "Building your first neural net with Keras", href: "lessons/0021-first-neural-net-keras.html" },
+      { id: "0022", title: "Decision trees & ensembles (Random Forest, XGBoost)", href: "lessons/0022-decision-trees-ensembles.html" },
+      { id: "0023", title: "Project 2 — a neural net image classifier", href: "lessons/0023-project-2-image-classifier.html" }
     ]
   },
   {
     key: "unsupervised",
     name: "G. Unsupervised & Recommenders",
     lessons: [
-      { id: "0024", title: "Clustering (k-means) & dimensionality basics" },
-      { id: "0025", title: "Recommender systems & intro to reinforcement learning" }
+      { id: "0024", title: "Clustering (k-means) & dimensionality basics", href: "lessons/0024-clustering-kmeans.html" },
+      { id: "0025", title: "Recommender systems & intro to reinforcement learning", href: "lessons/0025-recommenders-reinforcement-learning.html" }
     ]
   },
   {
     key: "cv-nlp",
     name: "H. Computer Vision & NLP",
     lessons: [
-      { id: "0026", title: "Computer vision: CNNs & image classification hands-on" },
-      { id: "0027", title: "NLP: text processing, embeddings, sentiment analysis" },
-      { id: "0028", title: "Transformers & how LLMs work" },
-      { id: "0029", title: "Hands-on project 3: portfolio-grade CV or NLP project" }
+      { id: "0026", title: "Computer vision: CNNs & image classification", href: "lessons/0026-computer-vision-cnns.html" },
+      { id: "0027", title: "NLP: text processing, embeddings, sentiment analysis", href: "lessons/0027-nlp-basics.html" },
+      { id: "0028", title: "Transformers & how LLMs work", href: "lessons/0028-transformers-llms.html" },
+      { id: "0029", title: "Project 3 — your strongest portfolio piece", href: "lessons/0029-project-3-portfolio.html" }
     ]
   },
   {
     key: "cloud-genai",
     name: "I. Cloud, MLOps & Generative AI",
     lessons: [
-      { id: "0030", title: "ML in the cloud: AWS SageMaker basics & deployment" },
-      { id: "0031", title: "Generative AI concepts & AWS AI Practitioner exam prep" }
+      { id: "0030", title: "ML in the cloud: AWS SageMaker basics & deployment", href: "lessons/0030-ml-cloud-sagemaker.html" },
+      { id: "0031", title: "Generative AI concepts & AWS AI Practitioner exam prep", href: "lessons/0031-genai-aws-ai-practitioner-prep.html" }
     ]
   },
   {
     key: "job-ready",
     name: "J. Job Readiness",
     lessons: [
-      { id: "0032", title: "Portfolio & resume for AI/ML roles" },
-      { id: "0033", title: "Interview prep: explaining your projects, common ML questions" },
-      { id: "0034", title: "Final review & cheat sheet" }
+      { id: "0032", title: "Portfolio & resume for AI/ML roles", href: "lessons/0032-portfolio-resume.html" },
+      { id: "0033", title: "Interview prep: explaining your projects & common ML questions", href: "lessons/0033-interview-prep.html" },
+      { id: "0034", title: "Final review & cheat sheet", href: "lessons/0034-final-review.html" }
     ]
   }
 ];

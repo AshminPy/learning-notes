@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 8 — Pandas: loading &amp; exploring data</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 8 of 34</p>
+<h1>Pandas: loading &amp; exploring data</h1>
+
+<p>Real-world data almost never arrives as a clean list of numbers — it arrives as a <strong>table</strong>: rows of records, columns of fields, like a spreadsheet. <strong>Pandas</strong> is the Python library for working with tables of data. It is the tool you will use in nearly every AI/ML project to load, inspect, and clean data before it goes anywhere near a model.</p>
+
+<div class="callout"><strong>Simple example:</strong> think of a spreadsheet of employees — one row per person, columns for name, age, and city. A pandas <strong>DataFrame</strong> is that spreadsheet, loaded into Python so you can query and manipulate it with code instead of clicking around a UI.</div>
+
+<h2>DataFrame vs Series</h2>
+<p>Pandas gives you two core data structures:</p>
+<table>
+<tr><th>Structure</th><th>Shape</th><th>Think of it as</th></tr>
+<tr><td><code>Series</code></td><td>one-dimensional</td><td>a single labeled column, or a single list of values</td></tr>
+<tr><td><code>DataFrame</code></td><td>two-dimensional</td><td>a full table — rows and columns, like a spreadsheet</td></tr>
+</table>
+<p>A DataFrame is really just a collection of Series that share the same row labels — one Series per column.</p>
+
+<h2>Creating a DataFrame from a dict</h2>
+<p>The simplest way to build a small DataFrame is from a Python dictionary: each key becomes a column name, and each value (a list) becomes that column's data.</p>
+<pre><code>import pandas as pd
+
+data = {
+    "name": ["Priya", "Alex", "Sam", "Noor", "Lee"],
+    "age": [25, 31, 28, 22, 35],
+    "city": ["Delhi", "Toronto", "Austin", "Cairo", "Seoul"]
+}
+
+df = pd.DataFrame(data)
+print(df)</code></pre>
+<p>Each list must be the same length — one entry per row. Run this in Colab and you'll see a neat table with row numbers (the <strong>index</strong>) on the left.</p>
+
+<h2>Exploring a DataFrame: .head(), .info(), .describe()</h2>
+<p>Once you have a DataFrame — even a huge one loaded from a file — these three methods are the first thing you run, every time:</p>
+<table>
+<tr><th>Method</th><th>Shows you</th></tr>
+<tr><td><code>df.head()</code></td><td>the first 5 rows (pass a number, e.g. <code>df.head(10)</code>, for more)</td></tr>
+<tr><td><code>df.info()</code></td><td>column names, data types, and how many non-empty values each column has</td></tr>
+<tr><td><code>df.describe()</code></td><td>quick statistics for numeric columns — count, mean, std, min, 25%, 50%, 75%, max</td></tr>
+</table>
+<pre><code>df.head()
+df.info()
+df.describe()</code></pre>
+
+<div class="callout"><strong>Simple example:</strong> <code>.head()</code> is like glancing at the first page of a report to sanity-check it loaded correctly. <code>.info()</code> is like checking the report's table of contents and page count. <code>.describe()</code> is like getting a one-line statistical summary of every numeric column — useful for spotting outliers or mistakes before you trust the data.</div>
+
+<h2>Selecting one column</h2>
+<p>Use square brackets with the column name as a string to pull out a single column. This returns a <code>Series</code>, not a DataFrame:</p>
+<pre><code>ages = df["age"]
+print(ages)
+print(type(ages))   # &lt;class 'pandas.core.series.Series'&gt;</code></pre>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You have a DataFrame <code>df</code> with columns <code>name</code>, <code>age</code>, <code>city</code>. What does <code>df["city"]</code> return — a DataFrame or a Series?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">A <code>Series</code> — selecting a single column with square brackets always gives you back a one-dimensional Series, not a full table.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You just loaded a large DataFrame and want to quickly check the data types and whether any columns have missing values. Which method do you run?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>df.info()</code> — it prints each column's name, data type, and non-null (non-empty) count, so missing values stand out immediately.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook:</p>
+<ul>
+<li>build a small DataFrame from a dict with 5 rows and three columns: <code>name</code>, <code>age</code>, <code>city</code> (make up the data)</li>
+<li>call <code>.head()</code> on it</li>
+<li>call <code>.describe()</code> on it and look at what it prints for the <code>age</code> column</li>
+</ul>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>import pandas as pd
+
+data = {
+    "name": ["Priya", "Alex", "Sam", "Noor", "Lee"],
+    "age": [25, 31, 28, 22, 35],
+    "city": ["Delhi", "Toronto", "Austin", "Cairo", "Seoul"]
+}
+
+df = pd.DataFrame(data)
+
+print(df.head())
+print(df.describe())</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://pandas.pydata.org/docs/user_guide/10min.html" target="_blank" rel="noopener">pandas.pydata.org/docs/user_guide/10min.html</a> — the official "10 minutes to pandas" guide, covers DataFrame/Series creation and the core exploration methods used in this lesson.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Pandas works with tables: a <code>DataFrame</code> is 2-D (rows + columns), a <code>Series</code> is 1-D (a single column).</li>
+    <li>Build a small DataFrame from a dict: <code>pd.DataFrame({"col": [...], ...})</code>.</li>
+    <li><code>.head()</code>, <code>.info()</code>, and <code>.describe()</code> are your first three checks on any new dataset.</li>
+    <li>Select one column with <code>df["column_name"]</code> — it returns a Series.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Python's error messages is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0007-numpy-basics.html">&larr; Back: Lesson 7 — NumPy</a></span>
+  <span><a href="0009-data-cleaning-visualization.html">Next: Lesson 9 — Data cleaning &amp; visualization &rarr;</a></span>
+</div>
+
+</body>
+</html>

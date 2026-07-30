@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 23 — Project 2: a neural net image classifier</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 23 of 34 — PROJECT 2</p>
+<h1>Project 2 — a neural net image classifier</h1>
+
+<p class="callout"><strong>This is your second portfolio project, and it's longer than a normal lesson on purpose.</strong> It combines everything from Lessons 19–22: what a neuron and a layer are, how a network trains (backpropagation, gradient descent), and how to build one in Keras. This time the model looks at images and learns to recognize what's in them. By the end you'll have a second working notebook and write-up, ready to commit to GitHub as "Project 2."</p>
+
+<h2>What you're building</h2>
+<p>A neural network that looks at small grayscale photos of clothing — a shoe, a shirt, a bag — and predicts which of 10 categories each one belongs to. This dataset is called <strong>Fashion MNIST</strong>: 70,000 images, 28x28 pixels each, built directly into Keras so there's no download or file wrangling. Same end-to-end shape as Project 1 (load → prepare → train → evaluate → write up → commit), new kind of data: images instead of a spreadsheet of numbers.</p>
+
+<h2>Step 0 — open a fresh notebook</h2>
+<p>Open a new notebook in your Colab account. Name it something like <code>project-2-image-classifier.ipynb</code>. Every code block below goes in its own cell, run top to bottom.</p>
+
+<h2>Step 1 — load Fashion MNIST</h2>
+<p>Just like scikit-learn ships small built-in datasets, Keras ships a handful of built-in image datasets — no download, no unzip, no folder of files. We'll use <code>fashion_mnist</code>, which loads pre-split into a training set and a test set:</p>
+<pre><code>import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+
+fashion_mnist = tf.keras.datasets.fashion_mnist
+
+(train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
+
+class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
+               'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
+
+print(train_images.shape)   # (60000, 28, 28) -- 60,000 training images, 28x28 pixels each
+print(test_images.shape)    # (10000, 28, 28) -- 10,000 test images</code></pre>
+<p>Each image is a 28x28 grid of numbers, one number per pixel, ranging from 0 (black) to 255 (white). Each label is a number 0–9 — <code>class_names</code> is just a lookup list so you can print a human word instead of a digit. Note the labels are plain integers here (0, 1, 2...), not one-hot vectors — that matters for one detail in Step 3.</p>
+
+<div class="callout"><strong>Simple example:</strong> think of each image as a 28x28 spreadsheet where every cell holds one brightness number instead of text. A neural network doesn't "see" a shoe the way you do — it just sees 784 numbers (28 x 28) and learns which patterns of numbers tend to go with the label "Sneaker."</div>
+
+<h2>Step 2 — normalize the pixel data</h2>
+<p>Pixel values come in as integers from 0 to 255. Neural networks train better on small numbers close to 0–1 — large raw values make the weighted sums swing wildly and slow down (or destabilize) training. So we scale every pixel down by dividing by 255:</p>
+<pre><code>train_images = train_images / 255.0
+test_images = test_images / 255.0</code></pre>
+<p>This is the same idea as <code>StandardScaler</code> in Project 1 — put your input numbers on a small, consistent scale before training — just done here with simple division, since we already know the fixed range (0–255) ahead of time.</p>
+
+<h2>Step 3 — build a small Sequential model</h2>
+<p>This is Lesson 19's neurons and layers, written in Keras code. No convolutional layers yet — that's Lesson 26. For now, a plain stack of <code>Dense</code> (fully-connected) layers is enough to get solid results:</p>
+<pre><code>model = tf.keras.Sequential([
+    tf.keras.layers.Flatten(input_shape=(28, 28)),
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dense(10)
+])</code></pre>
+<p>Three layers, three jobs:</p>
+<ul>
+<li><code>Flatten</code> — takes the 28x28 grid and lays it out as one flat list of 784 numbers. Not a "real" layer with weights — just reshaping, since <code>Dense</code> layers expect a flat list of inputs, not a 2D grid.</li>
+<li><code>Dense(128, activation='relu')</code> — the hidden layer from Lesson 19: 128 neurons, each doing a weighted sum of all 784 inputs plus a bias, then ReLU.</li>
+<li><code>Dense(10)</code> — the output layer: one neuron per class (10 clothing categories). No activation function here — it outputs raw scores called <strong>logits</strong>, which the loss function below converts into probabilities internally.</li>
+</ul>
+
+<h2>Step 4 — compile and train</h2>
+<pre><code>model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+model.fit(train_images, train_labels, epochs=10)</code></pre>
+<p>Three pieces, tying back to Lessons 20–21:</p>
+<ul>
+<li><code>optimizer='adam'</code> — the algorithm that performs gradient descent (Lesson 14 and 20) and updates every weight after each batch. Adam is a well-tested default, not something you need to tune by hand yet.</li>
+<li><code>loss=SparseCategoricalCrossentropy(from_logits=True)</code> — the cost function (Lesson 14) for multi-class classification. "Sparse" means it works directly with plain integer labels (0–9) instead of requiring one-hot vectors. <code>from_logits=True</code> tells it the output layer gave raw scores, not already-converted probabilities — matching the <code>Dense(10)</code> with no activation from Step 3.</li>
+<li><code>model.fit(..., epochs=10)</code> — trains for 10 full passes over the 60,000 training images, running backpropagation (Lesson 20) after each batch to nudge every weight toward lower loss.</li>
+</ul>
+<p>Run this cell and watch the accuracy climb epoch by epoch — that's gradient descent working in front of you, one step at a time.</p>
+
+<h2>Step 5 — evaluate honestly</h2>
+<p>Same rule as Project 1: check performance only on the test set, images the model never trained on.</p>
+<pre><code>test_loss, test_acc = model.evaluate(test_images, test_labels, verbose=2)
+
+print('\nTest accuracy:', test_acc)</code></pre>
+<p>The official TensorFlow tutorial this project is based on typically lands around 87–88% test accuracy with this exact setup — but <strong>use the number your own run actually produced</strong> in your write-up, not this one.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Why do we divide the pixel values by 255 before training, instead of feeding in the raw 0–255 numbers?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Neural networks train more reliably on small, consistently-scaled numbers. Large raw pixel values (up to 255) make the weighted sums inside each neuron swing much bigger, which slows down and can destabilize gradient descent. Dividing by 255 puts every pixel on a fixed 0–1 scale before the network ever sees it.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Why does the output layer use <code>Dense(10)</code> with no activation function, instead of a sigmoid like Lesson 19 mentioned?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Sigmoid squashes to a single 0–1 value, which fits yes/no problems. Here there are 10 possible classes, not 2, so the output layer produces one raw score (logit) per class instead. The loss function (<code>SparseCategoricalCrossentropy(from_logits=True)</code>) handles turning those 10 raw scores into probabilities internally — that's what <code>from_logits=True</code> is telling it to do.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. What is backpropagation actually doing during each <code>model.fit()</code> epoch?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">It measures how much each weight in the network contributed to the current loss (error), then nudges every weight a small step in the direction that reduces that loss — gradient descent, applied layer by layer backwards through the network. Lesson 20 covers this in depth; here you're watching its result (accuracy going up epoch by epoch) without hand-coding the math.</div>
+</div>
+
+<h2>Step 6 — turn logits into predictions and plot a few</h2>
+<p>Wrap the trained model with a <code>Softmax</code> layer to convert the raw output scores into probabilities that add up to 1, then use <code>np.argmax</code> to pick the single most likely class:</p>
+<pre><code>probability_model = tf.keras.Sequential([model, tf.keras.layers.Softmax()])
+
+predictions = probability_model.predict(test_images)
+
+print(predictions[0])                 # 10 probabilities for the first test image
+print(np.argmax(predictions[0]))      # index of the highest probability = predicted class
+print(test_labels[0])                 # the actual true label</code></pre>
+<p>Now plot a handful of test images with their predicted vs actual label, using <code>matplotlib</code> from Lesson 9:</p>
+<pre><code>plt.figure(figsize=(10, 5))
+for i in range(9):
+    plt.subplot(3, 3, i + 1)
+    plt.xticks([])
+    plt.yticks([])
+    plt.imshow(test_images[i], cmap='gray')
+
+    predicted_label = np.argmax(predictions[i])
+    true_label = test_labels[i]
+    color = 'green' if predicted_label == true_label else 'red'
+
+    plt.xlabel(f"{class_names[predicted_label]} (true: {class_names[true_label]})",
+               color=color)
+
+plt.tight_layout()
+plt.show()</code></pre>
+<p>Green labels mean the model got it right, red means it didn't — a fast visual gut-check on top of the single <code>test_acc</code> number from Step 5. It's worth looking at a couple of the red ones: often they're genuinely confusing items (a shirt that looks like a coat), which tells you something about the limits of a plain <code>Dense</code>-layer model, not just a bug in your code.</p>
+
+<h2>Step 7 — write the project README</h2>
+<p>Same structure as Project 1 — reuse it every time:</p>
+<pre><code>## Project 2: Fashion MNIST Image Classifier
+
+**Problem statement**
+Classify a small grayscale image of a clothing item into one
+of 10 categories (T-shirt, trouser, pullover, dress, coat,
+sandal, shirt, sneaker, bag, ankle boot).
+
+**Dataset**
+Fashion MNIST, built into Keras: 60,000 training images and
+10,000 test images, each 28x28 pixels, grayscale, 10 classes.
+Loaded via tf.keras.datasets.fashion_mnist.load_data().
+
+**Approach**
+- Normalized pixel values from 0-255 down to 0-1
+- Sequential Keras model: Flatten -> Dense(128, relu) -> Dense(10)
+- Trained 10 epochs with the Adam optimizer and
+  SparseCategoricalCrossentropy loss
+- Evaluated on the held-out test set only
+
+**Results**
+- Test accuracy: [your actual number from Step 5]
+- Test loss: [your actual number from Step 5]
+- Spot-checked 9 sample predictions against true labels (plotted)
+
+**What I'd improve next**
+- Add a convolutional (Conv2D) layer, which is built specifically
+  for image data (covered in Lesson 26)
+- Look at which classes get confused with each other most often
+  (e.g. shirt vs coat) using a confusion matrix
+- Try more epochs or a wider hidden layer and compare results
+</code></pre>
+<p>Fill in the brackets with your own run's real numbers. Save as <code>README.md</code> alongside your notebook, or as a Markdown cell at the top of the notebook itself.</p>
+
+<h2>Step 8 — commit it as Project 2</h2>
+<p>Same repo as Project 1: <code>ai-ml-learning-log</code> on GitHub.</p>
+<ul>
+<li>Download the notebook from Colab: <strong>File → Download → Download .ipynb</strong></li>
+<li>Add it to your local clone of <code>ai-ml-learning-log</code>, in a folder like <code>project-2-image-classifier/</code></li>
+<li>Add the README.md in the same folder</li>
+<li>Commit with a clear message, e.g. <code>git commit -m "Project 2: image classifier"</code></li>
+<li>Push to GitHub: <code>git push</code></li>
+</ul>
+<p>Two real projects on your GitHub profile now — one structured data, one image data. Same repeatable shape both times: load, prepare, train, evaluate honestly, write up, commit.</p>
+
+<h2>Source</h2>
+<p><a href="https://www.tensorflow.org/tutorials/keras/classification" target="_blank" rel="noopener">tensorflow.org/tutorials/keras/classification</a> — the official TensorFlow "Basic classification: Classify images of clothing" tutorial. All code in this lesson (dataset loading, normalization, model architecture, compile/fit/evaluate arguments, and the softmax + argmax prediction pattern) follows it directly.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Fashion MNIST loads directly from <code>tf.keras.datasets.fashion_mnist.load_data()</code> — 60,000 train / 10,000 test grayscale images, 28x28 pixels, 10 classes.</li>
+    <li>Divide pixel values by 255 before training — small consistent numbers train more reliably than raw 0–255 values.</li>
+    <li><code>Flatten -> Dense(128, relu) -> Dense(10)</code> is enough for a solid first image classifier — no Conv2D required yet (that's Lesson 26).</li>
+    <li><code>SparseCategoricalCrossentropy(from_logits=True)</code> pairs with a plain-integer-label, no-activation output layer for multi-class problems.</li>
+    <li>Wrap the trained model with <code>Softmax()</code> to get real probabilities, then <code>np.argmax()</code> to get the single predicted class.</li>
+    <li>Every project write-up: problem statement, dataset, approach, actual results, what you'd improve next.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Accuracy stuck around 10%, or loss showing as <code>nan</code>? Paste the exact output and ask — a common cause is forgetting the normalize-by-255 step or mismatching <code>from_logits</code> with your output layer's activation.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0022-decision-trees-ensembles.html">&larr; Back: Lesson 22 — Decision trees &amp; ensembles</a></span>
+  <span><a href="0024-clustering-kmeans.html">Next: Lesson 24 — Clustering (k-means) &rarr;</a></span>
+</div>
+
+</body>
+</html>

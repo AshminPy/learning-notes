@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 20 — How training works: forward pass & backpropagation intuition</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 20 of 34</p>
+<h1>How training works: forward pass & backpropagation intuition</h1>
+
+<p>In Lesson 19 you built a neural network out of neurons and layers. But a brand new network is useless — its weights are random guesses. This lesson explains, in plain words, how a network goes from "random guesses" to "actually good at the task." Two words to know: <strong>forward pass</strong> and <strong>backpropagation</strong>.</p>
+
+<div class="callout"><strong>Simple example:</strong> imagine you're learning to throw darts blindfolded. You throw (forward pass), someone tells you how far you missed the bullseye and in which direction (loss), and you adjust your arm angle a little to correct for that miss (backpropagation). Throw again. Over hundreds of throws, your aim gets better. A neural network learns the exact same way — throw, check the miss, adjust, repeat.</div>
+
+<h2>Step 1: the forward pass</h2>
+<p>The <strong>forward pass</strong> is just what you already learned in Lesson 19: the input numbers flow into the first layer of neurons, each neuron does its little calculation, passes its output to the next layer, and so on until the last layer spits out a prediction. Data moves forward, layer by layer, left to right. That's the whole forward pass — nothing new here, just running the network once.</p>
+
+<h2>Step 2: compute the loss</h2>
+<p>Now the network has a prediction. But is it any good? You compare it to the real answer (the label you already know, from your training data) using a <strong>loss function</strong> — the same idea from Lesson 14. The loss is a single number that says "how wrong was this prediction." Big loss = way off. Small loss = close. Zero loss = perfect.</p>
+<p>At the start of training, with random weights, the loss is usually huge. The whole goal of training is to make that number small.</p>
+
+<h2>Step 3: backpropagation — send the error backward</h2>
+<p>Here is the new idea. Once we know the loss (how wrong we were), we need to figure out: <em>which weights caused the mistake, and how should each one change to make the mistake smaller next time?</em></p>
+<p><strong>Backpropagation</strong> is the process of sending that error signal backward through the network, layer by layer, from the output back toward the input. As the error travels backward through each layer, the network works out — for every single weight in that layer — "if I nudge this weight up a little, does the error get better or worse? By how much?" That's it. No new math tool here — this is <strong>exactly gradient descent from Lesson 14</strong>, just applied many times over, once for every weight in every layer, instead of just one weight in a simple regression line.</p>
+
+<div class="callout"><strong>Simple example:</strong> think of a company where a customer complaint (the error) travels backward through the chain of command — from the CEO, to the department head, to the team lead, to the individual worker. At each level, that person asks "was my decision part of the problem, and which way should I adjust next time?" Backpropagation is that same complaint working its way backward through the network's layers, with each weight asking "was I part of the mistake, and which way should I move?"</div>
+
+<h2>Step 4: update the weights</h2>
+<p>Once every weight knows which direction would have reduced the error, the network nudges each weight a small step in that direction — same "small step" idea as gradient descent in Lesson 14. Not a huge jump (that would overshoot and cause chaos), just a small, careful nudge. Then the whole cycle starts again with a new example.</p>
+
+<h2>Putting the four steps together</h2>
+<table>
+<tr><th>Step</th><th>What happens</th><th>Where you've seen this before</th></tr>
+<tr><td>1. Forward pass</td><td>Input flows through the layers, network produces a prediction</td><td>Lesson 19 — neurons and layers</td></tr>
+<tr><td>2. Compute loss</td><td>Compare prediction to the real answer, get one "how wrong" number</td><td>Lesson 14 — cost/loss function</td></tr>
+<tr><td>3. Backpropagation</td><td>Send the error backward, work out which direction each weight should move</td><td>Lesson 14 — gradient descent, applied to every weight in every layer</td></tr>
+<tr><td>4. Update weights</td><td>Nudge every weight a small step in the direction that reduces error</td><td>Lesson 14 — the "small step" update rule</td></tr>
+</table>
+
+<p>One full trip through all four steps, on one training example, is one round of training. Do this for every example in your training set, and you've completed one <strong>epoch</strong> — one full pass through the whole training set. Training a network usually means repeating this for many epochs, seeing the same data again and again, each time with slightly better weights than before.</p>
+
+<h2>Try it yourself</h2>
+<p>No code this time — just trace it through in your head, step by step. Imagine a tiny network that predicts "will this email get a reply" (yes/no) and it just saw one training email that <em>should</em> be labeled "yes" but the network predicted "no."</p>
+<ul>
+<li>What happens in the forward pass for this email? (What does the network produce?)</li>
+<li>What does the loss look like here — small or large? Why?</li>
+<li>During backpropagation, is the error signal traveling from the input layer to the output layer, or from the output layer back to the input layer?</li>
+<li>After the weights update, would you expect this same network, shown this exact email again right away, to be slightly more or slightly less likely to predict "yes"?</li>
+</ul>
+<p>Think through your answers before you move on — there's no single "correct" wording, but the direction of each answer should match the steps above.</p>
+
+<h2>Check your understanding</h2>
+<div class="quiz">
+<p>Q1. Put these four steps in the correct order: (a) update weights, (b) compute loss, (c) forward pass, (d) backpropagation.</p>
+<input type="text" id="q1" placeholder="type your answer, e.g. a, b, c, d">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">c, b, d, a — forward pass first (get a prediction), then compute loss (how wrong were we), then backpropagation (send the error backward to find each weight's direction), then update weights (take the small step). Then repeat with the next example.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Suppose a network only ever did the forward pass, over and over, and never ran backpropagation or updated its weights. What would happen to its predictions over time?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Nothing would improve. The weights would stay exactly as they started (random), so the network would keep making the same quality of predictions forever — no matter how many times you ran it, or how much training data you showed it. Learning only happens in the backpropagation + weight update steps. Running the forward pass alone is just "using" the network, not "training" it.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. True or false: backpropagation is a completely different technique from gradient descent — they just happen to look similar.</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">False. Backpropagation <em>is</em> gradient descent — it's the same "find the direction that reduces error, take a small step that way" idea from Lesson 14, just applied to every weight in every layer of a multi-layer network, instead of one weight in a simple line.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developers.google.com/machine-learning/crash-course/neural-networks/backpropagation" target="_blank" rel="noopener">developers.google.com/machine-learning/crash-course/neural-networks/backpropagation</a> — Google's Machine Learning Crash Course, which describes backpropagation as "the most common training algorithm for neural networks" that "makes gradient descent feasible for multi-layer neural networks."</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Forward pass: input flows through the network's layers and produces a prediction.</li>
+    <li>Loss: compare the prediction to the real answer to get a single "how wrong" number (Lesson 14).</li>
+    <li>Backpropagation: send that error backward through the layers so every weight learns which direction would reduce it — this is gradient descent applied to every weight in every layer, not a new technique.</li>
+    <li>One forward + backward + update on one example = one training step. One full pass through the whole training set = one epoch.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">If "sending the error backward" still feels fuzzy, that's completely normal — most learners need to sit with this one for a day before it clicks. Ask away, one question at a time.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0019-neural-networks-basics.html">&larr; Back: Lesson 19 — Neural network basics</a></span>
+  <span><a href="0021-first-neural-net-keras.html">Next: Lesson 21 — Your first neural net (Keras) &rarr;</a></span>
+</div>
+
+</body>
+</html>

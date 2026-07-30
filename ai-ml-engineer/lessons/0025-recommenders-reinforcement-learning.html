@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 25 — Recommender systems & intro to reinforcement learning</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 25 of 34</p>
+<h1>Recommender systems & intro to reinforcement learning</h1>
+
+<p>This lesson is a survey, not deep hands-on. Two big ideas, in plain terms: how apps like Netflix and Spotify decide what to show you next (recommender systems), and how an AI can learn by trial and error instead of from labeled examples (reinforcement learning).</p>
+
+<h2>Recommender systems</h2>
+<p>A recommender system's job is simple: given what you've liked or watched or bought before, guess what you'll want next. There are two main approaches.</p>
+
+<h3>Collaborative filtering</h3>
+<p>Collaborative filtering looks at <strong>other people</strong>, not the item itself. The logic: "people who liked what you liked also liked X, so you'll probably like X too." It never needs to understand what a movie is <em>about</em> — it just needs a big table of who liked what.</p>
+<div class="callout"><strong>Simple example:</strong> Netflix notices that most people who rated <em>Movie A</em> highly also rated <em>Movie B</em> highly. You just rated <em>Movie A</em> highly. Netflix recommends <em>Movie B</em> — even though it never looked at what either movie is about.</div>
+
+<h3>Content-based filtering</h3>
+<p>Content-based filtering looks at <strong>the item's features</strong> — genre, artist, actors, keywords — and recommends things similar to what you already liked. It doesn't need other users at all, just a description of each item and your own history.</p>
+<div class="callout"><strong>Simple example:</strong> Spotify sees you liked several acoustic indie songs. It looks for other songs tagged with similar features (tempo, instruments, genre) and recommends those — based purely on the songs' properties, not on what other listeners did.</div>
+
+<p>In practice, big platforms usually blend both approaches — collaborative filtering is powerful once you have lots of user data, content-based filtering works even for a brand-new item nobody has rated yet.</p>
+
+<table>
+<tr><th>Approach</th><th>Uses</th><th>Weak point</th></tr>
+<tr><td>Collaborative filtering</td><td>Patterns across many users</td><td>Struggles with new items nobody has rated yet</td></tr>
+<tr><td>Content-based filtering</td><td>Features of the item itself</td><td>Tends to recommend "more of the same," less discovery</td></tr>
+</table>
+
+<h2>Reinforcement learning (RL)</h2>
+<p>Every model so far in this course has learned from a fixed, labeled dataset. Reinforcement learning is different: there's no dataset of "correct answers." Instead, an <strong>agent</strong> takes <strong>actions</strong> inside an <strong>environment</strong>, and gets a <strong>reward</strong> (a number — good or bad) after each action. Over many, many attempts, the agent learns which actions tend to lead to more reward. No math needed here — just the loop: act, observe the result, get a reward, adjust, repeat.</p>
+
+<div class="callout"><strong>Simple example:</strong> a game-playing agent learning to play a simple game like Pong starts out moving randomly. Sometimes it happens to hit the ball and scores a point (positive reward); sometimes it misses (no reward, or a penalty). It doesn't get told the "right" move — it just tries things, notices which actions came before a reward, and slowly starts favoring those actions. After enough games, it plays well, without a human ever writing "if ball is here, move paddle there."</div>
+
+<p>The same loop shows up in robots learning to walk (reward = staying upright and moving forward), and in RLHF (Reinforcement Learning from Human Feedback), which is part of how chatbots like ChatGPT get fine-tuned to give better responses — human preferences act as the reward signal.</p>
+
+<table>
+<tr><th>Piece</th><th>What it means</th></tr>
+<tr><td>Agent</td><td>The learner/decision-maker (the game AI, the robot, the model)</td></tr>
+<tr><td>Environment</td><td>The world it acts in (the game, the physical robot's surroundings)</td></tr>
+<tr><td>Action</td><td>A choice the agent makes (move paddle up, take a step forward)</td></tr>
+<tr><td>Reward</td><td>A number telling the agent how good that action turned out to be</td></tr>
+</table>
+
+<h2>Try it — classify these</h2>
+<p>For each short scenario, decide: collaborative filtering, content-based filtering, or reinforcement learning?</p>
+
+<div class="quiz">
+<p>Q1. A music app recommends a new song because it has a similar tempo, key, and genre tags to songs you've saved before.</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Content-based filtering — it's matching item <em>features</em>, not other users' behavior.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A shopping site recommends a product because "customers who bought this also bought that."</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Collaborative filtering — it's based on patterns across many users, not the product's own features.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. A robot tries different leg movements, falls over a few times, and gradually learns a walking pattern that keeps it upright longest.</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">Reinforcement learning — trial and error, guided by a reward signal (staying upright), no labeled dataset of "correct" movements.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developers.google.com/machine-learning/recommendation" target="_blank" rel="noopener">developers.google.com/machine-learning/recommendation</a> — Google's Recommendation Systems course (collaborative vs. content-based filtering, and more).</p>
+<p><a href="http://incompleteideas.net/book/the-book.html" target="_blank" rel="noopener">incompleteideas.net/book/the-book.html</a> — Sutton & Barto's <em>Reinforcement Learning: An Introduction</em>, the standard free textbook on RL, hosted on the author's own site.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Collaborative filtering: recommend based on what similar <em>users</em> liked.</li>
+    <li>Content-based filtering: recommend based on <em>item features</em> similar to what you liked before.</li>
+    <li>Reinforcement learning: an agent learns by taking actions, getting rewards, and adjusting — trial and error, no labeled dataset.</li>
+    <li>Real systems often mix approaches — e.g. collaborative filtering plus content-based to handle new items.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Not sure whether a scenario is collaborative or content-based? Ask: "is this based on other people, or on the item's own features?" — send me the scenario and I'll walk through it with you.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0024-clustering-kmeans.html">&larr; Back: Lesson 24 — Clustering (k-means)</a></span>
+  <span><a href="0026-computer-vision-cnns.html">Next: Lesson 26 — Computer vision (CNNs) &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 31 — Generative AI concepts &amp; AWS AI Practitioner exam prep</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 31 of 34</p>
+<h1>Generative AI concepts &amp; AWS AI Practitioner exam prep</h1>
+
+<p>Lesson 28 showed you how a transformer works under the hood — attention, next-token prediction, all of it. "Generative AI" is what people call the industry built on top of that architecture: models that generate new text, images, code, or audio instead of just classifying or predicting a number. This lesson gives you the vocabulary that industry uses every day, then walks you through exactly what the AWS Certified AI Practitioner exam expects you to know — confirmed against AWS's own certification page and exam guide, not guessed.</p>
+
+<h2>Part 1 — Generative AI vocabulary</h2>
+
+<p>These five terms show up constantly in job postings, AWS documentation, and the exam itself. Each one builds on what you already learned in Lesson 28.</p>
+
+<h3>Foundation model</h3>
+<p>A <strong>foundation model</strong> is a large model — usually a transformer, exactly like the one in Lesson 28 — pre-trained on a huge, general dataset, then adapted to many different downstream tasks. "Foundation" is the key word: it's a base you build on, not a model built for one narrow job. GPT, Claude, and Amazon Titan are all foundation models. The same pre-trained model can answer questions, summarize documents, write code, or hold a conversation, depending on how you use it.</p>
+
+<h3>Prompting</h3>
+<p><strong>Prompting</strong> is giving the model instructions in plain text to get the output you want — no retraining involved. "Summarize this in 3 bullet points" or "Write this email in a formal tone" are prompts. This is the cheapest and fastest way to steer a foundation model, and it's why so much of "using AI" today is really just learning to write clear instructions.</p>
+
+<h3>Fine-tuning</h3>
+<p><strong>Fine-tuning</strong> means taking a pre-trained foundation model and training it further on your own specific data, so it gets better at your particular task or adopts your tone/format. It's more expensive and slower than prompting — you're updating the model's internal parameters, not just asking it nicely — so it's usually a later step, only used when prompting alone isn't good enough.</p>
+
+<h3>RAG — Retrieval-Augmented Generation</h3>
+<p><strong>RAG</strong> means giving the model relevant documents or data at request time, so it can answer using information it was never trained on — your company's internal wiki, last week's support tickets, today's stock price. The model retrieves the relevant pieces first, then generates its answer using both the question and those retrieved documents.</p>
+<div class="callout"><strong>Simple example:</strong> a foundation model without RAG is like a very well-read person answering purely from memory — impressive, but their knowledge has a cutoff date and doesn't include your private files. RAG is the same person now allowed to open a folder of your documents before answering. If you've used an AI chat assistant that can search your files or a knowledge base before responding, that's RAG — it's also the core pattern behind most "AI agents" you may have already seen at work, which look things up before they act.</div>
+
+<h3>Responsible AI</h3>
+<p>Foundation models inherit patterns — including bad ones — from the data they were trained on. <strong>Bias</strong> means the model's outputs can unfairly favor or disfavor certain groups because that pattern existed in the training data. <strong>Hallucination</strong> means the model can state something completely wrong with total confidence — it has no built-in way to say "I don't know," so it generates a plausible-sounding answer even when it isn't true. Neither of these is a bug you can fully "fix" — they're properties of how these models work, which is exactly why responsible AI practices (testing outputs, human review, citing sources, RAG to ground answers in real documents) are a required skill, not an optional extra. This is one of the five domains on the exam you're about to prep for.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your team wants a chatbot that can answer questions using your company's internal policy documents, which the model was never trained on. Do you reach for prompting, fine-tuning, or RAG — and why?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">RAG. The model needs access to specific, current documents it wasn't trained on — RAG retrieves the relevant policy text at request time and hands it to the model along with the question. Fine-tuning would be slower, more expensive, and doesn't naturally keep up when the policies change; prompting alone can't give the model information it has never seen.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A foundation model gives you a confident, detailed answer that turns out to be completely false. What is this called, and why does it happen?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">A hallucination. The model generates the next most plausible-sounding tokens (Lesson 28) — it has no built-in mechanism to check "is this actually true" or say "I don't know," so a fluent, confident-sounding answer can still be factually wrong.</div>
+</div>
+
+<h2>Part 2 — AWS Certified AI Practitioner (AIF-C01) exam prep</h2>
+<p>Lesson 1 already flagged this cert as your fastest resume-visible badge, slotted around Phase I. Here's the exam confirmed directly against AWS's official certification page and exam guide (aws.amazon.com and docs.aws.amazon.com) — no guessing.</p>
+
+<h3>Exam format</h3>
+<table>
+<tr><th>Detail</th><th>Value</th></tr>
+<tr><td>Exam code</td><td>AIF-C01</td></tr>
+<tr><td>Cost</td><td>$100 USD</td></tr>
+<tr><td>Duration</td><td>90 minutes</td></tr>
+<tr><td>Total questions</td><td>65 (50 scored + 15 unscored, not identified during the exam — used by AWS to evaluate future questions)</td></tr>
+<tr><td>Question types</td><td>Multiple choice, multiple response, ordering, matching</td></tr>
+<tr><td>Passing score</td><td>700 out of a scaled 100–1,000 (pass/fail only, no penalty for guessing)</td></tr>
+<tr><td>Validity</td><td>3 years</td></tr>
+<tr><td>Delivery</td><td>Pearson VUE testing center or online proctored</td></tr>
+<tr><td>Prerequisites</td><td>None required. AWS describes the target candidate as having up to 6 months of exposure to AI/ML on AWS and familiarity with core services (EC2, S3, Lambda, Bedrock, SageMaker AI) — recommended, not mandatory.</td></tr>
+</table>
+
+<h3>What it actually tests — the 5 domains</h3>
+<p>This is the exam guide's official content outline, with the exact weightings AWS publishes:</p>
+<table>
+<tr><th>Domain</th><th>Weight</th></tr>
+<tr><td>1. Fundamentals of AI and ML</td><td>20%</td></tr>
+<tr><td>2. Fundamentals of Generative AI</td><td>24%</td></tr>
+<tr><td>3. Applications of Foundation Models</td><td>28%</td></tr>
+<tr><td>4. Guidelines for Responsible AI</td><td>14%</td></tr>
+<tr><td>5. Security, Compliance, and Governance for AI Solutions</td><td>14%</td></tr>
+</table>
+<p>Notice domains 2 and 3 together are over half the exam (52%) — that's exactly the vocabulary from Part 1 above: foundation models, prompting, fine-tuning, RAG, and how to apply them to business problems on AWS (mainly through Amazon Bedrock and SageMaker AI). Domain 4, responsible AI, is the bias/hallucination material you just read. The exam explicitly does <em>not</em> expect you to code, build ML pipelines, or do hyperparameter tuning — it tests whether you understand and can apply these concepts, not whether you can build the models yourself.</p>
+
+<h3>How to study</h3>
+<p>AWS's own certification page lists free official resources — use these instead of random third-party dumps:</p>
+<ul>
+<li><strong>AWS Skill Builder — Exam Prep Plan (free):</strong> a structured 4-step plan (knowledge, skill refresh, review/practice, readiness check) built specifically for this exam.</li>
+<li><strong>AWS Certification Official Pretest (free):</strong> take this first to see which of the 5 domains are already weak, before you spend study time.</li>
+<li><strong>AWS Certification Official Practice Question Set (free):</strong> official exam-style questions, so you know what the real thing feels like.</li>
+<li><strong>AWS Certification Official Practice Exam (free):</strong> a full readiness check once you've studied — this is your "am I ready" signal.</li>
+</ul>
+<p>All of these are on AWS Skill Builder (skillbuilder.aws), free, and official — no need to buy a third-party question bank for a foundational-level exam.</p>
+
+<h3>Are you ready to book it?</h3>
+<p>You don't need this exam on day one — book it once you can honestly check off all of these:</p>
+<ul>
+<li>You've completed Phase E through Phase I of this course (core ML through cloud/MLOps/GenAI) — the exam assumes you understand what ML, GenAI, and foundation models are, which is everything from Lesson 12 onward.</li>
+<li>You've taken the AWS Certification Official Pretest and it isn't flagging entire domains as weak.</li>
+<li>You can explain, without notes, the difference between prompting, fine-tuning, and RAG (Part 1 above) — and when you'd use Bedrock vs. SageMaker AI for a use case.</li>
+<li>You scored comfortably above 700 (the real pass mark) on the official practice exam.</li>
+</ul>
+<p>If all four are true, book it — $100 well spent for a resume-visible AWS badge you can list before you have a full-time AI job.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q3. Roughly how many of the 65 exam questions actually count toward your score, and why does that number matter when you're pacing yourself in the 90 minutes?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">50 questions are scored; the other 15 are unscored questions AWS is testing for future exams, mixed in without being labeled. It doesn't change your pacing strategy — since you can't tell which is which, you have to treat every one of the 65 as if it counts, giving each one fair attention across the 90 minutes.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. Which two exam domains together make up more than half the exam, and what topic from Part 1 of this lesson do they map to?</p>
+<input type="text" id="q4" placeholder="type your answer">
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4">Domain 2 (Fundamentals of GenAI, 24%) and Domain 3 (Applications of Foundation Models, 28%) — together 52%. They map directly to the vocabulary in Part 1: foundation models, prompting, fine-tuning, and RAG, plus applying them to real business use cases on AWS.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://aws.amazon.com/certification/certified-ai-practitioner/" target="_blank" rel="noopener">aws.amazon.com/certification/certified-ai-practitioner</a> — official AWS certification page (exam format, cost, prep resources). Domain names and weightings confirmed against the official exam guide: <a href="https://docs.aws.amazon.com/aws-certification/latest/ai-practitioner-01/ai-practitioner-01.html" target="_blank" rel="noopener">docs.aws.amazon.com/aws-certification/latest/ai-practitioner-01</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>GenAI vocabulary: foundation model (large pre-trained transformer, adaptable to many tasks), prompting (plain-text instructions, no retraining), fine-tuning (further training on your own data), RAG (retrieving relevant documents at request time — the pattern behind most AI agents).</li>
+    <li>Responsible AI matters because bias and hallucination are properties of how these models work, not bugs you can fully fix.</li>
+    <li>AIF-C01: $100, 90 minutes, 65 questions (50 scored), pass mark 700/1000, no required prerequisites, valid 3 years.</li>
+    <li>5 domains: Fundamentals of AI/ML (20%), Fundamentals of GenAI (24%), Applications of Foundation Models (28%), Responsible AI (14%), Security/Compliance/Governance (14%).</li>
+    <li>Study with AWS Skill Builder's free official Exam Prep Plan, Pretest, Practice Question Set, and Practice Exam — book once Phases E-I are done and your practice exam score is comfortably above 700.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">If any exam number here ever looks off, don't take my word for it — check the official AWS certification page directly (link above); AWS does update exam guides and pricing over time.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0030-ml-cloud-sagemaker.html">&larr; Back: Lesson 30 — ML in the cloud</a></span>
+  <span><a href="0032-portfolio-resume.html">Next: Lesson 32 — Portfolio &amp; resume &rarr;</a></span>
+</div>
+
+</body>
+</html>

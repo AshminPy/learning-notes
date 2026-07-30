@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 24 — Clustering (k-means) & dimensionality basics</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 24 of 34</p>
+<h1>Clustering (k-means) & dimensionality basics</h1>
+
+<p>Back in Lesson 12 you met <strong>unsupervised learning</strong>: data with no labels, where the model has to find structure on its own. Today you'll actually do it — using an algorithm called <strong>k-means</strong> to group similar data points together, and you'll meet the idea of <strong>dimensionality reduction</strong> for shrinking huge feature sets down to something manageable.</p>
+
+<h2>Recap: what "no labels" means</h2>
+<p>In supervised learning (Lessons 13 onward), every training example came with the correct answer attached — a price, a category. In unsupervised learning, there's no correct answer given. You just have data points, and you ask the model: "what groups do you see in here?" <strong>Clustering</strong> is the most common unsupervised task — sorting similar items into groups (clusters) without anyone predefining what the groups are.</p>
+
+<div class="callout"><strong>Simple example:</strong> imagine dumping a mixed box of red and green marbles on a table, mixed in with a pile of blue buttons. Nobody told you "these are marbles" and "these are buttons" — but just by looking at how the items cluster by color and shape, you'd naturally sort them into three piles. That's clustering: finding natural groups using only how similar items are to each other.</div>
+
+<h2>How k-means works</h2>
+<p><strong>k-means</strong> is the most common clustering algorithm. The "k" is a number you choose upfront — it's how many groups (clusters) you want the algorithm to find. The algorithm then repeats a simple loop:</p>
+<ol>
+<li><strong>Pick k starting points.</strong> Choose k data points to act as the initial "center" of each cluster (called <strong>centroids</strong>).</li>
+<li><strong>Assign.</strong> Look at every data point, and assign it to whichever center is closest to it.</li>
+<li><strong>Update.</strong> For each cluster, move its center to the average (mean) position of all the points now assigned to it — that's why it's called "k-<em>means</em>."</li>
+<li><strong>Repeat</strong> steps 2 and 3 until the centers stop moving (or barely move). At that point the clusters are stable, and you're done.</li>
+</ol>
+
+<p>Each round, points can switch which cluster they belong to, because the centers shifted. After a handful of rounds, the centers settle into place and every point stays put — that's convergence.</p>
+
+<h2>Picking k</h2>
+<p>k-means needs you to tell it the number of clusters in advance — it doesn't figure that out by itself. If you don't already know how many groups make sense (you rarely do), the common approach is to just try a few different values of k (like 2, 3, 4, 5) and see which one produces clusters that make sense for your data. A more formal version of this is called the <strong>elbow method</strong> — plotting how tightly-packed the clusters are for each k and looking for the point where adding more clusters stops helping much. You don't need to master the elbow method today — just know the name and that trying a few values of k is the normal starting point.</p>
+
+<h2>Dimensionality reduction (PCA) — the idea, not the code</h2>
+<p>Real datasets often have dozens or hundreds of features (columns) per data point — a customer record might have 200 attributes. Most ML algorithms get slower and less reliable as feature counts grow. <strong>Dimensionality reduction</strong> techniques, the most common being <strong>PCA (Principal Component Analysis)</strong>, compress many features down into a smaller number of new features, while keeping as much of the important pattern in the data as possible. Think of it as summarizing: instead of tracking 200 separate numbers per customer, PCA might find that 10 new combined numbers capture almost all the useful variation. You don't need to write PCA code today — just recognize the idea: fewer dimensions, same important structure, easier for models (and for humans) to work with.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You run k-means with <code>n_clusters=3</code> on a dataset. After the algorithm converges, what has k-means found?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Three cluster centers (centroids), and every data point assigned to whichever center is closest to it. The centers stopped moving because reassigning points and recalculating averages no longer changes anything.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. True or false: k-means figures out the best number of clusters on its own, so you never need to specify k.</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><strong>False.</strong> k-means requires you to specify the number of clusters upfront. You usually try a few values of k and compare results, sometimes using the elbow method to help decide.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook, install/import scikit-learn's <code>KMeans</code> and run it on a tiny made-up dataset — a handful of 2D points that visually form two or three groups:</p>
+
+<pre><code>from sklearn.cluster import KMeans
+import numpy as np
+
+# Six made-up 2D points, visually forming two groups:
+# three points clustered near (1,1), three clustered near (8,8)
+X = np.array([
+    [1, 1],
+    [1.5, 2],
+    [2, 1.5],
+    [8, 8],
+    [8.5, 9],
+    [9, 8],
+])
+
+kmeans_model = KMeans(n_clusters=2, n_init=10, random_state=42)
+kmeans_model.fit(X)
+
+print(kmeans_model.labels_)          # which cluster each point belongs to
+print(kmeans_model.cluster_centers_) # the two final centroid positions</code></pre>
+
+<p><code>random_state=42</code> just makes the result repeatable every time you run it (same starting points). Run it, then look at <code>labels_</code> — you should see the three points near <code>(1,1)</code> get one cluster number, and the three near <code>(8,8)</code> get the other. Try adding a third group of points and set <code>n_clusters=3</code> to see it split three ways.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer / expected output</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>labels_ might print as: [0 0 0 1 1 1]
+(or [1 1 1 0 0 0] — which number labels which group is arbitrary,
+what matters is the three near (1,1) share one number and the
+three near (8,8) share the other)
+
+cluster_centers_ will be close to:
+[[1.5, 1.5],
+ [8.5, 8.3]]
+— roughly the average position of each group of points.</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://scikit-learn.org/stable/modules/clustering.html#k-means" target="_blank" rel="noopener">scikit-learn.org/stable/modules/clustering — K-means</a> — the official scikit-learn documentation for the k-means algorithm and the <code>KMeans</code> class used above.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Clustering is unsupervised: no labels, the model finds groups (clusters) using similarity alone.</li>
+    <li>k-means loop: pick k starting centers &rarr; assign each point to its nearest center &rarr; move each center to the average of its points &rarr; repeat until stable.</li>
+    <li>You must choose k yourself — try a few values, or use the elbow method to help decide.</li>
+    <li>PCA (dimensionality reduction) compresses many features into fewer, while keeping the important patterns — useful conceptually even without writing the code yet.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Not sure why your clusters look uneven or a point ended up in the "wrong" group? Paste your <code>labels_</code> output and describe the data — reading cluster assignments is a skill worth building here.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0023-project-2-image-classifier.html">&larr; Back: Lesson 23 — Project 2</a></span>
+  <span><a href="0025-recommenders-reinforcement-learning.html">Next: Lesson 25 — Recommenders & reinforcement learning &rarr;</a></span>
+</div>
+
+</body>
+</html>

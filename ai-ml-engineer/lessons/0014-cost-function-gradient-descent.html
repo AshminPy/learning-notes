@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 14 — Cost function & gradient descent</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 14 of 34</p>
+<h1>Cost function & gradient descent</h1>
+
+<p>In Lesson 13 you learned that "training" a model means finding the best <code>w</code> (weight) and <code>b</code> (bias). But how does the computer know which <code>w</code> and <code>b</code> are "best"? It needs two things: a way to <strong>measure how wrong</strong> the current guess is, and a way to <strong>improve it step by step</strong>. That's this lesson.</p>
+
+<div class="callout"><strong>Simple example:</strong> imagine you're baking bread and adjusting the oven temperature by feel. Each time, you taste the bread (measure how wrong it is) and turn the dial a little in the direction that made it better last time (adjust). You repeat this until the bread tastes right. A model does the same thing with numbers: measure the error, nudge the weights, repeat.</div>
+
+<h2>The cost function: measuring how wrong you are</h2>
+<p>A <strong>cost function</strong> (also called a <strong>loss function</strong>) is a single number that says how bad the model's predictions are right now. Small number = good predictions. Big number = bad predictions.</p>
+
+<p>The most common one for regression is <strong>Mean Squared Error (MSE)</strong>. In plain steps:</p>
+<ul>
+<li>For each data point, find the error: <code>actual - predicted</code>.</li>
+<li>Square that error (so negative and positive errors don't cancel out, and big errors get punished harder).</li>
+<li>Average the squared errors across all data points.</li>
+</ul>
+
+<pre><code>MSE = average of (actual - predicted) squared</code></pre>
+
+<p>Example: a model predicts <code>60</code> for a student who actually scored <code>65</code>. The error is <code>65 - 60 = 5</code>. Squared, that's <code>25</code>. Do this for every data point, average the results, and you get the MSE — one number that summarizes how good or bad the whole model is.</p>
+
+<p class="callout"><strong>Common trap:</strong> the cost function measures the model, not one prediction. A single wrong guess isn't the "cost" — the cost is the average error across the whole dataset. Change <code>w</code> or <code>b</code>, and the cost changes too.</p>
+
+<h2>Gradient descent: walking downhill in fog</h2>
+<p>Now that we can measure "how wrong," we need a way to get "less wrong." <strong>Gradient descent</strong> is the algorithm that does this — it's how the model adjusts <code>w</code> and <code>b</code> to make the cost smaller, step by step.</p>
+
+<div class="callout"><strong>Simple example:</strong> imagine you're standing on a hill in thick fog. You can't see the bottom, but you can feel the ground under your feet. To get down, you feel which direction slopes downward, take one step that way, then feel again and take another step. Repeat this enough times and you reach the bottom — the lowest point. Gradient descent does exactly this, except the "hill" is the cost function, and the "position" is the current values of <code>w</code> and <code>b</code>.</div>
+
+<p>Each step of gradient descent:</p>
+<ol>
+<li>Look at the current cost (how wrong the model is).</li>
+<li>Figure out which direction to nudge <code>w</code> and <code>b</code> to make the cost go down.</li>
+<li>Take a small step in that direction.</li>
+<li>Repeat, over and over, until the cost stops going down (or barely changes).</li>
+</ol>
+
+<h2>The learning rate: how big each step is</h2>
+<p>The <strong>learning rate</strong> controls how big each step is. It's a small number you choose before training, like <code>0.01</code>.</p>
+
+<table>
+<tr><th>Learning rate</th><th>What happens</th></tr>
+<tr><td>Too big</td><td>You overshoot — like taking giant leaps downhill and stepping right past the bottom, maybe even ending up higher than before.</td></tr>
+<tr><td>Too small</td><td>You crawl — you do eventually reach the bottom, but it takes a huge number of steps and a long time to train.</td></tr>
+<tr><td>Just right</td><td>Steady, efficient progress toward the lowest cost.</td></tr>
+</table>
+
+<p>Picking a good learning rate is one of the first practical tuning decisions you'll make when training real models. There's no calculus needed to understand this — just remember: big steps risk overshooting, tiny steps are slow.</p>
+
+<h2>Worked example: minimizing (x - 3)² by hand</h2>
+<p>Let's watch gradient descent happen on the simplest possible example: a cost function of <code>(x - 3)²</code>. This cost is <code>0</code> exactly when <code>x = 3</code>, and gets bigger the further <code>x</code> is from <code>3</code> — so "3" is the bottom of the hill we're looking for.</p>
+
+<p>We start at <code>x = 0</code>. Each step, gradient descent nudges <code>x</code> a bit closer to <code>3</code> — imagine it's using the slope to figure out "closer to 3 means smaller cost," so it moves <code>x</code> in that direction. Here's what a few iterations look like with a reasonable learning rate (using a step size that shrinks the distance to the target by about 20% each time, a common pattern with this cost shape):</p>
+
+<table>
+<tr><th>Step</th><th>x (before)</th><th>Cost (x-3)²</th><th>Move</th><th>x (after)</th></tr>
+<tr><td>Start</td><td>0</td><td>9</td><td>—</td><td>0</td></tr>
+<tr><td>1</td><td>0</td><td>9</td><td>step toward 3</td><td>1.2</td></tr>
+<tr><td>2</td><td>1.2</td><td>3.24</td><td>step toward 3</td><td>2.04</td></tr>
+<tr><td>3</td><td>2.04</td><td>0.92</td><td>step toward 3</td><td>2.51</td></tr>
+</table>
+
+<p>Notice the pattern: <code>x</code> moves toward <code>3</code> each step, and the cost keeps shrinking (<code>9 → 3.24 → 0.92</code>). The steps also get smaller as <code>x</code> gets closer to <code>3</code> — near the bottom of the hill, the "slope" is gentler, so gradient descent naturally takes smaller steps. Given enough iterations, <code>x</code> keeps creeping toward <code>3</code> and the cost keeps shrinking toward <code>0</code>.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. In the worked example above, why does the cost use <code>(actual - predicted)²</code> instead of just <code>actual - predicted</code>?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Squaring makes every error positive, so overestimates and underestimates don't cancel out — and it punishes big errors more heavily than small ones.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Following the pattern in the table (x moves closer to 3 each step, by a shrinking amount), if step 3 ends at <code>x = 2.51</code>, will step 4 land above 3, below 3, or exactly at 3?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Below 3 — gradient descent keeps closing the gap but takes many small steps to get there, so <code>x</code> would land somewhere around 2.8, still short of 3.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. You train a model and the cost value bounces up and down wildly instead of shrinking smoothly. Is the learning rate most likely too big or too small?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">Too big — the steps are overshooting the lowest point of the cost, jumping back and forth instead of settling down.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<p>Take the same cost function, <code>(x - 3)²</code>, but start at <code>x = 10</code> instead of <code>x = 0</code>. By hand (or on paper), walk through 3 steps using the same idea: each step, move <code>x</code> about 20% of the remaining distance closer to <code>3</code>.</p>
+<ul>
+<li>Step 1: distance to 3 is <code>10 - 3 = 7</code>. Move 20% of that (<code>1.4</code>) closer. Where does <code>x</code> land?</li>
+<li>Step 2: repeat from your new <code>x</code>.</li>
+<li>Step 3: repeat again.</li>
+</ul>
+<p>Try it before revealing.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4">
+Step 1: <code>10 - (0.2 * 7) = 8.6</code><br>
+Step 2: distance is <code>8.6 - 3 = 5.6</code>, move <code>1.12</code> closer → <code>x = 7.48</code><br>
+Step 3: distance is <code>7.48 - 3 = 4.48</code>, move <code>0.896</code> closer → <code>x = 6.58</code><br>
+<br>
+Same pattern as before: <code>x</code> keeps sliding toward 3, and the steps shrink as it gets closer. It just needs more steps this time because it started further away.
+</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developers.google.com/machine-learning/crash-course/linear-regression/gradient-descent" target="_blank" rel="noopener">developers.google.com — Machine Learning Crash Course: Gradient Descent</a> — Google's official course page describing gradient descent as an iterative optimization algorithm that repeatedly calculates loss, adjusts weights and bias in the direction that reduces it, and continues until the model can't reduce loss any further.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A cost function (like Mean Squared Error) is one number that measures how wrong the model's predictions are — smaller is better.</li>
+    <li>Gradient descent adjusts <code>w</code> and <code>b</code> step by step to make the cost smaller, like walking downhill in fog by feeling the slope.</li>
+    <li>The learning rate controls step size: too big overshoots, too small is slow to train.</li>
+    <li>Steps naturally shrink as you get closer to the lowest cost — progress slows down but keeps going in the right direction.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Confused about why the cost "shrinks slower" near the bottom? Ask — this same pattern shows up in every model you'll train from here on.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0013-linear-regression.html">&larr; Back: Lesson 13 — Linear regression</a></span>
+  <span><a href="0015-logistic-regression.html">Next: Lesson 15 — Logistic regression &rarr;</a></span>
+</div>
+
+</body>
+</html>

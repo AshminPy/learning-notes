@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 28 — Transformers &amp; how LLMs work</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 28 of 34</p>
+<h1>Transformers &amp; how LLMs work</h1>
+
+<p>In the last lesson you turned words into numbers (embeddings). But a sentence isn't just a bag of separate word-numbers — the meaning of a word changes depending on the other words around it. The <strong>transformer</strong> is the architecture that solved this. It's the design behind almost every modern AI model, including the large language models (LLMs) powering tools like ChatGPT, Claude, and Copilot. This lesson: the one idea you need to understand it — <strong>attention</strong>.</p>
+
+<div class="callout"><strong>Simple example:</strong> read this sentence: "The trophy didn't fit in the suitcase because it was too big." Who is "it" — the trophy or the suitcase? You solved that instantly, without thinking, by looking back at the rest of the sentence. That's exactly what attention does inside a transformer — for every word, it looks back at every other word and decides how much each one matters.</div>
+
+<h2>What "attention" actually does</h2>
+<p>When a transformer processes a word, it doesn't look at that word alone. For each word, it asks: <em>"which other words in this sentence should I pay attention to, to understand this one correctly?"</em> It then blends in information from those other words, weighted by how relevant they are.</p>
+
+<p>Take the trophy/suitcase example. When the model processes the word "it," attention lets it look back at every earlier word — "trophy," "suitcase," "fit," "big" — and weigh them. Because "big" and "didn't fit" go together with "trophy" being the thing that's too big to fit, attention assigns "trophy" a much higher weight than "suitcase" for that specific word "it." The model doesn't need a hardcoded grammar rule — it learned this weighting pattern from seeing millions of sentences during training.</p>
+
+<p>Change one word and the answer flips: "The trophy didn't fit in the suitcase because it was too small." Now "it" should point to the suitcase. Attention recalculates the weights based on the whole sentence, every time — nothing is fixed in advance.</p>
+
+<h2>Why transformers replaced RNNs</h2>
+<p>Before transformers, the standard architecture for text was the <strong>RNN</strong> (recurrent neural network). An RNN reads a sentence one word at a time, left to right, carrying forward a summary of everything it's seen so far — like reading a book and only remembering a compressed mental note of the previous pages.</p>
+
+<p>This causes two problems that transformers fix:</p>
+<table>
+<tr><th>Problem with RNNs</th><th>How transformers fix it</th></tr>
+<tr><td>Word-by-word processing is slow to train — step 5 must wait for step 4</td><td>Attention looks at the whole sentence at once, so all words can be processed in parallel — much faster to train on large amounts of text</td></tr>
+<tr><td>Long-range context gets diluted — by word 50, details from word 2 are mostly forgotten</td><td>Every word can directly attend to every other word, no matter how far apart, so long-range connections (like "it" referring back several words) are preserved</td></tr>
+</table>
+
+<p>This combination — parallelizable training plus strong long-range context — is why transformers, introduced in the 2017 paper "Attention Is All You Need," took over as the default architecture for language (and now also for images, audio, and more). If you want a deeper, more visual walkthrough later, Jay Alammar's community write-up "The Illustrated Transformer" is a well-known resource — but the core idea is exactly what you just learned above.</p>
+
+<h2>So what is an LLM, really?</h2>
+<p>An LLM (large language model) — the kind of model behind AI chat tools and coding assistants you may already use at work — is, at its core, a very large transformer. It's trained on a huge amount of text with one repeated task: given the words so far, predict the next word (technically, the next "token" — a word or word-piece).</p>
+
+<p>It does this prediction over and over, one token at a time, using attention at every step to weigh which earlier words matter most for choosing the next one. Do that billions of times over massive amounts of text, with a huge number of parameters, and the model becomes good enough at "predict the next token" that it can hold conversations, write code, and summarize documents — all as a side effect of getting really good at that one simple task.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. In your own words: what does "attention" let a transformer do when it processes a word?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">It lets the model look back at every other word in the sentence and decide how much each one matters for understanding the current word — instead of only looking at the word by itself.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. "The city council refused the demonstrators a permit because they feared violence." Who does "they" most likely refer to — the city council, or the demonstrators?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The city council. "Refused... because they feared violence" makes more sense as the council's reasoning for refusing. (Change the sentence to "...because they advocated violence" and the answer flips to the demonstrators — that's attention re-weighting based on context, same as the trophy/suitcase example.)</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<p>Write one more ambiguous-pronoun sentence of your own (like the trophy/suitcase or council/demonstrators examples). For each word the pronoun could refer to, jot down what clue in the sentence pushes attention toward one answer over the other. This is the exact judgment a transformer's attention mechanism learns to make automatically.</p>
+
+<div class="quiz">
+<p>Reveal one more example to check your thinking</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3"><p>"I poured water from the bottle into the cup until it was full." — "it" refers to the cup (things get "full" by receiving liquid, not by giving it away). The clue word is "full," and attention would weight "cup" highly when processing "it" for that reason.</p></div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://huggingface.co/learn/nlp-course/chapter1/4" target="_blank" rel="noopener">huggingface.co/learn/nlp-course/chapter1/4</a> — Hugging Face's official NLP course, "How do Transformers work?" — covers attention layers and why context changes a word's meaning.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Attention: for each word, the model looks at every other word in the sentence and weighs how much each one matters for understanding it.</li>
+    <li>Transformers replaced RNNs because attention processes a whole sentence at once (parallelizable, faster to train) and keeps long-range context (no "forgetting" earlier words).</li>
+    <li>An LLM is a very large transformer trained to repeatedly predict the next token, using attention at every step.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">If the trophy/suitcase example still feels fuzzy, try building 2-3 more of your own ambiguous-pronoun sentences and asking why — that's the fastest way this intuition sticks.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0027-nlp-basics.html">&larr; Back: Lesson 27 — NLP basics</a></span>
+  <span><a href="0029-project-3-portfolio.html">Next: Lesson 29 — Project 3 &rarr;</a></span>
+</div>
+
+</body>
+</html>

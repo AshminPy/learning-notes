@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 10 — Vectors, matrices, dot product — the intuition</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 10 of 34</p>
+<h1>Vectors, matrices, dot product — the intuition</h1>
+
+<p>You already used a vector and a matrix in Lessons 7 and 8 — you just didn't call them that. This lesson gives you the two words, plus one calculation (the <strong>dot product</strong>) that shows up inside almost every model you'll ever train.</p>
+
+<h2>A vector is just a list of numbers</h2>
+<p>A <strong>vector</strong> is a list of numbers that together describe one thing. The NumPy array from Lesson 7 — <code>np.array([2, 3, 4])</code> — <em>is</em> a vector. Nothing new to install or import; it's the same object, new name.</p>
+
+<div class="callout"><strong>Simple example:</strong> a house could be described by the vector <code>[3, 2, 1500]</code> — 3 bedrooms, 2 bathrooms, 1500 square feet. Each position in the list is a <strong>feature</strong>. The order matters: position 1 always means "bedrooms," position 3 always means "square feet," for every house you describe this way.</div>
+
+<h2>A matrix is a grid of numbers</h2>
+<p>A <strong>matrix</strong> is a 2-D grid of numbers — rows and columns. You already met one: the pandas DataFrame from Lesson 8 <em>is</em> a matrix (plus row/column labels on top). Each row is one example (one house, one customer, one email); each column is one feature (bedrooms, age, word count).</p>
+
+<table>
+<tr><th></th><th>bedrooms</th><th>bathrooms</th><th>sqft</th></tr>
+<tr><td>house 1</td><td>3</td><td>2</td><td>1500</td></tr>
+<tr><td>house 2</td><td>4</td><td>3</td><td>2100</td></tr>
+<tr><td>house 3</td><td>2</td><td>1</td><td>900</td></tr>
+</table>
+
+<p>This is exactly what a dataset is for machine learning: a matrix where <strong>rows = examples</strong> and <strong>columns = features</strong>. Each row of this matrix, on its own, is a vector — the vector for house 1 is <code>[3, 2, 1500]</code>.</p>
+
+<h2>The dot product: multiply, then add</h2>
+<p>The <strong>dot product</strong> of two vectors (same length) is: multiply the numbers in matching positions, then add up all the results. That's the whole idea.</p>
+
+<div class="callout"><strong>Simple example:</strong> receipt math. You buy 2 coffees at $0.50 and 3 muffins at $0.50 — wait, let's use different prices. Quantities <code>[2, 3]</code>, prices <code>[4, 5]</code>. Total cost = (2 × 4) + (3 × 5) = 8 + 15 = <strong>23</strong>. That's a dot product — multiply matching positions, add them up.</div>
+
+<pre><code>a = [2, 3]
+b = [4, 5]
+
+dot = (a[0] * b[0]) + (a[1] * b[1])
+    = (2 * 4) + (3 * 5)
+    = 8 + 15
+    = 23</code></pre>
+
+<div class="callout"><strong>Common trap:</strong> from Lesson 7, <code>*</code> on two NumPy arrays multiplies elementwise and gives you back an array — <code>[8, 15]</code>, not <code>23</code>. The dot product is a different operation: multiply elementwise, <em>then sum</em> everything into one single number. In NumPy that's <code>np.dot()</code> or the <code>@</code> operator, not <code>*</code>.</div>
+
+<h2>Why the dot product matters: it's what a neuron does</h2>
+<p>This is the part that makes it worth learning. A single "neuron" in a neural network (and a plain linear model like linear regression) does exactly this calculation on its inputs:</p>
+<ol>
+<li>Take the input features as a vector — e.g. a house's <code>[bedrooms, bathrooms, sqft]</code>.</li>
+<li>Take a <strong>weight</strong> for each feature — a number saying how much that feature matters — as a vector of the same length.</li>
+<li>Compute the dot product of features and weights: multiply matching positions, add them up. This gives one number — a <strong>weighted sum</strong>.</li>
+</ol>
+<p>That single number is the model's raw prediction (before any extra adjustment). Training a model is largely the process of finding the weight values that make this weighted sum as accurate as possible, across every row in your dataset. Every layer of a deep neural network is just many of these dot products, run in parallel, stacked on top of each other.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Vectors <code>a = [1, 2, 3]</code> and <code>b = [4, 0, 2]</code>. What is their dot product?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>10</code> — (1×4) + (2×0) + (3×2) = 4 + 0 + 6 = 10.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A dataset has 200 rows and 5 columns. In matrix terms, what do the 200 and the 5 represent?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">200 = the number of examples (rows); 5 = the number of features (columns). Each row, read alone, is a feature vector for one example.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook, use NumPy to compute the dot product of a feature vector and a weight vector, and interpret the result as a weighted sum:</p>
+<ul>
+<li>create <code>features = np.array([2, 3])</code></li>
+<li>create <code>weights = np.array([0.5, 0.5])</code></li>
+<li>compute the dot product with <code>np.dot(features, weights)</code> (or <code>features @ weights</code>)</li>
+<li>print the result and write a one-line comment explaining what it represents</li>
+</ul>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>import numpy as np
+
+features = np.array([2, 3])
+weights = np.array([0.5, 0.5])
+
+result = np.dot(features, weights)
+print(result)   # 2.5
+
+# result = (2*0.5) + (3*0.5) = 1.0 + 1.5 = 2.5
+# This is the weighted sum a single neuron/linear model
+# would compute from these two input features.
+
+# Same result using the @ operator instead of np.dot():
+result2 = features @ weights
+print(result2)  # 2.5</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://numpy.org/doc/stable/reference/generated/numpy.dot.html" target="_blank" rel="noopener">numpy.org/doc/stable/reference/generated/numpy.dot.html</a> — the official NumPy documentation for <code>np.dot()</code>: for two 1-D arrays it computes "the inner product of vectors" — multiply matching positions and sum, exactly as covered above.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A vector is a list of numbers describing one thing (a NumPy array). A matrix is a grid of numbers (a DataFrame) — rows = examples, columns = features.</li>
+    <li>Dot product: multiply matching positions, add the results, get one number.</li>
+    <li>In NumPy, use <code>np.dot()</code> or <code>@</code> for the dot product — <code>*</code> alone only multiplies elementwise, it does not sum.</li>
+    <li>A dot product of features and weights is a weighted sum — the core calculation a single neuron or linear model performs.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Python's error messages is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0009-data-cleaning-visualization.html">&larr; Back: Lesson 9 — Data cleaning &amp; visualization</a></span>
+  <span><a href="0011-probability-statistics.html">Next: Lesson 11 — Probability &amp; statistics &rarr;</a></span>
+</div>
+
+</body>
+</html>

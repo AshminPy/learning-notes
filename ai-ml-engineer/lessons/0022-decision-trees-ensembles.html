@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 22 — Decision trees & ensembles (Random Forest, XGBoost)</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 22 of 34</p>
+<h1>Decision trees & ensembles (Random Forest, XGBoost)</h1>
+
+<p>The neural net from Lesson 21 is a black box — you can't easily explain why it predicted what it predicted. A <strong>decision tree</strong> is the opposite: a model you can read out loud, one yes/no question at a time. This lesson covers trees, why a single tree overfits, and how combining many trees (ensembles) fixes that.</p>
+
+<h2>What a decision tree is</h2>
+<p>A decision tree is a flowchart of yes/no (or true/false) questions about your features. Each question splits the data into two smaller groups. It keeps splitting group after group until each final group is mostly one class — at that point, it makes a prediction.</p>
+
+<div class="callout"><strong>Simple example:</strong> imagine deciding whether to play tennis. "Is it raining?" — yes → don't play. no → "Is it windy?" — yes → maybe. no → play. That's a decision tree: a chain of simple questions, each narrowing things down, ending in a decision.</div>
+
+<p>For the breast cancer dataset from Project 1, a tree might ask: "Is <code>mean radius</code> greater than 15?" then "Is <code>mean texture</code> greater than 20?" and so on, splitting the 569 patients into smaller and smaller groups until each group is almost entirely malignant or almost entirely benign.</p>
+
+<p>The big appeal: you can print the tree and read exactly why it made a prediction. A neural net gives you a probability with no plain-English reason attached. A tree gives you a chain of if/then questions a human can follow.</p>
+
+<h2>Why a single tree tends to overfit</h2>
+<p>Remember Lesson 16: a model that's too flexible will memorize the training data instead of learning the general pattern. A decision tree is a classic example of this. Left alone, a tree keeps splitting until every single training example sits in its own tiny group — including the noise and one-off quirks in that specific data. It scores close to 100% on training data, then does noticeably worse on the test set. That gap is overfitting, exactly as Lesson 16 described.</p>
+
+<p>You can limit this (e.g. capping how deep the tree is allowed to grow), but a single tree is still fragile: change the training data slightly, and you can get a very different tree. That instability is the real problem ensembles solve.</p>
+
+<h2>Ensembles: combine many trees, let them vote</h2>
+<p>An <strong>ensemble</strong> trains many models instead of one, then combines their predictions. The idea: individual trees are unstable and overfit-prone, but a large group of imperfect trees, combined the right way, is far more stable and accurate than any single one.</p>
+
+<h3>Random Forest</h3>
+<p><strong>Random Forest</strong> is the standard ensemble of decision trees. It builds many trees, and adds randomness on purpose so the trees don't all end up identical:</p>
+<ul>
+<li>each tree trains on a random sample of the rows (drawn with replacement, called a "bootstrap sample")</li>
+<li>each split inside each tree only considers a random subset of the features</li>
+</ul>
+<p>Because every tree sees slightly different data and slightly different features, the trees end up different from each other — some overfit in one direction, some in another. For a classification task, scikit-learn's Random Forest combines all the trees' predictions to reach a final answer (conceptually, the trees "vote" and the majority wins — that's what makes an ensemble more stable than any single tree). One overfit tree's mistake gets outvoted by the rest of the forest.</p>
+
+<div class="callout"><strong>Simple example:</strong> a Random Forest is like asking 100 people to independently guess an answer, each having seen a slightly different, partial set of clues. Any one person might guess wrong. But if 80 of 100 land on the same answer, that answer is probably right — the crowd cancels out individual mistakes.</div>
+
+<h3>Gradient boosting (XGBoost, LightGBM)</h3>
+<p>Random Forest builds all its trees independently, in parallel. <strong>Gradient boosting</strong> methods — XGBoost and LightGBM are the two most popular — build trees one at a time, in sequence. Each new tree is trained specifically to correct the mistakes the previous trees still have wrong, rather than being an independent guess. The trees are added together as a running total, gradually reducing the overall error.</p>
+<p>You won't hand-build a boosting model in this lesson — just know the name and the idea, because gradient boosting libraries (XGBoost, LightGBM, and scikit-learn's own <code>GradientBoostingClassifier</code>) are extremely popular for tabular data (rows and columns, like spreadsheets or databases) and dominate Kaggle competitions on that kind of data. If a job posting mentions "XGBoost," this is what it's referring to.</p>
+
+<table>
+<tr><th>Model</th><th>How trees are built</th><th>Core idea</th></tr>
+<tr><td>Decision tree</td><td>One tree</td><td>Readable, but overfits easily</td></tr>
+<tr><td>Random Forest</td><td>Many trees, in parallel, on random data/feature subsets</td><td>Combine predictions to cancel out individual trees' mistakes</td></tr>
+<tr><td>Gradient boosting (XGBoost, LightGBM)</td><td>Many trees, in sequence</td><td>Each new tree corrects the previous trees' errors</td></tr>
+</table>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Why does a single, unrestricted decision tree tend to overfit?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Left alone, it keeps splitting until nearly every training example is isolated into its own tiny group — including noise and one-off quirks. That memorizes the training data (great training accuracy) instead of learning a pattern that generalizes to new data (worse test accuracy) — the same overfitting gap from Lesson 16.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What's the key difference between how Random Forest builds its trees and how gradient boosting (XGBoost) builds its trees?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Random Forest builds many trees independently and in parallel, each on a random subset of rows/features, then combines their predictions. Gradient boosting builds trees one at a time, in sequence, where each new tree is trained to correct the errors the previous trees still have wrong.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook, reuse Project 1's breast cancer dataset. Train a <code>RandomForestClassifier</code> the same way you trained <code>LogisticRegression</code>, and compare accuracy:</p>
+<ul>
+<li>load <code>load_breast_cancer()</code> and split it with <code>train_test_split</code> (same <code>random_state=42</code> as Project 1, so the comparison is fair)</li>
+<li>train a <code>RandomForestClassifier</code> on the training set</li>
+<li>print its accuracy on the test set, and compare it to your Project 1 <code>LogisticRegression</code> number</li>
+</ul>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+from sklearn.metrics import accuracy_score
+
+X, y = load_breast_cancer(return_X_y=True)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# Random Forest -- no scaling needed, trees split on raw thresholds
+forest = RandomForestClassifier(random_state=42)
+forest.fit(X_train, y_train)
+forest_pred = forest.predict(X_test)
+print("Random Forest accuracy:", accuracy_score(y_test, forest_pred))
+
+# Logistic Regression, same split, for comparison (Project 1's approach)
+logreg = make_pipeline(StandardScaler(), LogisticRegression(max_iter=10000))
+logreg.fit(X_train, y_train)
+logreg_pred = logreg.predict(X_test)
+print("Logistic Regression accuracy:", accuracy_score(y_test, logreg_pred))
+
+# Expect both in the 95-98% range on this dataset -- close, not identical.
+# Note Random Forest didn't need StandardScaler: trees split on raw
+# thresholds (like "is this feature > 15?"), so feature scale doesn't matter.</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://scikit-learn.org/stable/modules/ensemble.html" target="_blank" rel="noopener">scikit-learn.org — Ensemble methods</a> — official documentation covering Random Forest (bootstrap samples, random feature subsets, combining predictions) and gradient boosting (sequential trees, each correcting the previous ensemble's errors).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A decision tree is a chain of yes/no questions that splits data down to a prediction — readable, unlike a neural net.</li>
+    <li>A single unrestricted tree overfits: it can memorize training data down to individual examples (Lesson 16's overfitting, again).</li>
+    <li>Random Forest trains many trees on random subsets of rows/features and combines their predictions — outvoting any one tree's mistakes.</li>
+    <li>Gradient boosting (XGBoost, LightGBM) builds trees sequentially, each correcting the last, and dominates tabular-data competitions like Kaggle.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Python's error messages is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0021-first-neural-net-keras.html">&larr; Back: Lesson 21 — Your first neural net (Keras)</a></span>
+  <span><a href="0023-project-2-image-classifier.html">Next: Lesson 23 — Project 2: image classifier &rarr;</a></span>
+</div>
+
+</body>
+</html>
