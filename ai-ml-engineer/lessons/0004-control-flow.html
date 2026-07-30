@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 4 — Control flow: if/else and loops</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 4 of 34</p>
+<h1>Control flow: if/else and loops</h1>
+
+<p>So far your code runs top to bottom, one line after another. <strong>Control flow</strong> lets code make decisions and repeat itself. A model's training code is full of this: loops that go through thousands of training examples, one at a time, and conditionals that decide what to do with each one. This lesson covers both.</p>
+
+<div class="callout"><strong>Simple example:</strong> think of a loop like checking every item in a laundry basket one at a time. For each item (a loop), you decide: is it dirty or clean? (a conditional). You repeat the check until the basket is empty.</div>
+
+<h2>if / elif / else — making decisions</h2>
+<p>Python checks a condition using comparison operators: <code>==</code> (equal), <code>!=</code> (not equal), <code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code>. Note <code>==</code> checks equality; a single <code>=</code> assigns a value — mixing them up is a very common bug.</p>
+
+<pre><code>x = 0
+
+if x &lt; 0:
+    print("Negative")
+elif x == 0:
+    print("Zero")
+else:
+    print("Positive")</code></pre>
+
+<p>There can be zero or more <code>elif</code> parts, and the final <code>else</code> is optional. Python checks each condition top to bottom and runs the first block that matches.</p>
+
+<p>You can combine conditions with boolean operators: <code>and</code> (both must be true), <code>or</code> (at least one must be true), <code>not</code> (flips true/false).</p>
+
+<pre><code>age = 25
+has_id = True
+
+if age &gt;= 18 and has_id:
+    print("Allowed in")
+
+if not has_id:
+    print("Need ID")</code></pre>
+
+<h2>for loops — repeat a fixed number of times, or over a list</h2>
+<p>A <code>for</code> loop goes through the items of a sequence (a list, a string, or a range of numbers) one at a time. <code>range(5)</code> generates the numbers 0, 1, 2, 3, 4 — it stops before the number you give it.</p>
+
+<pre><code>for i in range(5):
+    print(i)
+# prints 0, 1, 2, 3, 4</code></pre>
+
+<p>You can also loop directly over a list — each pass, the loop variable becomes the next item:</p>
+
+<pre><code>fruits = ["apple", "banana", "mango"]
+
+for fruit in fruits:
+    print(fruit)</code></pre>
+
+<p class="callout"><strong>Common trap:</strong> <code>range(1, 11)</code> gives you 1 through 10, not 1 through 11 — the second number is where the range stops, and it's excluded.</p>
+
+<h2>while loops — repeat until a condition is false</h2>
+<p>A <code>while</code> loop keeps running as long as its condition stays true. You are responsible for changing something inside the loop, or it never stops (an "infinite loop").</p>
+
+<pre><code>count = 0
+
+while count &lt; 3:
+    print(count)
+    count = count + 1
+# prints 0, 1, 2</code></pre>
+
+<h2>break and continue</h2>
+<p>Inside any loop, <code>break</code> stops the loop immediately. <code>continue</code> skips the rest of the current pass and jumps to the next one.</p>
+
+<pre><code>for num in range(2, 10):
+    if num % 2 == 0:
+        continue   # skip even numbers
+    print(num)     # only odd numbers print</code></pre>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. What does <code>range(1, 5)</code> produce?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">1, 2, 3, 4 — it starts at 1 and stops before 5.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Inside a loop, what is the difference between <code>break</code> and <code>continue</code>?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>break</code> stops the whole loop right away. <code>continue</code> only skips the rest of the current pass and moves on to the next one — the loop keeps going.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook, write a program that:</p>
+<ul>
+<li>loops through the numbers 1 to 10 (inclusive)</li>
+<li>for each number, checks if it's even or odd using <code>%</code> (the remainder operator: <code>num % 2 == 0</code> means "no remainder when divided by 2", i.e. even)</li>
+<li>prints a line for each number saying whether it's even or odd</li>
+</ul>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>for num in range(1, 11):
+    if num % 2 == 0:
+        print(num, "is even")
+    else:
+        print(num, "is odd")</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.python.org/3/tutorial/controlflow.html" target="_blank" rel="noopener">docs.python.org/3/tutorial/controlflow</a> — the official Python tutorial's chapter on control flow tools, covers if/elif/else, for, range(), break, and continue.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>if / elif / else</code> makes decisions, using comparisons (<code>==</code>, <code>!=</code>, <code>&lt;</code>, <code>&gt;</code>) and booleans (<code>and</code>, <code>or</code>, <code>not</code>).</li>
+    <li><code>for</code> loops repeat over a list or a <code>range()</code> of numbers; <code>while</code> loops repeat until a condition turns false.</li>
+    <li><code>break</code> exits a loop early; <code>continue</code> skips to the next pass.</li>
+    <li>Real model code is mostly this: loops over training data, conditionals deciding what to do with each example.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Python's error messages is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0003-python-basics-variables-types.html">&larr; Back: Lesson 3 — Python basics</a></span>
+  <span><a href="0005-functions.html">Next: Lesson 5 — Functions &rarr;</a></span>
+</div>
+
+</body>
+</html>

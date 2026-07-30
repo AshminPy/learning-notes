@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 18 — Project 1: your first end-to-end classifier</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 18 of 34 — PROJECT 1</p>
+<h1>Project 1 — your first end-to-end classifier</h1>
+
+<p class="callout"><strong>This is a project lesson, not a quick lesson.</strong> It's longer than usual on purpose — it's the first piece for your portfolio. You'll load real data, split it, train a classifier, evaluate it honestly, and write it up the way a working ML engineer would. Everything here combines Lessons 12–17: what ML is, linear and logistic regression, cost functions, overfitting, train/test split, and evaluation metrics. Take your time. Rushing this one costs you more later than slowing down now.</p>
+
+<h2>What you're building</h2>
+<p>A binary classifier that predicts whether a breast tumor is malignant or benign, using real diagnostic measurements. Real dataset, real numbers, real evaluation — no toy 7-row tables this time. By the end you'll have a working notebook and a short written report, both ready to commit to GitHub as "Project 1."</p>
+
+<h2>Step 0 — open a fresh notebook</h2>
+<p>Open a new notebook in your Colab account from Lesson 2. Name it something like <code>project-1-breast-cancer-classifier.ipynb</code>. Every code block below goes in its own cell, run top to bottom.</p>
+
+<h2>Step 1 — load a real dataset</h2>
+<p>Scikit-learn ships a handful of small, real, well-known datasets built in — no download, no file wrangling, no messy CSV. We'll use the <strong>Breast Cancer Wisconsin (Diagnostic)</strong> dataset: 569 samples, 30 numeric features computed from digitized images of cell nuclei, and a binary label — malignant or benign.</p>
+<pre><code>from sklearn.datasets import load_breast_cancer
+
+data = load_breast_cancer()
+
+print(data.data.shape)         # (569, 30) -- 569 samples, 30 features
+print(data.target.shape)       # (569,) -- one label per sample
+print(data.target_names)       # ['malignant' 'benign']
+print(data.feature_names[:5])  # first 5 of the 30 feature names</code></pre>
+<p><code>load_breast_cancer()</code> returns a <strong>Bunch</strong> object (a dictionary-like container). The pieces you'll use: <code>data.data</code> (the feature matrix, X), <code>data.target</code> (the labels, y — 0 or 1), <code>data.feature_names</code>, and <code>data.target_names</code>. In scikit-learn's encoding here, <strong>0 = malignant, 1 = benign</strong> — check <code>target_names</code> any time you forget, don't assume.</p>
+<p>You can also skip straight to X and y with one argument:</p>
+<pre><code>from sklearn.datasets import load_breast_cancer
+
+X, y = load_breast_cancer(return_X_y=True)
+print(X.shape, y.shape)   # (569, 30) (569,)</code></pre>
+
+<div class="callout"><strong>Simple example:</strong> think of <code>load_breast_cancer()</code> as scikit-learn handing you a pre-cleaned spreadsheet — 569 rows (patients), 30 columns (measurements), plus an answer column (malignant/benign) already provided. No Lesson 9 data-cleaning needed here; that step already happened. In your own future projects, it usually won't have.</div>
+
+<h2>Step 2 — split into train and test (Lesson 16)</h2>
+<p>You already know why: never evaluate a model on data it trained on. Split before you touch the model.</p>
+<pre><code>from sklearn.model_selection import train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+print("Train:", X_train.shape, "Test:", X_test.shape)</code></pre>
+<p>80% of the 569 samples go to training, 20% (about 114 samples) are held back for testing. <code>random_state=42</code> keeps the split reproducible — you and a classmate running this same code get the identical split.</p>
+
+<h2>Step 3 — train a classifier (Lesson 15)</h2>
+<p>We'll use <code>LogisticRegression</code>, the same classifier from Lesson 15, now on 30 real features instead of one made-up one. One addition: real feature scales here vary a lot (some columns are areas in the hundreds, others are ratios near 0). scikit-learn's own getting-started guide handles this by scaling features first with <code>StandardScaler</code>, then chaining scaler and model together with <code>make_pipeline</code>:</p>
+<pre><code>from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+
+model = make_pipeline(
+    StandardScaler(),
+    LogisticRegression(max_iter=10000)
+)
+
+model.fit(X_train, y_train)</code></pre>
+<p><code>make_pipeline</code> chains steps into one object: call <code>.fit()</code> once, and it fits the scaler on the training data, then fits the classifier on the scaled result. Call <code>.predict()</code> once, and it scales new data the same way before predicting — you never have to do it by hand or risk doing it inconsistently. <code>max_iter=10000</code> just gives the solver enough iterations to converge on this many features; without it you may see a convergence warning (harmless, but worth silencing).</p>
+<p class="callout"><strong>Common trap:</strong> only call <code>.fit()</code> on the training set — never on the test set, and never on the full X/y before splitting. Fitting includes the <code>StandardScaler</code> step too: if you scaled using statistics from the test set, information from "unseen" data would leak into training. The pipeline above does this correctly because <code>.fit()</code> only ever touches <code>X_train</code>.</p>
+
+<h2>Step 4 — predict, then evaluate honestly (Lesson 17)</h2>
+<p>Now use the held-out test set — data the model has never seen — to check how it actually performs.</p>
+<pre><code>from sklearn.metrics import accuracy_score, classification_report
+
+y_pred = model.predict(X_test)
+
+print("Accuracy:", accuracy_score(y_test, y_pred))
+print()
+print(classification_report(y_test, y_pred, target_names=data.target_names))</code></pre>
+<p><code>classification_report</code> prints precision, recall, and F1-score for each class, plus overall accuracy — everything from Lesson 17 in one call. Run this cell and read your own numbers before moving on. A well-tuned logistic regression on this dataset typically lands around 96–98% accuracy, but <strong>use the number your run actually produced</strong> — not this one — in the write-up below.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Why do you call <code>.fit()</code> only on <code>X_train</code>/<code>y_train</code>, never on the test set?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The test set exists to measure how the model handles data it has never seen. If you fit on it (directly, or indirectly by scaling with its statistics), the model has effectively "seen" it, so the test score stops being an honest measure of real-world performance — you'd be grading the exam with the answer key already shown.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Your model scores 99% accuracy on the training set but only 80% on the test set. What does that gap tell you, and which lesson covered it?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Overfitting (Lesson 16) — the model memorized quirks of the training data instead of learning a pattern that generalizes. The big gap between train and test accuracy is the tell.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. In this dataset, why might recall on the "malignant" class matter more than overall accuracy?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">Missing a real malignant case (a false negative) is far more costly than a false alarm on a benign case. High overall accuracy can hide a model that quietly misses malignant cases if that class is smaller — recall on the malignant class shows that directly, which is why Lesson 17 covers more than one metric.</div>
+</div>
+
+<h2>Step 5 — write the project README</h2>
+<p>Every project in your portfolio should have a short written summary — not just code. Employers and future-you skim this before reading a single line of code. Use this exact structure every time; it's reusable for every project in this course:</p>
+
+<pre><code>## Project 1: Breast Cancer Classifier
+
+**Problem statement**
+Predict whether a breast tumor is malignant or benign from
+30 diagnostic measurements, so it could support (not replace)
+a clinician's screening decision.
+
+**Dataset**
+scikit-learn's built-in Breast Cancer Wisconsin (Diagnostic)
+dataset: 569 samples, 30 numeric features, 2 classes
+(malignant / benign). Loaded via sklearn.datasets.load_breast_cancer().
+
+**Approach**
+- 80/20 train/test split (random_state=42)
+- StandardScaler + LogisticRegression, chained in a pipeline
+- Evaluated on the held-out test set only
+
+**Results**
+- Accuracy: [your actual number from Step 4]
+- Precision / recall / F1 per class: [paste your classification_report]
+
+**What I'd improve next**
+- Try a different model (e.g. DecisionTreeClassifier) and compare
+- Look at which features matter most
+- Check which specific test cases were misclassified, and why
+</code></pre>
+<p>Fill in the bracketed parts with your own run's real numbers — never copy someone else's results into your own report. Save this as <code>README.md</code> in the same folder as your notebook, or as a Markdown cell at the top of the notebook itself.</p>
+
+<h2>Step 6 — commit it as Project 1</h2>
+<p>Go back to the <code>ai-ml-learning-log</code> GitHub repo you created in Lesson 2. Add your notebook and README there:</p>
+<ul>
+<li>Download the notebook from Colab: <strong>File → Download → Download .ipynb</strong></li>
+<li>Add it to your local clone of <code>ai-ml-learning-log</code>, in a folder like <code>project-1-classifier/</code></li>
+<li>Add the README.md in the same folder</li>
+<li>Commit with a clear message, e.g. <code>git commit -m "Project 1: breast cancer classifier"</code></li>
+<li>Push to GitHub: <code>git push</code></li>
+</ul>
+<p>This is the first real portfolio piece on your GitHub profile. Every project from here on (Lessons 23, 29, and beyond) follows this exact same pattern: load data, split, train, evaluate honestly, write it up, commit it.</p>
+
+<h2>Source</h2>
+<p><a href="https://scikit-learn.org/stable/getting_started.html" target="_blank" rel="noopener">scikit-learn.org — Getting Started</a> — the official end-to-end walkthrough this project follows (loading a dataset, splitting, scaling + fitting a pipeline, scoring on the test set). Dataset details from <a href="https://scikit-learn.org/stable/datasets/toy_dataset.html" target="_blank" rel="noopener">scikit-learn.org — Toy datasets</a>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>End-to-end project shape: load data → split → train → evaluate on the untouched test set → write up → commit.</li>
+    <li><code>load_breast_cancer()</code> gives you a real 569-sample, 30-feature, 2-class dataset built into scikit-learn — no cleaning required.</li>
+    <li><code>.fit()</code> only ever touches the training set — that's what keeps your test score honest.</li>
+    <li>A project write-up needs: problem statement, dataset, approach, actual results, and what you'd improve next — reuse this structure every time.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck on a specific error, or unsure if your numbers look "right"? Paste the exact output and ask — there's no single correct accuracy number here, only a plausible range, and it's worth knowing the difference.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0017-evaluation-metrics.html">&larr; Back: Lesson 17 — Evaluation metrics</a></span>
+  <span><a href="0019-neural-networks-basics.html">Next: Lesson 19 — Neural networks basics &rarr;</a></span>
+</div>
+
+</body>
+</html>

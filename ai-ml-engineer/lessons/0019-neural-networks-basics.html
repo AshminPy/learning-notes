@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 19 — Neural networks: neurons, layers, activation functions</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 19 of 34</p>
+<h1>Neural networks: neurons, layers, activation functions</h1>
+
+<p>You already know the math behind a neural network — you learned it in Lesson 10. A neuron is nothing more than a dot product (a weighted sum) with one extra step bolted on. This lesson names that extra step, shows why we stack neurons into layers, and why that extra step is what makes stacking worth doing at all.</p>
+
+<h2>A neuron is the dot product you already know</h2>
+<p>Back in Lesson 10 you learned: take input features as a vector, take a weight for each feature, multiply matching positions and add them up — that gives you one number, a <strong>weighted sum</strong>. That is exactly what one neuron computes. Nothing new here.</p>
+
+<p>A real neuron adds two small things on top of the plain dot product:</p>
+<ol>
+<li><strong>A bias</strong> — one extra number added at the end, not tied to any input. It lets the neuron shift its output up or down, the same way the <code>+ c</code> in <code>y = mx + c</code> shifts a line.</li>
+<li><strong>An activation function</strong> — a small function applied to the result, which decides what the neuron actually outputs.</li>
+</ol>
+
+<p>So the full formula for one neuron is:</p>
+<pre><code>output = activation( (input1 * weight1) + (input2 * weight2) + ... + bias )
+         \_______________ dot product ________________/   \___/   \____________/
+                     (Lesson 10)                            new       new</code></pre>
+
+<div class="callout"><strong>Simple example:</strong> think of a neuron as a bouncer at a club door checking a few signals — are you on the guest list (weight 1), did you arrive before midnight (weight 2). Each signal gets multiplied by how much the bouncer cares about it, the results are added up, then the bouncer's own mood that night (the bias) shifts the total. The activation function is the bouncer's final yes/no rule applied to that total — not just "sum up the evidence" but "decide something based on it."</div>
+
+<h2>Why stack neurons into layers</h2>
+<p>One neuron only makes one weighted decision. Real problems need many small decisions combined. So we arrange neurons into <strong>layers</strong>:</p>
+<table>
+<tr><th>Layer</th><th>Job</th></tr>
+<tr><td>Input layer</td><td>Not really neurons — just holds the raw feature values you feed in (e.g. bedrooms, bathrooms, sqft).</td></tr>
+<tr><td>Hidden layer(s)</td><td>Each neuron here takes every value from the previous layer, computes its own weighted sum + bias, and applies an activation function. A network can have one hidden layer or many — "deep" learning just means "many hidden layers."</td></tr>
+<tr><td>Output layer</td><td>The final neuron(s) that produce the answer — e.g. one neuron outputting a price, or a few neurons outputting class probabilities.</td></tr>
+</table>
+<p>Every value flows forward: input layer &rarr; hidden layer &rarr; hidden layer &rarr; ... &rarr; output layer. Each connection between two neurons has its own weight, learned during training (that's Lesson 20).</p>
+
+<h2>Why nonlinearity matters — the activation function is not optional</h2>
+<p>Here is the part beginners usually skip, and it is the most important idea in this lesson: <strong>if every neuron only computed a weighted sum with no activation function, stacking layers would be mathematically pointless.</strong> A dot product feeding into another dot product feeding into another dot product collapses into... one single dot product. Ten layers of plain weighted sums behave exactly like one layer. You'd gain nothing from the "depth" in deep learning.</p>
+<p>The activation function breaks that collapse. It bends the output — it is <strong>nonlinear</strong> — so stacking layers actually builds something new each time: more complex shapes and patterns than any single layer could represent alone. This is the entire reason neural networks can learn things like image recognition or language, which no straight line or flat weighted sum could ever capture.</p>
+
+<h2>Two activation functions to know now</h2>
+<table>
+<tr><th>Name</th><th>Rule</th><th>Typical use</th></tr>
+<tr><td><strong>ReLU</strong> (Rectified Linear Unit)</td><td>Negative numbers become 0. Positive numbers stay the same.</td><td>The default choice for hidden layers in most modern networks — cheap to compute, works well in practice.</td></tr>
+<tr><td><strong>Sigmoid</strong></td><td>Squashes any number into a range between 0 and 1.</td><td>Common in the output layer for yes/no (binary classification) problems, where you want a probability — you already met this exact function in Lesson 15's logistic regression.</td></tr>
+</table>
+
+<div class="callout"><strong>Simple example — ReLU by hand:</strong> ReLU(-3) = 0. ReLU(0) = 0. ReLU(4) = 4. That's the whole function: <code>max(0, x)</code>. Anything below zero gets clipped to zero; anything zero or above passes through unchanged.</div>
+
+<h2>Try it yourself — compute one neuron by hand</h2>
+<p>A neuron has 2 inputs, 2 weights, and a bias:</p>
+<ul>
+<li>input1 = 3, weight1 = 0.5</li>
+<li>input2 = 4, weight2 = -1</li>
+<li>bias = 1</li>
+</ul>
+<p>Do this on paper before revealing the answer:</p>
+<ol>
+<li>Compute the weighted sum: <code>(input1 * weight1) + (input2 * weight2) + bias</code></li>
+<li>Apply ReLU to that result.</li>
+</ol>
+
+<div class="quiz">
+<p>Reveal the worked answer</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a1"><code>weighted sum = (3 * 0.5) + (4 * -1) + 1
+             = 1.5 + (-4) + 1
+             = -1.5
+
+ReLU(-1.5) = 0   # negative, so it gets clipped to 0
+
+Final neuron output: 0</code></pre>
+</div>
+
+<h2>Check your understanding</h2>
+<div class="quiz">
+<p>Q1. What two things does a neuron add on top of the plain dot product from Lesson 10?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">A bias (one extra number added at the end) and an activation function (applied to the weighted sum + bias to produce the final output).</div>
+</div>
+
+<div class="quiz">
+<p>Q2. If you stacked 5 layers but removed every activation function, how would that network behave compared to a single layer?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">Exactly the same as one layer. Without nonlinear activation functions, stacked weighted sums collapse into a single weighted sum — depth adds nothing.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. A neuron's weighted sum + bias comes out to -7. What does ReLU output for that neuron?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4">0 — ReLU turns any negative number into 0.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developers.google.com/machine-learning/crash-course/neural-networks" target="_blank" rel="noopener">developers.google.com/machine-learning/crash-course/neural-networks</a> — Google's ML Crash Course module on neural networks, covering nodes, hidden layers, and activation functions.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A neuron = the Lesson 10 dot product (weighted sum) + a bias, then passed through an activation function.</li>
+    <li>Layers stack neurons: input layer &rarr; hidden layer(s) &rarr; output layer, with weights on every connection.</li>
+    <li>Without a nonlinear activation function, stacking layers is mathematically identical to one layer — activation functions are what make "deep" learning actually deeper.</li>
+    <li>ReLU: negative &rarr; 0, positive &rarr; unchanged. Sigmoid: squashes any number into 0–1, used for probabilities.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Not sure why a bias is needed, or why "nonlinear" matters? Ask — this is the concept that unlocks everything else in deep learning, worth getting solid before Lesson 20.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0018-project-1-classifier.html">&larr; Back: Lesson 18 — Project 1</a></span>
+  <span><a href="0020-backpropagation.html">Next: Lesson 20 — Backpropagation &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -7,7 +7,7 @@ Self-paced study notes — one workspace per topic, lessons numbered in order.
 An independent, free rapid-revision and active-recall companion for CKA and Google Cloud Professional Cloud Architect candidates. Not affiliated with, endorsed by, or sponsored by Google, Google Cloud, CNCF, or the Linux Foundation. Not a replacement for hands-on labs, official documentation, or full exam preparation.
 
 ## Topics
-- `ai-ml-engineer/` — Zero-to-job-ready AI/ML Engineer path — 3 of 34 lessons so far + [course roadmap tracker](https://ashminpy.github.io/learning-notes/ai-ml-engineer/objectives.html)
+- `ai-ml-engineer/` — Zero-to-job-ready AI/ML Engineer path — 34 lessons + [course roadmap tracker](https://ashminpy.github.io/learning-notes/ai-ml-engineer/objectives.html)
 - `gcp-pca/` — Google Professional Cloud Architect exam prep — 28 lessons + [exam objectives tracker](https://ashminpy.github.io/learning-notes/gcp-pca/objectives.html)
 - `kubernetes-cka/` — Kubernetes CKA prep — 24 lessons + [exam objectives tracker](https://ashminpy.github.io/learning-notes/kubernetes-cka/objectives.html)
 - `keyboard-workflow/` — AeroSpace / Raycast / Warp keyboard-first productivity — 8 lessons

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 15 — Logistic regression & classification</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 15 of 34</p>
+<h1>Logistic regression & classification</h1>
+
+<p>Lesson 13 predicted a <strong>number</strong> (an exam score). A lot of real problems instead ask a yes/no question: is this email spam? Will this customer cancel? Is this tumor malignant? That's a different kind of problem — <strong>classification</strong> — and it needs a different kind of model.</p>
+
+<div class="callout"><strong>Simple example:</strong> regression is like asking "how many degrees will it be tomorrow?" (a number, could be anything). Classification is like asking "will it rain tomorrow — yes or no?" (a category, one of a fixed set of options). Same data, very different question.</p></div>
+
+<h2>Regression vs classification</h2>
+<table>
+<tr><th></th><th>Regression</th><th>Classification</th></tr>
+<tr><td>Predicts</td><td>A number (any value)</td><td>A category (one of a fixed set)</td></tr>
+<tr><td>Example</td><td>Exam score: 73</td><td>Pass or fail</td></tr>
+<tr><td>Example</td><td>House price: $410,000</td><td>Spam or not spam</td></tr>
+<tr><td>Lesson 13 tool</td><td><code>LinearRegression</code></td><td><code>LogisticRegression</code> (this lesson)</td></tr>
+</table>
+
+<h2>Why not just reuse linear regression?</h2>
+<p>Say you're predicting pass/fail from hours studied, using 0 = fail and 1 = pass. You could try fitting a straight line through those 0s and 1s with <code>y = w*x + b</code> from Lesson 13. Two problems show up immediately:</p>
+<ul>
+<li>A straight line keeps going forever. Plug in a big enough <code>x</code> and it predicts <code>1.4</code> or <code>-0.3</code>. Those aren't valid probabilities — a probability has to stay between 0 and 1.</li>
+<li>There's no natural "probability of passing" reading on a raw line output — it's just a number with no upper or lower limit.</li>
+</ul>
+<p>We need a model that always outputs something between 0 and 1, so it can represent "how likely is class 1." That's what logistic regression adds.</p>
+
+<h2>The sigmoid function: squashing any number into 0–1</h2>
+<p>Logistic regression starts exactly like linear regression — it computes the same weighted sum, <code>z = w*x + b</code>. But instead of using <code>z</code> directly as the prediction, it feeds <code>z</code> through the <strong>sigmoid function</strong>:</p>
+<pre><code>sigmoid(z) = 1 / (1 + e^(-z))</code></pre>
+<p>You don't need to memorize the formula. What matters is what it does: no matter how big, small, positive, or negative <code>z</code> is, <code>sigmoid(z)</code> always comes out between 0 and 1.</p>
+<ul>
+<li>Very negative <code>z</code> (like -10) → sigmoid squashes it close to <code>0</code></li>
+<li>Very positive <code>z</code> (like 10) → sigmoid squashes it close to <code>1</code></li>
+<li><code>z = 0</code> → sigmoid gives exactly <code>0.5</code></li>
+</ul>
+<p>That output is treated as a <strong>probability</strong> — "how likely is this to be class 1?" 0.9 means "90% likely class 1." 0.05 means "5% likely class 1 (almost certainly class 0)."</p>
+
+<div class="callout"><strong>Simple example:</strong> think of sigmoid as a dimmer switch, not an on/off switch. Whatever raw number goes in, however extreme, the dimmer output always lands somewhere between fully off (0) and fully on (1) — never past either end.</div>
+
+<h2>Despite the name, it's a classifier</h2>
+<p>"Logistic <em>regression</em>" is a confusing name — it does not predict a number like Lesson 13's regression did. It outputs a probability, and that probability is used to pick a category. In scikit-learn and in the ML field generally, it's classified as a <strong>classification algorithm</strong>, not a regression algorithm. The name stuck for historical reasons.</p>
+
+<h2>Decision boundary: turning a probability into a yes/no</h2>
+<p>A probability like 0.73 isn't itself an answer to "pass or fail?" — you need a rule to convert it into a final category. The usual rule is a <strong>threshold</strong> of 0.5:</p>
+<pre><code>if probability >= 0.5:
+    predicted class = 1  (e.g. "pass")
+else:
+    predicted class = 0  (e.g. "fail")</code></pre>
+<p>The point where the probability crosses 0.5 is called the <strong>decision boundary</strong> — the line that separates where the model predicts class 0 from where it predicts class 1. 0.5 is the default in scikit-learn, but it can be moved — for example, a cancer-screening model might use a lower threshold like 0.3, so it flags more borderline cases as "possible risk" rather than missing them.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A logistic regression model outputs a probability of 0.82 for "this email is spam." Using the default 0.5 threshold, what does it predict?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Spam (class 1) — 0.82 is above the 0.5 threshold.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Why can't you just use plain linear regression (<code>y = w*x + b</code>) to predict yes/no outcomes directly?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">A straight line's output is unbounded — it can go below 0 or above 1, which isn't a valid probability. Logistic regression fixes this by passing the line's output through the sigmoid function, which always stays between 0 and 1.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook, use scikit-learn's <code>LogisticRegression</code> on this tiny made-up dataset of hours studied vs. pass (1) / fail (0):</p>
+
+<table>
+<tr><th>Hours studied</th><th>Pass (1) / Fail (0)</th></tr>
+<tr><td>0.5</td><td>0</td></tr>
+<tr><td>1</td><td>0</td></tr>
+<tr><td>2</td><td>0</td></tr>
+<tr><td>3</td><td>1</td></tr>
+<tr><td>4</td><td>1</td></tr>
+<tr><td>5</td><td>1</td></tr>
+<tr><td>6</td><td>1</td></tr>
+</table>
+
+<p>Do this:</p>
+<ul>
+<li>Build <code>hours</code> as a 2D list and <code>result</code> as a flat list, from the table above (same shape rule as Lesson 13).</li>
+<li>Create a <code>LogisticRegression()</code> model and call <code>.fit(hours, result)</code>.</li>
+<li>Call <code>.predict()</code> to guess pass/fail for a student who studied <strong>2.5 hours</strong>.</li>
+<li>Call <code>.predict_proba()</code> on the same input to see the actual probability behind that prediction.</li>
+</ul>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>from sklearn.linear_model import LogisticRegression
+
+hours = [[0.5], [1], [2], [3], [4], [5], [6]]
+result = [0, 0, 0, 1, 1, 1, 1]
+
+model = LogisticRegression()
+model.fit(hours, result)
+
+prediction = model.predict([[2.5]])
+print(prediction)          # [0] or [1] -- the predicted class
+
+probability = model.predict_proba([[2.5]])
+print(probability)         # [[prob_of_0, prob_of_1]]</code></pre>
+</div>
+
+<p class="callout"><strong>Common trap:</strong> <code>.predict_proba()</code> returns <em>two</em> numbers per row: probability of class 0 first, then probability of class 1 — always in that order, and they always add up to 1. Don't mix up which column is which.</p>
+
+<h2>Source</h2>
+<p><a href="https://scikit-learn.org/stable/modules/linear_model.html#logistic-regression" target="_blank" rel="noopener">scikit-learn.org — Linear Models (Logistic regression)</a> — official docs confirming <code>LogisticRegression</code> is implemented as a classifier (not a regressor) that models outcome probabilities using the logistic (sigmoid) function.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Classification predicts a category (e.g. pass/fail); regression predicts a number.</li>
+    <li>The sigmoid function squashes any number into a probability between 0 and 1.</li>
+    <li>Despite the name, logistic regression is a classification algorithm, not a number predictor.</li>
+    <li>A threshold (default 0.5) turns the probability into a final class — this cutoff is the decision boundary.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Confused about why predict_proba gives two numbers instead of one? Ask — it trips people up the first time, and it matters a lot once you get to evaluating classifiers.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0014-cost-function-gradient-descent.html">&larr; Back: Lesson 14 — Cost function & gradient descent</a></span>
+  <span><a href="0016-overfitting-regularization.html">Next: Lesson 16 — Overfitting & regularization &rarr;</a></span>
+</div>
+
+</body>
+</html>

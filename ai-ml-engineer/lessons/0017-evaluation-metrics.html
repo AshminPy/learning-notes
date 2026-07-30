@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 17 — Evaluation metrics: accuracy, precision, recall, F1</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 17 of 34</p>
+<h1>Evaluation metrics: accuracy, precision, recall, F1</h1>
+
+<p>A classifier that is "97% accurate" can still be useless. This lesson teaches you how to actually check whether a model is doing a good job — starting with the four numbers everything else is built from, then the metrics that matter more than accuracy in most real problems.</p>
+
+<h2>The confusion matrix</h2>
+<p>Every time a classifier makes a prediction on a labeled example, there are only four possible outcomes. Take a spam classifier: it looks at an email and predicts "spam" or "not spam."</p>
+
+<table>
+<tr><th>Outcome</th><th>Meaning</th><th>Example</th></tr>
+<tr><td>True Positive (TP)</td><td>Predicted positive, actually positive</td><td>Spam email correctly flagged as spam</td></tr>
+<tr><td>False Positive (FP)</td><td>Predicted positive, actually negative</td><td>Real email wrongly flagged as spam</td></tr>
+<tr><td>False Negative (FN)</td><td>Predicted negative, actually positive</td><td>Spam email that slipped into the inbox</td></tr>
+<tr><td>True Negative (TN)</td><td>Predicted negative, actually negative</td><td>Real email correctly left alone</td></tr>
+</table>
+
+<div class="callout"><strong>Simple example:</strong> "positive" just means "the thing the model is looking for" — here, spam. It does not mean "good." A false positive (real email marked as spam) can be worse than a false negative, because you might miss an important email entirely.</div>
+
+<p>Say you test your spam classifier on 1,000 emails and get this confusion matrix:</p>
+<table>
+<tr><th></th><th>Predicted spam</th><th>Predicted not spam</th></tr>
+<tr><td><strong>Actually spam</strong></td><td>TP = 40</td><td>FN = 20</td></tr>
+<tr><td><strong>Actually not spam</strong></td><td>FP = 10</td><td>TN = 930</td></tr>
+</table>
+<p>We'll reuse these numbers (TP=40, FP=10, FN=20, TN=930) for every metric below.</p>
+
+<h2>Accuracy — and why it lies to you</h2>
+<p><strong>Accuracy</strong> is the fraction of all predictions that were correct:</p>
+<pre><code>accuracy = (TP + TN) / (TP + TN + FP + FN)</code></pre>
+<p>For the spam matrix above: (40 + 930) / 1000 = <strong>0.97</strong>, or 97%. That sounds great. But accuracy has a trap: it looks fine even when the model is doing almost nothing useful, as soon as one class is much bigger than the other (an <strong>imbalanced dataset</strong>).</p>
+
+<div class="callout"><strong>Simple example:</strong> imagine only 1% of emails are actually spam — 990 not-spam, 10 spam, out of 1,000. A lazy model that <em>always</em> predicts "not spam," no matter what it sees, gets 990 correct out of 1,000 — 99% accuracy. And it catches zero spam. Accuracy alone can't tell the difference between a genuinely good model and a model that just predicts the majority class every time.</div>
+
+<p>This is why, for imbalanced problems (fraud detection, disease screening, spam, fault detection — most real-world classification), you need metrics that look specifically at how the model handles the class you actually care about.</p>
+
+<h2>Precision — of what I flagged, how much was right?</h2>
+<pre><code>precision = TP / (TP + FP)</code></pre>
+<p>Precision answers: <strong>"Of everything the model called positive, what fraction actually was positive?"</strong> It only looks at the predicted-positive column. A model with low precision cries wolf a lot — it flags things that turn out to be fine.</p>
+<p>Spam example: precision = 40 / (40 + 10) = 40 / 50 = <strong>0.80</strong>. Of every 10 emails the model marked as spam, 8 really were spam and 2 were innocent emails wrongly buried in the spam folder.</p>
+
+<h2>Recall — of everything real, how much did I catch?</h2>
+<pre><code>recall = TP / (TP + FN)</code></pre>
+<p>Recall (also called sensitivity) answers: <strong>"Of everything that was actually positive, what fraction did the model catch?"</strong> It only looks at the actually-positive row. A model with low recall misses a lot of the real cases.</p>
+<p>Spam example: recall = 40 / (40 + 20) = 40 / 60 = <strong>0.667</strong>. Of every 3 spam emails that arrived, the model caught 2 and let 1 through to the inbox.</p>
+
+<h2>F1 score — balancing the two</h2>
+<p>Precision and recall usually trade off against each other — a model tuned to flag more things as positive will catch more real positives (higher recall) but also flag more false alarms (lower precision), and vice versa. <strong>F1</strong> is the harmonic mean of the two, giving one number that only stays high when both are reasonably good:</p>
+<pre><code>F1 = 2 * (precision * recall) / (precision + recall)</code></pre>
+<p>Spam example: F1 = 2 × (0.80 × 0.667) / (0.80 + 0.667) = 1.067 / 1.467 ≈ <strong>0.727</strong>. A harmonic mean (unlike a plain average) punishes a big gap between precision and recall — you can't hide a terrible recall behind a great precision.</p>
+
+<h2>When to prioritize precision vs. recall</h2>
+<table>
+<tr><th>Situation</th><th>Prioritize</th><th>Why</th></tr>
+<tr><td>Cancer screening test</td><td>Recall</td><td>Missing a real cancer case (false negative) can cost a life. A false positive just means a follow-up test.</td></tr>
+<tr><td>Spam filter</td><td>Precision</td><td>Sending a real, important email to spam (false positive) is worse than one spam email reaching the inbox (false negative).</td></tr>
+<tr><td>Fraud detection blocking a transaction</td><td>Balance / depends</td><td>Too low recall lets fraud through; too low precision blocks honest customers. Usually needs F1 or a business-cost-weighted metric.</td></tr>
+</table>
+<p>There is no single "correct" metric — you choose based on which mistake (false positive or false negative) is more expensive in your situation.</p>
+
+<h2>Check your understanding</h2>
+<div class="quiz">
+<p>Q1. A medical test is run on 1,000 patients. TP = 8, FP = 2, FN = 12, TN = 978. What is the precision (round to 2 decimals)?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">precision = TP / (TP + FP) = 8 / (8 + 2) = 8 / 10 = <code>0.80</code>. Of everyone the test flagged positive, 80% actually had the condition.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Same numbers (TP=8, FP=2, FN=12, TN=978). What is the recall (round to 2 decimals), and is that a good number for a cancer screening test?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">recall = TP / (TP + FN) = 8 / (8 + 12) = 8 / 20 = <code>0.40</code>. That's bad for cancer screening — the test misses 60% of real cases (12 out of 20). A screening test should be tuned for much higher recall, even if it means more false alarms (lower precision).</div>
+</div>
+
+<h2>Try it yourself — scikit-learn's metric functions</h2>
+<p>In practice you never compute these by hand — scikit-learn's <code>sklearn.metrics</code> module does it from two lists: the true labels and the predicted labels. Try this in your Colab notebook (1 = spam, 0 = not spam):</p>
+<pre><code>from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score, classification_report
+
+y_true = [1, 0, 1, 1, 0, 0, 1, 0, 0, 1]
+y_pred = [1, 0, 0, 1, 0, 1, 1, 0, 0, 0]
+
+print("accuracy: ", accuracy_score(y_true, y_pred))
+print("precision:", precision_score(y_true, y_pred))
+print("recall:   ", recall_score(y_true, y_pred))
+print("f1:       ", f1_score(y_true, y_pred))
+print(classification_report(y_true, y_pred))</code></pre>
+<p>Before you run it: go through the 10 pairs by hand and count the TP, FP, FN, TN yourself. Then run the code and check your count matches the scores.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">
+<p>Counting the 10 pairs: TP = 3, TN = 4, FP = 1, FN = 2.</p>
+<pre><code>accuracy:  0.7
+precision: 0.75
+recall:    0.6
+f1:        0.6666...</code></pre>
+<p>Check: precision = 3/(3+1) = 0.75. recall = 3/(3+2) = 0.6. f1 = 2×0.75×0.6/(0.75+0.6) ≈ 0.667. accuracy = (3+4)/10 = 0.7. <code>classification_report</code> prints all of these per class plus "support" (how many true examples of each class there were) in one table — that's usually what you'll actually use day to day.</p>
+</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://scikit-learn.org/stable/modules/model_evaluation.html" target="_blank" rel="noopener">scikit-learn.org/stable/modules/model_evaluation</a> — official scikit-learn documentation on metrics and scoring, including the exact precision/recall/F1 formulas and function reference.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Confusion matrix: TP, FP, FN, TN — every prediction falls into exactly one of these four boxes.</li>
+    <li>Accuracy = (TP+TN)/total, but it's misleading on imbalanced data — a model that always predicts the majority class can score high while catching nothing.</li>
+    <li>Precision = TP/(TP+FP) — of what I flagged, how much was right. Recall = TP/(TP+FN) — of everything real, how much did I catch. F1 balances both.</li>
+    <li>Choose the metric to prioritize based on which mistake costs more: recall for cancer screening, precision for spam filters.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a confusion matrix from your own model and the numbers don't add up to what you expected? Paste the four counts and ask — we'll trace through exactly what the model is getting wrong.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0016-overfitting-regularization.html">&larr; Back: Lesson 16 — Overfitting & regularization</a></span>
+  <span><a href="0018-project-1-classifier.html">Next: Lesson 18 — Project 1: your first classifier &rarr;</a></span>
+</div>
+
+</body>
+</html>

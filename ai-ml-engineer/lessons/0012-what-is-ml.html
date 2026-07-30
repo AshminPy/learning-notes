@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 12 — What is machine learning?</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 12 of 34</p>
+<h1>What is machine learning?</h1>
+
+<p>You've learned Python, and you've learned the math behind ML (vectors, matrices, probability, statistics). Now it's time to answer the big question: what actually <em>is</em> machine learning? This lesson is conceptual — no code today. Coding starts again next lesson.</p>
+
+<h2>The core idea</h2>
+<p>A normal computer program follows <strong>hardcoded rules</strong> that a human wrote. Machine learning flips that: instead of a human writing the rules, a program <strong>learns patterns from data</strong> on its own.</p>
+
+<div class="callout"><strong>Simple example:</strong> to detect spam email the old way, a programmer writes rules by hand: "if the email contains the word FREE in all caps, mark as spam." A machine learning model instead looks at thousands of emails already labeled "spam" or "not spam," and figures out the patterns itself — without anyone writing "if word = X" rules.</div>
+
+<p>Google's Machine Learning Crash Course defines it this way: <strong>"ML is the process of training a piece of software, called a model, to make useful predictions or generate content ... from data."</strong> The model learns from examples instead of following instructions a human typed in.</p>
+
+<h2>The three main categories</h2>
+<p>Almost every ML system falls into one of three categories, based on <em>what kind of data it learns from</em> and <em>how it learns</em>.</p>
+
+<h3>1. Supervised learning — learning from labeled examples</h3>
+<p>The model is shown data where the "correct answer" is already attached (this is called a <strong>label</strong>). It learns the pattern that connects the input to the correct answer, so it can predict the answer for new, unseen data.</p>
+<p>Supervised learning splits into two types:</p>
+<table>
+<tr><th>Type</th><th>Predicts</th><th>Example</th></tr>
+<tr><td><strong>Regression</strong></td><td>A number</td><td>Predicting a house's price from its square footage</td></tr>
+<tr><td><strong>Classification</strong></td><td>A category</td><td>Deciding if an email is "spam" or "not spam"</td></tr>
+</table>
+<p><strong>Real-world example:</strong> a bank's fraud-detection system is trained on millions of past transactions, each labeled "fraud" or "not fraud." It learns to classify new transactions the same way.</p>
+
+<h3>2. Unsupervised learning — finding structure with no labels</h3>
+<p>The model is given data with <strong>no correct answers attached</strong>. Nobody tells it what the groups or patterns should be — it has to find structure on its own. A common task here is <strong>clustering</strong>: grouping similar items together.</p>
+<p><strong>Real-world example:</strong> an online store groups its customers into segments based on purchase behavior — "bargain hunters," "frequent big spenders," and so on — without anyone predefining what those groups should look like. The model discovers the groups from the data.</p>
+
+<h3>3. Reinforcement learning — learning by trial and error</h3>
+<p>Here there's no fixed dataset of labeled examples at all. An <strong>agent</strong> takes actions in an environment, and gets a <strong>reward</strong> (or penalty) depending on how good the action was. Over many attempts, it learns which actions lead to the best rewards.</p>
+<p><strong>Real-world example:</strong> a program learning to play chess plays millions of games against itself, getting a reward for winning and a penalty for losing, gradually learning better strategies — no human ever labels "this move is correct."</p>
+
+<h2>Try it — classify these scenarios</h2>
+<p>For each scenario below, decide: supervised (regression), supervised (classification), unsupervised, or reinforcement learning?</p>
+
+<div class="quiz">
+<p>Q1. Grouping customers by purchase behavior, with no predefined groups.</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><strong>Unsupervised learning</strong> — no labels exist telling the model what the groups are. It finds the structure (clusters) itself.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Predicting a house's price from its square footage, using past sale prices.</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><strong>Supervised learning — regression</strong> — the model learns from labeled examples (past houses with known prices) and predicts a number.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Sorting photos into "cat" or "dog," trained on thousands of photos already tagged with the correct animal.</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3"><strong>Supervised learning — classification</strong> — the labels are categories ("cat"/"dog"), not numbers, and the model learns from tagged examples.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. A robot learning to walk by trying different movements and getting a higher score the further it walks without falling.</p>
+<input type="text" id="q4" placeholder="type your answer">
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4"><strong>Reinforcement learning</strong> — there's no labeled dataset. The robot (the agent) learns from trial and error, guided by a reward signal (distance walked).</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developers.google.com/machine-learning/intro-to-ml/what-is-ml" target="_blank" rel="noopener">developers.google.com/machine-learning/intro-to-ml/what-is-ml</a> — Google's Machine Learning Crash Course, "What is machine learning?" page. Covers the definition of ML and all three learning categories used in this lesson.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Machine learning: a program that learns patterns from data, instead of following hardcoded rules.</li>
+    <li><strong>Supervised learning</strong> learns from labeled examples — regression predicts numbers, classification predicts categories.</li>
+    <li><strong>Unsupervised learning</strong> finds structure (like clusters) in data that has no labels.</li>
+    <li><strong>Reinforcement learning</strong> has an agent learn by trial and error, guided by rewards.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Not sure which category a real system you know about falls into? Describe it and ask — working through real examples is how this sticks.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0011-probability-statistics.html">&larr; Back: Lesson 11 — Probability & statistics</a></span>
+  <span><a href="0013-linear-regression.html">Next: Lesson 13 — Linear regression &rarr;</a></span>
+</div>
+
+</body>
+</html>

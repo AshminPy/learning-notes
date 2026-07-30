@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 11 — Probability & statistics essentials</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 11 of 34</p>
+<h1>Probability & statistics essentials</h1>
+
+<p>ML models learn patterns from data, and data always has spread — some values close together, some far apart. To describe that spread with numbers, you need two ideas: the <strong>mean</strong> (the center) and the <strong>standard deviation</strong> (how far things scatter from the center). You also need <strong>probability</strong> — the language models use to say "how sure am I?" instead of a flat yes/no.</p>
+
+<div class="callout"><strong>Simple example:</strong> imagine two classrooms. Both have an average test score of 70. In Room A, everyone scored between 65 and 75. In Room B, scores ranged from 20 to 100. Same mean, totally different spread. The mean alone hides this — you need standard deviation to see it.</div>
+
+<h2>Mean — the center of the data</h2>
+<p>The <strong>mean</strong> (average) is the sum of all values divided by how many values there are.</p>
+
+<pre><code>data = [2, 4, 4, 4, 5, 5, 7, 9]
+
+mean = sum(data) / len(data)
+print(mean)   # 5.0</code></pre>
+
+<p>Add up 2+4+4+4+5+5+7+9 = 40. There are 8 numbers. 40 / 8 = 5. The mean is 5.</p>
+
+<h2>Variance and standard deviation — how spread out the data is</h2>
+<p>To measure spread, you look at how far each value is from the mean, square those distances (so negatives don't cancel positives), and average them. That average is the <strong>variance</strong>. The <strong>standard deviation</strong> is just the square root of the variance — it puts the spread back into the same units as your original data.</p>
+
+<table>
+<tr><th>Value</th><th>Distance from mean (5)</th><th>Squared</th></tr>
+<tr><td>2</td><td>-3</td><td>9</td></tr>
+<tr><td>4</td><td>-1</td><td>1</td></tr>
+<tr><td>4</td><td>-1</td><td>1</td></tr>
+<tr><td>4</td><td>-1</td><td>1</td></tr>
+<tr><td>5</td><td>0</td><td>0</td></tr>
+<tr><td>5</td><td>0</td><td>0</td></tr>
+<tr><td>7</td><td>2</td><td>4</td></tr>
+<tr><td>9</td><td>4</td><td>16</td></tr>
+</table>
+
+<p>Sum of squared distances = 9+1+1+1+0+0+4+16 = 32. Divide by 8 values: variance = 32 / 8 = <strong>4</strong>. Square root of 4 = <strong>2</strong>. So the standard deviation is 2 — on average, values sit about 2 away from the mean of 5.</p>
+
+<p class="callout"><strong>Common trap:</strong> a small standard deviation means the data is tightly clustered (predictable). A large one means the data is spread wide (noisy). In ML, features with wildly different spreads can confuse a model — this is part of why you often <em>scale</em> data before training (more on that in a later lesson).</p>
+
+<h2>Probability — a number from 0 to 1</h2>
+<p><strong>Probability</strong> is just a number between 0 and 1 that says how likely something is. 0 means "will never happen." 1 means "will definitely happen." 0.5 means "50-50, a coin flip." 0.85 means "85% likely."</p>
+
+<h2>Why this matters for ML</h2>
+<p>Most ML models don't give you a hard yes/no. They give you a <strong>probability</strong>, and you decide the cutoff. A spam filter doesn't say "this email is spam." It says "there's an 85% chance this is spam" — and your app decides that anything above, say, 50% gets moved to the spam folder.</p>
+
+<p>This matters because it lets you tune how cautious the system is. Want fewer false alarms? Raise the cutoff to 90%. Want to catch everything, even risky guesses? Lower it to 30%. A hard yes/no answer would take that control away from you.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Data = [10, 12, 14]. What is the mean?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">12 — (10+12+14)/3 = 36/3 = 12.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A model outputs 0.05 probability that an email is spam. In plain words, what does that mean?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">It means the model thinks there is only a 5% chance the email is spam — very unlikely. It would almost certainly be treated as "not spam" at a normal cutoff.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook, write a program that:</p>
+<ul>
+<li>defines a list <code>data = [3, 7, 7, 19, 23, 3, 5, 17]</code></li>
+<li>computes the mean using plain Python (<code>sum()</code> and <code>len()</code>)</li>
+<li>imports <code>numpy</code> and computes the mean again with <code>np.mean()</code>, plus the standard deviation with <code>np.std()</code></li>
+<li>prints all three results and checks the two means match</li>
+</ul>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>import numpy as np
+
+data = [3, 7, 7, 19, 23, 3, 5, 17]
+
+# Plain Python
+mean_plain = sum(data) / len(data)
+print("Mean (plain Python):", mean_plain)
+
+# NumPy
+mean_np = np.mean(data)
+std_np = np.std(data)
+print("Mean (NumPy):", mean_np)
+print("Standard deviation (NumPy):", std_np)</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://numpy.org/doc/stable/reference/generated/numpy.std.html" target="_blank" rel="noopener">numpy.org/doc/stable/reference/generated/numpy.std</a> — official NumPy documentation for <code>numpy.std()</code>, including the exact formula used.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Mean = sum of values divided by count — the center of the data.</li>
+    <li>Variance = average squared distance from the mean; standard deviation = square root of variance — both measure spread.</li>
+    <li>Probability is a number from 0 to 1 describing how likely something is.</li>
+    <li>ML models usually output a probability (e.g. "85% chance this is spam"), not a hard yes/no — you choose the cutoff.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Python's error messages is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0010-vectors-matrices.html">&larr; Back: Lesson 10 — Vectors & matrices</a></span>
+  <span><a href="0012-what-is-ml.html">Next: Lesson 12 — What is ML? &rarr;</a></span>
+</div>
+
+</body>
+</html>

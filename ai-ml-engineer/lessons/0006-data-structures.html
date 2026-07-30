@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 6 — Data structures: lists, dicts, tuples, sets</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 6 of 34</p>
+<h1>Data structures: lists, dicts, tuples, sets</h1>
+
+<p>A single variable holds one value. Real data — a dataset, a batch of images, a set of class names — needs to hold many values together. Python gives you four built-in ways to group values, each with a different job. This lesson: <code>list</code>, <code>dict</code>, <code>tuple</code>, and <code>set</code>.</p>
+
+<div class="callout"><strong>Simple example:</strong> think of these like containers in a kitchen. A <strong>list</strong> is a shopping list — ordered, and you can add or cross things off. A <strong>dict</strong> is a labeled spice rack — you grab "cumin" by name, not by position. A <strong>tuple</strong> is a sealed jar — fixed contents, can't change once packed. A <strong>set</strong> is a bag of unique marbles — no duplicates, order doesn't matter.</div>
+
+<h2>List — ordered, and you can change it</h2>
+<p>A <code>list</code> keeps items in order. Each item has a position (an <strong>index</strong>), starting at <code>0</code>.</p>
+<pre><code>fruits = ["apple", "banana", "pear"]
+
+print(fruits[0])     # apple  (first item)
+print(fruits[-1])    # pear   (last item)
+
+fruits.append("kiwi")
+print(fruits)         # ['apple', 'banana', 'pear', 'kiwi']</code></pre>
+
+<p><code>-1</code> means "last item", <code>-2</code> means "second to last", and so on — you don't need to know the list's length to reach the end.</p>
+
+<h3>Slicing — grab a chunk</h3>
+<p>A slice <code>list[start:end]</code> gives you a smaller list. <code>end</code> is not included.</p>
+<pre><code>numbers = [10, 20, 30, 40, 50]
+print(numbers[1:3])   # [20, 30]   items at index 1 and 2
+print(numbers[:2])    # [10, 20]   from the start
+print(numbers[2:])    # [30, 40, 50]  to the end</code></pre>
+
+<h2>Dict — labeled values, accessed by key</h2>
+<p>A <code>dict</code> (dictionary) stores <strong>key: value</strong> pairs. Instead of finding an item by position, you find it by name.</p>
+<pre><code>person = {"name": "Priya", "age": 25}
+
+print(person["name"])   # Priya
+person["city"] = "Pune"  # add a new key
+print(person)             # {'name': 'Priya', 'age': 25, 'city': 'Pune'}</code></pre>
+
+<p>This is why dicts matter for ML: a row of data almost always has named fields — <code>{"age": 25, "income": 50000, "label": "approved"}</code> — and you'll constantly map class names to numbers, e.g. <code>{"cat": 0, "dog": 1}</code>, because models need numbers, not text.</p>
+
+<h2>Tuple — like a list, but locked</h2>
+<p>A <code>tuple</code> looks like a list but uses <code>()</code> instead of <code>[]</code>, and once created, it cannot be changed.</p>
+<pre><code>point = (10, 20)
+print(point[0])   # 10
+
+point[0] = 99      # TypeError: 'tuple' object does not support item assignment</code></pre>
+
+<p>Use a tuple when the values should never change — like an image's fixed <code>(width, height)</code>, or a coordinate. It's a small signal to anyone reading your code: "this won't be modified."</p>
+
+<h2>Set — unique values, no order</h2>
+<p>A <code>set</code> keeps only unique values and has no fixed order. Adding a duplicate does nothing.</p>
+<pre><code>labels = {"cat", "dog", "cat", "bird", "dog"}
+print(labels)   # {'bird', 'cat', 'dog'}  — duplicates removed automatically</code></pre>
+
+<p>This makes sets perfect for de-duplication — e.g. "what are the unique class labels in my dataset?" — <code>set(all_labels)</code> answers that in one line.</p>
+
+<h2>When to use which</h2>
+<table>
+<tr><th>Structure</th><th>Ordered?</th><th>Changeable?</th><th>Duplicates?</th><th>Use it for</th></tr>
+<tr><td><code>list</code></td><td>Yes</td><td>Yes</td><td>Allowed</td><td>A sequence of items, e.g. one row of features</td></tr>
+<tr><td><code>dict</code></td><td>Insertion order kept</td><td>Yes</td><td>Keys unique</td><td>Labeled data, e.g. a data row, or class-name → number</td></tr>
+<tr><td><code>tuple</code></td><td>Yes</td><td>No</td><td>Allowed</td><td>Fixed values that should never change, e.g. image dimensions</td></tr>
+<tr><td><code>set</code></td><td>No</td><td>Yes</td><td>Never</td><td>Unique values, e.g. removing duplicate labels</td></tr>
+</table>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You have <code>colors = ["red", "green", "blue"]</code>. What does <code>colors[-1]</code> give you?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>"blue"</code> — <code>-1</code> always means the last item in the list.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You need to store a mapping from class name to a number, like <code>"cat" → 0</code> and <code>"dog" → 1</code>. Which structure should you use, and why?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">A <code>dict</code> — <code>{"cat": 0, "dog": 1}</code>. You look up a value by its label (key), which is exactly what a dict is for.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook, write a program that:</p>
+<ul>
+<li>builds a dict mapping 3 people's names to their ages, e.g. <code>{"Priya": 25, "Aman": 30, "Zoe": 28}</code></li>
+<li>loops over it using <code>.items()</code></li>
+<li>prints one sentence per person, e.g. <code>Priya is 25 years old.</code></li>
+</ul>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>ages = {"Priya": 25, "Aman": 30, "Zoe": 28}
+
+for name, age in ages.items():
+    print(name + " is " + str(age) + " years old.")</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.python.org/3/tutorial/datastructures.html" target="_blank" rel="noopener">docs.python.org/3/tutorial/datastructures</a> — the official Python tutorial chapter on data structures, covers lists, dicts, tuples, and sets in full.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>list</code> — ordered, changeable, access by index (<code>[0]</code>, <code>[-1]</code>), grow it with <code>.append()</code>.</li>
+    <li><code>dict</code> — key: value pairs, access by key — the natural fit for labeled data rows and class-name-to-number maps.</li>
+    <li><code>tuple</code> — like a list but locked after creation; use it for values that must not change.</li>
+    <li><code>set</code> — unique, unordered values; use it to de-duplicate.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Python's error messages is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0005-functions.html">&larr; Back: Lesson 5 — Functions</a></span>
+  <span><a href="0007-numpy-basics.html">Next: Lesson 7 — NumPy &rarr;</a></span>
+</div>
+
+</body>
+</html>

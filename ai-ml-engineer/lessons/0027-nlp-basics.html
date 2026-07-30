@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 27 — NLP: text processing, embeddings, sentiment analysis</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 27 of 34</p>
+<h1>NLP: text processing, embeddings, sentiment analysis</h1>
+
+<p>NLP (Natural Language Processing) is the branch of AI that works with text — reviews, emails, chat messages, articles. But a model only understands numbers, from Lesson 3 onward. This lesson covers the two-step trick that turns text into numbers a model can actually learn from: <strong>tokenization</strong> and <strong>embeddings</strong>.</p>
+
+<div class="callout"><strong>Simple example:</strong> imagine translating a sentence into a language made only of numbers. First you split the sentence into pieces (words). Then you look each piece up in a dictionary that gives you its number. "I love this course" might become <code>[15, 203, 47, 891]</code>. That's tokenization in one sentence.</div>
+
+<h2>Step 1: Tokenization — splitting text into pieces</h2>
+<p><strong>Tokenization</strong> is splitting a piece of text into smaller units called <strong>tokens</strong>. A token is often a whole word, but for many models it's a <strong>subword</strong> — a chunk smaller than a word, so the model can still handle words it has never seen by breaking them into familiar pieces.</p>
+<pre><code>"I love this course"  -->  ["I", "love", "this", "course"]
+
+# a subword tokenizer might split an unfamiliar word like this:
+"tokenization"  -->  ["token", "##ization"]</code></pre>
+<p>After splitting, each token is looked up in a fixed vocabulary and replaced with a number — its <strong>token ID</strong>. This is exactly the same idea as the <code>int</code>/<code>str</code> conversion from Lesson 3: text becomes a number so code can work with it.</p>
+
+<h2>Step 2: Embeddings — turning token IDs into vectors</h2>
+<p>A raw token ID like <code>47</code> is a problem: it's just an arbitrary index, like a phone book entry number. The ID for "cat" being close to the ID for "car" tells the model nothing about meaning — it's random accident of alphabetical order.</p>
+<p>So instead of using the raw ID, the model looks up a <strong>word embedding</strong> for each token: a <strong>vector</strong> of numbers (remember vectors from Lesson 10 — a list of numbers describing one thing). Instead of one number, "love" might become something like <code>[0.21, -0.87, 0.44, ...]</code>, often with hundreds of positions.</p>
+
+<div class="callout"><strong>Simple example:</strong> think of an embedding as GPS coordinates for a word, but in a space with hundreds of directions instead of 2. Words placed close together in that space have similar meaning. "happy" and "joyful" end up near each other. "happy" and "bicycle" end up far apart. The model learns these coordinates during training — nobody hand-writes them.</div>
+
+<h2>Why embeddings beat plain word IDs</h2>
+<p>This is the whole point of embeddings: they capture <strong>meaning and similarity</strong>, not just identity.</p>
+<table>
+<tr><th></th><th>Token ID (e.g. 47)</th><th>Word embedding (e.g. <code>[0.21, -0.87, ...]</code>)</th></tr>
+<tr><td>What it is</td><td>One arbitrary number</td><td>A vector — many numbers, like Lesson 10's feature vectors</td></tr>
+<tr><td>Similar words</td><td>No relationship between nearby IDs</td><td>Similar-meaning words end up close together in the vector space</td></tr>
+<tr><td>Can you do math with it?</td><td>Not meaningfully — <code>47</code> and <code>48</code> aren't "similar" words</td><td>Yes — distance between vectors reflects how related two words are</td></tr>
+</table>
+<p>Because similar words land near each other, a model trained on "I love this movie" can generalize to "I adore this film" even if it never saw that exact sentence — the embeddings for love/adore and movie/film are already close.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. What is the difference between a token ID and a word embedding?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">A token ID is a single arbitrary number (a lookup index). A word embedding is a vector — many numbers — positioned so that similar-meaning words are close together in that space. The ID tells you "which word," the embedding tells you "what it means, roughly."</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Why can a model trained on "great service" also handle "excellent service" well, even if it never saw that exact phrase in training?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Because "great" and "excellent" end up with similar embedding vectors (they're close together in the embedding space) — so the model treats them as near-equivalent even without seeing that exact sentence before.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>You don't need to build tokenization or embeddings from scratch — Hugging Face's <code>transformers</code> library gives you a ready-made <strong>pipeline</strong> that does tokenization, embeddings, and prediction in one call. In your Colab notebook:</p>
+<ul>
+<li>install the library: <code>!pip install transformers</code></li>
+<li>import <code>pipeline</code> and create a sentiment-analysis pipeline</li>
+<li>run it on a sentence of your own choosing, and on <code>"I love this course!"</code></li>
+<li>print the result and identify the <code>label</code> and <code>score</code> in the output</li>
+</ul>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>!pip install transformers
+
+from transformers import pipeline
+
+classifier = pipeline("sentiment-analysis")
+result = classifier("I love this course!")
+print(result)
+# [{'label': 'POSITIVE', 'score': 0.99...}]</code></pre>
+</div>
+
+<p class="callout"><strong>What just happened:</strong> that one call to <code>pipeline("sentiment-analysis")</code> downloads a pretrained model, tokenizes your sentence, converts the tokens to embeddings, runs them through the model, and hands you back a simple <code>label</code> ("POSITIVE"/"NEGATIVE") and <code>score</code> (confidence, 0 to 1). Everything in this lesson happens inside that one line.</p>
+
+<h2>Source</h2>
+<p><a href="https://huggingface.co/learn/nlp-course/chapter1/3" target="_blank" rel="noopener">huggingface.co/learn/nlp-course/chapter1/3</a> — Hugging Face's own free NLP course, "Transformers, what can they do?" — the official source for the <code>pipeline("sentiment-analysis")</code> usage shown above.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Tokenization splits text into tokens (words or subwords), then maps each token to a token ID.</li>
+    <li>A word embedding turns a token ID into a vector — the same kind of "list of numbers" idea as Lesson 10 — positioned so similar-meaning words are close together.</li>
+    <li>Embeddings beat plain IDs because they capture meaning and similarity, letting a model generalize to words/phrases it never saw during training.</li>
+    <li>Hugging Face's <code>pipeline("sentiment-analysis")</code> runs tokenization, embeddings, and prediction for you in one line.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Python's error messages is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0026-computer-vision-cnns.html">&larr; Back: Lesson 26 — Computer vision (CNNs)</a></span>
+  <span><a href="0028-transformers-llms.html">Next: Lesson 28 — Transformers &amp; how LLMs work &rarr;</a></span>
+</div>
+
+</body>
+</html>

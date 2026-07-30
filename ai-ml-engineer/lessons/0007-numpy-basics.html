@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 7 — NumPy: arrays & vectorized math</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 7 of 34</p>
+<h1>NumPy: arrays & vectorized math</h1>
+
+<p>Every ML library you'll ever use — scikit-learn, TensorFlow, PyTorch — stores its numbers in one thing underneath: a NumPy array. This lesson shows why that array exists, and the handful of moves you'll use with it constantly.</p>
+
+<h2>Why not just use a Python list?</h2>
+<p>A Python list can hold numbers, but it's slow when you have a lot of them and need to do math on all of them at once. Python has to loop through the list one item at a time, checking each item's type as it goes. <strong>NumPy arrays</strong> fix this: all the numbers are packed together in memory as one type, so NumPy can do the math on all of them in one fast step — this is called <strong>vectorization</strong>.</p>
+
+<div class="callout"><strong>Simple example:</strong> a Python list is like a box of mixed items you have to check one by one. A NumPy array is like a carton of eggs — same shape, same type, packed tight — so you can tilt the whole carton at once instead of moving each egg by hand.</div>
+
+<h2>Creating an array</h2>
+<p>Import NumPy (the usual short name is <code>np</code>), then build an array from a Python list with <code>np.array()</code>:</p>
+<pre><code>import numpy as np
+
+a = np.array([2, 3, 4])
+print(a)          # [2 3 4]
+print(a.shape)     # (3,)</code></pre>
+
+<p><code>.shape</code> tells you the size of the array along each dimension, as a tuple. <code>(3,)</code> means "1 dimension, 3 items." A grid of numbers (like a mini spreadsheet) would show <code>(rows, columns)</code>, e.g. <code>(2, 3)</code> for 2 rows and 3 columns.</p>
+
+<h2>Elementwise math: the whole point of NumPy</h2>
+<p>With a Python list, to multiply every number by 2 you must loop:</p>
+<pre><code># Python list — manual loop
+numbers = [1, 2, 3, 4, 5]
+doubled = []
+for n in numbers:
+    doubled.append(n * 2)
+print(doubled)     # [2, 4, 6, 8, 10]</code></pre>
+
+<p>With a NumPy array, you write the operation once and it applies to every element automatically. This is called an <strong>elementwise</strong> operation:</p>
+<pre><code># NumPy array — no loop needed
+numbers = np.array([1, 2, 3, 4, 5])
+doubled = numbers * 2
+print(doubled)     # [ 2  4  6  8 10]</code></pre>
+
+<p>Addition works the same way: <code>numbers + 10</code> adds 10 to every element. Two arrays of the same shape can also be combined directly, e.g. <code>a - b</code> subtracts them position by position — no loop, no index tracking.</p>
+
+<div class="callout"><strong>Common trap:</strong> on a NumPy array, <code>*</code> multiplies each element by the number — it does <em>not</em> do matrix multiplication like in linear algebra. That's a different operation (<code>@</code> or <code>.dot()</code>), which you'll meet later. For now, just remember <code>*</code> on an array = elementwise.</div>
+
+<h2>Indexing and slicing — same rules as lists</h2>
+<p>A 1-dimensional NumPy array is indexed and sliced exactly like a Python list from Lesson 6:</p>
+<pre><code>a = np.array([10, 20, 30, 40, 50])
+
+print(a[0])        # 10   — first item
+print(a[2:4])      # [30 40]  — slice, index 2 up to (not including) 4
+print(a[::-1])     # [50 40 30 20 10]  — reversed</code></pre>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You run <code>a = np.array([5, 10, 15])</code> then <code>print(a.shape)</code>. What gets printed?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>(3,)</code> — one dimension, 3 items.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Why is a NumPy array faster than a Python list for math on a large amount of numbers?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">All the values are packed together as one type, so NumPy applies the operation to every element in one fast step (vectorized), instead of Python looping through one item at a time.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook, write code that:</p>
+<ul>
+<li>creates a NumPy array of 5 numbers of your choice</li>
+<li>multiplies the whole array by 2 and stores the result</li>
+<li>prints the <strong>sum</strong> of that doubled array using <code>.sum()</code></li>
+</ul>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>import numpy as np
+
+nums = np.array([1, 2, 3, 4, 5])
+doubled = nums * 2
+print(doubled)          # [ 2  4  6  8 10]
+print(doubled.sum())    # 30</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://numpy.org/doc/stable/user/quickstart.html" target="_blank" rel="noopener">numpy.org/doc/stable/user/quickstart</a> — the official NumPy quickstart tutorial, covers array creation, shape, elementwise operations, and indexing/slicing.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>NumPy arrays are fast because operations apply to every element at once (vectorized) — no manual loop.</li>
+    <li>Create one with <code>np.array([...])</code>; check its size with <code>.shape</code>.</li>
+    <li><code>*</code> and <code>+</code> on an array apply elementwise to every item.</li>
+    <li>Indexing and slicing (<code>a[0]</code>, <code>a[2:4]</code>) work the same as Python lists.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Python's error messages is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0006-data-structures.html">&larr; Back: Lesson 6 — Data structures</a></span>
+  <span><a href="0008-pandas-basics.html">Next: Lesson 8 — Pandas &rarr;</a></span>
+</div>
+
+</body>
+</html>

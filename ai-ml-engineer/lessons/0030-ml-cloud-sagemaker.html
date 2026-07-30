@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 30 — ML in the cloud: AWS SageMaker basics & deployment</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 30 of 34</p>
+<h1>ML in the cloud: AWS SageMaker basics & deployment</h1>
+
+<p>Every model you've trained so far lived in a Colab notebook on Google's servers, only reachable by you, only running while the notebook tab is open. That's fine for learning. It is not a product. A real job asks: can other software call your model, any time, reliably, without you babysitting a browser tab? This lesson introduces the AWS service built to answer that — <strong>Amazon SageMaker AI</strong> (officially renamed from "Amazon SageMaker" in December 2024, though the older name is still used everywhere in practice).</p>
+
+<div class="callout"><strong>Simple example:</strong> think of training a model like baking a cake, and deploying it like opening a bakery counter. Colab is your home kitchen — great for practicing recipes, but only you can eat the cake, and only while you're standing there. SageMaker gives you a rented commercial kitchen (to bake at scale, without buying your own oven) and a shop counter with a phone number (so anyone — including other apps — can call in and get a slice, any time.)</div>
+
+<h2>Why "it works in my notebook" isn't enough</h2>
+<p>A model sitting in a <code>.ipynb</code> file has three job-blocking problems:</p>
+<ul>
+<li><strong>No one else can reach it.</strong> Other software (a website, a mobile app, another service) has no way to call your notebook and get an answer back.</li>
+<li><strong>It doesn't scale.</strong> Your laptop or free Colab session can't handle thousands of requests per second, or even a handful, reliably.</li>
+<li><strong>It isn't "always on."</strong> Notebooks time out, disconnect, and require you to manually re-run cells. Production software cannot depend on that.</li>
+</ul>
+<p>Cloud ML platforms exist to close this gap: managed infrastructure so you train and serve models without personally owning, patching, or babysitting servers.</p>
+
+<h2>SageMaker's three core pieces</h2>
+<p>You don't need to master all of SageMaker for this lesson — just recognize three concepts, because interviewers and job posts assume you know what each one is for.</p>
+
+<table>
+<tr><th>Piece</th><th>What it is</th><th>Think of it as</th></tr>
+<tr><td><strong>Managed notebooks</strong></td><td>A hosted Jupyter-style notebook environment inside AWS, with compute you can size up or down, and direct access to your AWS data (e.g. files in S3) without downloading them first.</td><td>Colab, but living inside AWS instead of Google's servers.</td></tr>
+<tr><td><strong>Training jobs</strong></td><td>You point SageMaker at your training code and your data, pick how much compute you want (e.g. a machine with a GPU), and AWS rents you that machine just long enough to run the job — then shuts it down automatically.</td><td>Renting a commercial oven by the hour instead of buying one for your kitchen.</td></tr>
+<tr><td><strong>Endpoints (deployment)</strong></td><td>A hosted, always-on URL that wraps your trained model. Other software sends it input (e.g. a photo, a sentence) over the network and gets a prediction back. This is what "deploying a model" means in practice.</td><td>The shop counter with a phone number — anyone can call and place an order.</td></tr>
+</table>
+
+<p>Put together: you develop and experiment in a <strong>notebook</strong>, you scale up real training with a <strong>training job</strong>, and you make the finished model usable by other software through an <strong>endpoint</strong>. That last step — endpoint — is what most people mean when they say "we deployed the model."</p>
+
+<div class="callout"><strong>Simple example:</strong> a training job is like ordering a custom cake for one big event — you specify size, flavor, and pickup time, the bakery works overnight, and the oven turns off when it's done. An endpoint is the opposite — it's the shop staying open all day, every day, ready to serve whoever walks in.</div>
+
+<h2>A word on cost — read before you touch the AWS console</h2>
+<p>AWS offers a free tier, and some SageMaker resources have limited free-tier allowances for new accounts. But training jobs and endpoints run on real rented compute — leaving an endpoint running, or picking an oversized instance for a training job, can rack up charges even if you never send it a single request. This lesson is conceptual on purpose: understand what each piece does before you ever click "create" in a paid AWS account. When you're ready to try it for real, always check current SageMaker pricing first and shut down anything you start.</p>
+
+<h2>Try it — think it through</h2>
+<p>No AWS account needed. Answer in your own words, then check your reasoning:</p>
+<ol>
+<li>You've trained a small model in Colab and want to let your team try it from a Slack bot. Which SageMaker piece do you need, and why?</li>
+<li>You have 2 million rows of data and your laptop would take 3 days to train on it. Which SageMaker piece solves that, and why?</li>
+<li>Why is "the model trains successfully in my notebook" not the same claim as "the model is deployed"?</li>
+</ol>
+
+<h2>Check yourself</h2>
+<div class="quiz">
+<p>Q1. A data scientist wants to explore a new dataset interactively, writing and testing code cell by cell, with access to files already stored in AWS. Which SageMaker piece fits?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">A <strong>managed notebook</strong> — it's the interactive, exploratory environment, like Colab but inside AWS with direct access to AWS-stored data.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A team has finished experimenting and now needs to train their final model on the full dataset using a GPU machine, running for a few hours, without owning that GPU machine permanently. Which piece fits?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">A <strong>training job</strong> — rented compute for the duration of training only, shut down automatically when it finishes.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. A mobile app needs to send a photo to the trained model and instantly get back "cat" or "dog," at any hour, from any user. Which piece fits?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">An <strong>endpoint</strong> — a hosted, always-on URL other software can call to get predictions. This is "deployment."</div>
+</div>
+
+<div class="quiz">
+<p>Q4. True or false: leaving a SageMaker endpoint running costs nothing as long as no one sends it any requests.</p>
+<input type="text" id="q4" placeholder="type your answer">
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4"><strong>False.</strong> An endpoint holds rented compute always-on, so it typically bills for the time it's running, not per request. Always shut down endpoints you're not using.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/whatis.html" target="_blank" rel="noopener">docs.aws.amazon.com/sagemaker/latest/dg/whatis.html</a> — official AWS documentation, "What is Amazon SageMaker AI?" Confirms SageMaker AI is AWS's fully managed service for building, training, and deploying ML models, and that it was renamed from "Amazon SageMaker" to "Amazon SageMaker AI" in December 2024 as part of a broader unified SageMaker platform.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A model in a notebook isn't a product — it needs to be reachable, scalable, and always-on.</li>
+    <li>SageMaker's three core pieces: <strong>managed notebooks</strong> (develop), <strong>training jobs</strong> (rent compute to train), <strong>endpoints</strong> (hosted URL to serve predictions — this is "deployment").</li>
+    <li>Endpoints bill for time running, not per request — always shut down what you're not using.</li>
+    <li>AWS has a free tier, but real training and hosting cost money — check pricing before creating paid resources.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Not sure which piece fits a given scenario? Describe the scenario and ask — matching "what's happening" to "which SageMaker concept" is exactly the skill this lesson builds.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0029-project-3-portfolio.html">&larr; Back: Lesson 29 — Project 3</a></span>
+  <span><a href="0031-genai-aws-ai-practitioner-prep.html">Next: Lesson 31 — Generative AI & AWS AI Practitioner exam prep &rarr;</a></span>
+</div>
+
+</body>
+</html>

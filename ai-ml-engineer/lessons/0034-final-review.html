@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Final Review — AI/ML Engineer Cheat Sheet</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 34 of 34 (Final Review)</p>
+<h1>Final review: the cheat sheet</h1>
+
+<p>Reference doc, not a new lesson — no new content, no quiz. Every line compresses something already taught across Lessons 1-33. Bookmark this page; come back to it before interviews, or whenever a term feels rusty.</p>
+
+<h2>1. Glossary — term → plain-English meaning</h2>
+<table>
+<tr><th>Term</th><th>What it means</th></tr>
+<tr><td>Weight (<code>w</code>) / Bias (<code>b</code>)</td><td>The numbers a model adjusts during training — weight scales an input's importance, bias shifts the output. (Lesson 13)</td></tr>
+<tr><td>Cost / loss function</td><td>A single number measuring how wrong the model's predictions are right now. (Lesson 14)</td></tr>
+<tr><td>Gradient descent</td><td>The algorithm that nudges weights step by step to make the loss smaller — "walk downhill on the cost surface." (Lesson 14)</td></tr>
+<tr><td>Learning rate</td><td>How big each gradient-descent step is. Too big overshoots, too small is slow. (Lesson 14)</td></tr>
+<tr><td>Classification vs regression</td><td>Regression predicts a number (price, score); classification predicts a category (spam/not-spam). (Lessons 13, 15)</td></tr>
+<tr><td>Sigmoid</td><td>A function that squashes any number into a 0-1 probability, used in logistic regression. (Lesson 15)</td></tr>
+<tr><td>Train/test split</td><td>Holding back some data the model never trains on, so you can honestly check how it does on new data. (Lesson 16)</td></tr>
+<tr><td>Overfitting vs underfitting</td><td>Overfitting = memorized the training data, fails on new data. Underfitting = too simple to learn the pattern at all. (Lesson 16)</td></tr>
+<tr><td>Confusion matrix</td><td>A table of True/False Positives/Negatives — the raw material every classification metric is built from. (Lesson 17)</td></tr>
+<tr><td>Precision / Recall / F1</td><td>Precision = of what I flagged positive, how much was right. Recall = of all actual positives, how much did I catch. F1 balances both. (Lesson 17)</td></tr>
+<tr><td>Neuron</td><td>A weighted sum of its inputs, plus a bias, passed through an activation function — literally a dot product. (Lessons 10, 19)</td></tr>
+<tr><td>Activation function (ReLU, sigmoid)</td><td>Adds non-linearity so stacked layers can learn more than a straight line could. (Lesson 19)</td></tr>
+<tr><td>Forward pass</td><td>Input flows through the network's layers to produce a prediction. (Lesson 20)</td></tr>
+<tr><td>Backpropagation</td><td>Sends the error backward through the network so gradient descent can update every weight in every layer. (Lesson 20)</td></tr>
+<tr><td>Epoch</td><td>One full pass of training over the entire training set. (Lesson 20)</td></tr>
+<tr><td>Decision tree / Random Forest</td><td>A flowchart of yes/no splits; a Random Forest is many trees voting together. (Lesson 22)</td></tr>
+<tr><td>Clustering / k-means</td><td>Grouping unlabeled data by similarity — no correct answer to check against. (Lesson 24)</td></tr>
+<tr><td>Convolution / CNN</td><td>A small filter sliding over an image looking for patterns like edges — the basis of computer vision models. (Lesson 26)</td></tr>
+<tr><td>Embedding</td><td>A word (or item) represented as a vector, positioned so similar meanings end up close together. (Lesson 27)</td></tr>
+<tr><td>Attention / Transformer</td><td>A mechanism letting a model weigh every other word's relevance when processing one word — the architecture behind modern LLMs. (Lesson 28)</td></tr>
+<tr><td>Foundation model</td><td>A large pre-trained model (usually a transformer) adaptable to many downstream tasks. (Lesson 31)</td></tr>
+<tr><td>RAG (Retrieval-Augmented Generation)</td><td>Giving a model relevant documents at request time so it can answer using information it wasn't trained on. (Lesson 31)</td></tr>
+</table>
+
+<h2>2. Your 3 portfolio projects — checklist</h2>
+<table>
+<tr><th>Project</th><th>What it proves</th><th>Lesson</th></tr>
+<tr><td>[ ] Project 1 — end-to-end classifier</td><td>Full ML workflow: load data, split, train, evaluate (Lessons 12-17)</td><td><a href="0018-project-1-classifier.html">Lesson 18</a></td></tr>
+<tr><td>[ ] Project 2 — neural net image classifier</td><td>Built and trained a neural network with Keras (Lessons 19-22)</td><td><a href="0023-project-2-image-classifier.html">Lesson 23</a></td></tr>
+<tr><td>[ ] Project 3 — CV or NLP portfolio piece</td><td>Applied piece closest to real 2026 job postings (Lessons 26-28)</td><td><a href="0029-project-3-portfolio.html">Lesson 29</a></td></tr>
+</table>
+<p>Each project's GitHub README should follow the same shape every time: problem, dataset, approach, results (actual numbers), what you'd improve. Consistency across all three makes your portfolio look deliberate, not accidental — see <a href="0032-portfolio-resume.html">Lesson 32</a>.</p>
+
+<h2>3. Certification path — checklist</h2>
+<table>
+<tr><th>Certification</th><th>Status</th><th>Why</th></tr>
+<tr><td>[ ] DeepLearning.AI Machine Learning Specialization</td><td>Theory backbone</td><td>Runs alongside Lessons 10-25; free to audit</td></tr>
+<tr><td>[ ] AWS Certified AI Practitioner (AIF-C01)</td><td>Fast resume badge</td><td>$100, no prerequisites — see <a href="0031-genai-aws-ai-practitioner-prep.html">Lesson 31</a></td></tr>
+<tr><td>[ ] IBM AI Engineering Professional Certificate</td><td>Hands-on depth</td><td>scikit-learn/Keras/PyTorch/TensorFlow, CV, NLP</td></tr>
+<tr><td>[ ] AWS Certified Machine Learning Engineer – Associate</td><td>Later stretch goal</td><td>AWS itself recommends ~1 year of hands-on experience first — not day one</td></tr>
+</table>
+<p>Full details and official links: <a href="0001-roadmap-and-cert-plan.html">Lesson 1</a>.</p>
+
+<h2>4. Common interview questions — quick recall</h2>
+<p>If you can answer all of these cold, without looking, you're ready. Full model answers and links back to the teaching lesson: <a href="0033-interview-prep.html">Lesson 33</a>.</p>
+<ul>
+<li>What is overfitting, and how do you detect it?</li>
+<li>Explain gradient descent in one sentence.</li>
+<li>What's the difference between precision and recall — and when would you prioritize one over the other?</li>
+<li>What is a neural network, in plain terms?</li>
+<li>Supervised vs unsupervised vs reinforcement learning — one example each.</li>
+<li>Why do we split data into train and test sets?</li>
+<li>Walk me through one of your projects: problem, approach, results, what you'd improve.</li>
+</ul>
+
+<h2>What's next</h2>
+<p>You've gone from zero code to a working ML/DL/CV/NLP foundation, three portfolio projects, and a certification plan. From here:</p>
+<ul>
+<li><strong>Apply now, don't wait to feel "ready."</strong> The projects and the AWS AI Practitioner badge are enough to start applying while you keep deepening skills in parallel.</li>
+<li><strong>Keep building.</strong> A 4th project in whatever area pulled at you most (CV, NLP, classic ML, MLOps) sharpens your story for interviews.</li>
+<li><strong>Specialize when a real job pulls you there</strong> — not before. This course was deliberately broad; let the market tell you where to go deep.</li>
+<li><strong>Revisit this page</strong> before every interview — it's built to be scanned in five minutes.</li>
+</ul>
+
+<div class="recap">
+  <strong>You've completed the AI/ML Engineer — Zero to Job-Ready course.</strong>
+  <ul>
+    <li>34 lessons, 3 portfolio projects, a certification plan grounded in official sources.</li>
+    <li>Every concept on this page traces back to a specific earlier lesson — nothing here is new.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Questions about anything on this page, or ready to talk through your first job applications? Ask — that's what comes next.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0033-interview-prep.html">&larr; Back: Lesson 33 — Interview prep</a></span>
+  <span><a href="../objectives.html">Course roadmap tracker &rarr;</a></span>
+</div>
+
+</body>
+</html>

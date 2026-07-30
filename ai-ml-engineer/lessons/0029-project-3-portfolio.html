@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 29 — Project 3: your strongest portfolio piece</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 29 of 34 — PROJECT 3</p>
+<h1>Project 3 — your strongest portfolio piece</h1>
+
+<p class="callout"><strong>This is a project lesson, not a quick lesson — and it's your strongest one yet.</strong> Projects 1 and 2 proved you can do the full ML workflow (structured data, then images). This one draws on Phase H: computer vision (Lesson 26), NLP and embeddings (Lesson 27), and transformers (Lesson 28) — the exact skills that map most directly onto real 2026 "AI/ML Engineer" job postings, which increasingly ask for hands-on computer vision or NLP/LLM experience, not just classic ML. That's why this is the one to point to first on your resume and in interviews.</p>
+
+<h2>Why this project matters more than Projects 1 and 2</h2>
+<p>Projects 1 and 2 taught you the shape of ML work: load data, split it, train, evaluate honestly, write it up. That shape doesn't change here. What changes is the subject matter — instead of a spreadsheet or a small built-in image set, you'll extend real computer-vision or real NLP work, using the exact same tools (CNNs, Hugging Face pipelines) that show up in job descriptions today. A hiring manager skimming your GitHub sees Project 1 (classic ML), Project 2 (deep learning basics), and Project 3 (CV or NLP with modern tooling) — that progression tells a story on its own, before they read a single line of your code.</p>
+
+<h2>Choose your path</h2>
+<p>Pick one. Don't do both unless you want extra practice — one solid project with a clear write-up beats two rushed ones.</p>
+<ul>
+<li><strong>Path A — extend computer vision.</strong> Take the CNN pattern from Lesson 26 and apply it to a bigger, more realistic image dataset than Fashion MNIST, with a stretch goal of data augmentation.</li>
+<li><strong>Path B — extend NLP.</strong> Take the Hugging Face sentiment pipeline from Lesson 27 and run it on your own sentences, with a stretch goal of trying a different Hugging Face pipeline task.</li>
+</ul>
+
+<h2>Step 0 — open a fresh notebook</h2>
+<p>Open a new notebook in your Colab account. Name it <code>project-3-cv.ipynb</code> or <code>project-3-nlp.ipynb</code> depending on the path you picked. Every code block below goes in its own cell, run top to bottom.</p>
+
+<h2>Path A — extend your CNN to a bigger, real image dataset</h2>
+<p>Lesson 26's CNN worked on Fashion MNIST: 28x28 grayscale images, 60,000 of them, already loaded and pre-sorted by Keras. Real-world image data is rarely handed to you that neatly. This path uses the <strong>flower photos</strong> dataset — 5 classes of real color photographs, downloaded as actual image files in folders, the way image data usually shows up on the job.</p>
+
+<h3>Load real image files from folders</h3>
+<pre><code>import tensorflow as tf
+import pathlib
+
+dataset_url = "https://storage.googleapis.com/download.tensorflow.org/example_images/flower_photos.tgz"
+data_dir = tf.keras.utils.get_file('flower_photos', origin=dataset_url, untar=True)
+data_dir = pathlib.Path(data_dir)
+
+image_count = len(list(data_dir.glob('*/*.jpg')))
+print(image_count)   # about 3,670 images across 5 flower classes</code></pre>
+<p><code>get_file</code> downloads and unzips the dataset once, into folders named after each class (<code>daisy/</code>, <code>roses/</code>, and so on). That folder-per-class layout is a common real-world format — <code>image_dataset_from_directory</code> reads it directly, no manual labeling needed:</p>
+<pre><code>img_height, img_width = 180, 180
+batch_size = 32
+
+train_ds = tf.keras.utils.image_dataset_from_directory(
+    data_dir,
+    validation_split=0.2,
+    subset="training",
+    seed=123,
+    image_size=(img_height, img_width),
+    batch_size=batch_size)
+
+val_ds = tf.keras.utils.image_dataset_from_directory(
+    data_dir,
+    validation_split=0.2,
+    subset="validation",
+    seed=123,
+    image_size=(img_height, img_width),
+    batch_size=batch_size)
+
+class_names = train_ds.class_names
+print(class_names)   # ['daisy', 'dandelion', 'roses', 'sunflowers', 'tulips']</code></pre>
+<p>This does the same job as Project 1 and 2's train/test split (Lesson 16), just with an 80/20 <code>validation_split</code> argument instead of <code>train_test_split</code>. Every photo also gets resized to a consistent 180x180, since real photos come in inconsistent sizes and a CNN needs a fixed input shape.</p>
+
+<h3>Build the CNN — same pattern as Lesson 26, one key difference</h3>
+<p>Fashion MNIST was grayscale, so Lesson 26's <code>Conv2D</code> input shape ended in <code>1</code> channel. These are color photos, so the channel dimension is <code>3</code> (red, green, blue) instead:</p>
+<pre><code>num_classes = len(class_names)
+
+model = tf.keras.Sequential([
+    tf.keras.layers.Rescaling(1./255, input_shape=(img_height, img_width, 3)),
+    tf.keras.layers.Conv2D(16, 3, activation='relu'),
+    tf.keras.layers.MaxPooling2D(),
+    tf.keras.layers.Conv2D(32, 3, activation='relu'),
+    tf.keras.layers.MaxPooling2D(),
+    tf.keras.layers.Conv2D(64, 3, activation='relu'),
+    tf.keras.layers.MaxPooling2D(),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dense(num_classes)
+])
+
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+model.fit(train_ds, validation_data=val_ds, epochs=10)</code></pre>
+<p><code>Rescaling(1./255, ...)</code> is the same normalize-to-0-1 idea from Project 2 (Lesson 23), just written as a layer instead of a manual division — it now runs as part of the model itself. Everything else is the stacked <code>Conv2D -&gt; MaxPooling2D</code> pattern from Lesson 26, with one more conv+pool pair since these images are bigger and more complex than Fashion MNIST's.</p>
+
+<h3>Stretch goal — data augmentation (fighting overfitting on a small dataset)</h3>
+<p>3,670 photos across 5 classes is far less data than Fashion MNIST's 60,000 images, so this model is more prone to overfitting (Lesson 16) — memorizing quirks of the training photos instead of general flower features. <strong>Data augmentation</strong> fights this by randomly flipping, rotating, and zooming training images each epoch, so the model effectively sees more variety without collecting more photos:</p>
+<pre><code>data_augmentation = tf.keras.Sequential([
+    tf.keras.layers.RandomFlip("horizontal", input_shape=(img_height, img_width, 3)),
+    tf.keras.layers.RandomRotation(0.1),
+    tf.keras.layers.RandomZoom(0.1),
+])</code></pre>
+<p>Add it as the first layer of the model (before <code>Rescaling</code>), and add a <code>Dropout(0.2)</code> layer right before the final <code>Dense(num_classes)</code> — dropout randomly turns off 20% of neurons each training step, which also reduces overfitting by preventing the network from leaning too hard on any one neuron. Retrain and compare your validation accuracy with and without these two additions.</p>
+
+<h2>Path B — extend your Hugging Face pipeline to your own text</h2>
+<p>Lesson 27 ran <code>pipeline("sentiment-analysis")</code> on one hardcoded sentence. This path runs it on a small set of sentences you write yourself, then tries a second, different pipeline task.</p>
+
+<h3>Run sentiment analysis on your own sentences</h3>
+<pre><code>!pip install transformers
+
+from transformers import pipeline
+
+classifier = pipeline("sentiment-analysis")
+
+my_sentences = [
+    "The onboarding process was confusing and slow.",
+    "Support fixed my issue within five minutes, amazing!",
+    "It's an average product, does the job.",
+]
+
+results = classifier(my_sentences)
+for sentence, result in zip(my_sentences, results):
+    print(sentence, "->", result)</code></pre>
+<p>Write your own 5-10 sentences instead of copying the ones above — pick a theme (product reviews, messages from friends, lines from a show you like) so your write-up has something real to say about the results. Pay attention to any sentence the model gets "wrong" by your own judgment, or scores with low confidence — that's useful material for your README's "what I'd improve" section.</p>
+
+<h3>Stretch goal — try a different Hugging Face pipeline task</h3>
+<p>The <code>pipeline()</code> function isn't just for sentiment. Hugging Face's own course lists several ready-made task names, including <code>"zero-shot-classification"</code> and <code>"summarization"</code>. Zero-shot classification is a good stretch pick — it sorts text into labels <em>you choose on the spot</em>, without retraining anything:</p>
+<pre><code>zero_shot = pipeline("zero-shot-classification")
+
+result = zero_shot(
+    "This tutorial explains transformers really well.",
+    candidate_labels=["education", "politics", "sports"],
+)
+print(result)
+# {'sequence': '...', 'labels': ['education', 'sports', 'politics'], 'scores': [0.93, 0.04, 0.03]}</code></pre>
+<p>If you'd rather try summarization instead, it's the same pattern with a different task name: <code>pipeline("summarization")</code>, called on a longer paragraph, with <code>max_length</code>/<code>min_length</code> arguments controlling how short the summary comes out. Either is a fine stretch goal — pick whichever is more useful for the sentences/text you gathered.</p>
+
+<div class="callout"><strong>Simple example:</strong> think of <code>pipeline("sentiment-analysis")</code> and <code>pipeline("zero-shot-classification")</code> as two different jobs done by the same machine. Both still do Lesson 27's tokenize-then-embed steps first — turning your sentence into vectors — and both still run those vectors through a transformer using attention (Lesson 28) to weigh which words matter. The only real difference is the small "task head" bolted on at the end: one is trained to output a fixed positive/negative label, the other is trained to score your sentence against whatever labels you hand it at request time.</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. In Path A, why is data augmentation more useful for the flower photos dataset than it was for Fashion MNIST in Lesson 26?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Fashion MNIST has 60,000 training images; the flower dataset has only about 3,670 across 5 classes. Less training data means a higher risk of overfitting (Lesson 16) — the model memorizing specific training photos instead of learning general features. Data augmentation manufactures extra variety (flips, rotations, zooms) from the same photos, which reduces that risk without collecting more data.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Both <code>pipeline("sentiment-analysis")</code> and <code>pipeline("zero-shot-classification")</code> start with the same two steps from Lesson 27. What are those two steps?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Tokenization (splitting the text into tokens and mapping each to a token ID) and embedding (turning each token ID into a vector positioned by meaning). Both pipelines share this front end — they only differ in the final task-specific step that turns the processed vectors into a label.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. If you chose Path B, how does Lesson 28's idea of "attention" apply to what the pipeline just did to your sentences?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">The pretrained model inside the pipeline is a transformer. As it processes each token in your sentence, attention lets it weigh every other token to understand context — for example, deciding that "not" changes the meaning of the word after it, or that "amazing" late in a sentence should carry more weight than a filler word. That's what lets it score "It's an average product, does the job" differently from a sentence with the word "average" used sarcastically — the same mechanism from the trophy/suitcase example in Lesson 28, just running on your own text.</div>
+</div>
+
+<h2>What to put in your project README</h2>
+<p>Same structure as Projects 1 and 2 (Lessons 18 and 23) — reuse it every time. This time, add one more line if you chose Path B: a short note connecting your results to attention/transformers from Lesson 28.</p>
+<pre><code>## Project 3: [Flower Image Classifier / Sentiment &amp; Zero-Shot Text Classifier]
+
+**Problem statement**
+[One or two sentences: what are you predicting, and from what input?]
+
+**Dataset**
+[Flower photos, ~3,670 images, 5 classes, loaded via
+tf.keras.utils.image_dataset_from_directory()
+-- OR --
+My own set of N sentences, classified with Hugging Face's
+pipeline("sentiment-analysis") and pipeline("zero-shot-classification")]
+
+**Approach**
+- [CNN: Conv2D/MaxPooling2D stack, optionally + data augmentation
+  and Dropout to reduce overfitting on a small dataset
+  -- OR --
+  Hugging Face pipeline(s), run on my own sentences instead of
+  the lesson's example sentence]
+- Evaluated on the held-out validation set only (Path A)
+  / read results sentence by sentence and judged them myself (Path B)
+
+**Results**
+- [Your actual accuracy/loss numbers (Path A), or a short table
+  of your sentences with their predicted label + score (Path B)]
+
+**Connection to transformers (Path B only)**
+[1-2 sentences: how does attention (Lesson 28) explain why the
+pipeline scored your sentences the way it did? Any sentence it
+got "wrong" by your judgment, and why attention might have
+weighted the wrong word?]
+
+**What I'd improve next**
+- [e.g. try a deeper CNN or more epochs; try a third pipeline task;
+  collect more of my own labeled examples to check accuracy properly]
+</code></pre>
+<p>Fill in the brackets with your own real results — never copy someone else's numbers into your write-up. Save as <code>README.md</code> alongside your notebook, or as a Markdown cell at the top of the notebook itself.</p>
+
+<h2>Commit it as Project 3</h2>
+<p>Same repo as Projects 1 and 2: <code>ai-ml-learning-log</code> on GitHub.</p>
+<ul>
+<li>Download the notebook from Colab: <strong>File → Download → Download .ipynb</strong></li>
+<li>Add it to your local clone of <code>ai-ml-learning-log</code>, in a folder like <code>project-3-portfolio/</code></li>
+<li>Add the README.md in the same folder</li>
+<li>Commit with a clear message, e.g. <code>git commit -m "Project 3: flower image classifier"</code> or <code>git commit -m "Project 3: NLP sentiment + zero-shot classification"</code></li>
+<li>Push to GitHub: <code>git push</code></li>
+</ul>
+<p>Three real projects on your GitHub profile now — structured data, image data, and CV/NLP with modern tooling. That's an interview-ready portfolio repo: three write-ups, each following the same honest load → train → evaluate → document shape, showing you can apply it to genuinely different kinds of problems.</p>
+
+<h2>Source</h2>
+<p><a href="https://www.tensorflow.org/tutorials/images/classification" target="_blank" rel="noopener">tensorflow.org/tutorials/images/classification</a> — the official TensorFlow "Image classification" tutorial. Path A's dataset loading (<code>image_dataset_from_directory</code>), the flower photos dataset, and the data augmentation / <code>Dropout</code> stretch goal all follow it directly. Path B follows Hugging Face's own free course at <a href="https://huggingface.co/learn/nlp-course/chapter1/3" target="_blank" rel="noopener">huggingface.co/learn/nlp-course/chapter1/3</a>, which lists <code>pipeline()</code> task names including <code>sentiment-analysis</code>, <code>zero-shot-classification</code>, and <code>summarization</code>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Project 3 is your strongest resume piece — it draws on computer vision, NLP, and transformers (Phase H), the skills most 2026 AI/ML Engineer postings ask for directly.</li>
+    <li>Path A: extend Lesson 26's CNN pattern to real color photos loaded from folders with <code>image_dataset_from_directory</code>, with data augmentation + <code>Dropout</code> as a stretch goal against overfitting on a smaller dataset.</li>
+    <li>Path B: run Lesson 27's Hugging Face pipeline on your own sentences, with trying a second pipeline task (e.g. <code>zero-shot-classification</code> or <code>summarization</code>) as a stretch goal.</li>
+    <li>Both paths still start with the same tokenize-then-embed steps, and both run on a transformer that uses attention (Lesson 28) to weigh context.</li>
+    <li>Same README structure as every project, plus (Path B) a short note linking your results back to attention.</li>
+    <li>Three committed projects = an interview-ready portfolio repo.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Not sure which path fits your goals better, or stuck on a specific error in either one? Paste what you're seeing and ask — and if you're torn between paths, picking the one closer to the job postings you're actually applying for is a reasonable tiebreaker.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0028-transformers-llms.html">&larr; Back: Lesson 28 — Transformers &amp; LLMs</a></span>
+  <span><a href="0030-ml-cloud-sagemaker.html">Next: Lesson 30 — ML in the cloud (AWS SageMaker) &rarr;</a></span>
+</div>
+
+</body>
+</html>

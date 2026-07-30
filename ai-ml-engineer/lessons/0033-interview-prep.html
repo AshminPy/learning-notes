@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 33 — Interview prep: explaining your projects & common ML questions</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 33 of 34</p>
+<h1>Interview prep: explaining your projects & common ML questions</h1>
+
+<p>You've built three projects and read 32 lessons of theory. None of that helps in an interview if you freeze when someone says "walk me through one of your projects" or "what's overfitting?" This lesson has no new concepts — it's the opposite: a script for saying out loud, clearly and quickly, everything you already know.</p>
+
+<div class="callout"><strong>Simple example:</strong> knowing something and being able to explain it under pressure are different skills, the same way knowing how to swim is different from staying calm the first time someone throws you in a pool. The fix for both is the same: practice the exact motion enough times that it stops feeling new.</div>
+
+<h2>Part 1 — walking through a project in under 2 minutes</h2>
+<p>Every project you built in this course already has the structure an interviewer wants, because you wrote it that way in Lesson 18 (and reused it in Lessons 23 and 29): <strong>problem, dataset/approach, results, what you'd improve next.</strong> That README structure isn't just for GitHub — it's also your spoken answer. Say it in the same order, out loud, in under 2 minutes:</p>
+
+<table>
+<tr><th>README section</th><th>What you say out loud</th><th>Roughly how long</th></tr>
+<tr><td>Problem statement</td><td>What question were you answering, and why does it matter? ("Predict whether a tumor is malignant or benign, to support — not replace — a screening decision.")</td><td>~15 seconds</td></tr>
+<tr><td>Dataset / approach</td><td>Where the data came from, how big it was, and what you did to it — split, scaled, which model, why that model.</td><td>~30 seconds</td></tr>
+<tr><td>Results</td><td>Your actual numbers — accuracy, precision/recall if it's imbalanced — and one sentence on whether that's good enough for the problem.</td><td>~30 seconds</td></tr>
+<tr><td>What you'd improve next</td><td>One or two honest next steps. This is the question interviewers actually care most about — it shows you understand the model's limits, not just its output.</td><td>~30 seconds</td></tr>
+</table>
+
+<p class="callout"><strong>Common trap:</strong> narrating your code line by line ("then I imported sklearn, then I called train_test_split..."). Nobody wants that. An interviewer wants the decisions and the reasoning — why you split before training (Lesson 16), why you picked that metric (Lesson 17) — not a tour of your imports.</p>
+
+<h2>Try it now — say it out loud, then time yourself</h2>
+<p>Pick one project (your Lesson 18 classifier is the easiest to start with). Using the four-part structure above, explain it out loud — actually speak, don't just think it — with a timer running. Most people's first attempt runs 4–5 minutes. That's normal. Cut it down by removing detail from the middle two sections, not the last one — "what I'd improve" is the part that shows judgment.</p>
+<p>Do this for at least one project before moving to Part 2. There's no reveal button for this one — the only way to know if 2 minutes is enough is to actually try it.</p>
+
+<h2>Part 2 — 8 questions you can now answer</h2>
+<p>These are common early-career ML interview questions. You already learned the answer to every one of them earlier in this course — this section is not new material, it's a pointer back to where you learned it, plus the answer phrased the way this course explained it (not textbook wording).</p>
+
+<h3>1. What is overfitting?</h3>
+<p>Overfitting is when a model memorizes the training data instead of learning the general pattern — like a student who memorized the exact answer key for one exam instead of learning the subject. It scores great on data it has already seen and badly on new data. You catch it by comparing training accuracy to test accuracy: a big gap (say, 99% on training, 61% on test) is the tell.</p>
+<p><a href="0016-overfitting-regularization.html">&rarr; Taught in Lesson 16 — Train/test split, overfitting & regularization</a></p>
+
+<h3>2. Explain gradient descent.</h3>
+<p>Gradient descent is how a model gets "less wrong," one small step at a time. Picture standing on a hill in thick fog: you can't see the bottom, but you can feel which direction slopes downward, take a small step that way, then feel again. The "hill" is the cost function (how wrong the model currently is), and each step nudges the weights and bias to make that cost smaller. The learning rate controls the step size — too big and you overshoot the bottom, too small and training crawls.</p>
+<p><a href="0014-cost-function-gradient-descent.html">&rarr; Taught in Lesson 14 — Cost function & gradient descent</a></p>
+
+<h3>3. What's the difference between precision and recall?</h3>
+<p>Precision answers: "of everything I flagged as positive, how much was actually right?" Recall answers: "of everything that was actually positive, how much did I catch?" A spam filter that wrongly buries real emails in spam has low precision. A spam filter that lets real spam through to the inbox has low recall. Which one matters more depends on which mistake is more expensive — recall matters more for cancer screening (missing a real case is costly), precision matters more for a spam filter (losing a real email is costly).</p>
+<p><a href="0017-evaluation-metrics.html">&rarr; Taught in Lesson 17 — Evaluation metrics</a></p>
+
+<h3>4. What is a neural network?</h3>
+<p>A neural network is layers of neurons stacked together. Each neuron is just a weighted sum — the same dot product idea from linear regression — plus a bias, passed through an activation function. The input layer holds the raw features, hidden layers each learn their own weighted combination of the layer before them, and the output layer produces the final answer. The activation function is what actually makes stacking layers worth it: without it, ten layers behave exactly like one, because stacked plain weighted sums collapse into a single weighted sum.</p>
+<p><a href="0019-neural-networks-basics.html">&rarr; Taught in Lesson 19 — Neural networks: neurons, layers, activation functions</a></p>
+
+<h3>5. Supervised vs unsupervised learning?</h3>
+<p>Supervised learning learns from labeled examples — the correct answer is already attached to each one, like emails already tagged spam or not spam. Unsupervised learning gets no labels at all and has to find structure on its own, like grouping customers into segments nobody predefined ahead of time. Supervised learning splits further into two types: regression (predicting a number) and classification (predicting a category).</p>
+<p><a href="0012-what-is-ml.html">&rarr; Taught in Lesson 12 — What is machine learning?</a></p>
+
+<h3>6. What's a confusion matrix?</h3>
+<p>It's a small table that sorts every prediction into one of four boxes: true positive (predicted positive, actually positive), false positive (predicted positive, actually negative), false negative (predicted negative, actually positive), and true negative (predicted negative, actually negative). Every other classification metric — accuracy, precision, recall, F1 — is just a different way of combining those four counts.</p>
+<p><a href="0017-evaluation-metrics.html">&rarr; Taught in Lesson 17 — Evaluation metrics</a></p>
+
+<h3>7. Why do we split data into train/test sets?</h3>
+<p>Because testing a model on the same data it trained on is like grading a student with the exact homework questions they already saw the answers to — it proves nothing about whether they actually understood the subject. A train/test split holds back a test set the model never sees during training, so the test score is an honest read on how the model handles new, real data. It's also what lets you catch overfitting in the first place.</p>
+<p><a href="0016-overfitting-regularization.html">&rarr; Taught in Lesson 16 — Train/test split, overfitting & regularization</a></p>
+
+<h3>8. What's the difference between classification and regression?</h3>
+<p>Regression predicts a number that can be anything — a house price, an exam score. Classification predicts a category from a fixed set — spam or not spam, malignant or benign. Under the hood they start from the same weighted-sum idea, but classification (logistic regression, for example) squashes that raw number through something like the sigmoid function into a probability between 0 and 1, then applies a threshold to pick a final category.</p>
+<p><a href="0013-linear-regression.html">&rarr; Regression taught in Lesson 13 — Linear regression</a> &nbsp;·&nbsp; <a href="0015-logistic-regression.html">Classification taught in Lesson 15 — Logistic regression</a></p>
+
+<h2>Try it — answer cold, then check yourself</h2>
+<div class="quiz">
+<p>Q1. Without scrolling back up: an interviewer asks, "What is overfitting, and how would you detect it in a model you just trained?" Answer it out loud in one breath, then reveal.</p>
+<input type="text" id="q1" placeholder="type or say your answer, then reveal">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Overfitting is when a model memorizes the training data instead of learning the general pattern behind it — great on data it has seen, bad on data it hasn't. You detect it by comparing training accuracy to test accuracy: a big gap between the two (high on training, much lower on test) is the sign. (Lesson 16)</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Same drill: "Why is accuracy alone sometimes a misleading metric?" Answer cold, then reveal.</p>
+<input type="text" id="q2" placeholder="type or say your answer, then reveal">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">On an imbalanced dataset, a model can score very high accuracy just by always predicting the majority class — for example, always predicting "not spam" when 99% of emails aren't spam gets 99% accuracy while catching zero actual spam. Precision, recall, and F1 look at how the model handles the class you actually care about, which accuracy alone can hide. (Lesson 17)</div>
+</div>
+
+<h2>Every answer above traces back to a lesson — that's the evidence trail</h2>
+<p>This lesson doesn't cite outside sources, because it doesn't need to: every model answer above is a compressed version of a lesson you already worked through, with a link back to it. If an interviewer pushes deeper than the short answer here, the full explanation — with the worked examples, the tables, the "why," and the common traps — is one click away at the linked lesson. That's also a fine thing to say in an actual interview if you get a follow-up you're unsure of: it's better to say "let me think through that from first principles" and reason out loud than to guess confidently and be wrong.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Explain any project in under 2 minutes using the same structure as your README: problem, approach, results, what you'd improve next.</li>
+    <li>"What I'd improve next" matters most to interviewers — it shows judgment, not just output.</li>
+    <li>You already learned the answer to every common beginner ML question earlier in this course — this lesson is a pointer, not new material.</li>
+    <li>If you don't know a follow-up answer, reasoning out loud beats a confident guess.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Practiced your 2-minute pitch and it still runs long, or froze on one of the 8 questions? Paste what you said and ask — tightening a spoken answer is a skill this course can help you drill before it matters in a real interview.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0032-portfolio-resume.html">&larr; Back: Lesson 32 — Portfolio & resume</a></span>
+  <span><a href="0034-final-review.html">Next: Lesson 34 — Final review & cheat sheet &rarr;</a></span>
+</div>
+
+</body>
+</html>

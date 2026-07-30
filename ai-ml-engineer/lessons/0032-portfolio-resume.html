@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 32 — Portfolio & resume for AI/ML roles</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 32 of 34</p>
+<h1>Portfolio & resume for AI/ML roles</h1>
+
+<p>You've built three real projects and (if you followed Lesson 31) you're working toward a cloud AI cert. None of that helps you if a hiring manager can't find it in 30 seconds. This lesson turns what you've already built into a resume and GitHub profile that actually get read.</p>
+
+<p class="callout"><strong>Simple example:</strong> a hiring manager scanning resumes is like someone skimming restaurant menus while starving and short on time. They're not reading every word — they're scanning for 3–4 things that answer "can this person do the job." Your job isn't to list everything you know. It's to put the 3–4 things they're scanning for where they can't miss them.</p>
+
+<h2>What actually goes on an entry-level AI/ML resume</h2>
+<p>Many hiring managers who screen entry-level ML resumes say the same thing: they spend under a minute on a first pass, and they're looking for evidence of real, working projects over a long list of course names. Structure your resume around that. A solid order, top to bottom:</p>
+<ol>
+<li><strong>Header</strong> — name, email, GitHub profile link, LinkedIn link. No photo needed for most English-speaking markets.</li>
+<li><strong>Summary</strong> — 1–2 lines. What you are, what you've built, what you're aiming for. E.g. "Entry-level AI/ML engineer. Built and shipped three end-to-end ML projects covering classical ML, deep learning, and NLP. AWS Certified AI Practitioner."</li>
+<li><strong>Projects</strong> — your 3 GitHub portfolio projects, front and center. This is the section that does the most work on this resume — see below.</li>
+<li><strong>Skills</strong> — a short, honest, concrete list. See below.</li>
+<li><strong>Certifications</strong> — AWS AI Practitioner, once you've earned it (Lesson 31).</li>
+<li><strong>Education</strong> — wherever it naturally fits for you; it doesn't need to lead.</li>
+</ol>
+
+<h2>The projects section — your strongest asset</h2>
+<p>By the time you reach this lesson you have three working, evaluated, written-up projects on GitHub (Lessons 18, 23, and 29). Each one gets 2–3 lines on your resume: what it does, what tools you used, and one real, honest result number. Link the repo directly.</p>
+
+<pre><code>PROJECTS
+
+Breast Cancer Classifier — github.com/you/ai-ml-learning-log/project-1-classifier
+Built a logistic regression classifier on the scikit-learn Breast Cancer
+Wisconsin dataset, reaching [your real accuracy]% accuracy on a held-out
+test set. Python, scikit-learn, pandas.
+
+Fashion Image Classifier — github.com/you/ai-ml-learning-log/project-2-image-classifier
+Built and trained a neural network in Keras to classify clothing images
+from Fashion MNIST, reaching [your real accuracy]% test accuracy.
+Python, TensorFlow/Keras, NumPy.
+
+[Project 3 name] — github.com/you/ai-ml-learning-log/project-3-...
+[One line: what it does, what tools, one real result number.]
+Python, Hugging Face transformers.</code></pre>
+
+<p class="callout"><strong>Common trap:</strong> never put a made-up or "typical" accuracy number on your resume — only the number your own run actually produced. If a hiring manager asks you to walk through the notebook in an interview (and some will), the numbers need to match what's really in your repo. This is the same honesty rule Lesson 17 and your Project 1 write-up already taught you: report what you actually measured, not what sounds good.</p>
+
+<h2>Skills — list what you actually used, nothing more</h2>
+<p>Resist the urge to pad this list with tools you skimmed once. A short, accurate list that matches your projects is more convincing than a long list that doesn't survive one follow-up question. Based on this course, here's what you can honestly claim by Lesson 32:</p>
+<ul>
+<li><strong>Languages:</strong> Python</li>
+<li><strong>Data:</strong> NumPy, Pandas</li>
+<li><strong>Classical ML:</strong> scikit-learn (regression, classification, train/test evaluation)</li>
+<li><strong>Deep learning:</strong> TensorFlow / Keras (neural networks, CNNs)</li>
+<li><strong>NLP:</strong> Hugging Face transformers</li>
+<li><strong>Tools:</strong> Git, GitHub, Google Colab</li>
+</ul>
+<p>If you're not confident explaining a skill out loud in an interview, don't put it on the resume yet. A shorter, defensible list beats a longer, shaky one.</p>
+
+<h2>The AWS AI Practitioner cert</h2>
+<p>Once you pass the exam from Lesson 31, it goes in its own short "Certifications" section — not buried in skills. Format: <code>AWS Certified AI Practitioner — [month, year]</code>. If you haven't taken it yet, leave the section off rather than listing "in progress" — most hiring managers weight a completed cert far more than a pending one.</p>
+
+<h2>Make each README genuinely good</h2>
+<p>Your resume links to your repos — so the README is doing a second round of the same test. Project 1's README structure (Lesson 18) is the template for all three projects. Keep every project README consistent with this shape:</p>
+<pre><code>## Project name
+
+**Problem statement**
+What you're predicting or building, in one or two sentences.
+
+**Dataset**
+Where the data came from, how big it is, how many classes/features.
+
+**Approach**
+The 3-5 concrete steps: split, model, key choices you made.
+
+**Results**
+Your real, actual numbers. Not a typical range — what your run produced.
+
+**What I'd improve next**
+1-3 honest next steps. Shows you understand the model's limits,
+not just that it "worked."</code></pre>
+<p>Two small things that make a bigger difference than people expect: a one-line project description at the very top of the README (before the headings), and making sure the notebook actually runs top to bottom without errors before you commit it. A reviewer who hits a broken cell stops reading right there.</p>
+
+<h2>LinkedIn — keep it a mirror, not a second job</h2>
+<p>You don't need a separate LinkedIn strategy. Two things matter:</p>
+<ul>
+<li><strong>Consistency</strong> — same summary line, same project names, same skills list as your resume. Recruiters cross-check both; contradictions read as carelessness.</li>
+<li><strong>Link your GitHub profile</strong> — in the headline or "About" section, not buried in a work-history bullet. It's the single link most likely to get clicked.</li>
+</ul>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Why should your resume list the exact accuracy number from your own run, instead of the "typical" range mentioned in a lesson?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Because it has to hold up under a follow-up question. If an interviewer opens your notebook and the numbers don't match your resume, it looks like you copied a result instead of running the project yourself — the same honesty principle from Lesson 17's evaluation metrics and Project 1's write-up.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Write one resume bullet point for Project 1 (the breast cancer classifier), using a real or placeholder accuracy number. Try it yourself first.</p>
+<input type="text" id="q2" placeholder="type your bullet point">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal example</button>
+<div class="answer" id="a2">"Built a logistic regression classifier on the scikit-learn Breast Cancer Wisconsin dataset, reaching 97% accuracy on a held-out test set (Python, scikit-learn, pandas)." — swap 97% for your own run's real number. Notice the shape: what you built, what tools, one honest result.</div>
+</div>
+
+<h2>Further reading</h2>
+<p><a href="https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes" target="_blank" rel="noopener">GitHub — About READMEs</a> — GitHub's own guide to what makes a README useful to a reader landing on your repo for the first time.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Resume order: header → summary → projects → skills → certifications → education. Projects do the most work.</li>
+    <li>Each of your 3 GitHub projects gets a short bullet: what it does, tools used, one real result number — linked directly.</li>
+    <li>Skills list should match this course exactly: Python, NumPy, Pandas, scikit-learn, TensorFlow/Keras, Hugging Face transformers, Git/GitHub, Colab.</li>
+    <li>Every README follows the same shape: problem statement, dataset, approach, results, what you'd improve next.</li>
+    <li>LinkedIn mirrors the resume and links your GitHub profile — nothing more elaborate needed.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Not sure if a skill or result belongs on your resume yet? Paste your draft bullet and ask — it's worth checking before it goes in front of a hiring manager, not after.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0031-genai-aws-ai-practitioner-prep.html">&larr; Back: Lesson 31 — Generative AI & AWS AI Practitioner prep</a></span>
+  <span><a href="0033-interview-prep.html">Next: Lesson 33 — Interview prep &rarr;</a></span>
+</div>
+
+</body>
+</html>

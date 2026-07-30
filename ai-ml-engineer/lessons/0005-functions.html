@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 5 — Functions & reusable code</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 5 of 34</p>
+<h1>Functions & reusable code</h1>
+
+<p>In Lesson 4 you wrote code to check if a number is even or odd. If you needed that check in five different places in a program, you'd have to copy-paste it five times. A <strong>function</strong> lets you write the logic once, give it a name, and reuse it anywhere — just by calling that name.</p>
+
+<div class="callout"><strong>Simple example:</strong> a function is like a kitchen recipe. You write the recipe once ("Pancakes: mix flour + egg + milk, cook 2 min each side"). After that, you just say "make pancakes" — you don't rewrite the recipe every time you're hungry. The recipe can also take ingredients as input (how many eggs?) and hand back a result (a plate of pancakes).</div>
+
+<h2>Defining a function: <code>def</code></h2>
+<p>You create a function with the <code>def</code> keyword, a name, and parentheses. The code inside runs only when the function is <strong>called</strong> — not when it's defined.</p>
+<pre><code>def greet(name):
+    print("Hello, " + name)
+
+greet("Priya")   # this line actually runs the function
+greet("Sam")</code></pre>
+<p><code>name</code> here is a <strong>parameter</strong> — a placeholder variable that receives whatever value you pass in when you call the function. <code>"Priya"</code> and <code>"Sam"</code> are the <strong>arguments</strong> — the actual values.</p>
+
+<h2>Returning a value vs. just printing</h2>
+<p>This is the single most important distinction in this lesson. Compare these two functions:</p>
+<pre><code>def show_double(n):
+    print(n * 2)          # displays the result, gives nothing back
+
+def get_double(n):
+    return n * 2           # hands the result back to whoever called it</code></pre>
+<p><code>show_double(5)</code> prints <code>10</code> to the screen and that's it — the function's result is gone once it's printed. <code>get_double(5)</code> doesn't print anything by itself, but it <strong>hands back</strong> the value <code>10</code>, so you can store it, do more math with it, or pass it to another function:</p>
+<pre><code>result = get_double(5)
+print(result + 1)    # 11 — you can use the returned value
+
+show_double(5)        # prints 10, but show_double(5) itself has no usable value
+x = show_double(5)    # x is now None — there was nothing to return</code></pre>
+<p class="callout"><strong>Common trap:</strong> if a function has no <code>return</code> statement, Python quietly gives back <code>None</code> instead of raising an error. This is a real, documented rule of the language — not a guess. If your code ever prints <code>None</code> unexpectedly, check whether you forgot a <code>return</code>.</p>
+
+<h2>Default argument values</h2>
+<p>You can give a parameter a default value. If the caller doesn't supply that argument, Python uses the default instead:</p>
+<pre><code>def greet(name, greeting="Hello"):
+    print(greeting + ", " + name)
+
+greet("Priya")                 # Hello, Priya
+greet("Priya", "Namaste")      # Namaste, Priya</code></pre>
+<p>This is everywhere in real ML code — for example a model-loading function might have <code>batch_size=32</code> as a default, so you only override it when you actually need a different value.</p>
+
+<h2>Why this matters for AI/ML work</h2>
+<ul>
+<li><strong>No repeated code.</strong> Fix a bug once, inside the function, instead of hunting down five copies of the same logic.</li>
+<li><strong>Every library you'll use is functions.</strong> When you later write <code>model.predict(data)</code> or <code>train_test_split(X, y)</code>, those are functions someone else already wrote — with parameters, defaults, and return values, exactly like the ones above. Understanding <code>def</code> now means those library calls won't feel like magic.</li>
+</ul>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. <code>def add(a, b): print(a + b)</code> — what does <code>x = add(2, 3)</code> store in <code>x</code>?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>None</code>. <code>add</code> only prints, it never returns anything, so Python's default "return nothing" rule (returning <code>None</code>) applies.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. <code>def power(base, exponent=2): return base ** exponent</code> — what does <code>power(5)</code> return?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>25</code>. No second argument was given, so Python uses the default <code>exponent=2</code>, and <code>5 ** 2 == 25</code>.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook, write a function called <code>is_even(n)</code> that:</p>
+<ul>
+<li>takes one parameter, <code>n</code></li>
+<li>returns <code>True</code> if <code>n</code> is even, <code>False</code> if it's odd (reuse the <code>%</code> logic from Lesson 4)</li>
+<li>does NOT print inside the function — it must <code>return</code> the result</li>
+</ul>
+<p>Then call it a few times to check: <code>print(is_even(4))</code> and <code>print(is_even(7))</code>.</p>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>def is_even(n):
+    return n % 2 == 0
+
+print(is_even(4))   # True
+print(is_even(7))   # False</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.python.org/3/tutorial/controlflow.html#defining-functions" target="_blank" rel="noopener">docs.python.org/3/tutorial/controlflow — Defining Functions</a> — the official Python tutorial section on <code>def</code>, parameters, default argument values, and how functions without a <code>return</code> statement give back <code>None</code>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>def name(parameters):</code> defines a function; it only runs when called.</li>
+    <li><code>return</code> hands a value back to the caller so it can be reused; <code>print</code> only displays it and gives nothing back. A function with no <code>return</code> gives back <code>None</code>.</li>
+    <li>Default argument values (<code>def f(x, y=10)</code>) let callers skip arguments they don't need to change.</li>
+    <li>Functions avoid repeated code — and every ML library function you'll call later works the same way: parameters in, a value out.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Python's error messages is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0004-control-flow.html">&larr; Back: Lesson 4 — Control flow</a></span>
+  <span><a href="0006-data-structures.html">Next: Lesson 6 — Data structures &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 21 — Building your first neural net with Keras</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 21 of 34</p>
+<h1>Building your first neural net with Keras</h1>
+
+<p>In Lesson 19 you learned that a neural network is layers of neurons connected together. In Lesson 20 you learned that training means running a loop — predict, measure error, adjust weights — over and over with backpropagation and gradient descent. Writing that loop by hand, with all the calculus, would take pages of code. <strong>Keras</strong> is the library that builds and trains those exact networks for you, in a handful of lines. It ships inside <strong>TensorFlow</strong>, the ML platform built by Google.</p>
+
+<div class="callout"><strong>Simple example:</strong> think of Lessons 19-20 as you learning to drive a manual car — you had to understand the clutch, the gears, the engine. Keras is the automatic transmission. You still need to know what a gear is, or you won't know what to ask for — but day to day, you just tell it "go" and it handles the mechanics.</div>
+
+<h2>The four Keras steps</h2>
+<p>Almost every Keras project follows the same four steps. We'll connect each one back to what you already know.</p>
+
+<h3>1. Build the model — <code>Sequential</code> and <code>Dense</code></h3>
+<p>A <code>Sequential</code> model is a plain stack of layers, one after another — data flows in the top and out the bottom. A <code>Dense</code> layer is a layer where every neuron connects to every neuron in the layer before it (this is exactly the "layers of neurons" picture from Lesson 19).</p>
+<pre><code>model = tf.keras.Sequential([
+    tf.keras.layers.Flatten(input_shape=(28, 28)),
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dense(10)
+])</code></pre>
+<p><code>Flatten</code> just reshapes a 28×28 grid of pixels into one long line of 784 numbers — networks read a flat list of numbers, not a grid. Then <code>Dense(128, activation='relu')</code> is a hidden layer of 128 neurons. <code>Dense(10)</code> is the output layer — 10 neurons, one per class the network is choosing between.</p>
+
+<h3>2. Compile the model — optimizer and loss</h3>
+<p>Before training starts, the model needs to know two things: how to measure how wrong it is, and how to correct itself. That's exactly the <strong>cost function</strong> (Lesson 14) and <strong>gradient descent</strong> (Lesson 14/20) pairing.</p>
+<pre><code>model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])</code></pre>
+<ul>
+<li><code>loss</code> — the cost function. It scores how far the prediction is from the true answer.</li>
+<li><code>optimizer</code> — the algorithm that adjusts the weights to reduce that loss. <code>'adam'</code> is a smarter, faster relative of the plain gradient descent from Lesson 14.</li>
+<li><code>metrics</code> — extra numbers to report while training, purely for you to watch. <code>'accuracy'</code> doesn't affect training itself.</li>
+</ul>
+
+<h3>3. Train the model — <code>.fit()</code></h3>
+<p>This is the training loop from Lesson 20, running automatically.</p>
+<pre><code>model.fit(train_images, train_labels, epochs=10)</code></pre>
+<p>One <strong>epoch</strong> means the model has seen every training example once. <code>epochs=10</code> runs the whole predict-measure-adjust loop 10 times over the full dataset.</p>
+
+<h3>4. Evaluate the model — <code>.evaluate()</code></h3>
+<p>Once training is done, you check performance on data the model has never seen — the test set — to see if it actually learned, or just memorized.</p>
+<pre><code>test_loss, test_acc = model.evaluate(test_images, test_labels, verbose=2)
+print('Test accuracy:', test_acc)</code></pre>
+
+<div class="quiz">
+<p>Q1. Which Keras step corresponds to Lesson 14's "cost function"?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The <code>loss</code> argument inside <code>model.compile()</code>. It measures how wrong the model's predictions are.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Your model has <code>Dense(128, activation='relu')</code> then <code>Dense(10)</code>. How many neurons are in the output layer, and what does that number usually match?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">10 neurons — it matches the number of classes the model is choosing between (one output neuron per possible answer).</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Open a fresh Colab notebook. We'll train a small network on <strong>Fashion MNIST</strong> — 70,000 small grayscale images of clothing (t-shirts, shoes, bags, etc.), a standard beginner dataset that comes built into Keras.</p>
+<p>Steps:</p>
+<ul>
+<li>Import TensorFlow.</li>
+<li>Load the Fashion MNIST dataset with <code>tf.keras.datasets.fashion_mnist.load_data()</code>. It returns a training set and a test set, already split.</li>
+<li>Scale the pixel values from the 0-255 range down to 0-1 (dividing by 255.0) — networks train better on small numbers.</li>
+<li>Build a <code>Sequential</code> model: <code>Flatten</code> → <code>Dense(128, activation='relu')</code> → <code>Dense(10)</code>.</li>
+<li><code>compile()</code> it with the <code>'adam'</code> optimizer and <code>SparseCategoricalCrossentropy</code> loss.</li>
+<li><code>fit()</code> it for 10 epochs.</li>
+<li><code>evaluate()</code> it on the test set and print the test accuracy.</li>
+</ul>
+<p>Try writing it yourself before revealing the answer below. Expect roughly 88-91% accuracy — don't worry about tuning it further, the goal here is just to see the four steps run end to end.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>import tensorflow as tf
+
+fashion_mnist = tf.keras.datasets.fashion_mnist
+(train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
+
+train_images = train_images / 255.0
+test_images = test_images / 255.0
+
+model = tf.keras.Sequential([
+    tf.keras.layers.Flatten(input_shape=(28, 28)),
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dense(10)
+])
+
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+model.fit(train_images, train_labels, epochs=10)
+
+test_loss, test_acc = model.evaluate(test_images, test_labels, verbose=2)
+print('Test accuracy:', test_acc)</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://www.tensorflow.org/tutorials/keras/classification" target="_blank" rel="noopener">tensorflow.org/tutorials/keras/classification</a> — the official TensorFlow "Basic classification" tutorial, which this exercise follows.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Keras builds and trains the neural networks from Lessons 19-20 without you writing the training loop by hand.</li>
+    <li><code>Sequential</code> + <code>Dense</code> layers = the "layers of neurons" picture from Lesson 19.</li>
+    <li><code>.compile()</code> sets the loss (cost function) and optimizer (gradient descent); <code>.fit(epochs=...)</code> runs the training loop from Lesson 20; <code>.evaluate()</code> checks performance on unseen data.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Python's error messages is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0020-backpropagation.html">&larr; Back: Lesson 20 — Backpropagation</a></span>
+  <span><a href="0022-decision-trees-ensembles.html">Next: Lesson 22 — Decision trees &amp; ensembles &rarr;</a></span>
+</div>
+
+</body>
+</html>

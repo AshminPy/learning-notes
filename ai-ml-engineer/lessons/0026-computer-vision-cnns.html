@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 26 — Computer vision: CNNs &amp; image classification</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 26 of 34</p>
+<h1>Computer vision: CNNs &amp; image classification</h1>
+
+<p>In Project 2 (Lesson 23) you built an image classifier using only <code>Flatten</code> and <code>Dense</code> layers, and it worked — around 87–88% test accuracy. But plain <code>Dense</code> layers are not really built for images. This lesson covers the layer type that is: the <strong>convolutional layer</strong>, and the network built from it, the <strong>CNN</strong> (convolutional neural network).</p>
+
+<h2>Why Dense layers struggle with images</h2>
+<p>A <code>Dense</code> layer connects every input number to every neuron. In Project 2, <code>Flatten</code> turned each 28x28 image into 784 numbers in a row, and <code>Dense(128)</code> connected all 784 of them to each of its 128 neurons — that's over 100,000 weights in one layer, for small 28x28 grayscale images. A bigger, color, real-world photo would blow that number up fast.</p>
+<p>There's a second problem, worse than the parameter count: <code>Flatten</code> throws away position. Once the grid becomes one flat list, the network has no built-in sense that pixel 5 and pixel 6 are neighbors, or that a curve in the top-left of the image is the same kind of shape as that same curve in the bottom-right. Nearby pixels in a real image are related — they form edges, textures, shapes — and a plain <code>Dense</code> layer has no way to use that fact.</p>
+
+<div class="callout"><strong>Simple example:</strong> imagine describing a photo to someone by reading out all its pixel brightness values in one long list, left to right, top to bottom, with no mention of rows or columns. They could technically reconstruct the image from that list, but they'd have a much harder time spotting "there's an edge here" than if you just handed them the actual 2D picture. <code>Flatten</code> does exactly that — turns the picture into a long list before the network gets to look for shapes.</div>
+
+<h2>Convolution: a small filter sliding across the image</h2>
+<p>A <strong>convolution</strong> uses a small filter (also called a kernel) — for example a 3x3 grid of numbers — and slides it across the image, one small step at a time. At each position, it multiplies the filter's numbers against the pixels underneath it and adds up the result into a single number. Do that at every position and you get a new grid of numbers called a <strong>feature map</strong>.</p>
+<p>Different filters detect different patterns. One filter's numbers might be tuned to light up strongly wherever there's a vertical edge; another might respond to a curve, or a patch of a certain texture. The network doesn't get these filters handwritten — it <em>learns</em> the filter numbers during training, the same way it learns the weights in a <code>Dense</code> layer, through backpropagation and gradient descent (Lesson 20).</p>
+<p>The key win: the same filter is reused at every position in the image. Instead of one giant set of weights connecting every pixel to every neuron, you have one small filter (say, 3x3 = 9 numbers) that slides everywhere. Far fewer parameters, and the filter that learns "vertical edge" in the top-left of the image also recognizes a vertical edge in the bottom-right — because it's the exact same filter, reused.</p>
+
+<h2>Pooling: shrinking the feature map</h2>
+<p><strong>Pooling</strong> shrinks a feature map by keeping only the strongest signal in each small region and dropping the rest. The most common kind, <strong>max pooling</strong>, looks at each 2x2 block of the feature map and keeps just the single largest value, throwing the other three away. A 28x28 feature map becomes 14x14 after a 2x2 max pool — a quarter of the size.</p>
+<p>Two benefits from this shrinking:</p>
+<ul>
+<li><strong>Faster and smaller</strong> — fewer numbers to carry into the next layer means fewer computations and fewer parameters downstream.</li>
+<li><strong>Tolerant of small shifts</strong> — if the same edge shows up one pixel to the left in a slightly different photo of the same object, max pooling still picks up roughly the same strongest signal in that region. The network becomes less sensitive to exact pixel position, which is exactly what you want — a shoe is still a shoe whether it's centered or shifted a few pixels in the frame.</li>
+</ul>
+
+<h2>Stacking conv + pool layers</h2>
+<p>A single convolutional layer only sees small patches (like 3x3) at a time, so it can only learn simple, local patterns — edges, corners, small blobs of color. Stack a second conv+pool layer on top of the first, and it operates on the <em>feature maps</em> from the first layer, not the raw pixels. That means the second layer can combine simple edges into more complex shapes — a corner plus two edges might become "the outline of a sneaker's sole."</p>
+<p>Stack a third layer, and it combines those shapes into full objects. This is the core idea of a CNN: early layers learn simple, generic patterns (edges), and each layer after that combines the previous layer's patterns into something more complex, right up to recognizable objects.</p>
+
+<div class="callout"><strong>Simple example:</strong> think of building a face from LEGO. The first layer of bricks gives you straight edges and curves. The second layer combines those into recognizable parts — an eye shape, a mouth shape. The third layer combines the parts into a whole face. Each layer builds on what the layer before it already found — it never starts over from raw pixels.</div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Why does a plain <code>Flatten -&gt; Dense</code> network (like Project 2) struggle compared to a CNN, even though both can technically be trained on image data?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>Flatten</code> turns the 2D grid into one long list, so the network loses the information that nearby pixels are related — it can't use position to spot edges or shapes directly. It also needs far more weights, since every pixel connects to every neuron in the next <code>Dense</code> layer, instead of reusing one small filter across the whole image.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A 3x3 filter slides across an image and produces a feature map. What is that filter actually made of, and where do its numbers come from?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The filter is a small grid of numbers (9 numbers for a 3x3 filter). Those numbers start out random and are learned during training through backpropagation and gradient descent — the same process that learns weights in a <code>Dense</code> layer. The network is not handed a "vertical edge detector" — it discovers filters like that on its own because they help reduce the loss.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. What does max pooling with a 2x2 window do to a 28x28 feature map, and why is that useful beyond just making the network faster?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">It shrinks the 28x28 feature map to 14x14 by keeping only the single strongest value in each 2x2 block and dropping the other three. Beyond speed, this makes the network more tolerant of small shifts in the image — the same pattern shifted by a pixel or two still produces roughly the same strongest signal in its region, so the network doesn't need the object in an exact pixel position to recognize it.</div>
+</div>
+
+<h2>Now write your own — a small Keras CNN</h2>
+<p>Open a new cell in your Project 2 notebook (or a fresh Colab notebook) and rebuild the same Fashion MNIST classifier from Lesson 23, this time with convolutional layers instead of a plain <code>Dense</code> stack.</p>
+<p>One setup difference from Project 2: <code>Conv2D</code> expects a channel dimension on the input, even for grayscale images (color photos would have 3 channels for red/green/blue; grayscale has 1). Reshape the images to add that extra dimension before training:</p>
+<pre><code>import tensorflow as tf
+
+fashion_mnist = tf.keras.datasets.fashion_mnist
+(train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
+
+train_images = train_images / 255.0
+test_images = test_images / 255.0
+
+# add a channel dimension: (28, 28) -> (28, 28, 1)
+train_images = train_images.reshape(-1, 28, 28, 1)
+test_images = test_images.reshape(-1, 28, 28, 1)</code></pre>
+<p>Now build the CNN: <code>Conv2D -&gt; MaxPooling2D -&gt; Conv2D -&gt; MaxPooling2D -&gt; Flatten -&gt; Dense -&gt; Dense</code>:</p>
+<pre><code>model = tf.keras.Sequential([
+    tf.keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)),
+    tf.keras.layers.MaxPooling2D((2, 2)),
+    tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),
+    tf.keras.layers.MaxPooling2D((2, 2)),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(64, activation='relu'),
+    tf.keras.layers.Dense(10)
+])
+
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+model.fit(train_images, train_labels, epochs=10)
+
+test_loss, test_acc = model.evaluate(test_images, test_labels, verbose=2)
+print('\nTest accuracy:', test_acc)</code></pre>
+<p>Reading the architecture line by line:</p>
+<ul>
+<li><code>Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1))</code> — 32 different 3x3 filters, each learning to detect a different simple pattern, producing 32 feature maps. <code>input_shape</code> is only needed on the first layer, same rule as <code>Flatten</code> in Project 2.</li>
+<li><code>MaxPooling2D((2, 2))</code> — shrinks each feature map by keeping the strongest value in every 2x2 block.</li>
+<li><code>Conv2D(64, (3, 3), activation='relu')</code> — a second conv layer, 64 filters, now combining the first layer's simple patterns into more complex ones.</li>
+<li><code>MaxPooling2D((2, 2))</code> — shrinks again.</li>
+<li><code>Flatten -&gt; Dense(64, activation='relu') -&gt; Dense(10)</code> — same job as the end of Project 2's network: take whatever the conv/pool stack found, flatten it to a list, and use ordinary <code>Dense</code> layers to make the final 10-class prediction.</li>
+</ul>
+<p><code>compile</code>, <code>fit</code>, and <code>evaluate</code> are unchanged from Project 2 — same optimizer, same loss, same rule about checking accuracy only on the held-out test set. Run it and compare your test accuracy against your Project 2 number.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer (full script)</p>
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a4"><code>import tensorflow as tf
+
+fashion_mnist = tf.keras.datasets.fashion_mnist
+(train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
+
+train_images = train_images / 255.0
+test_images = test_images / 255.0
+
+train_images = train_images.reshape(-1, 28, 28, 1)
+test_images = test_images.reshape(-1, 28, 28, 1)
+
+model = tf.keras.Sequential([
+    tf.keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)),
+    tf.keras.layers.MaxPooling2D((2, 2)),
+    tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),
+    tf.keras.layers.MaxPooling2D((2, 2)),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(64, activation='relu'),
+    tf.keras.layers.Dense(10)
+])
+
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+model.fit(train_images, train_labels, epochs=10)
+
+test_loss, test_acc = model.evaluate(test_images, test_labels, verbose=2)
+print('\nTest accuracy:', test_acc)</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://www.tensorflow.org/tutorials/images/cnn" target="_blank" rel="noopener">tensorflow.org/tutorials/images/cnn</a> — the official TensorFlow "Convolutional Neural Network (CNN)" tutorial. The <code>Conv2D</code> / <code>MaxPooling2D</code> layer arguments and stacking pattern above follow it directly (adapted here to Fashion MNIST's 28x28 grayscale images to build on Project 2).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Plain <code>Dense</code> layers need huge parameter counts for images and ignore that nearby pixels are related — <code>Flatten</code> throws away position.</li>
+    <li>A convolution slides a small learned filter across the image, producing a feature map that lights up wherever it finds the pattern it detects.</li>
+    <li>Max pooling shrinks the feature map by keeping only the strongest value in each region — faster, and more tolerant of small shifts in the image.</li>
+    <li>Stacking conv+pool layers lets the network build up from simple patterns (edges) to complex ones (shapes, objects), layer by layer.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Getting a shape mismatch error on <code>Conv2D</code>? Paste the exact error — a common cause is forgetting the <code>reshape</code> step that adds the channel dimension.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0025-recommenders-reinforcement-learning.html">&larr; Back: Lesson 25 — Recommenders &amp; reinforcement learning</a></span>
+  <span><a href="0027-nlp-basics.html">Next: Lesson 27 — NLP basics &rarr;</a></span>
+</div>
+
+</body>
+</html>

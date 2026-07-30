@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 13 — Linear regression from scratch</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer / Zero to Job-Ready — Lesson 13 of 34</p>
+<h1>Linear regression from scratch</h1>
+
+<p>Linear regression is the simplest machine learning model, and almost every other model builds on the same idea. The job: fit a straight line through your data, so you can predict a number for new inputs you haven't seen yet.</p>
+
+<div class="callout"><strong>Simple example:</strong> imagine you know how many hours 6 students studied, and their exam scores. If you plot "hours studied" on one axis and "score" on the other, the points roughly form a line going up and to the right. Linear regression finds the single best straight line through those points — then you can use that line to guess the score of a 7th student, just from their hours studied.</div>
+
+<h2>The equation: y = wx + b</h2>
+<p>A straight line is described by one small equation:</p>
+<pre><code>y = w * x + b</code></pre>
+<ul>
+<li><strong>x</strong> — the input (hours studied)</li>
+<li><strong>y</strong> — the prediction (predicted exam score)</li>
+<li><strong>w</strong> — the <strong>weight</strong> (also called the slope). It says how much <code>y</code> changes when <code>x</code> goes up by 1. A bigger <code>w</code> means a steeper line — each extra hour studied buys you more score.</li>
+<li><strong>b</strong> — the <strong>bias</strong> (also called the intercept). It's the value of <code>y</code> when <code>x</code> is 0 — where the line crosses the vertical axis. Think of it as a starting score before any studying at all.</li>
+</ul>
+
+<p>"Training" a linear regression model means one thing only: finding the <code>w</code> and <code>b</code> that make the line fit the actual data points as closely as possible. You don't pick <code>w</code> and <code>b</code> by hand — the algorithm works them out from the data. How it does that is the topic of the next lesson (cost function &amp; gradient descent). For now, just know that fitting = finding the best <code>w</code> and <code>b</code>.</p>
+
+<h2>This is the same weighted sum from Lesson 10</h2>
+<p>In Lesson 10 you saw the dot product: multiply each input by a weight, then add everything up. <code>y = w * x + b</code> is exactly that idea, just with one input for now:</p>
+<pre><code>y = (w * x) + b
+    ^weighted   ^bias added
+     input       on top</code></pre>
+<p>Later, when a model has many inputs (hours studied, hours slept, past grade, etc.), the equation grows into <code>y = w1*x1 + w2*x2 + w3*x3 + b</code> — a dot product of weights and inputs, plus one bias. Linear regression with one input is the smallest possible version of that same pattern. Learn it here, and the bigger models in later lessons will feel familiar instead of new.</p>
+
+<h2>Meet scikit-learn</h2>
+<p><strong>scikit-learn</strong> (imported in code as <code>sklearn</code>) is a Python library full of ready-made machine learning algorithms. Instead of writing the line-fitting math yourself, you hand scikit-learn your data and it works out <code>w</code> and <code>b</code> for you. This is the first lesson where you'll use it — and you'll keep using it for most of the "Core Machine Learning" phase.</p>
+
+<p>Every scikit-learn model follows the same two-step pattern:</p>
+<ul>
+<li><code>.fit(X, y)</code> — "learn from this data." <code>X</code> is your inputs, <code>y</code> is the correct answers.</li>
+<li><code>.predict(X_new)</code> — "now guess the answer for this new input."</li>
+</ul>
+
+<p class="callout"><strong>Common trap:</strong> scikit-learn always expects <code>X</code> as a 2D list — a list of rows, even if each row has only one number. So one input column of hours looks like <code>[[1], [2], [3]]</code>, not <code>[1, 2, 3]</code>. <code>y</code>, the answers, stays a plain flat list: <code>[50, 55, 65]</code>.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. In <code>y = w * x + b</code>, which letter controls how steep the line is?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>w</code>, the weight (slope) — a bigger <code>w</code> means <code>y</code> rises faster as <code>x</code> increases.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A model has <code>w = 10</code> and <code>b = 40</code>. What score does it predict for someone who studied 3 hours?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>70</code> — <code>y = w*x + b = 10*3 + 40 = 70</code>.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In your Colab notebook, use scikit-learn's <code>LinearRegression</code> on this tiny made-up dataset of hours studied vs. exam score:</p>
+
+<table>
+<tr><th>Hours studied</th><th>Exam score</th></tr>
+<tr><td>1</td><td>50</td></tr>
+<tr><td>2</td><td>55</td></tr>
+<tr><td>3</td><td>65</td></tr>
+<tr><td>4</td><td>70</td></tr>
+<tr><td>5</td><td>85</td></tr>
+<tr><td>6</td><td>90</td></tr>
+</table>
+
+<p>Do this:</p>
+<ul>
+<li>Build <code>hours</code> as a 2D list (a list of one-item lists) and <code>scores</code> as a flat list, from the table above.</li>
+<li>Create a <code>LinearRegression()</code> model and call <code>.fit(hours, scores)</code>.</li>
+<li>Call <code>.predict()</code> to guess the score for a student who studied <strong>7 hours</strong>.</li>
+<li>Print <code>model.coef_</code> (the learned <code>w</code>) and <code>model.intercept_</code> (the learned <code>b</code>).</li>
+</ul>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>from sklearn.linear_model import LinearRegression
+
+hours = [[1], [2], [3], [4], [5], [6]]
+scores = [50, 55, 65, 70, 85, 90]
+
+model = LinearRegression()
+model.fit(hours, scores)
+
+prediction = model.predict([[7]])
+print(prediction)          # predicted score for 7 hours studied
+
+print(model.coef_)         # the learned weight (w)
+print(model.intercept_)    # the learned bias (b)</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://scikit-learn.org/stable/modules/linear_model.html#ordinary-least-squares" target="_blank" rel="noopener">scikit-learn.org — Linear Models (Ordinary Least Squares)</a> — official docs for the <code>LinearRegression</code> class, including the <code>fit()</code>/<code>predict()</code> pattern and the <code>coef_</code>/<code>intercept_</code> attributes used above.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Linear regression fits a straight line, <code>y = w * x + b</code>, to predict a number.</li>
+    <li><code>w</code> (weight/slope) controls steepness; <code>b</code> (bias/intercept) shifts the line up or down.</li>
+    <li>This is the same weighted-sum-plus-bias idea as the dot product from Lesson 10, just with one input.</li>
+    <li>scikit-learn's pattern is always: <code>model.fit(X, y)</code> to learn, then <code>model.predict(X_new)</code> to guess.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Not sure why X needs double brackets but y doesn't? Ask — that shape mismatch trips up almost everyone the first time.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0012-what-is-ml.html">&larr; Back: Lesson 12 — What is machine learning?</a></span>
+  <span><a href="0014-cost-function-gradient-descent.html">Next: Lesson 14 — Cost function &amp; gradient descent &rarr;</a></span>
+</div>
+
+</body>
+</html>
