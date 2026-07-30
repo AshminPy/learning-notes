@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI/ML Engineer — Course roadmap tracker</title>
+<meta name="description" content="Zero-to-job-ready AI/ML Engineer course roadmap: Python foundations, core ML, deep learning, CV/NLP, cloud & GenAI, job readiness. Free, independent study resource.">
+<link rel="canonical" href="https://ashminpy.github.io/learning-notes/ai-ml-engineer/objectives.html">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .domain {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 1.25rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .domain-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .domain-head h2 { margin: 0; padding: 0; border: none; font-size: 1.1rem; }
+  .domain-head p { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--muted); }
+  .count { color: var(--accent); font-weight: bold; font-size: 0.9rem; white-space: nowrap; }
+  .bar-track {
+    height: 6px;
+    background: var(--code-bg);
+    border-radius: 3px;
+    margin: 0.7rem 0 1rem;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.2s ease;
+  }
+  .item-list { list-style: none; padding: 0; margin: 0; }
+  .item-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.35rem 0;
+  }
+  .item-list input[type="checkbox"] { margin-top: 0.2rem; }
+  .item-list a { color: var(--fg); }
+  .item-list a:hover { color: var(--accent); }
+  .planned { color: var(--muted); font-size: 0.95rem; }
+  .planned-tag {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.05rem 0.35rem;
+  }
+  .overall {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .disclaimer {
+    border-left: 3px solid var(--rule);
+    background: var(--code-bg);
+    padding: 0.6rem 1rem;
+    margin: 1.25rem 0;
+    font-size: 0.82rem;
+    color: var(--muted);
+    border-radius: 0 4px 4px 0;
+  }
+  .meta-line { font-size: 0.78rem; color: var(--muted); margin-top: 0.4rem; }
+  .feedback-link { font-size: 0.85rem; }
+  .reset-btn {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .reset-btn:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">AI/ML Engineer — Zero to Job-Ready</p>
+<h1>Course roadmap tracker</h1>
+<p>The full planned curriculum — <strong>34 lessons across 10 phases</strong>, Python fundamentals through a job-ready portfolio. Lessons with a link are published; the rest are planned and will be added over future sessions (see <a href="RESOURCES.md">RESOURCES.md</a> for the certification path this maps to). Check off a lesson once you can rebuild/explain it from memory — progress is saved in this browser only.</p>
+<p class="overall" id="overall"></p>
+<button class="reset-btn" id="reset-progress" type="button" aria-label="Reset AI/ML Engineer tracker progress">Reset progress</button>
+
+<div class="disclaimer">
+  This is an independent study resource, not affiliated with, endorsed by, or sponsored by AWS, IBM, Coursera, or DeepLearning.AI. Certification names, exam codes, and prices may change — always verify against the official pages linked in RESOURCES.md.
+  <div class="meta-line">Certification landscape last reviewed: July 30, 2026</div>
+</div>
+<p class="feedback-link"><a href="https://github.com/AshminPy/learning-notes/issues/new?title=Learning%20notes%20correction%3A%20AI-ML%20Engineer%20roadmap" target="_blank" rel="noopener">Report an issue / suggest a correction &rarr;</a></p>
+
+<div id="domains"></div>
+
+<div class="lesson-nav">
+  <a href="../index.html">&larr; Back to lessons</a>
+  <span></span>
+</div>
+
+<script>
+const PHASES = [
+  {
+    key: "orientation",
+    name: "A. Orientation & Setup",
+    lessons: [
+      { id: "0001", title: "Your roadmap: from zero to AI/ML engineer job", href: "lessons/0001-roadmap-and-cert-plan.html" },
+      { id: "0002", title: "Tools setup: Python, Jupyter/Colab, Git & GitHub", href: "lessons/0002-tools-setup-python-git.html" }
+    ]
+  },
+  {
+    key: "python",
+    name: "B. Python Foundations",
+    lessons: [
+      { id: "0003", title: "Python basics: variables, types, print/input", href: "lessons/0003-python-basics-variables-types.html" },
+      { id: "0004", title: "Control flow: if/else, loops" },
+      { id: "0005", title: "Functions & reusable code" },
+      { id: "0006", title: "Data structures: lists, dicts, tuples, sets" },
+      { id: "0007", title: "NumPy: arrays & vectorized math" }
+    ]
+  },
+  {
+    key: "data",
+    name: "C. Data Handling",
+    lessons: [
+      { id: "0008", title: "Pandas: loading & exploring data" },
+      { id: "0009", title: "Data cleaning & visualization" }
+    ]
+  },
+  {
+    key: "math",
+    name: "D. Math & Stats You Actually Need",
+    lessons: [
+      { id: "0010", title: "Vectors, matrices, dot product — the intuition" },
+      { id: "0011", title: "Probability & statistics essentials" }
+    ]
+  },
+  {
+    key: "core-ml",
+    name: "E. Core Machine Learning",
+    lessons: [
+      { id: "0012", title: "What is ML? Supervised vs unsupervised vs reinforcement" },
+      { id: "0013", title: "Linear regression from scratch" },
+      { id: "0014", title: "Cost function & gradient descent" },
+      { id: "0015", title: "Logistic regression & classification" },
+      { id: "0016", title: "Train/test split, overfitting, regularization" },
+      { id: "0017", title: "Evaluation metrics: accuracy, precision, recall, F1" },
+      { id: "0018", title: "Hands-on project 1: scikit-learn classifier end to end" }
+    ]
+  },
+  {
+    key: "deep-learning",
+    name: "F. Neural Networks & Deep Learning",
+    lessons: [
+      { id: "0019", title: "Neural networks: neurons, layers, activation functions" },
+      { id: "0020", title: "How training works: forward pass, backprop intuition" },
+      { id: "0021", title: "Building your first neural net (TensorFlow/Keras)" },
+      { id: "0022", title: "Decision trees & ensembles (Random Forest, XGBoost)" },
+      { id: "0023", title: "Hands-on project 2: neural net image classifier" }
+    ]
+  },
+  {
+    key: "unsupervised",
+    name: "G. Unsupervised & Recommenders",
+    lessons: [
+      { id: "0024", title: "Clustering (k-means) & dimensionality basics" },
+      { id: "0025", title: "Recommender systems & intro to reinforcement learning" }
+    ]
+  },
+  {
+    key: "cv-nlp",
+    name: "H. Computer Vision & NLP",
+    lessons: [
+      { id: "0026", title: "Computer vision: CNNs & image classification hands-on" },
+      { id: "0027", title: "NLP: text processing, embeddings, sentiment analysis" },
+      { id: "0028", title: "Transformers & how LLMs work" },
+      { id: "0029", title: "Hands-on project 3: portfolio-grade CV or NLP project" }
+    ]
+  },
+  {
+    key: "cloud-genai",
+    name: "I. Cloud, MLOps & Generative AI",
+    lessons: [
+      { id: "0030", title: "ML in the cloud: AWS SageMaker basics & deployment" },
+      { id: "0031", title: "Generative AI concepts & AWS AI Practitioner exam prep" }
+    ]
+  },
+  {
+    key: "job-ready",
+    name: "J. Job Readiness",
+    lessons: [
+      { id: "0032", title: "Portfolio & resume for AI/ML roles" },
+      { id: "0033", title: "Interview prep: explaining your projects, common ML questions" },
+      { id: "0034", title: "Final review & cheat sheet" }
+    ]
+  }
+];
+
+const STORE_KEY = "ai-ml-engineer-objectives-progress";
+const state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+function renderPhase(d) {
+  const built = d.lessons.filter(l => l.href);
+  const wrap = document.createElement("div");
+  wrap.className = "domain";
+
+  const head = document.createElement("div");
+  head.className = "domain-head";
+  head.innerHTML = `<div><h2>${d.name}</h2><p>${built.length} of ${d.lessons.length} lessons published</p></div><span class="count">${d.lessons.length} planned</span>`;
+  wrap.appendChild(head);
+
+  const track = document.createElement("div");
+  track.className = "bar-track";
+  const fill = document.createElement("div");
+  fill.className = "bar-fill";
+  track.appendChild(fill);
+  wrap.appendChild(track);
+
+  const list = document.createElement("ul");
+  list.className = "item-list";
+  d.lessons.forEach(l => {
+    const li = document.createElement("li");
+    if (l.href) {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!state[l.id];
+      cb.setAttribute("aria-label", `Mark Lesson ${Number(l.id)} — ${l.title} as reviewed`);
+      cb.addEventListener("change", () => {
+        state[l.id] = cb.checked;
+        save();
+        updateBar();
+        updateOverall();
+      });
+      const a = document.createElement("a");
+      a.href = l.href;
+      a.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      li.appendChild(cb);
+      li.appendChild(a);
+    } else {
+      const span = document.createElement("span");
+      span.className = "planned";
+      span.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      const tag = document.createElement("span");
+      tag.className = "planned-tag";
+      tag.textContent = "planned";
+      li.appendChild(span);
+      li.appendChild(tag);
+    }
+    list.appendChild(li);
+  });
+  wrap.appendChild(list);
+
+  function updateBar() {
+    const done = built.filter(l => state[l.id]).length;
+    const pct = built.length ? Math.round((done / built.length) * 100) : 0;
+    fill.style.width = pct + "%";
+  }
+  updateBar();
+
+  return wrap;
+}
+
+function updateOverall() {
+  const all = PHASES.flatMap(d => d.lessons);
+  const built = all.filter(l => l.href);
+  const done = built.filter(l => state[l.id]).length;
+  document.getElementById("overall").textContent =
+    `${built.length} of ${all.length} lessons published — ${done} of ${built.length} published lessons checked off.`;
+}
+
+const container = document.getElementById("domains");
+PHASES.forEach(d => container.appendChild(renderPhase(d)));
+updateOverall();
+
+document.getElementById("reset-progress").addEventListener("click", () => {
+  if (confirm("Reset all AI/ML Engineer tracker progress? This only clears this tracker's checkboxes in this browser — it does not affect any other course on this site.")) {
+    localStorage.removeItem(STORE_KEY);
+    location.reload();
+  }
+});
+</script>
+
+</body>
+</html>
