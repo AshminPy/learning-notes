@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 33 — Troubleshooting common errors</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 33 of 37</p>
+<h1>Troubleshooting common errors</h1>
+
+<p>By now you've probably already seen a real Terraform error somewhere along the way — a typo'd resource reference, a lock error on a shared backend, a missing argument. This lesson doesn't teach new syntax. It teaches a way of reading errors so they stop feeling random, plus a reference table of the errors you're most likely to actually hit, with their real cause and fix. Every message and cause below is verified against HashiCorp's own docs or official troubleshooting guidance — nothing here is invented.</p>
+
+<h2>The debugging mental model: read top to bottom</h2>
+<p>Terraform error output can look intimidating — sometimes several lines of context, file paths, and diagnostic detail stacked on top of each other. The habit that cuts through this: <strong>read from the top</strong>. The first line of a Terraform error is almost always the actual problem, stated plainly — <code>Error: Missing required argument</code>, <code>Error: Cycle</code>, <code>Error: Reference to undeclared resource</code>. Everything printed after that first line is <em>context</em>: which file, which line, which resource block, sometimes a snippet of your own config with an arrow pointing at the offending part.</p>
+
+<p class="callout"><strong>Mental model:</strong> treat the first line as the diagnosis and everything below it as supporting evidence, not as more problems to solve. New Terraform users often panic at a long error block and try to fix the last thing they read. Fix the first line's actual cause, and the rest of the block that follows from it usually resolves on its own.</p>
+
+<p>HashiCorp's own troubleshooting guidance splits errors into roughly four layers, and knowing which layer you're in narrows the search fast:</p>
+<ul>
+<li><strong>Language errors</strong> — HCL syntax problems, caught before Terraform even tries to talk to a provider (bad characters, wrong argument names, type mismatches)</li>
+<li><strong>State errors</strong> — the config, state, and real infrastructure disagree in a way Terraform can't reconcile on its own (Lessons 13–16)</li>
+<li><strong>Core errors</strong> — Terraform's own graph/planning logic hits a problem, like a dependency cycle</li>
+<li><strong>Provider errors</strong> — the actual cloud API rejected something (bad credentials, invalid value, quota, permissions)</li>
+</ul>
+<p>Language and core errors usually show up at <code>plan</code> time, before anything touches real infrastructure. Provider errors usually only show up at <code>apply</code>, because that's the first moment Terraform actually calls the API.</p>
+
+<h2>Common errors, real cause, real fix</h2>
+<p>These are six error patterns you're likely to hit sooner or later, verified against official sources rather than guessed at.</p>
+
+<table>
+<thead>
+<tr><th>Error (first line)</th><th>Real root cause</th><th>Fix</th></tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Error acquiring the state lock</code></td>
+<td>Another operation is genuinely holding the lock on state (a teammate's <code>apply</code>, a CI job) — or a process that held the lock crashed or was killed and left it stuck. Covered in depth in Lesson 15.</td>
+<td>Check the <code>Created</code> timestamp in the printed lock info. Recent and someone's actively running Terraform → wait. Old and nobody is → confirm with your team, then <code>terraform force-unlock &lt;LOCK_ID&gt;</code>. Never force-unlock a lock someone else is actively holding — that's the exact corruption locking exists to prevent.</td>
+</tr>
+<tr>
+<td><code>Error: Cycle: &lt;resource A&gt;, &lt;resource B&gt;</code></td>
+<td>Terraform builds your resources into a dependency graph and refuses to plan if it finds a loop — resource A depends on B, which depends on A (directly or through a chain), so there's no valid order to create or update them in.</td>
+<td>Find the circular reference and break it — remove the unnecessary reference, or restructure so the dependency only flows one direction. <code>depends_on</code> can express dependencies explicitly if the implicit ones aren't what you meant.</td>
+</tr>
+<tr>
+<td><code>Error: Reference to undeclared resource</code></td>
+<td>Your config references a resource/data source/module output that doesn't exist under that exact name — usually a typo, a missing <code>data.</code> or <code>module.</code> prefix, or a missing index like <code>[0]</code> or <code>["key"]</code> when the target uses <code>count</code> or <code>for_each</code>.</td>
+<td>Re-check the exact name and type against the real block, including the prefix. <code>terraform validate</code> catches this before you ever touch real infrastructure.</td>
+</tr>
+<tr>
+<td><code>Error: Missing required argument</code></td>
+<td>A resource, data source, or module block is missing an argument that its schema requires — e.g. an <code>aws_instance</code> without <code>ami</code>, or a module call missing a variable that has no default.</td>
+<td>Add the missing argument. If you're not sure what's required, check the provider/module docs for that block's schema — required arguments have no default value.</td>
+</tr>
+<tr>
+<td><code>Error: Inconsistent conditional result types</code></td>
+<td>A ternary expression (<code>condition ? true_val : false_val</code>) has a true-branch and false-branch that resolve to different types — e.g. one side returns a string, the other a list, or the two lists have incompatible element types.</td>
+<td>Make both branches return the same type. Often fixed by wrapping one side in an explicit conversion (like <code>tostring()</code> or <code>tolist()</code>) or restructuring so both branches shape their result the same way.</td>
+</tr>
+<tr>
+<td><code>Error: Provider configuration not present</code></td>
+<td>Resources still exist in <strong>state</strong> that were created by a provider configuration (often an aliased provider, or one declared inside a child module) that no longer exists in your current config — commonly happens right after removing a module block or a provider alias while it still owns real, tracked resources.</td>
+<td>Temporarily restore the removed provider configuration so Terraform can plan against those resources again (to destroy or migrate them properly), then remove the provider config only after state no longer references it. Don't just delete state entries to make the error disappear — that orphans real infrastructure.</td>
+</tr>
+</tbody>
+</table>
+
+<p class="callout"><strong>Notice the pattern:</strong> half of these trace back to the three-way comparison from Lesson 13 — config, state, and real infrastructure disagreeing with each other. Once you've internalized that model, a surprising number of "scary" errors turn out to be one of those three simply out of sync with the other two.</p>
+
+<h2>Last resort: verbose logging with <code>TF_LOG</code></h2>
+<p>The table above covers errors Terraform prints in plain language. Sometimes the error is opaque — a provider crash, a network-level failure, something where the printed message doesn't tell you enough. HashiCorp's official debugging mechanism for that is the <code>TF_LOG</code> environment variable.</p>
+
+<p>Per HashiCorp's own docs, setting <code>TF_LOG</code> to one of <code>TRACE</code>, <code>DEBUG</code>, <code>INFO</code>, <code>WARN</code>, or <code>ERROR</code> (in decreasing order of verbosity) turns on detailed internal logging. You can also scope it: <code>TF_LOG_CORE</code> logs Terraform's own internals separately, and <code>TF_LOG_PROVIDER</code> logs provider plugin activity separately — useful when you already suspect the problem is on one side or the other. Set <code>TF_LOG_PATH</code> alongside <code>TF_LOG</code> to write the log to a file instead of your terminal, so it doesn't scroll away.</p>
+
+<pre><code># most common form — full verbosity to a file
+TF_LOG=TRACE TF_LOG_PATH=terraform.log terraform apply
+
+# scoped: only provider-side logging
+TF_LOG_PROVIDER=TRACE terraform apply</code></pre>
+
+<p class="callout"><strong>Mental model:</strong> <code>TF_LOG</code> is the equivalent of turning on debug logging in any other tool — it's verbose, it's meant for you (or a support ticket, or a GitHub bug report) to read line by line, not something you leave on by default. Reach for it only after the plain error message and the table above don't explain what happened; for most day-to-day errors, you'll never need it.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You see this at the top of a failed <code>plan</code>: <code>Error: Reference to undeclared resource</code>, followed by several lines showing your file and a snippet of code with an arrow. What do you actually fix — the first line, or the snippet below it?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The first line is the real diagnosis: you referenced a resource/data source/module output that doesn't exist under that name. The snippet below is context showing you exactly where — use it to find the typo or missing prefix, but the fix is driven by the first line's message, not by treating the snippet as a separate problem.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Your teammate's laptop died mid-<code>apply</code> against a shared remote backend. You now get <code>Error acquiring the state lock</code>. Is this Terraform being broken, and what do you check before running <code>force-unlock</code>?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Not broken — this is locking doing exactly what it's designed to do. Before force-unlocking, check the lock info's "Created" timestamp and "Who" field: if it's old and matches the crashed process, it's a stale lock safe to clear with <code>terraform force-unlock &lt;LOCK_ID&gt;</code>. If it's recent and someone else is genuinely running Terraform right now, wait — force-unlocking a live lock risks two writers corrupting state at once.</div>
+</div>
+
+<h2>Hands-on: match the error to its cause</h2>
+<p>Match each error snippet below to the cause that actually produces it. Try before revealing.</p>
+
+<div class="quiz">
+<p>Snippet A: <code>Error: Missing required argument</code><br>Snippet B: <code>Error: Cycle: aws_security_group.sg_a, aws_security_group.sg_b</code><br>Snippet C: <code>Error acquiring the state lock</code></p>
+<p>Causes (in scrambled order): (1) two security groups reference each other's ID, so Terraform can't decide which to create first &nbsp;·&nbsp; (2) a resource block is missing a value its schema requires, like <code>ami</code> on an <code>aws_instance</code> &nbsp;·&nbsp; (3) a CI pipeline is mid-<code>apply</code> against the same remote state right now</p>
+<input type="text" id="q3" placeholder="type A/B/C matched to 1/2/3">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">A → (2) missing required argument, a schema violation caught before any API call. B → (1) a dependency cycle — the two security groups' references form a loop the graph can't order. C → (3) the lock is held by an in-progress operation elsewhere; check who/when before ever considering force-unlock.</div>
+</div>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Read Terraform errors top to bottom — the first line is the real cause, everything after is supporting context (file, line, snippet).</li>
+    <li>Errors fall into four rough layers: language (HCL syntax), state (config/state/reality disagreement), core (graph/planning logic like cycles), and provider (the API rejected something) — knowing the layer narrows the search fast.</li>
+    <li>Six real, verifiable error patterns: state lock errors, cycles, undeclared resource references, missing required arguments, inconsistent conditional result types, and provider-configuration-not-present — each traced to a specific, checkable cause.</li>
+    <li>A large share of confusing errors trace back to the Lesson 13 three-way comparison: config, state, and real infrastructure out of sync.</li>
+    <li><code>TF_LOG</code> (with <code>TF_LOG_CORE</code>, <code>TF_LOG_PROVIDER</code>, and <code>TF_LOG_PATH</code>) is the official last-resort verbose logging mechanism — reach for it only when the plain error message isn't enough.</li>
+  </ul>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/internals/debugging" target="_blank" rel="noopener">developer.hashicorp.com — Debugging Terraform</a> (confirms <code>TF_LOG</code>, <code>TF_LOG_CORE</code>, <code>TF_LOG_PROVIDER</code> log levels TRACE/DEBUG/INFO/WARN/ERROR, and <code>TF_LOG_PATH</code> for writing logs to a file) · <a href="https://developer.hashicorp.com/terraform/language/state/locking" target="_blank" rel="noopener">developer.hashicorp.com — State Locking</a> and <a href="https://discuss.hashicorp.com/t/error-acquiring-the-state-lock" target="_blank" rel="noopener">HashiCorp Discuss — Error acquiring the state lock</a> (confirm the lock error's cause and the <code>force-unlock</code> warning about multiple writers, consistent with Lesson 15) · <a href="https://developer.hashicorp.com/terraform/tutorials/configuration-language/troubleshooting-workflow" target="_blank" rel="noopener">developer.hashicorp.com — Troubleshoot Terraform</a> (confirms the language/state/core/provider error-layer model and the official <code>Error: Cycle</code> example) · <a href="https://support.hashicorp.com/hc/en-us/articles/1500000332721-Error-Provider-configuration-not-present" target="_blank" rel="noopener">HashiCorp Support — Error: Provider configuration not present</a> (confirms the cause: state referencing a provider configuration no longer present in config) — verified 2026-07-30.</p>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0032-cost-awareness.html">&larr; Lesson 32: Cost awareness</a></span>
+  <span><a href="0034-capstone-project.html">Lesson 34: Capstone project: end-to-end stack &rarr;</a></span>
+</div>
+
+</body>
+</html>

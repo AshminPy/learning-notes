@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3 — What is Infrastructure as Code?</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 3 of 37</p>
+<h1>What is Infrastructure as Code?</h1>
+
+<p>Before you write a single line of Terraform, you need the mental model underneath it. This lesson has no hands-on labs — it's the concept that every later lesson assumes you already understand. Get this right and the rest of the course clicks into place. Get it wrong and Terraform will keep feeling confusing no matter how many commands you memorize.</p>
+
+<h2>Infrastructure as Code, defined</h2>
+<p><strong>Infrastructure as Code (IaC)</strong> means you manage your servers, networks, databases, and other infrastructure by writing and versioning configuration files — not by clicking buttons in a cloud console, and not by running one-off scripts by hand.</p>
+<p>HashiCorp describes Terraform itself as "an infrastructure as code tool that lets you build, change, and version cloud and on-prem resources safely and efficiently," using "human-readable configuration files that you can version, reuse, and share."</p>
+<p class="callout"><strong>Simple example:</strong> instead of logging into the AWS console and clicking "Launch Instance" five times, you write one file that says "I want 5 servers of this type," save that file in Git, and run a tool that creates them. Need a 6th next month? Change one number in the file, run the tool again.</p>
+
+<h2>The single most important mental model: declarative vs imperative</h2>
+<p>This is the idea the whole course is built on, so slow down here.</p>
+<ul>
+<li><strong>Imperative</strong> — you write the exact steps to take, in order. A shell script is imperative: "create a server, then attach a disk, then open port 443, then install nginx." You are telling the computer <em>how</em> to get there, step by step. If a step is already done, you have to write logic to check for that yourself.</li>
+<li><strong>Declarative</strong> — you describe the end state you want, and the tool figures out the steps to get there. Terraform is declarative. HashiCorp's own docs put it plainly: "Terraform configuration files are declarative, meaning that they describe the end state of your infrastructure." You write "I want 5 servers, this disk, this open port" — and Terraform compares that to what currently exists, then works out what to create, change, or destroy to match.</li>
+</ul>
+<p class="callout"><strong>Mental model:</strong> imperative is a recipe ("do this, then this, then this"). Declarative is an order form ("this is what I want the finished kitchen to look like"). The recipe breaks if you run it twice or start from a different kitchen. The order form doesn't care where you're starting from — it just compares "what exists" to "what's on the form" and closes the gap.</p>
+<p>Why this matters in practice: with an imperative script, re-running it can create duplicates or error out on a step that already ran. With Terraform, re-running it is safe — if the real infrastructure already matches your config, Terraform sees no gap and does nothing. This property is called <strong>idempotency</strong>, and it's only possible because Terraform is declarative.</p>
+
+<h2>Why teams adopt IaC</h2>
+<table>
+<tr><th>Benefit</th><th>What it means</th></tr>
+<tr><td>Repeatability</td><td>Run the same config twice, get the same result — no "it worked when I clicked it last time" drift.</td></tr>
+<tr><td>Code review for infra</td><td>Infrastructure changes go through a pull request like application code — someone else reviews before it's applied.</td></tr>
+<tr><td>Disaster recovery</td><td>If a whole environment is deleted or corrupted, you rebuild it from the config files instead of remembering every manual click that set it up originally.</td></tr>
+<tr><td>Collaboration</td><td>The config file is the shared source of truth for what infrastructure should exist — not tribal knowledge in one engineer's head.</td></tr>
+</table>
+
+<h2>Where Terraform fits among other tools</h2>
+<p><strong>vs. configuration management tools (Ansible, Chef, Puppet):</strong> these solve a different problem — configuring software on a machine that already exists (installing packages, editing config files, starting services). HashiCorp's own comparison is direct: "Configuration management tools install and manage software on a machine that already exists. Terraform is not a configuration management tool." Terraform's job is <em>provisioning</em> — creating the server, network, and disk in the first place. In short: Terraform builds the kitchen, Ansible stocks the fridge. The two are commonly used together, not as competitors. (This site has a separate Ansible course if you want to go deep on that side.)</p>
+<p><strong>vs. cloud-native tools (AWS CloudFormation, Azure ARM templates):</strong> these are declarative too, but each is locked to one cloud provider. Terraform's comparison page notes it "can be used to orchestrate an AWS and OpenStack cluster simultaneously, while enabling 3rd-party providers like Cloudflare and DNSimple," and that it is "both cloud-agnostic and enabling multiple providers and services to be combined and composed" — giving you "a single unified syntax, instead of requiring operators to use independent and non-interoperable tools for each platform and service." If your infrastructure spans AWS, GCP, Cloudflare DNS, and a SaaS API, Terraform can describe all of it in one place; CloudFormation can only describe the AWS part.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You write a bash script: "SSH into the server, run <code>apt install nginx</code>, then edit <code>/etc/nginx/nginx.conf</code> line by line." Is this declarative or imperative?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Imperative — it's a list of exact steps in order. Nothing describes the end state; it just says what to do.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You write a Terraform file that says <code>instance_count = 5</code>. Terraform checks what exists, sees only 3 servers, and creates 2 more to match. Declarative or imperative?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Declarative — you stated the end state (5 servers) and Terraform figured out the steps needed to get there from whatever the current state was.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. A script that logs into an already-running server and installs a security patch — is this a job for Terraform or a configuration management tool like Ansible?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">Configuration management (Ansible) — the server already exists; this is about changing software on it, not provisioning new infrastructure.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. A task that creates a new VPC, a subnet, and a load balancer in AWS — Terraform or a configuration management tool?</p>
+<input type="text" id="q4" placeholder="type your answer">
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4">Terraform — this is provisioning brand-new infrastructure resources, which is exactly what Terraform is built for.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/intro" target="_blank" rel="noopener">developer.hashicorp.com/terraform/intro</a> — official HashiCorp introduction to Terraform and Infrastructure as Code, plus the linked <a href="https://developer.hashicorp.com/terraform/intro/vs/chef-puppet" target="_blank" rel="noopener">Terraform vs. Chef/Puppet</a> and <a href="https://developer.hashicorp.com/terraform/intro/vs/cloudformation" target="_blank" rel="noopener">Terraform vs. CloudFormation</a> comparison pages.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Infrastructure as Code means managing infrastructure through versioned config files, not manual clicks or one-off scripts.</li>
+    <li>Declarative (describe the end state, Terraform figures out how) vs imperative (a script of exact steps) — this is the core mental model for the whole course.</li>
+    <li>Being declarative is why Terraform runs are idempotent: re-running against a matching state does nothing.</li>
+    <li>IaC benefits: repeatability, code review for infra, disaster recovery, collaboration.</li>
+    <li>Terraform provisions infrastructure; tools like Ansible configure what's already running. Terraform is provider-agnostic; CloudFormation/ARM are locked to one cloud.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">If declarative vs imperative still feels fuzzy, that's normal — it clicks once you write your first config in Lesson 4 and watch Terraform figure out the steps on its own. Come back and reread this lesson after that if you need to.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0002-tools-setup.html">&larr; Back: Lesson 2 — Tools setup</a></span>
+  <span><a href="0004-providers-and-terraform-block.html">Next: Lesson 4 — Providers & the terraform block &rarr;</a></span>
+</div>
+
+</body>
+</html>

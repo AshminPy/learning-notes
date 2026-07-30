@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 32 — Cost awareness</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 32 of 37</p>
+<h1>Cost awareness</h1>
+
+<p>Everything so far has been about correctness and safety — state (Lesson 13), plan review (Lesson 26), policy as code (Lesson 30), IAM (Lesson 31). This lesson is about a different kind of risk: money. A perfectly correct, perfectly secure Terraform config can still bankrupt a budget in seconds, and it happens in a very specific, IaC-shaped way that clicking around a cloud console doesn't.</p>
+
+<h2>Why IaC makes cost surprises worse, not just possible</h2>
+<p>Think about how you'd accidentally overspend in the AWS or GCP console by hand. You click "create instance," pick a size, click again. Cost creeps up one click at a time — you'd have to click "create" dozens of times in a row to spin up dozens of expensive resources, and somewhere around click five or six, most people notice what they're doing.</p>
+<p>Terraform removes that friction entirely, which is exactly its selling point from Lesson 3 — and exactly why it's a cost risk. A single <code>terraform apply</code> can create one resource or two hundred, and from where you're sitting, typing <code>yes</code>, both look almost identical: one confirmation prompt, one keystroke. You saw this mechanism directly in Lesson 11 — a <code>for_each</code> or <code>count</code> block that looks like a few lines of HCL can expand into dozens of real, billable resources the moment you approve the plan. There's no "click five more times and maybe reconsider" pause built in. The friction that naturally slows down console-driven overspending doesn't exist in Terraform — the plan output is the only place that friction can live.</p>
+<p class="callout"><strong>Mental model:</strong> the console makes cost visible through repetition — you feel the cost adding up because you're the one clicking each time. Terraform makes cost invisible through automation — the same "create N things" power that makes Terraform valuable also means cost can scale instantly, with a single approval, unless you deliberately go looking for it in the plan.</p>
+
+<h2>Reading the plan's resource count as a cost-risk signal</h2>
+<p>You already know from Lesson 5 to read the plan summary line before typing <code>yes</code> — <code>Plan: 1 to add, 0 to change, 0 to destroy</code>. That habit was taught as a correctness check: does the resource count match what you expected? It's also, with zero extra effort, a rough cost-risk signal.</p>
+<p><code>Plan: 1 to add</code> deserves a glance. <code>Plan: 40 to add</code> deserves real scrutiny — not because more resources are automatically wrong, but because the blast radius for both mistakes and spend is proportional to that number. Before approving a plan with a large add count, it's worth asking:</p>
+<ul>
+<li>Does this number match what I intended? (A stray <code>for_each</code> over the wrong set, or a <code>count</code> pointed at the wrong variable, can silently multiply resources — Lesson 11's exact pitfall, just pointed at your wallet instead of your state.)</li>
+<li>What resource <em>types</em> are being added? Forty <code>aws_s3_bucket</code> objects and forty <code>aws_instance</code> objects with a large instance type are not remotely the same cost event, even though both show up as "40 to add."</li>
+<li>Is this a one-time cost (created once, billed once or not at all) or an ongoing cost (billed every hour/month it exists)? The plan's resource count doesn't tell you this — you have to know your resource types.</li>
+</ul>
+<p class="callout"><strong>Important limit:</strong> the resource count is a rough triage signal, not a cost estimate. "40 to add" could be forty free resources or forty expensive ones — the number alone can't tell the difference. Treat a high count as "look closer," not as a verdict either way. The tools later in this lesson exist precisely because resource count isn't precise enough on its own.</p>
+
+<h2>Tagging for cost allocation</h2>
+<p>Lesson 30 introduced policy as code with an example rule: "every resource must carry a <code>cost-center</code> tag so finance can attribute cloud spend." That wasn't just an example of what a policy engine can check — it's the actual mechanism cost allocation runs on. Cloud billing tools (AWS Cost Explorer, GCP's billing reports, and equivalents) can break down spend by tag, but only if the tag is actually present on the resource. No tag, no attribution — that spend just shows up as unexplained cost sitting in a shared bucket nobody can trace back to a team or project.</p>
+<p>This is a case where a correctness lesson and a cost lesson are the same lesson wearing two hats. A hard-mandatory Sentinel or OPA policy requiring a <code>cost-center</code> (or <code>team</code>, or <code>project</code>) tag on every resource isn't just tidy governance — it's what makes "how much is team X actually spending" an answerable question instead of a guess. Untagged infrastructure is cost you can see the total for, but never explain.</p>
+
+<h2>Third-party cost estimation: Infracost</h2>
+<p>Reading resource counts and enforcing tags both help, but neither one tells you an actual dollar figure before you apply. That's the gap third-party cost-estimation tools fill. <strong>Infracost</strong> is the best-known example — a tool built specifically to sit alongside Terraform and estimate the cost impact of a plan before it's applied.</p>
+<p>Conceptually, the workflow mirrors the policy-as-code workflow from Lesson 30: Infracost reads Terraform's plan output (it works from the same <code>terraform show -json</code> plan JSON that OPA consumes) and matches the resources in it against cloud provider pricing data, producing a cost estimate and — critically — a cost <em>diff</em> for changes, so you can see "this PR adds $340/month" as a number attached to the pull request, not something you discover on next month's bill. Its own documentation describes this as a "shift-left" approach: surfacing cost during code review, in the same pull request where Lesson 26's plan review and Lesson 30's policy checks already happen, rather than after the infrastructure is live and already being billed.</p>
+<p>This lesson isn't teaching you to install or configure Infracost — that's implementation detail for a later, hands-on moment if you ever need it. What matters here is the mental model: a plan is structured data (Lesson 30 already established this for policy checks), and cost estimation is just another automated reader of that same data, slotting into the same place in your pipeline — after the plan, before the apply.</p>
+
+<h2>Basic cost hygiene: always destroy throwaway resources</h2>
+<p>None of the above matters if learning resources are just left running. Lesson 5 taught <code>terraform destroy</code> as the fourth command in the core workflow, and every hands-on section in this course since has ended with a reminder to run it. That reminder isn't filler — it's the single cheapest cost-control habit that exists. A <code>random_pet</code> resource costs nothing left running, because it isn't real infrastructure. A forgotten <code>aws_instance</code> or a database from a course exercise absolutely does cost something, for every hour it keeps existing, whether or not anyone is using it or even remembers it's there.</p>
+<p class="callout"><strong>Best practice:</strong> if you provisioned it to learn, and you're done learning from it, run <code>terraform destroy</code> before you close the terminal. Don't rely on remembering later — "I'll clean it up tomorrow" is exactly how idle cloud spend accumulates. State (Lesson 13) makes this trivial: Terraform already knows everything it created, so destroy is always a complete, accurate teardown, not a manual hunt through a console.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You run <code>terraform plan</code> and see <code>Plan: 25 to add, 0 to change, 0 to destroy</code>, mostly instances of one resource type created through a <code>for_each</code> or <code>count</code> block (Lesson 11). What should you check before typing <code>yes</code>?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">First, confirm 25 is actually what you intended — check the collection driving the <code>for_each</code>/<code>count</code> (a variable, a data source result, a list) to rule out the Lesson 11 pitfall of it silently containing more entries than you expected. Second, look at what resource type is being multiplied and whether it's a one-time or ongoing (billed-per-hour) cost — 25 free/cheap resources and 25 large, always-on instances are both "25 to add," but very different cost events. Third, if this is going to real cloud spend and not a throwaway exercise, consider running it through a cost-estimation tool (like Infracost) or checking it against a tagging/cost policy (Lesson 30) before approving, so the cost is visible and attributable, not just multiplied.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Your org has an OPA policy requiring every resource to carry a <code>cost-center</code> tag. Why does enforcing that tag matter for cost specifically, beyond just being tidy governance?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Cloud billing tools can only attribute spend to a team or project if the resource is tagged with that information. Without the tag, the resource still costs money and still shows up on the bill — it's just unexplained spend nobody can trace back to who owns it or why it exists. The policy isn't decoration; it's the actual mechanism that makes "what is team X spending" an answerable question instead of a guess.</div>
+</div>
+
+<h2>Hands-on: read a plan for cost risk, not just correctness</h2>
+<p>No new resources to create for this one — reuse the <code>for_each</code> example from Lesson 11 (three <code>random_pet</code> resources keyed by environment name) if you still have it, or rebuild it quickly:</p>
+<pre><code>resource "random_pet" "env_pet" {
+  for_each = toset(["dev", "staging", "prod"])
+  length   = 2
+}</code></pre>
+<ul>
+<li>run <code>terraform plan</code> and find the summary line — note the "to add" count</li>
+<li>before you'd normally jump to <code>apply</code>, pause and ask the three questions from this lesson: does the count match intent, what resource type is this, is it one-time or ongoing cost</li>
+<li><code>random_pet</code> is free and stateless-to-the-cloud, so the honest answer here is "zero cost, low risk" — the point of the exercise is practicing the pause, not finding a real bill</li>
+<li>now imagine the same <code>for_each</code> set had ten entries instead of three, and the resource were <code>aws_instance</code> with a large instance type instead of <code>random_pet</code> — walk through out loud what you'd check differently before approving that plan</li>
+<li>run <code>terraform destroy</code>, type <code>yes</code>, to clean up if you built the resources</li>
+</ul>
+<p>This is a habit exercise, not a syntax exercise — the goal is making "check the count, check the type, check one-time vs. ongoing" as automatic as reading the plan at all.</p>
+
+<h2>Source</h2>
+<p><a href="https://www.infracost.io/" target="_blank" rel="noopener">infracost.io</a> (confirms Infracost is an active FinOps/cost-estimation product for Terraform and other IaC tools, positioned as a "shift-left" approach that surfaces cost before deployment) · <a href="https://www.infracost.io/docs/" target="_blank" rel="noopener">infracost.io/docs</a> (confirms Infracost reads Terraform plan JSON, the same <code>terraform show -json</code> output used for policy checks in Lesson 30, and integrates into pull requests to show a cost diff before merge/apply) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Terraform can create dozens of billable resources from one <code>apply</code> approval — unlike the console, where cost creeps up visibly one click at a time, Terraform has no built-in pause proportional to blast radius.</li>
+    <li>Treat the plan's "to add" count as a rough cost-risk signal, not a verdict: a high count means look closer at intent, resource type, and one-time vs. ongoing cost — it doesn't by itself mean something is wrong.</li>
+    <li>Tagging resources (Lesson 30's <code>cost-center</code> tag example) is what makes spend attributable to a team or project — untagged resources still cost money, they just can't be traced.</li>
+    <li>Infracost is a real third-party tool that reads Terraform plan JSON and estimates cost impact before apply, commonly surfaced as a cost diff on pull requests, alongside Lesson 26's plan review and Lesson 30's policy checks.</li>
+    <li>Always run <code>terraform destroy</code> on throwaway/learning resources (Lesson 5) — it's the cheapest, most reliable cost-control habit in the entire course.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0031-iam-for-terraform.html">&larr; Lesson 31: Least-privilege IAM for Terraform itself</a></span>
+  <span><a href="0033-troubleshooting.html">Lesson 33: Troubleshooting common errors &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 7 — Outputs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 7 of 37</p>
+<h1>Outputs</h1>
+
+<p>Lesson 6 gave you a way to get values <em>into</em> a config — input variables. This lesson is the mirror image: getting values <em>out</em>. An <strong>output</strong> is how Terraform tells you (or another piece of config) something it learned during <code>apply</code> — an IP address it was assigned, an ID it generated, a name it randomized. Without outputs, that information is buried inside the state file where nothing outside Terraform can easily see it.</p>
+
+<p class="callout"><strong>Mental model:</strong> if input variables are the parameters you hand to a function, outputs are its return value. The function runs (<code>apply</code>), does its work, and outputs are the one sanctioned way it hands something back to whoever called it — you at the terminal, or a parent module in Lesson 17 onward.</p>
+
+<h2>The output block</h2>
+<p>An output block lives in your <code>.tf</code> files, usually grouped in an <code>outputs.tf</code> file once a config grows past a couple of resources. Its name is a label you choose, and it needs exactly one required argument:</p>
+
+<pre><code>output "pet_name" {
+  description = "The randomly generated pet name"
+  value       = random_pet.example.id
+}</code></pre>
+
+<ul>
+<li><code>value</code> — <strong>required.</strong> Any expression Terraform can evaluate: a resource attribute (like <code>random_pet.example.id</code> above), a variable, a computed expression, even a whole object or list.</li>
+<li><code>description</code> — optional, but write it anyway. It documents what the value means and shows up when someone runs <code>terraform output</code> or inspects the config — the same discipline as the <code>description</code> you gave input variables in Lesson 6.</li>
+<li><code>sensitive</code> — optional boolean, default <code>false</code>. Set it to <code>true</code> and Terraform redacts the value from normal <code>plan</code>/<code>apply</code> output, printing <code>&lt;sensitive&gt;</code> instead.</li>
+</ul>
+
+<pre><code>output "database_password" {
+  description = "Auto-generated password for the database instance"
+  value       = aws_db_instance.main.password
+  sensitive   = true
+}</code></pre>
+
+<p class="callout"><strong>Best practice — <code>sensitive</code> is not real security.</strong> It only redacts the value from the CLI's normal plan/apply text. Run <code>terraform output -json</code> or <code>terraform output -raw database_password</code> and the plaintext comes right back — and the value is always stored in plaintext inside the state file, sensitive or not. Treat <code>sensitive = true</code> as a courtesy that stops a password scrolling past on a shared screen, not as encryption. Real secrets need a secrets manager (Lesson 27+ territory) with state itself locked down.</p>
+
+<h2>Why outputs matter</h2>
+<p>Two separate jobs, both solved by the same block:</p>
+
+<ul>
+<li><strong>Surfacing values to you.</strong> Some values don't exist until <code>apply</code> runs — a cloud provider assigns an IP, Terraform generates a random ID. An output is how that value gets printed for you to actually use, instead of staying locked inside <code>terraform.tfstate</code>.</li>
+<li><strong>Passing values between configs.</strong> When a module is called from another config (Lessons 17–20), the calling config can only see what the module explicitly outputs — everything else stays private to that module. Outputs are the module's public interface, the same way a function's return value is the only thing its caller gets to see. You're not using modules yet, but every output you write today is practice for that exact pattern.</li>
+</ul>
+
+<h2>Viewing outputs — <code>terraform output</code></h2>
+<p>After an <code>apply</code>, outputs print automatically at the bottom of the run. To see them again any time afterward, without re-running <code>apply</code>:</p>
+
+<pre><code>$ terraform output
+
+pet_name = "climbing-mudfish"</code></pre>
+
+<p>Ask for one specific output by name:</p>
+
+<pre><code>$ terraform output pet_name
+"climbing-mudfish"</code></pre>
+
+<p>Two flags worth knowing now, because you'll reach for them constantly once outputs feed into scripts or other tools:</p>
+
+<ul>
+<li><code>terraform output -json</code> — every output as machine-readable JSON, including sensitive ones in plaintext. Used to hand values to another program.</li>
+<li><code>terraform output -raw &lt;name&gt;</code> — the bare value with no quotes, useful for piping straight into a shell command.</li>
+</ul>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Which argument is required inside every output block?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>value</code> — <code>description</code> and <code>sensitive</code> are both optional.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You mark an output <code>sensitive = true</code>. Does that stop the value from ever appearing in plaintext anywhere?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No. It only redacts the value from normal <code>plan</code>/<code>apply</code> CLI output. <code>terraform output -json</code>, <code>terraform output -raw</code>, and the state file itself all still hold the plaintext value.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In the same <code>main.tf</code> you've been building since Lesson 4, which already has your <code>resource "random_pet" "example" {}</code> block:</p>
+<ul>
+<li>add an output block that exposes the pet name, referencing the resource's <code>id</code> attribute (the same attribute you saw as <code>(known after apply)</code> back in Lesson 5)</li>
+<li>run <code>terraform apply</code> and type <code>yes</code> — watch the output print at the bottom of the run</li>
+<li>run <code>terraform output</code> and confirm you see the same value without re-applying anything</li>
+<li>run <code>terraform output</code> with the specific output name to fetch just that one value</li>
+</ul>
+<p>Try it yourself before checking the reference below.</p>
+
+<div class="quiz">
+<p>Reveal the reference block and commands</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>output "pet_name" {
+  description = "The randomly generated pet name"
+  value       = random_pet.example.id
+}</code>
+
+<code>terraform apply
+# type: yes
+terraform output
+# pet_name = "climbing-mudfish"
+terraform output pet_name
+# "climbing-mudfish"</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/values/outputs" target="_blank" rel="noopener">developer.hashicorp.com — Output Values</a> · <a href="https://developer.hashicorp.com/terraform/cli/commands/output" target="_blank" rel="noopener">terraform output</a> — both developer.hashicorp.com, verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>An output block needs one required argument, <code>value</code>; <code>description</code> documents it, <code>sensitive = true</code> redacts it from normal CLI output only.</li>
+    <li>Outputs surface values that don't exist until <code>apply</code> runs, and are the only values a module exposes to whatever calls it — the same mechanism does both jobs.</li>
+    <li><code>terraform output</code> re-prints outputs any time without re-applying; <code>-json</code> and <code>-raw</code> give machine-readable or bare-value forms.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0006-input-variables.html">&larr; Lesson 6: Input variables</a></span>
+  <span><a href="0008-resources-and-arguments.html">Lesson 8: Resources & arguments &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 21 — Terraform workspaces</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 21 of 37</p>
+<h1>Terraform workspaces</h1>
+
+<p>So far, every folder of <code>.tf</code> files you've run has had exactly one state file, tracking exactly one set of real infrastructure. What if you want the <em>same</em> config to manage more than one instance of that infrastructure — say, a throwaway copy for testing a change, sitting alongside the real one? Terraform has a built-in feature for exactly that: <strong>workspaces</strong>. This lesson covers what they are, the CLI commands, and — just as important — where HashiCorp itself says not to reach for them. That last part sets up Lesson 22, where we compare workspaces against the alternative for managing dev/stage/prod.</p>
+
+<h2>What a workspace actually is</h2>
+<p>Recall from Lesson 13: state is just a JSON file that maps your config's resource blocks to real-world infrastructure. A workspace is nothing more exotic than <strong>a separate state file for the same configuration</strong>. Every Terraform working directory starts with one workspace already, called <code>default</code>. When you create a new workspace, Terraform doesn't touch your <code>.tf</code> files at all — it just creates a fresh, empty state file and starts tracking a second, independent set of infrastructure under the same code.</p>
+
+<p>Locally, you can see this happen on disk. Terraform stores non-default workspace states in a directory called <code>terraform.tfstate.d</code>, one subfolder per workspace. The docs are explicit that this directory should be treated the same way as a local <code>terraform.tfstate</code> file — same sensitivity, same "never commit it" rule from Lesson 13. With a remote backend (Lesson 14), the workspace name gets folded into the state path on the backend instead, but the principle is identical: one workspace, one isolated state.</p>
+
+<p class="callout"><strong>Mental model:</strong> your <code>.tf</code> files are the recipe. State is the specific cake you baked from it. A workspace lets you bake a second cake from the exact same recipe, without the two cakes getting mixed up — <code>plan</code> and <code>apply</code> in workspace A never look at workspace B's state.</p>
+
+<h2>The CLI commands</h2>
+<p>All workspace operations live under <code>terraform workspace</code>:</p>
+<ul>
+<li><code>terraform workspace list</code> — show every workspace that exists for this config, with a <code>*</code> marking the one you're currently in</li>
+<li><code>terraform workspace new &lt;name&gt;</code> — create a new workspace and switch to it immediately (e.g. <code>terraform workspace new staging</code>)</li>
+<li><code>terraform workspace select &lt;name&gt;</code> — switch to an existing workspace</li>
+<li><code>terraform workspace show</code> — print the name of the workspace you're currently in</li>
+<li><code>terraform workspace delete &lt;name&gt;</code> — remove a workspace (Terraform won't let you delete one that still has resources tracked in its state)</li>
+</ul>
+<p>Whichever workspace is currently selected is the one every subsequent <code>plan</code>, <code>apply</code>, and <code>destroy</code> in that directory operates on. There's no flag to bolt onto <code>apply</code> to target a different workspace — you <code>select</code> first, then run your command.</p>
+
+<h2>Varying behavior with <code>terraform.workspace</code></h2>
+<p>Having a separate state per workspace is only half the story — most of the time you also want your config to <em>behave</em> slightly differently depending on which workspace is active. Terraform exposes the current workspace name as an expression: <code>terraform.workspace</code>. You can use it anywhere an interpolation is allowed, the same as any other expression you've used since Lesson 3.</p>
+
+<p>Two patterns straight from HashiCorp's own docs:</p>
+<pre><code>count = terraform.workspace == "default" ? 5 : 1</code></pre>
+<p>— run 5 instances in <code>default</code>, but only 1 in any other workspace (handy for a cheap, single-instance test copy).</p>
+<pre><code>tags = {
+  Name = "web - ${terraform.workspace}"
+}</code></pre>
+<p>— bake the workspace name straight into a resource's tag, so <code>web - staging</code> and <code>web - default</code> are visibly distinguishable even though they came from the same <code>resource</code> block.</p>
+
+<h2>Where workspaces are a poor fit — read this before Lesson 22</h2>
+<p>It's tempting, the first time you see this feature, to think "great — I'll make a <code>dev</code> workspace, a <code>staging</code> workspace, and a <code>prod</code> workspace, and I'm done with environments." HashiCorp's own documentation pushes back on that directly. Quoting the official guidance: <strong>"Workspaces alone are not a suitable tool for system decomposition,"</strong> and they're explicitly called out as unsuitable for situations needing <strong>"strong separation between multiple deployments...serving different development stages or different internal teams,"</strong> especially because "the backend for each deployment often has different credentials and access controls." The state-workspaces reference page adds a second, related warning: workspaces "are not appropriate for system decomposition or deployments requiring separate credentials and access controls."</p>
+
+<p>Think about why, using the mental model above: a workspace changes <em>which state file</em> Terraform reads, but it's still the exact same <code>.tf</code> config, the exact same backend, the exact same provider credentials. That's perfect when your "different instances" really are near-identical and low-risk — a temporary feature-branch test environment, a handful of interchangeable regional copies. It falls apart the moment prod needs something <em>meaningfully</em> different from dev: bigger instance sizes, extra modules, a locked-down backend only a subset of engineers can write to, stricter access controls. <code>terraform.workspace == "prod" ? big : small</code> conditionals scattered through your config get unreadable fast, and — more seriously — a typo that selects the wrong workspace means someone's laptop just ran <code>apply</code> against prod using the same credentials as dev, because workspaces don't separate credentials at all.</p>
+
+<p class="callout"><strong>Rule of thumb going into Lesson 22:</strong> workspaces are for <em>many similar, low-risk copies</em> of one config. When environments need genuinely different configuration, sizing, modules, or access control — which prod almost always does — HashiCorp's own recommendation is separate configurations with distinct backends, built from reusable modules (the module patterns from Lesson 20). That's exactly the comparison Lesson 22 walks through in full.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You run <code>terraform workspace new staging</code> then <code>terraform apply</code>. What happens to your existing <code>default</code> workspace's infrastructure and state?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Nothing happens to it. Creating and switching to <code>staging</code> gives you a brand-new, empty state file for that workspace — <code>default</code>'s state and the real infrastructure it tracks are completely untouched. The <code>apply</code> you just ran only creates resources tracked in <code>staging</code>'s state, using the same <code>.tf</code> config.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Why does HashiCorp specifically warn against using workspaces to separate dev, staging, and prod, even though it seems like the obvious use case?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Because a workspace only swaps which state file is active — the config, backend, and provider credentials stay identical across every workspace. Real environments usually need more than that: different resource sizes, different modules, and different access controls (prod often needs a locked-down backend only some people can write to). Workspaces give you none of that separation, so a mistake (e.g. selecting the wrong workspace) can apply prod-shaped changes using dev's exact same credentials.</div>
+</div>
+
+<h2>Hands-on: create a staging workspace and compare state</h2>
+<p>Use the same <code>random_pet</code> example from earlier lessons (<code>resource "random_pet" "example" {}</code> in <code>main.tf</code>).</p>
+<ul>
+<li>run <code>terraform workspace list</code> — you should see just <code>* default</code></li>
+<li>run <code>terraform workspace new staging</code> — Terraform creates the workspace and switches you into it automatically</li>
+<li>run <code>terraform apply</code>, type <code>yes</code> — this creates a pet <em>inside the staging workspace's own state</em></li>
+<li>run <code>terraform workspace show</code> — confirms you're in <code>staging</code></li>
+<li>run <code>terraform workspace select default</code>, then <code>terraform apply</code>, type <code>yes</code> — this creates a <em>separate</em> pet, tracked in <code>default</code>'s state</li>
+<li>run <code>terraform workspace list</code> again — you'll see both workspaces, with <code>*</code> marking whichever one you last selected</li>
+<li>look inside the <code>terraform.tfstate.d</code> folder that appeared next to your <code>.tf</code> files — you'll find a <code>staging</code> subfolder with its own <code>terraform.tfstate</code>, completely separate from the <code>default</code> one in your working directory</li>
+<li>clean up both: <code>terraform destroy</code> while in <code>default</code>, then <code>terraform workspace select staging</code> and <code>terraform destroy</code> again</li>
+</ul>
+<p>Two pet names, from one config, tracked in two independent state files you can see side by side on disk — that's the entire mechanism.</p>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/state/workspaces" target="_blank" rel="noopener">developer.hashicorp.com — State: Workspaces</a> (confirms workspaces let multiple states associate with one config, the <code>terraform.workspace</code> expression and its <code>count</code>/tagging examples, and that workspaces "are not appropriate for system decomposition or deployments requiring separate credentials and access controls") · <a href="https://developer.hashicorp.com/terraform/cli/workspaces" target="_blank" rel="noopener">developer.hashicorp.com — CLI: Workspaces</a> (confirms the <code>list</code>/<code>new</code>/<code>select</code>/<code>show</code>/<code>delete</code> subcommands, the local <code>terraform.tfstate.d</code> storage directory, and the explicit guidance that "workspaces alone are not a suitable tool for system decomposition" for deployments needing different credentials and access controls) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A workspace is a separate state file for the same config — <code>default</code> exists from the start; <code>terraform workspace new &lt;name&gt;</code> adds more, stored locally under <code>terraform.tfstate.d</code>.</li>
+    <li>Manage workspaces with <code>terraform workspace list / new / select / show / delete</code>. Whichever is selected is what <code>plan</code>/<code>apply</code>/<code>destroy</code> act on.</li>
+    <li>The <code>terraform.workspace</code> expression lets a single config behave differently per workspace (e.g. <code>count</code>, tags).</li>
+    <li>HashiCorp's own guidance: workspaces suit many near-identical, low-risk copies of one config — not environments needing different sizing, modules, or access controls (like real prod vs dev). That's the setup for Lesson 22.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0020-module-composition-patterns.html">&larr; Lesson 20: Module composition patterns</a></span>
+  <span><a href="0022-managing-environments.html">Lesson 22: Managing dev/stage/prod environments &rarr;</a></span>
+</div>
+
+</body>
+</html>

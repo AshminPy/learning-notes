@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 15 — State locking & drift detection</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 15 of 37</p>
+<h1>State locking & drift detection</h1>
+
+<p>Lesson 14 moved your state file to a remote backend so a team can share it. But sharing a single file raises a new question immediately: what stops two people from running <code>apply</code> at the same time and corrupting it? And separately — what happens when the real infrastructure changes but nobody tells Terraform? Both problems are about the same thing: keeping state trustworthy once more than one actor (a person, a pipeline, a console click) can touch the real world. This lesson covers both: <strong>locking</strong> (protects against concurrent writes) and <strong>drift</strong> (protects your understanding of what's actually true).</p>
+
+<h2>What state locking actually does</h2>
+<p>When Terraform runs an operation that could write to state — most importantly <code>apply</code> — it first acquires a <strong>lock</strong> on that state. HashiCorp's own docs put the reason plainly: locking "prevents others from acquiring the lock and potentially corrupting your state." While the lock is held, a second <code>apply</code> targeting the same state doesn't get to barge in and write at the same time — it either waits or errors out, depending on how it's invoked.</p>
+
+<p class="callout"><strong>Mental model:</strong> a state lock is a "do not disturb" sign on a hotel room door, not a deadbolt permanently welded shut. It goes up automatically the moment Terraform starts an operation that writes state, and it comes down automatically the moment that operation finishes — success or failure. Nobody has to remember to lock or unlock anything by hand in the normal case. It exists only to stop two people from redecorating the same room at the same second, not to keep the room locked forever.</p>
+
+<h2>Not every backend supports locking</h2>
+<p>Locking is a backend feature, not a Terraform-core guarantee that applies everywhere — the docs are explicit that "not all backends support locking," and each backend that does support it implements the mechanism differently. Two you already know from this course:</p>
+
+<ul>
+<li><strong>Local backend</strong> (your <code>terraform.tfstate</code> on disk, Lessons 5–13) — supports locking too. The docs describe it as locking "that state using system APIs," i.e. your operating system's own file-locking calls. It's why even solo, single-laptop Terraform occasionally shows a lock error if you accidentally run two commands against the same folder at once.</li>
+<li><strong>S3 backend</strong> (Lesson 14) — locking is optional and configured explicitly. The current recommended method is a native S3 lockfile, enabled with <code>use_lockfile = true</code> in the backend block. The older method — a separate DynamoDB table holding a lock row — still works but HashiCorp's docs now mark it deprecated and slated for removal in a future minor version. If you're following an older tutorial that shows <code>dynamodb_table</code>, know that it still works today but isn't the current recommendation.</li>
+</ul>
+
+<p>Other backends (Terraform Cloud/HCP Terraform, Google Cloud Storage, Azure Storage, Postgres, and others) each implement locking their own way. The rule to carry forward: before you trust a shared backend to protect you from concurrent applies, check that specific backend's docs — don't assume locking is on just because the backend is remote.</p>
+
+<h2>Stuck locks and <code>force-unlock</code></h2>
+<p>Because the lock is tied to a running operation, anything that kills that operation abnormally — a crashed laptop, a killed CI job, a network drop mid-<code>apply</code> — can leave the lock standing with nobody actually working. The next person to run <code>apply</code> gets blocked by a lock that no longer corresponds to real, in-progress work.</p>
+
+<p>Terraform's answer is <code>terraform force-unlock &lt;LOCK_ID&gt;</code>. It requires the specific lock ID (Terraform prints this in the error message of whoever got blocked), which acts as a confirmation that you're releasing the lock you think you're releasing, not a different one. The official guidance is a genuine warning, worth quoting exactly:</p>
+
+<p class="callout"><strong>From HashiCorp's docs:</strong> "Be very careful with this command. If you unlock the state when someone else is holding the lock it could cause multiple writers." Force-unlock is meant to clear <em>your own</em> stuck lock after automatic unlocking failed — never to override a lock someone else is actively holding. Before running it, confirm with your team that no apply is genuinely in flight.</p>
+
+<h2>Drift — when reality stops matching state</h2>
+<p>State locking protects against Terraform corrupting itself. It does nothing about a completely different problem: someone opens the AWS console and resizes an instance by hand. Someone runs a one-off <code>kubectl</code> or CLI command that touches a resource Terraform manages. An auto-scaler, a security tool, or another automation changes something outside Terraform entirely. In every case, the real infrastructure now disagrees with what's recorded in state (and by extension, with your config). This gap is called <strong>drift</strong>.</p>
+
+<p class="callout"><strong>Mental model:</strong> state is Terraform's memory of what it last saw. Drift is what happens when the world moves on without updating that memory — like a to-do list that says "in progress" for a task someone else already finished, or already threw out, without telling you.</p>
+
+<h2>How <code>terraform plan</code> catches it — refresh, then compare</h2>
+<p>You don't run a separate "check for drift" command. <code>terraform plan</code> already does it as its first step, before it ever compares anything to your config: it <strong>refreshes</strong> state, meaning it queries each real resource's provider API and pulls back the actual current values, updating its in-memory picture of what really exists right now. Only after that refresh does it diff the refreshed reality against your <code>.tf</code> config to produce the plan you read.</p>
+
+<p>This is why a resource can show up as needing changes in <code>plan</code> even though you haven't touched a single <code>.tf</code> file since the last apply — the config didn't change, but reality did, and the refresh step is what surfaces that gap. (You can skip the refresh with <code>terraform plan -refresh=false</code> if you specifically want to compare against last-known state instead of live reality, but that's the exception, not the default.)</p>
+
+<h2>Fixing drift — two directions, one real tradeoff</h2>
+<p>Once <code>plan</code> shows drift, you have exactly two honest ways to resolve it, and picking between them is a judgment call, not a technical one:</p>
+
+<table>
+<tr><th></th><th>Re-apply (reality → config)</th><th>Update config (config → reality)</th></tr>
+<tr><td><strong>What happens</strong></td><td><code>terraform apply</code> pushes your config's values back onto the real resource, overwriting the manual change</td><td>You edit your <code>.tf</code> files to match what the resource now actually looks like, so <code>plan</code> shows no diff</td></tr>
+<tr><td><strong>Use when</strong></td><td>the manual change was accidental, unauthorized, or simply wrong — config is the source of truth and should win</td><td>the manual change was legitimate and should be kept — reality is right, and your config was the thing out of date</td></tr>
+<tr><td><strong>Risk</strong></td><td>you silently undo someone's real, possibly urgent, fix (e.g. a manual scale-up during an incident)</td><td>you have to correctly translate whatever was clicked in a console back into accurate HCL — easy to get subtly wrong</td></tr>
+</table>
+
+<p class="callout"><strong>Best practice:</strong> treat recurring drift as a process signal, not just a technical one. If the same resource keeps drifting, something outside Terraform keeps touching infrastructure it shouldn't — restrict console/API access for Terraform-managed resources, or bring that change into the config properly instead of leaving it as a manual habit.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A teammate manually deletes a resource in the cloud console — a resource your Terraform config still declares and your state still tracks. What does <code>terraform plan</code> show, and why?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Terraform refreshes state first and finds the resource genuinely gone from the real infrastructure. Since your config still declares it, <code>plan</code> shows it needs to be <strong>created</strong> again (not "no changes") — from Terraform's refreshed view, a resource it's supposed to own simply doesn't exist anymore.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What are the two ways to resolve that situation, and what does each one actually decide?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">(1) Run <code>terraform apply</code> — this recreates the resource, pushing your config back onto reality, appropriate if the deletion was a mistake. (2) Remove the resource's block from your config (and use <code>terraform state rm</code> so Terraform stops tracking it without trying to destroy something that's already gone) — appropriate if the deletion was intentional and the resource should no longer exist. Which one is correct depends entirely on whether the manual deletion was wanted — Terraform can't tell you that, only a human can.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Your teammate's <code>apply</code> got killed mid-run when their laptop lost power. Your own <code>apply</code> now fails with a lock error. Is it safe to immediately run <code>terraform force-unlock</code>?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">Only after confirming nobody's apply is genuinely still running. The lock outlived the crashed process, so it's now stale — but force-unlock can't tell the difference between "stale lock from a crash" and "someone's apply is legitimately mid-write." Unlocking a lock someone else actually holds risks two writers touching state at once, the exact corruption locking exists to prevent.</div>
+</div>
+
+<h2>Hands-on: watch <code>plan</code> catch drift, for free</h2>
+<p>Reproducing a stuck lock needs a real crash mid-write, which isn't practical to force in a lesson. Drift detection, though, you can see with the same local, zero-cost setup from Lessons 8–9 — no cloud account required, because the local backend and the <code>local_file</code> resource are enough to prove the mechanism.</p>
+
+<p>In the same project folder, make sure you have this (from earlier lessons):</p>
+<pre><code>resource "local_file" "pet_note" {
+  filename = "${path.module}/pet.txt"
+  content  = "hello from terraform"
+}</code></pre>
+
+<p>Walk through it:</p>
+<ul>
+<li>run <code>terraform apply</code>, type <code>yes</code> — this creates <code>pet.txt</code> and records it in state</li>
+<li>run <code>terraform plan</code> once more first, and confirm it reports no changes — state and reality agree</li>
+<li>now simulate someone changing infrastructure outside Terraform: delete the file directly, <strong>not</strong> through Terraform — <code>rm pet.txt</code></li>
+<li>run <code>terraform plan</code> again — you'll see it plan to <strong>create</strong> <code>local_file.pet_note</code> again, even though you didn't touch a single <code>.tf</code> file. That's the refresh step finding the file gone and comparing against your still-unchanged config.</li>
+<li>you now have the same choice as the quiz above: run <code>terraform apply</code> to recreate <code>pet.txt</code> (reality loses), or remove the resource block and run <code>terraform state rm local_file.pet_note</code> if you'd decided you didn't want the file anymore (config catches up to reality)</li>
+<li>if you re-applied, run <code>terraform destroy</code>, type <code>yes</code>, to clean up before moving on</li>
+</ul>
+
+<p class="callout"><strong>Note on locking hands-on:</strong> you won't reliably see a lock error running solo against the local backend — <code>apply</code> against a couple of local resources finishes in well under a second, too fast for two terminals to genuinely collide. On a shared remote backend with a team actually running applies concurrently, this is a routine, expected error message, not a bug — it's the lock doing its job.</p>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/state/locking" target="_blank" rel="noopener">developer.hashicorp.com — State Locking</a> (confirms locking prevents concurrent state corruption, that not all backends support it, and the exact <code>force-unlock</code> warning about multiple writers) · <a href="https://developer.hashicorp.com/terraform/language/backend/local" target="_blank" rel="noopener">developer.hashicorp.com — Local Backend</a> (confirms the local backend locks state using system APIs) · <a href="https://developer.hashicorp.com/terraform/language/backend/s3" target="_blank" rel="noopener">developer.hashicorp.com — S3 Backend</a> (confirms <code>use_lockfile</code> as the current native S3 locking method and that DynamoDB-based locking via <code>dynamodb_table</code> is deprecated) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>State locking is a "do not disturb" sign, not a permanent lock — Terraform acquires it automatically for operations that write state (like <code>apply</code>) and releases it automatically when the operation ends.</li>
+    <li>Not every backend supports locking, and mechanisms differ — the local backend uses system file-locking APIs; the S3 backend supports an optional native lockfile (<code>use_lockfile</code>), with the older DynamoDB-table method now deprecated. Always check your specific backend's docs.</li>
+    <li>A crashed process can leave a lock stuck. <code>terraform force-unlock &lt;LOCK_ID&gt;</code> clears it, but only after confirming no one else is actually holding it — unlocking an active lock risks the exact corruption locking prevents.</li>
+    <li>Drift is when real infrastructure changes outside Terraform, so it no longer matches state/config. <code>terraform plan</code> catches it automatically by refreshing state against real infrastructure before diffing against config.</li>
+    <li>Two fixes for drift: re-apply to force reality back to match config (config wins), or update your config to match reality (reality wins) — the right choice depends on whether the manual change should be kept, which only a human can decide.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0014-remote-state-backends.html">&larr; Lesson 14: Remote state & backends</a></span>
+  <span><a href="0016-state-surgery.html">Lesson 16: State surgery &rarr;</a></span>
+</div>
+
+</body>
+</html>

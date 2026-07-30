@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 17 — Why modules? DRY infrastructure</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 17 of 37</p>
+<h1>Why modules? DRY infrastructure</h1>
+
+<p>In Lesson 16 you did surgery on state — moving and importing resources without touching real infrastructure. That was a "fix the map when it stops matching the territory" skill. This lesson is different: it's about not having to redraw the same map three times in the first place. You already know resources, variables, and outputs (Lessons 6–8). Modules don't introduce a new concept — they're about <strong>organizing</strong> the blocks you already know so you can reuse them instead of copy-pasting.</p>
+
+<h2>What a module actually is</h2>
+<p>A module is a reusable, self-contained group of <code>.tf</code> files — resources, variables, outputs — bundled together so you can call the whole group as a single unit. Here's the twist that trips people up at first: <strong>every Terraform configuration you've written so far has already been a module.</strong> The official HashiCorp docs call it the <strong>root module</strong> — the collection of <code>.tf</code> files in the directory where you run <code>terraform apply</code>. Every other module you write or download is a <strong>child module</strong>, called from the root (or from another module).</p>
+
+<p class="callout"><strong>Mental model:</strong> think of a module like a function in a programming language. A function takes inputs (parameters), does some work internally, and returns outputs (a return value) — and you can call it as many times as you want without rewriting its body. A Terraform module takes inputs (variables), creates resources internally, and exposes outputs — and you can call it from as many places as you want without rewriting the resource blocks inside it.</p>
+
+<h2>Why modules matter — DRY infrastructure</h2>
+<p>Imagine your "standard web server setup" is five resource blocks: a security group, an EC2 instance, an EBS volume, an Elastic IP, and a DNS record. Without modules, if you need that same setup for <code>dev</code>, <code>staging</code>, and <code>prod</code>, you'd copy-paste those five blocks into three separate configs, changing a few variable values each time (instance size, environment tag, subnet).</p>
+
+<p>That's a maintenance trap. Find a bug in the security group rule, or need to add a new tag everyone requires? Now you're hunting down and fixing the same change in three (or ten, or fifty) places, and it's only a matter of time before one copy drifts out of sync with the others. This is the same "Don't Repeat Yourself" (DRY) principle you'd apply in any programming language — write the logic once, reuse it everywhere, fix it in exactly one place when it needs fixing.</p>
+
+<p>A module fixes this: write the five-resource "standard web server setup" once, as a module. Then call it three times — once per environment — passing in only what differs (instance size, environment name, subnet ID). The resource logic lives in exactly one place.</p>
+
+<h2>The anatomy of a typical module folder</h2>
+<p>There's no required file layout enforced by Terraform — a module is just "a directory containing <code>.tf</code> files." But the community convention, and the one you should default to, mirrors exactly what you already learned in Lessons 6–8:</p>
+<ul>
+<li><code>main.tf</code> — the resource blocks, the actual infrastructure logic</li>
+<li><code>variables.tf</code> — the module's input variables, i.e. what the caller is allowed to configure</li>
+<li><code>outputs.tf</code> — the module's output values, i.e. what the caller can read back out</li>
+</ul>
+<p>Notice: this is not new syntax. It's the same <code>resource</code>, <code>variable</code>, and <code>output</code> blocks you've been writing all along, just grouped into their own folder so they can be called as a unit instead of pasted inline.</p>
+
+<h2>Calling a module from your root config</h2>
+<p>To use a module, you write a <code>module</code> block in your root configuration (or in another module). Per the official Terraform docs, the basic shape is:</p>
+<pre><code>module "&lt;LABEL&gt;" {
+  source = "&lt;location-of-module-files&gt;"
+}</code></pre>
+<p><code>"&lt;LABEL&gt;"</code> is a local name you choose for this call to the module — it's how you'll refer to it elsewhere in your config. <code>source</code> tells Terraform where to find the module's files: a local path like <code>"./modules/web-server"</code>, a Git repo, or the public Terraform Registry.</p>
+
+<p>You pass values into the module the same way you'd set variables anywhere else — as extra arguments inside the block, one per input variable the module declares:</p>
+<pre><code>module "web_dev" {
+  source        = "./modules/web-server"
+  environment   = "dev"
+  instance_size = "t3.micro"
+}
+
+module "web_prod" {
+  source        = "./modules/web-server"
+  environment   = "prod"
+  instance_size = "t3.large"
+}</code></pre>
+<p>Same module, called twice, only the inputs differ — exactly the copy-paste problem solved. To read a value back out of a module (something it exposed via its <code>outputs.tf</code>), you use <code>module.&lt;LABEL&gt;.&lt;output name&gt;</code>:</p>
+<pre><code>output "prod_server_ip" {
+  value = module.web_prod.public_ip
+}</code></pre>
+
+<p class="callout"><strong>Best practice — don't over-modularize:</strong> a module only pays for itself when you actually reuse it, or when it meaningfully hides complexity behind a clean interface. Wrapping a single resource block in a module you call exactly once, "just in case," usually adds a layer of indirection with no real benefit — now anyone reading your config has to jump into another folder to see what a single <code>aws_instance</code> actually does. Lesson 20 covers this in more depth ("when NOT to modularize") — for now, just keep the instinct: reach for a module when you're about to repeat yourself, not by default for every resource.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You have the exact same 3 resource blocks in your dev, staging, and prod configs — only the variable values differ between them (instance size, environment name, and so on). What should you do?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Pull those 3 resources out into a module (e.g. main.tf + variables.tf + outputs.tf in their own folder). Then call that module three times — once per environment — with a module block for each, passing in only the values that differ (environment, instance size, subnet, etc.) as inputs. The resource logic lives in one place instead of being copy-pasted three times, so a fix or an added tag only needs to happen once.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. True or false: your root configuration — the <code>.tf</code> files where you normally run <code>terraform apply</code> — is technically already a module.</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">True. HashiCorp calls it the "root module." Every configuration you've written since Lesson 1 has been a module — you just weren't calling any child modules from inside it yet.</div>
+</div>
+
+<h2>Hands-on: spot the duplication</h2>
+<p>You don't need to write a module yet (that's Lesson 18) — this exercise is just about recognizing the smell.</p>
+<ul>
+<li>open any config folder from earlier lessons that has more than one resource block</li>
+<li>ask yourself: if I needed this exact same group of resources again, in a different environment, would I copy-paste these blocks into a new folder and hand-edit a few values?</li>
+<li>if yes — that's the exact situation a module is built for. Note which values would need to change between copies (those become your module's input variables) and which values you'd want to read back out (those become your module's outputs)</li>
+<li>keep that list — you'll turn it into a real module folder in Lesson 18</li>
+</ul>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/modules/syntax" target="_blank" rel="noopener">developer.hashicorp.com — Module Blocks</a> (confirms the <code>module "&lt;LABEL&gt;" { source = ... }</code> syntax, that inputs are passed as arguments inside the block, and that outputs are read via <code>module.&lt;LABEL&gt;.&lt;output&gt;</code>) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A module is a reusable, self-contained group of Terraform resources — your root config (where you run <code>apply</code>) is technically already a module, called the "root module."</li>
+    <li>Modules exist to keep infrastructure DRY: write a setup once, reuse it across environments instead of copy-pasting resource blocks.</li>
+    <li>A typical module folder is just <code>main.tf</code>, <code>variables.tf</code>, <code>outputs.tf</code> — the same building blocks from Lessons 6–8, organized as a reusable unit.</li>
+    <li>You call a module with <code>module "name" { source = "./path" ... }</code>, pass values in as arguments, and read values out with <code>module.name.output</code>.</li>
+    <li>Don't over-modularize — a module used only once with no reuse benefit usually just adds indirection (more on this in Lesson 20).</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0016-state-surgery.html">&larr; Lesson 16: State surgery</a></span>
+  <span><a href="0018-writing-your-first-module.html">Lesson 18: Writing your first module &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 14 — Remote state & backends</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 14 of 37</p>
+<h1>Remote state & backends</h1>
+
+<p>Lesson 13 showed you what state is and why Terraform needs it. By default, that state lives in one file — <code>terraform.tfstate</code> — sitting on whatever laptop happened to run <code>terraform apply</code>. That's fine for a solo learning folder. It breaks the moment a second person, or a second machine, gets involved.</p>
+
+<h2>Why local state doesn't survive contact with a team</h2>
+<p>Picture two engineers, Priya and Marcus, both working on the same infrastructure folder.</p>
+<ul>
+<li><strong>The file lives on one laptop.</strong> Priya runs <code>terraform apply</code> from her machine. The only copy of the state — the only record Terraform has of what it created and how it maps to your config — now lives in Priya's <code>terraform.tfstate</code>. If her laptop dies, or she just forgets to push the file somewhere, Marcus has no way to run Terraform against that infrastructure safely. He'd either have to reconstruct state by hand or risk Terraform creating duplicate resources because it doesn't know they already exist.</li>
+<li><strong>Two people apply at the same time.</strong> Even if they share the file — say, by committing it to Git — nothing stops Marcus from running <code>terraform apply</code> at the exact moment Priya is mid-apply. Two Terraform processes now read the same "before" state, compute two different plans, and both start making real API calls to change real infrastructure. Whoever writes their state file last silently overwrites the other's changes in the state — even though both sets of infrastructure changes actually happened. The state file no longer matches reality, and nobody gets an error telling them so.</li>
+</ul>
+
+<p class="callout"><strong>Mental model:</strong> local state has exactly the two problems any shared mutable file has when multiple people touch it — no single source of truth (whose copy is current?), and no protection against simultaneous writes. Committing <code>terraform.tfstate</code> to Git does not fix either problem: Git can merge text, but it has no idea how to merge "two different sets of real cloud resources," and it does nothing to stop two applies from racing each other. This is also why state files should never go into Git at all — beyond the race condition, they routinely contain sensitive values (database passwords, private keys) in plain text.</p>
+
+<h2>What a backend actually is</h2>
+<p>A <strong>backend</strong> is Terraform's answer to "where does the state file live, and how does Terraform read/write it?" Every Terraform configuration has a backend — if you never configure one, you're using the default: <code>local</code>, which just reads and writes a file on the disk you're standing on. A <strong>remote backend</strong> moves that file to shared storage that every team member and every CI pipeline can reach, over the network, using the same credentials-based access control you already use for that storage.</p>
+
+<p>Moving state off your laptop solves the "single source of truth" half of the team problem directly: everyone who runs Terraform reads and writes the same state, from the same place, through the same access controls. It does not, by itself, solve simultaneous applies — that's a separate capability called <strong>state locking</strong>, which not every backend supports the same way. Lesson 15 covers locking in depth; for now, just note that remote storage and locking are two different problems that happen to often be solved by the same backend.</p>
+
+<h2>The <code>backend</code> block</h2>
+<p>You configure a backend inside the <code>terraform</code> block, as a nested <code>backend "&lt;type&gt;"</code> block. The syntax is the same shape regardless of which backend you pick — a type name in quotes, then key/value arguments specific to that backend:</p>
+
+<pre><code>terraform {
+  backend "&lt;backend_type&gt;" {
+    # arguments specific to this backend type
+  }
+}</code></pre>
+
+<p>Whenever you add, remove, or change a <code>backend</code> block, you must run <code>terraform init</code> again — Terraform needs to reconfigure itself to talk to the new location, and it will prompt you about what to do with any existing state (migrate it to the new backend, or start fresh).</p>
+
+<h2>Common remote backends, conceptually</h2>
+<p>You won't set any of these up hands-on in this lesson — each one needs a real cloud account and a pre-existing storage bucket/container, which is beyond a local learning folder. The goal here is to recognize the shape of each, so the config makes sense the day you do have a cloud account wired up.</p>
+
+<h3>AWS — <code>s3</code></h3>
+<p>Stores state as an object in an S3 bucket. State locking on this backend is handled natively by S3 itself via the <code>use_lockfile</code> argument (Terraform writes a lock object alongside the state file) — older guides pair the S3 backend with a separate DynamoDB table for locking, but HashiCorp's current documentation marks DynamoDB-based locking as deprecated in favor of this native approach.</p>
+<pre><code>terraform {
+  backend "s3" {
+    bucket       = "mybucket"
+    key          = "path/to/my/key"
+    region       = "us-east-1"
+    use_lockfile = true
+  }
+}</code></pre>
+
+<h3>Azure — <code>azurerm</code></h3>
+<p>Stores state as a blob in an Azure Storage Account container.</p>
+<pre><code>terraform {
+  backend "azurerm" {
+    resource_group_name  = "StorageAccount-ResourceGroup"
+    storage_account_name = "abcd1234"
+    container_name       = "tfstate"
+    key                  = "prod.terraform.tfstate"
+  }
+}</code></pre>
+
+<h3>Google Cloud — <code>gcs</code></h3>
+<p>Stores state as an object in a Google Cloud Storage bucket.</p>
+<pre><code>terraform {
+  backend "gcs" {
+    bucket = "tf-state-prod"
+    prefix = "terraform/state"
+  }
+}</code></pre>
+
+<h3>HCP Terraform — <code>cloud</code> block, not <code>backend</code></h3>
+<p>HashiCorp's own managed offering (HCP Terraform, formerly Terraform Cloud) stores and locks state for you automatically as part of a "workspace." It's configured differently from the others — with a <code>cloud</code> block instead of a <code>backend</code> block, and HashiCorp's documentation is explicit that a configuration cannot have both at once:</p>
+<pre><code>terraform {
+  cloud {
+    organization = "example_corp"
+
+    workspaces {
+      name = "my-app-prod"
+    }
+  }
+}</code></pre>
+<p>Everything else you've learned about remote backends still applies conceptually — state lives off your laptop, in one shared place — HCP Terraform just also runs the <code>plan</code>/<code>apply</code> itself and manages locking for you, rather than you pointing Terraform at storage you manage.</p>
+
+<p class="callout"><strong>Best practice — always remote in production:</strong> production Terraform should always use a remote backend. Never local state. The failure modes above (one laptop is the only copy, two people apply at once) aren't hypothetical edge cases — they are the default behavior the moment more than one person or one CI job touches the same infrastructure. Set the backend up before the first real <code>apply</code>, not after the first incident.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your team moves from local state to an S3 backend. Does this, by itself, stop two people from running <code>apply</code> at the same time?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Not automatically. Moving to a remote backend gives you one shared, authoritative copy of the state — it solves the "whose copy is current" problem. Preventing two simultaneous applies is a separate capability, state locking, which depends on the backend supporting it and being configured for it (e.g. S3's <code>use_lockfile</code>). This is exactly what Lesson 15 covers.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What problem does remote state solve on its own, without locking?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Team collaboration and a single source of truth — everyone (and every CI pipeline) reads and writes the same state file, from shared storage, instead of state being scattered across individual laptops where no one else can find or trust it.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. True or false: you can configure both a <code>backend</code> block and a <code>cloud</code> block in the same <code>terraform</code> block to get extra redundancy.</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">False. HCP Terraform's <code>cloud</code> block replaces a <code>backend</code> block entirely — a configuration cannot have both. HCP Terraform manages state storage and locking itself once you use <code>cloud</code>.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/backend" target="_blank" rel="noopener">developer.hashicorp.com — backend block configuration</a> · <a href="https://developer.hashicorp.com/terraform/language/backend/s3" target="_blank" rel="noopener">S3 backend</a> (schema: <code>bucket</code>, <code>key</code>, <code>region</code> required; <code>use_lockfile</code> for native locking, DynamoDB-based locking deprecated) · <a href="https://developer.hashicorp.com/terraform/language/backend/azurerm" target="_blank" rel="noopener">azurerm backend</a> · <a href="https://developer.hashicorp.com/terraform/language/backend/gcs" target="_blank" rel="noopener">gcs backend</a> — all verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Local state fails a team in two ways: it lives on one laptop (no shared source of truth), and nothing stops two people from applying at the same time (races that silently overwrite each other's state).</li>
+    <li>A <strong>backend</strong> is where Terraform stores state and how it accesses it. Remote backends (<code>s3</code>, <code>azurerm</code>, <code>gcs</code>, and others) move state to shared storage everyone can reach; HCP Terraform uses a <code>cloud</code> block instead and manages storage/locking for you.</li>
+    <li>Remote state alone solves collaboration and single-source-of-truth. It does not automatically solve simultaneous applies — that's state locking, covered in Lesson 15.</li>
+    <li>Best practice: production Terraform should always use a remote backend, never local state.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0013-understanding-state.html">&larr; Lesson 13: Understanding Terraform state</a></span>
+  <span><a href="0015-state-locking-and-drift.html">Lesson 15: State locking & drift detection &rarr;</a></span>
+</div>
+
+</body>
+</html>

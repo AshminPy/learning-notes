@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 28 — HCP Terraform workspaces & remote execution</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 28 of 37</p>
+<h1>HCP Terraform workspaces &amp; remote execution</h1>
+
+<p>Lesson 14 mentioned HCP Terraform in passing — the <code>cloud</code> block that replaces a <code>backend</code> block, storing and locking state for you. This lesson opens the CI/CD &amp; Collaboration phase of the course by going much deeper: what HCP Terraform actually is as a platform, what a "workspace" means there, and why that word colliding with Lesson 21's <code>terraform workspace</code> command trips up almost every beginner. It's also worth knowing this isn't a side topic — HCP Terraform is its own scored domain on the Terraform Associate exam, so the concepts here show up directly on the test, not just in real-world team setups.</p>
+
+<h2>What HCP Terraform is</h2>
+<p>HCP Terraform (formerly called Terraform Cloud — you'll still see both names in the wild, including in older docs and blog posts) is HashiCorp's own managed application for running Terraform. Instead of Terraform living only as a CLI binary on your laptop, HCP Terraform is a hosted service: you point your configuration at it, and it takes over storing state, running <code>plan</code>/<code>apply</code>, managing variables and credentials, and keeping a full history of every run — all through a web UI and API, not just your terminal.</p>
+
+<p>Everything you learned in Lessons 13–15 about state still applies conceptually. HCP Terraform is, among other things, a remote backend — it solves the same "one shared source of truth, with locking" problem. What it adds on top is the subject of this lesson: a place to <em>run</em> Terraform, not just store its state.</p>
+
+<h2>The workspace name collision — the single most important thing in this lesson</h2>
+<p>Here's the trap. You already know the word "workspace" from Lesson 21: <code>terraform workspace new staging</code> creates a second, isolated <em>state file</em> for the same local configuration, still run entirely from your own laptop with your own credentials. HCP Terraform uses the exact same word, <strong>workspace</strong>, for something much bigger — and the two are genuinely different concepts that happen to share a name, not two views of the same thing.</p>
+
+<p class="callout"><strong>Mental model — pin this down before anything else in the lesson:</strong> a <strong>CLI workspace</strong> (Lesson 21) is a state-file partition inside one working directory on your machine — same config, same backend, same credentials, just a different <code>.tfstate</code>. An <strong>HCP Terraform workspace</strong> is a full managed environment on HashiCorp's platform: its own VCS connection, its own variables and credentials, its own state, its own run history, its own access controls — roughly the equivalent of "one deployable unit," closer in spirit to what an entire remote-backend-plus-CI-pipeline setup looks like for one piece of infrastructure. HashiCorp's own workspaces documentation calls out this exact confusion directly, describing CLI workspaces as "a legacy feature" that are "very different from HCP Terraform workspaces," and warns that "the use of the same term for two different concepts is an unfortunate naming clash." That's not a beginner's assumption — that's HashiCorp's own docs telling you it's a real, acknowledged source of confusion.</p>
+
+<p>A practical way to keep them apart: a CLI workspace changes almost nothing except which state file gets read — same folder, same person running it, same access. An HCP Terraform workspace is closer to "a whole project's home" — it holds configuration, variables (including secrets), state, and a full run history, and it's the unit that role-based access control and governance policies attach to. If you're not sure which one a sentence means, ask: "does this exist only on my laptop, or does it live on HashiCorp's platform with its own login and access controls?" CLI workspace → laptop. HCP Terraform workspace → platform.</p>
+
+<h2>Projects — grouping workspaces</h2>
+<p>Once you have more than a handful of HCP Terraform workspaces — one per microservice, one per environment, one per region — you need a way to organize them. That's what a <strong>project</strong> is: a grouping layer that sits above workspaces, letting you organize related workspaces together and apply scoped access control at the project level rather than managing permissions workspace-by-workspace one at a time. Think of it the way you'd think of a folder of related repos in GitHub — the project doesn't run anything itself, it's an organizational and permissions boundary around a set of workspaces that belong together.</p>
+
+<h2>Remote execution — plan/apply run on HCP Terraform, not your laptop</h2>
+<p>This is the other half of what makes HCP Terraform more than "just" a remote backend. When a workspace is configured for remote execution, running a plan or apply doesn't execute on your machine at all — it runs on HCP Terraform's own infrastructure (disposable virtual machines it provisions per run), using the workspace's stored configuration, variables, and credentials.</p>
+
+<p>Why that matters in practice:</p>
+<ul>
+<li><strong>No "works on my machine."</strong> Every run — whether triggered by you, a teammate, or a pull request — executes with the exact same Terraform version, the exact same provider plugins, and the exact same environment. You stop debugging "it worked when I ran it locally but failed in CI" because there's no longer a separate "locally" — the run environment is always the same one.</li>
+<li><strong>Credentials stay off laptops.</strong> Cloud provider credentials live as variables inside the workspace on HCP Terraform, not in a shell environment variable or a config file on someone's machine. Nobody needs their own copy of the production AWS keys just to run <code>terraform plan</code>.</li>
+<li><strong>Every run is recorded.</strong> HCP Terraform keeps a full history — who triggered each run, what the plan showed, whether it was approved, what actually applied. That audit trail doesn't exist by default when applies happen from scattered local terminals.</li>
+</ul>
+
+<h2>VCS-driven workflow</h2>
+<p>The other major piece: a workspace can connect directly to a version control repository (GitHub, GitLab, and others). Once connected, HCP Terraform automatically triggers a <code>plan</code> run whenever a pull request touches that workspace's configuration — you get a plan output showing exactly what would change, attached right to the PR, before anyone reviews or merges. Push to the branch that workspace tracks (commonly after merge), and HCP Terraform can automatically kick off the corresponding apply, subject to whatever approval settings the workspace requires.</p>
+
+<p class="callout"><strong>Why this matters for CI/CD:</strong> this is the mechanical foundation the rest of this phase of the course builds on. "Plan on PR, apply on merge, always the same machine, full history of who approved what" is the core loop a real Terraform CI/CD pipeline needs — Lesson 29 builds a complete pipeline, and having HCP Terraform's VCS-driven workflow as a mental model makes that pipeline much easier to follow, whether you build it with HCP Terraform itself or with a general-purpose CI tool doing the equivalent job.</p>
+
+<h2>Cost — is this something you can actually try?</h2>
+<p>Yes. HCP Terraform has a genuine free tier suitable for learning and small teams — HashiCorp's own documentation states that "many of its features are free for small teams, including remote state storage, remote runs, and VCS connections," with the constraint that "free organizations are limited to 500 managed resources." For a learning account, or a small real team, 500 managed resources is a lot of room — you won't hit that ceiling working through this course. Paid tiers (Essentials, Standard, Premium) exist for larger organizations that need things like Sentinel/OPA policy enforcement at scale, SSO, or higher resource ceilings, but none of that is required to follow along here.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Priya says "I ran <code>terraform workspace new staging</code> on my laptop, so now I have an HCP Terraform workspace called staging." Is she right?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. <code>terraform workspace new staging</code> is the CLI workspace command from Lesson 21 — it creates a second local state file for the same config, still run from her laptop with her own credentials. It has nothing to do with HCP Terraform's platform. An HCP Terraform workspace is created on HashiCorp's platform (via the UI, API, or `cloud` block config) and comes with its own VCS connection, variables, and run history — a completely different, unrelated concept that happens to share the word "workspace."</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What specifically does "remote execution" mean in HCP Terraform, and name one concrete problem it solves that plain remote state storage (Lesson 14) does not.</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Remote execution means the `plan`/`apply` commands themselves run on HCP Terraform's own infrastructure (disposable VMs), not on whoever's laptop triggered them. Plain remote state storage (an S3/GCS/azurerm backend) only moves *where the state file lives* — the actual Terraform process, and whatever Terraform version, plugins, and credentials happen to be on that person's machine, still runs locally. Remote execution removes that variability entirely: every run uses the same environment and the workspace's own stored credentials, which is what kills "works on my machine" and keeps cloud credentials off individual laptops.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. What does a "project" group together in HCP Terraform, and why would a team want that?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">A project groups related workspaces together — for example, all the workspaces for one application's dev/staging/prod environments. It exists so a team can apply access control and organization at the project level (who can see or touch this whole group of workspaces) instead of configuring permissions one workspace at a time.</div>
+</div>
+
+<h2>Hands-on: read a real HCP Terraform workspace, no cloud account required</h2>
+<p>This lesson doesn't require signing up for anything to get the core mental model straight, but HCP Terraform does have a genuine free tier if you want to go further later. For now:</p>
+<ul>
+<li>reread the <code>cloud</code> block from Lesson 14:
+<pre><code>terraform {
+  cloud {
+    organization = "example_corp"
+
+    workspaces {
+      name = "my-app-prod"
+    }
+  }
+}</code></pre>
+</li>
+<li>point at the <code>name = "my-app-prod"</code> line and say out loud: "this is an HCP Terraform workspace — a managed environment on HashiCorp's platform, not a local state partition." Compare it to <code>terraform workspace new prod</code> from Lesson 21 and name, out loud, at least two things the HCP Terraform workspace has that the CLI one doesn't (its own VCS connection, its own stored variables/credentials, its own run history, project-level access control).</li>
+<li>if you do want to look at the real thing: <a href="https://app.terraform.io/public/signup/account" target="_blank" rel="noopener">HCP Terraform's free signup</a> lets you create an organization, a project, and a workspace without a credit card — connect it to a throwaway GitHub repo with a single <code>main.tf</code> (even just the <code>random_pet</code> example from earlier lessons) and open a pull request that touches it. Watch the plan appear automatically on the PR — that's the VCS-driven workflow from this lesson, happening for real.</li>
+</ul>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/cloud-docs/workspaces" target="_blank" rel="noopener">developer.hashicorp.com — HCP Terraform: Workspaces</a> (confirms a workspace stores configuration, state, variables, credentials, and run history; confirms CLI workspaces are "a legacy feature" and that using the same term for both is "an unfortunate naming clash"; confirms projects "let you organize your workspaces into groups") · <a href="https://developer.hashicorp.com/terraform/cli/workspaces" target="_blank" rel="noopener">developer.hashicorp.com — CLI: Workspaces</a> (confirms the CLI workspace feature is local state partitioning, distinct from HCP Terraform workspaces) · <a href="https://developer.hashicorp.com/terraform/cloud-docs/overview" target="_blank" rel="noopener">developer.hashicorp.com — HCP Terraform Overview</a> (confirms "many of its features are free for small teams, including remote state storage, remote runs, and VCS connections" and "free organizations are limited to 500 managed resources") · <a href="https://www.hashicorp.com/en/certifications/infrastructure-automation" target="_blank" rel="noopener">developer.hashicorp.com — Terraform Associate certification</a> (confirms "HCP Terraform" is domain 8 of the exam outline, covering workspaces/projects and collaboration/governance) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>HCP Terraform (formerly Terraform Cloud) is HashiCorp's managed platform for running Terraform — state storage plus remote execution, variables, and run history.</li>
+    <li><strong>CLI workspace</strong> (Lesson 21) = local state partition, same machine and credentials. <strong>HCP Terraform workspace</strong> = a full managed environment on the platform, with its own VCS connection, variables, credentials, and run history. Same word, unrelated concepts — HashiCorp's own docs call this an "unfortunate naming clash."</li>
+    <li><strong>Projects</strong> group related workspaces for organization and scoped access control.</li>
+    <li><strong>Remote execution</strong> runs plan/apply on HCP Terraform's own infrastructure, not your laptop — consistent environment, credentials off individual machines, full audit history.</li>
+    <li><strong>VCS-driven workflow</strong>: connect a workspace to a repo, get automatic plans on pull requests and (optionally) automatic applies on merge — the mechanical foundation for Lesson 29's CI/CD pipeline.</li>
+    <li>HCP Terraform is its own scored domain on the Terraform Associate exam, and it has a genuine free tier (500 managed resources) suitable for learning.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0027-automated-testing.html">&larr; Lesson 27: Automated testing</a></span>
+  <span><a href="0029-cicd-pipeline.html">Lesson 29: A real CI/CD pipeline &rarr;</a></span>
+</div>
+
+</body>
+</html>

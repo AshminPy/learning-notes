@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 22 — Managing dev/stage/prod environments</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 22 of 37</p>
+<h1>Managing dev/stage/prod environments</h1>
+
+<p>Lesson 21 gave you workspaces as a tool for running the same config against multiple states. This lesson is the judgment call that sits on top of that tool: given a real team with a dev, staging, and production environment, which pattern do you actually reach for? There are three patterns you'll meet in real Terraform codebases, and they trade off isolation against duplication in different ways. This lesson closes out the Environments phase of the course — no new syntax, just the design thinking that decides how your whole repo is laid out.</p>
+
+<h2>Why this decision matters more than it looks</h2>
+<p>Get this wrong and the failure mode isn't a syntax error — it's a <code>terraform apply</code> against the wrong workspace at 2am touching production instead of dev, or a staging change that silently drifts from prod because nobody remembered to port it across a branch. The three patterns below all "work" in the sense that Terraform will run. What separates them is how hard they make it to accidentally hurt production, and how much duplicated code you carry to get that safety.</p>
+
+<h2>Pattern 1 — Terraform workspaces</h2>
+<p>You already know this one from Lesson 21: one directory, one set of <code>.tf</code> files, multiple named workspaces (<code>terraform workspace new staging</code>), each with its own state file but sharing the same backend and the same configuration. Environment differences get expressed through <code>terraform.workspace</code> conditionals or workspace-keyed <code>.tfvars</code>.</p>
+<p>It's the simplest pattern to set up — no duplicated files, one config to maintain. But the official CLI workspaces documentation is explicit about its limits: <strong>"CLI workspaces within a working directory use the same backend, so they are not a suitable isolation mechanism"</strong> for scenarios that need separate credentials and access controls between environments. Same backend also means the same state storage, the same IAM permissions on that storage, and — if you're not careful with your prompt or CI step — a single typo'd workspace name away from running a prod-shaped plan against the wrong state.</p>
+
+<h2>Pattern 2 — separate directories per environment</h2>
+<p>Instead of one directory with multiple workspaces, each environment gets its own directory, its own backend configuration, and its own <code>.tfvars</code> file — all of them calling shared modules for the actual resources:</p>
+<pre><code>environments/
+  dev/
+    main.tf        # module "app" { source = "../../modules/app" ... }
+    backend.tf      # backend "s3" { key = "dev/app.tfstate" ... }
+    dev.tfvars
+  staging/
+    main.tf
+    backend.tf
+    staging.tfvars
+  prod/
+    main.tf
+    backend.tf
+    prod.tfvars
+modules/
+  app/
+    main.tf
+    variables.tf
+    outputs.tf</code></pre>
+<p>This is more explicit and more isolated: each environment can point at a completely different backend (different S3 bucket, different IAM role, different account even), and a plan run from <code>environments/dev</code> physically cannot touch prod's state — there's no shared workspace name to mistype. It costs you some duplication (each directory repeats the module-calling boilerplate), but the actual resource logic still lives once, in the shared module.</p>
+<p>This is the pattern the official docs point you toward when workspaces aren't enough. The same "When NOT to Use Workspaces" guidance recommends: <strong>"Instead of creating CLI workspaces, you can use one or more re-usable modules to represent the common elements and then represent each instance as a separate configuration that instantiates those common elements in the context of a different backend."</strong> That's exactly this pattern — shared modules, separate configurations, separate backends.</p>
+
+<h2>Pattern 3 — separate git branches per environment</h2>
+<p>The third pattern you'll encounter in the wild: one directory, one config, but a long-lived branch per environment (<code>dev</code>, <code>staging</code>, <code>main</code>/<code>prod</code>), where promoting a change means merging one branch into the next. It feels natural if your team already thinks in GitFlow-style branching for application code.</p>
+<p>It's generally discouraged for Terraform specifically, and HashiCorp's own recommended-practices guide says so directly. Discussing how to structure environments, it states plainly: <strong>"we believe a model of one canonical branch works best"</strong> — meaning one branch, with environments differentiated by variables (which is pattern 1 or 2's job), not by which branch you're on. Branch-per-environment is mentioned only as a fallback for teams whose existing code isn't yet structured to support the single-branch model — a migration stepping stone, not the target design.</p>
+<p>The reason it's discouraged is specific to infrastructure, not code style: state doesn't merge the way code does. If <code>staging</code> and <code>prod</code> branches drift apart — someone hotfixes prod directly, or a module version gets bumped on one branch but not merged to the other — <code>git merge</code> can't reconcile "which infrastructure state is correct" the way it reconciles text. You end up finding out about the drift during a stressful production apply, not during a code review.</p>
+
+<h2>All three side by side</h2>
+<table>
+<tr><th></th><th>Workspaces</th><th>Separate directories</th><th>Separate branches</th></tr>
+<tr><td><strong>Config duplication</strong></td><td>None — one config for all environments</td><td>Some — each directory repeats module-calling boilerplate, logic stays shared</td><td>None day-to-day, but real duplication risk as branches diverge over time</td></tr>
+<tr><td><strong>Isolation strength</strong></td><td>Weak — same backend, same credentials for every environment</td><td>Strong — separate backend, credentials, and state per environment possible</td><td>Weak to moderate — depends entirely on backend setup per branch, drift is the real risk</td></tr>
+<tr><td><strong>Best fit</strong></td><td>Environments that are meant to stay near-identical (e.g. ephemeral test copies)</td><td>Environments with meaningfully different config — different sizing, different access controls, different accounts</td><td>Teams already mid-migration from a legacy branch-based workflow</td></tr>
+<tr><td><strong>HashiCorp's stance</strong></td><td>Not a suitable isolation mechanism for separate credentials/access controls</td><td>The recommended alternative when workspaces aren't enough</td><td>Explicitly a fallback, not the recommended model — "one canonical branch works best"</td></tr>
+</table>
+
+<p class="callout"><strong>Best practice:</strong> whichever pattern you pick, production should never share a workspace or a state file with dev — full stop. Blast-radius isolation matters more than staying perfectly DRY. A typo in a workspace name or a stale branch shouldn't be the only thing standing between a routine dev change and a production outage. If keeping dev and prod maximally similar (pattern 1) starts to conflict with keeping prod maximally safe, safety wins — that's exactly why HashiCorp's own guidance steers meaningfully-different environments toward separate directories and separate backends instead.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your dev and prod environments use Terraform workspaces sharing one backend. A teammate on the ops team says "prod state should be encrypted with a different KMS key and only our senior engineers should have write access to it." Can you achieve that with workspaces alone? Why or why not?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No, not with workspaces alone. Workspaces within one directory share a single backend, which means they share the same storage location, the same encryption configuration, and the same IAM permissions on that storage — you can't give one workspace a different KMS key or a stricter access policy than another. To get per-environment backend configuration (different key, different access controls), you need separate directories with separate backend blocks — pattern 2.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A teammate proposes a <code>dev</code> branch and a <code>prod</code> branch, promoting changes by merging <code>dev</code> into <code>prod</code> after testing. What does HashiCorp's own guidance say about this pattern, and what's the specific reason it causes problems for infrastructure (as opposed to application code)?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">HashiCorp's recommended-practices guide states "we believe a model of one canonical branch works best," treating branch-per-environment as a fallback for teams migrating off it, not the target design. The specific problem for infrastructure: state doesn't merge the way source code does. If the two branches' real infrastructure drifts apart — a manual prod hotfix, a module bump applied to one branch but not the other — <code>git merge</code> can resolve the text conflict but can't tell you which actual infrastructure state is correct. That mismatch surfaces later, often during a prod apply, instead of during code review where it'd be cheap to catch.</div>
+</div>
+
+<h2>Hands-on: pick the pattern for a real scenario</h2>
+<p>Scenario: your team runs a web app in dev and prod. Dev runs on a single small instance with permissive security group rules so engineers can debug freely. Prod needs to run on larger, autoscaled instances, with tightly locked-down security groups, and only two senior engineers should be able to apply changes to prod state at all — nobody on the wider team should even have read access to prod's backend.</p>
+<ul>
+<li>Write down which of the three patterns fits this scenario, and which pattern(s) you're ruling out.</li>
+<li>For the pattern you picked, sketch (in words, no code needed) what would differ between the dev and prod setups: what lives in a shared module, and what's specific to each environment's own configuration.</li>
+<li>Name the one thing pattern 1 (workspaces) cannot give you here, that's a hard requirement in this scenario.</li>
+</ul>
+<div class="quiz">
+<p>Reveal one reasonable answer (the point is the reasoning, not memorizing this exact answer)</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">
+<p><strong>Pattern chosen: separate directories per environment (pattern 2).</strong> Ruled out workspaces, because the access-control requirement — only two senior engineers can touch prod state, nobody else even gets read access — needs a genuinely separate backend with its own IAM policy, and workspaces share one backend by design. Ruled out branches too: the requirement here is about isolation of state and access, not about code promotion timing, so branches don't solve the actual problem and add drift risk on top.</p>
+<p><strong>What's shared vs specific:</strong> a shared module (e.g. <code>modules/webapp</code>) owns the actual resources — instance definition, security group shape, autoscaling group — parameterized by inputs like instance size and allowed CIDR ranges. <code>environments/dev</code> calls that module with a small instance size and open CIDR ranges, pointed at a backend anyone on the team can read. <code>environments/prod</code> calls the same module with a larger, autoscaled instance size and locked-down CIDR ranges, pointed at a separate backend whose IAM policy only grants the two senior engineers write access.</p>
+<p><strong>What workspaces can't give you:</strong> per-environment backend access control. Workspaces sharing one backend means whoever can apply to the dev workspace has the same underlying storage access as whoever applies to the prod workspace — there's no way to lock prod's state behind a stricter IAM policy while dev stays open, because it's all the same backend.</p>
+</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/cli/workspaces" target="_blank" rel="noopener">developer.hashicorp.com — Workspaces (CLI)</a> (source of the "not a suitable isolation mechanism" warning and the recommended alternative of separate configurations calling shared modules with different backends) · <a href="https://developer.hashicorp.com/terraform/cloud-docs/recommended-practices/part3.3" target="_blank" rel="noopener">developer.hashicorp.com — Recommended Practices, Part 3.3</a> (source of "we believe a model of one canonical branch works best," and branch-per-environment being presented as a migration fallback rather than the recommended design) · <a href="https://developer.hashicorp.com/terraform/language/state/workspaces" target="_blank" rel="noopener">developer.hashicorp.com — Workspaces (state)</a> (background on how workspace state separation works, referenced from Lesson 21) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Three real-world patterns for managing dev/stage/prod: Terraform workspaces (Lesson 21), separate directories per environment with their own backend and <code>.tfvars</code>, and separate git branches per environment.</li>
+    <li>Workspaces are simplest but weakest on isolation — same backend, same credentials, same access controls for every environment, per HashiCorp's own docs.</li>
+    <li>Separate directories, each with its own backend calling shared modules, is HashiCorp's recommended alternative once environments need meaningfully different config or access controls.</li>
+    <li>Separate branches per environment are generally discouraged — HashiCorp's guidance favors "one canonical branch," because infrastructure state doesn't merge the way code does, and long-lived branches drift.</li>
+    <li>Best practice regardless of pattern: production should never share a workspace or state file with dev. Blast-radius isolation beats staying perfectly DRY.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0021-workspaces.html">&larr; Lesson 21: Terraform workspaces</a></span>
+  <span><a href="0023-ephemeral-values.html">Lesson 23: Ephemeral values &amp; write-only arguments &rarr;</a></span>
+</div>
+
+</body>
+</html>

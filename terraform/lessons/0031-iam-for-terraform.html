@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 31 — Least-privilege IAM for Terraform itself</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 31 of 37</p>
+<h1>Least-privilege IAM for Terraform itself</h1>
+
+<p>This lesson opens the Production Patterns phase of the course, and it starts with a question most teams never ask out loud: what permissions does <em>Terraform itself</em> have? Not the resources it creates — the identity Terraform runs as. Lesson 29 built a CI/CD pipeline that runs <code>plan</code> and <code>apply</code> automatically. Lesson 30 added policy-as-code to check the plan's output. Neither of those protects you if the credential Terraform authenticates with is over-permissioned. This lesson is about scoping that credential down.</p>
+
+<h2>The mistake almost everyone makes early</h2>
+<p>Here's how it usually happens. Someone sets up a Terraform CI pipeline. The first <code>apply</code> fails with an access-denied error — the pipeline's cloud credential is missing some permission. Rather than add the specific permission, under time pressure, someone attaches the broadest policy available: <code>AdministratorAccess</code> on AWS, <code>Owner</code> or <code>Editor</code> on GCP, <code>Contributor</code> on Azure. The errors stop. Nobody revisits it.</p>
+<p>This "fixes" the symptom and creates a much bigger problem: the CI pipeline's credential can now create, modify, or delete <em>anything</em> in the account — not just the handful of resource types the actual Terraform configs manage. That credential typically lives as a secret in the CI platform (Lesson 29). If that CI system is ever compromised — a leaked secret, a malicious pull request that runs in CI, a supply-chain attack on a GitHub Action — the blast radius is the entire cloud account, not just "whatever this Terraform config touches."</p>
+<p class="callout"><strong>Mental model:</strong> the permissions attached to Terraform's credential are not a convenience setting, they're the blast radius of every CI compromise, every leaked secret, and every mistake in a <code>.tf</code> file, all at once. Terraform will apply whatever a config tells it to, as far as its credential allows. Scoping that credential down is the only backstop between "a bug in a pull request" and "a bug in a pull request that can delete production."</p>
+
+<h2>What least privilege means for Terraform's own credentials</h2>
+<p>Least privilege for Terraform isn't abstract — it means the credential Terraform authenticates with should only be allowed to act on the specific resource types and actions the specific config it runs actually manages. A Terraform config that manages an S3 bucket and a DynamoDB table doesn't need a credential that can also touch IAM, EC2, RDS, or billing.</p>
+<p>Compare the two AWS policies below for a config that only manages an S3 bucket:</p>
+<ul>
+<li><strong>What people reach for under pressure:</strong> the AWS managed policy <code>AdministratorAccess</code> — full access to every service, every action, every resource.</li>
+<li><strong>What least privilege actually looks like</strong> — a customer-managed policy scoped to exactly the actions that config needs, on exactly the resources it manages:</li>
+</ul>
+<pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:PutBucketPolicy",
+        "s3:PutBucketVersioning",
+        "s3:GetBucketPolicy",
+        "s3:GetBucketVersioning",
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::my-app-*"
+    }
+  ]
+}</code></pre>
+<p>Notice the second policy is also scoped by resource ARN, not just action — it can only touch buckets matching <code>my-app-*</code>, not every bucket in the account. This is more setup work than attaching <code>AdministratorAccess</code>, and the AWS IAM docs are honest that teams often start broad and narrow over time: "you might start with broad permissions while you explore the permissions that are required for your workload or use case," then work toward least privilege as the use case matures. The point isn't that you must hand-write a perfect policy before your first <code>apply</code> — it's that "broad while exploring" has to actually get narrowed down afterward, not become the permanent state of a production CI pipeline.</p>
+
+<h2>Prefer short-lived, federated credentials over static keys</h2>
+<p>Scoping <em>what</em> the credential can do is half the problem. The other half is <em>what kind</em> of credential it is. A long-lived static access key — the kind you generate once and paste into a CI secrets store — is a standing liability: if it leaks, it's valid until someone notices and manually revokes it, which could be days or months.</p>
+<p>Lesson 29 already introduced the fix: OIDC. Instead of storing a static access key in CI at all, the CI job authenticates to the cloud provider using its own OIDC identity token, and the provider hands back a short-lived, automatically-expiring credential scoped to an assumed role. AWS's own IAM best practices guide states this directly for automation: "require workloads to use temporary credentials with IAM roles to access AWS," and specifically calls out that CI/CD platforms running outside the cloud can get these temporary credentials by calling the AWS STS <code>AssumeRoleWithWebIdentity</code> API using a JSON web token from an identity provider — which is exactly what GitHub Actions' or GitLab's OIDC token is. No static key sitting in a secrets store, nothing to rotate, and a leaked token from one job run is worthless once that run ends.</p>
+<p>Every major provider Terraform targets supports some form of this now — AWS via <code>AssumeRoleWithWebIdentity</code>, GCP via Workload Identity Federation, Azure via workload identity federation for service principals. Static long-lived keys should be the exception you can justify, not the default you reach for.</p>
+
+<h2>Separate credentials per environment</h2>
+<p>Lesson 22 covered separating dev, staging, and prod — different workspaces, directories, or branches, each with its own state. That separation is pointless from a security standpoint if all three environments share <em>one</em> Terraform credential. If dev, staging, and prod all authenticate as the same role, a compromised dev credential — the environment where people experiment, run untrusted code, and are least careful — can touch prod directly.</p>
+<p>Give each environment its own scoped credential (its own IAM role on AWS, its own service account on GCP, its own service principal on Azure), matched to what that specific environment's config manages. A dev credential that can only touch dev-tagged or dev-namespaced resources cannot become a path into production, no matter what goes wrong in the dev pipeline.</p>
+
+<p class="callout"><strong>Where policy-as-code fits:</strong> Lesson 30 covered Sentinel and OPA checking a Terraform <em>plan's output</em> before apply — did this plan try to open a security group to the world, did it try to create an unencrypted bucket. The same policy-as-code layer can enforce IAM discipline organizationally: a Sentinel or OPA policy can reject any pull request that attaches <code>AdministratorAccess</code> (or an equivalent broad managed policy) to a Terraform-related role, or flag any new static access key being created for CI use. Least privilege for Terraform's credentials isn't just something one careful engineer remembers to do — policy-as-code is how an organization makes it a rule that gets enforced automatically, on every PR, regardless of who wrote it.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A teammate says "I just gave the CI pipeline's credential <code>AdministratorAccess</code> so I'd never have to debug a permissions error again." What's wrong with that reasoning, in terms of blast radius?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">It trades a short-term annoyance (fixing permission errors as they come up) for a permanent, much larger risk: if that CI system, its secrets store, or a malicious PR ever gets compromised, the attacker inherits full account access — not just the ability to touch the handful of resource types the actual Terraform configs manage. The credential's permissions define the blast radius of every future compromise, not just today's convenience.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Your CI pipeline's AWS credentials have full <code>AdministratorAccess</code> so Terraform "just works" for any config anyone writes. What's the risk, and what should change?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The risk: any compromise of the CI pipeline or its stored credential — a leaked secret, a malicious pull request, a compromised GitHub Action — gives an attacker full control of the AWS account, including services and resources no Terraform config in that pipeline even touches. What should change: replace the broad managed policy with a customer-managed policy scoped to only the resource types and actions the actual configs manage; move from a static long-lived access key to short-lived, OIDC-federated credentials (<code>AssumeRoleWithWebIdentity</code>) so there's no standing key to leak; and give each environment (dev/staging/prod) its own separately-scoped credential so a compromise in one can't reach the others.</div>
+</div>
+
+<h2>Hands-on: scope a policy instead of reaching for admin</h2>
+<p>No cloud account needed for this one — it's a design exercise, and it's the exercise that matters most in real teams.</p>
+<ul>
+<li>picture a Terraform config that manages exactly two things: an AWS DynamoDB table and the IAM role that lets a Lambda function read from it</li>
+<li>on paper (or in a text file), list only the actions that config's <code>apply</code> and <code>destroy</code> would actually need to call — think about create, read, update, delete for each resource, plus whatever's needed to look up existing state during <code>plan</code></li>
+<li>now compare your list against what <code>AdministratorAccess</code> would grant. Count roughly how many AWS services your list touches versus how many <code>AdministratorAccess</code> covers</li>
+<li>that gap — the difference between "everything" and "the six or eight actions this config actually calls" — is exactly the blast radius you'd be removing by scoping the CI credential's policy down to match</li>
+</ul>
+<div class="quiz">
+<p>Reveal a reasonable scoped-actions list for that DynamoDB + IAM role example</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">Roughly: <code>dynamodb:CreateTable</code>, <code>dynamodb:DeleteTable</code>, <code>dynamodb:DescribeTable</code>, <code>dynamodb:UpdateTable</code>, <code>dynamodb:TagResource</code> for the table; and <code>iam:CreateRole</code>, <code>iam:DeleteRole</code>, <code>iam:GetRole</code>, <code>iam:PutRolePolicy</code>, <code>iam:DeleteRolePolicy</code>, <code>iam:PassRole</code> for the role — scoped by resource ARN to the specific table and role name pattern this config owns, not every table or role in the account. Two services, a dozen or so actions, versus every action on every service <code>AdministratorAccess</code> would grant.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html" target="_blank" rel="noopener">docs.aws.amazon.com — Security best practices in IAM</a> (confirms: "require workloads to use temporary credentials with IAM roles to access AWS," workloads running outside AWS such as CI/CD platforms can obtain temporary credentials via the STS <code>AssumeRoleWithWebIdentity</code> API using a JSON web token from an identity provider, and to "apply least-privilege permissions" by granting only the permissions required for a task, moving from broad managed policies toward scoped customer-managed policies as the use case matures) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Granting Terraform's CI credential admin/root access "to avoid permission errors" trades a minor annoyance for a massive blast radius if CI or its secrets are ever compromised.</li>
+    <li>Scope Terraform's credential to only the resource types and actions the specific config actually manages — not every service in the account.</li>
+    <li>Prefer short-lived, OIDC-federated credentials (Lesson 29) over static long-lived access keys wherever the provider supports it — nothing to leak, nothing to rotate.</li>
+    <li>Give each environment (Lesson 22) its own scoped credential, so a compromised dev credential can't reach staging or prod.</li>
+    <li>Policy-as-code (Lesson 30) can enforce this organizationally — rejecting overly broad IAM policies or new static keys automatically, on every PR.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0030-policy-as-code.html">&larr; Lesson 30: Policy as code</a></span>
+  <span><a href="0032-cost-awareness.html">Lesson 32: Cost awareness &rarr;</a></span>
+</div>
+
+</body>
+</html>

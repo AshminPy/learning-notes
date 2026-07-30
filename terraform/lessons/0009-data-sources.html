@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 9 — Data sources</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 9 of 37</p>
+<h1>Data sources</h1>
+
+<p>Every block you've written since Lesson 5 has been a <code>resource</code> — something Terraform creates, tracks in state, and will change or destroy on your behalf. But real infrastructure is rarely one clean config that owns everything. A networking team already created the VPC. A security team already created the AMI. Another Terraform config, run by someone else entirely, already created the S3 bucket you need to read from. You need to <em>use</em> that infrastructure without pretending you own it. That's what a <strong>data source</strong> is for.</p>
+
+<p class="callout"><strong>Mental model:</strong> <code>resource</code> = Terraform owns this — it will create it, and it will change or destroy it if your config changes. <code>data</code> = Terraform only reads this — it looks the value up fresh on every <code>plan</code>, and will never create, change, or destroy the real thing behind it, no matter what you do to the data block. Deleting a <code>data</code> block from your config never deletes anything in the real world; deleting a <code>resource</code> block schedules the real thing for destruction. That single distinction is the entire lesson.</p>
+
+<h2>The data block</h2>
+<p>Same shape as a resource block, one keyword different:</p>
+
+<pre><code>data "&lt;TYPE&gt;" "&lt;LOCAL_NAME&gt;" {
+  # arguments that identify *which* existing thing to read
+}</code></pre>
+
+<p>Side by side, so the difference is visible:</p>
+
+<pre><code># resource — Terraform will CREATE this
+resource "aws_instance" "web" {
+  ami           = "ami-123456"
+  instance_type = "t3.micro"
+}
+
+# data — Terraform only READS this, an AMI that already exists
+data "aws_ami" "web" {
+  most_recent = true
+  owners      = ["099720109477"]
+}</code></pre>
+
+<p>To use a value from a data source elsewhere in your config, reference it as <code>data.&lt;TYPE&gt;.&lt;LOCAL_NAME&gt;.&lt;ATTRIBUTE&gt;</code> — note the extra <code>data.</code> prefix that resource references don't have (you've been writing <code>random_pet.example.id</code>, not <code>resource.random_pet.example.id</code>, since Lesson 7).</p>
+
+<table>
+<tr><th></th><th><code>resource</code></th><th><code>data</code></th></tr>
+<tr><td>Terraform creates it?</td><td>Yes</td><td>No — must already exist</td></tr>
+<tr><td>Terraform changes/destroys it?</td><td>Yes, if config changes</td><td>Never</td></tr>
+<tr><td>Appears in <code>plan</code> as</td><td><code>+</code> create / <code>~</code> change / <code>-</code> destroy</td><td>Read, no create/change/destroy symbol</td></tr>
+<tr><td>Reference syntax</td><td><code>&lt;type&gt;.&lt;name&gt;.&lt;attr&gt;</code></td><td><code>data.&lt;type&gt;.&lt;name&gt;.&lt;attr&gt;</code></td></tr>
+<tr><td>Deleting the block from config</td><td>Schedules the real thing for destruction</td><td>Nothing happens to the real thing — Terraform just stops reading it</td></tr>
+</table>
+
+<h2>A runnable example — <code>data "local_file"</code></h2>
+<p>To keep this course at zero cost and no cloud account, we'll read a file that lives on your own disk using the <code>hashicorp/local</code> provider's <code>local_file</code> data source. It needs no credentials and touches nothing outside your project folder.</p>
+
+<p>First, create a plain text file next to your <code>main.tf</code> — something that already exists, the way a data source expects:</p>
+
+<pre><code>$ echo "hello from outside terraform" &gt; notes.txt</code></pre>
+
+<p>Add the <code>local</code> provider to your <code>required_providers</code> block from Lesson 4, alongside <code>random</code>:</p>
+
+<pre><code>terraform {
+  required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.5"
+    }
+  }
+}</code></pre>
+
+<p>Then add the data block and an output to prove Terraform actually read the file:</p>
+
+<pre><code>data "local_file" "notes" {
+  filename = "${path.module}/notes.txt"
+}
+
+output "notes_content" {
+  description = "Contents of notes.txt, read by Terraform, not written by it"
+  value       = data.local_file.notes.content
+}</code></pre>
+
+<p><code>filename</code> is the one required argument. <code>path.module</code> is a built-in reference to the folder holding the current <code>.tf</code> file — you'll meet the full family of <code>path.*</code> references properly in a later lesson; for now read it as "this folder." The data source exposes several read-only attributes: <code>content</code> (the file's text), <code>content_base64</code>, and several checksum attributes (<code>content_md5</code>, <code>content_sha1</code>, <code>content_sha256</code>, and their base64 forms) — useful for detecting if a file changed.</p>
+
+<h2>Step through it</h2>
+<p>Run the same workflow you already know from Lesson 5, with one addition — because you added a new provider, <code>init</code> is required again:</p>
+
+<pre><code>$ terraform init
+
+Initializing provider plugins...
+- Finding hashicorp/local versions matching "~&gt; 2.5"...
+- Installing hashicorp/local v2.5.3...
+- Installed hashicorp/local v2.5.3 (signed by HashiCorp)
+
+Terraform has been successfully initialized!
+
+$ terraform plan
+
+Terraform will perform the following actions:
+
+  # random_pet.example: (no changes)
+
+Changes to Outputs:
+  + notes_content = "hello from outside terraform\n"
+
+Plan: 0 to add, 0 to change, 0 to destroy.</code></pre>
+
+<p>Read that plan carefully — this is the payoff of the whole lesson. There is no <code>+ create</code>, no <code>~ change</code>, no <code>-</code> destroy line for <code>data.local_file.notes</code> anywhere in the output. Terraform doesn't touch <code>notes.txt</code> at all; it just read it and used the value inside the new output. Compare that to every <code>random_pet</code> plan you've seen since Lesson 5, which always shows an explicit create/change/destroy action — because <code>random_pet</code> is a resource Terraform owns.</p>
+
+<p>Run <code>terraform apply</code> and type <code>yes</code>, and you'll see <code>notes_content</code> printed at the bottom, exactly like any other output from Lesson 7 — data source values flow through the rest of your config exactly like resource attributes do, once read.</p>
+
+<p class="callout"><strong>Best practice — data sources are re-read on every plan, they are not cached.</strong> Edit <code>notes.txt</code> outside Terraform and run <code>terraform plan</code> again: you'll see <code>notes_content</code> listed as an output that will change, even though you never touched your <code>.tf</code> files. This is normal and expected — a data source's whole job is to reflect current outside reality back into your config every time you plan. It's the opposite of a resource, where Terraform's state file is the source of truth between runs.</p>
+
+<h2>The cloud-scale case — <code>data "aws_ami"</code> (conceptual)</h2>
+<p>The most common real-world use of data sources is looking up a cloud object your team doesn't manage in this config, then feeding its ID into a resource you <em>are</em> creating. The canonical example, straight from HashiCorp's own AWS tutorials, is looking up the latest AMI to boot a new EC2 instance from:</p>
+
+<pre><code>data "aws_ami" "ubuntu" {
+  most_recent = true
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+  }
+
+  owners = ["099720109477"] # Canonical's official AWS account ID
+}
+
+resource "aws_instance" "web" {
+  ami           = data.aws_ami.ubuntu.id
+  instance_type = "t3.micro"
+}</code></pre>
+
+<p><strong>This example is illustrative, not something to run in this course</strong> — it needs a real AWS account and credentials, which this zero-cost course deliberately avoids until the AWS-specific lessons later on. But read the shape of it: <code>data "aws_ami" "ubuntu"</code> never creates an AMI — Canonical (Ubuntu's publisher) already built and published it. The data block just finds the right one by filtering on name and owner, and <code>most_recent = true</code> picks the newest match if several fit the filter. The <code>resource "aws_instance"</code> block underneath is the part Terraform actually creates, and it borrows <code>data.aws_ami.ubuntu.id</code> instead of a hardcoded AMI ID that would go stale the next time Canonical ships an update.</p>
+
+<h2>One timing subtlety worth knowing</h2>
+<p>Terraform normally reads a data source's real value during <code>plan</code> — that's why you saw the actual file content, not <code>(known after apply)</code>, in the plan output above. But if a data source's arguments depend on a value that won't exist until something else is created or changed first, Terraform can't read it yet — it defers the read until <code>apply</code>, and the plan shows <code>(known after apply)</code> for that data source instead, same as you saw for a brand-new resource's <code>id</code> in Lesson 5. You don't need to do anything differently — Terraform figures this out from your config's dependency graph on its own.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. "This block reads an existing VPC that the networking team already created." Resource or data?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>data</code> — Terraform is only looking the VPC up, not creating or managing it.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. "This block creates a brand-new VPC for this project." Resource or data?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>resource</code> — Terraform will create it, and will change or destroy it if the config changes.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. You delete a <code>data "aws_ami" "ubuntu" {}</code> block from your config and run <code>apply</code>. What happens to the actual AMI in AWS?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">Nothing. The AMI was never Terraform's to destroy — deleting a data block only stops Terraform from reading it. Compare this to deleting a <code>resource</code> block, which schedules the real thing for destruction.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. "This looks up the latest Ubuntu AMI ID, then uses it to launch a new EC2 instance." Is this one block or two, and what type(s)?</p>
+<input type="text" id="q4" placeholder="type your answer">
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4">Two blocks: a <code>data "aws_ami"</code> block to read the existing AMI (data), whose <code>id</code> attribute feeds into a <code>resource "aws_instance"</code> block that Terraform creates and owns (resource). This combination — data feeding a resource — is the most common real-world pattern.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In the same folder you've been building since Lesson 4:</p>
+<ul>
+<li>create <code>notes.txt</code> with any one line of text</li>
+<li>add the <code>local</code> provider to <code>required_providers</code></li>
+<li>add the <code>data "local_file" "notes"</code> block and the <code>notes_content</code> output</li>
+<li>run <code>terraform init</code> (new provider, so this is required)</li>
+<li>run <code>terraform plan</code> — confirm there is no create/change/destroy line for the data source itself, only a new output</li>
+<li>run <code>terraform apply</code>, type <code>yes</code>, and confirm <code>notes_content</code> prints the file's text</li>
+<li>edit <code>notes.txt</code> outside Terraform, then run <code>terraform plan</code> again — confirm it now shows the output changing, with no edits to any <code>.tf</code> file</li>
+</ul>
+<p>Try it yourself before checking the reference below.</p>
+
+<div class="quiz">
+<p>Reveal the reference blocks</p>
+<button onclick="document.getElementById('a5').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a5"><code>terraform {
+  required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.5"
+    }
+  }
+}
+
+data "local_file" "notes" {
+  filename = "${path.module}/notes.txt"
+}
+
+output "notes_content" {
+  description = "Contents of notes.txt, read by Terraform, not written by it"
+  value       = data.local_file.notes.content
+}</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/data-sources" target="_blank" rel="noopener">developer.hashicorp.com — Data Sources</a> · <a href="https://registry.terraform.io/providers/hashicorp/local/latest/docs/data-sources/file" target="_blank" rel="noopener">registry.terraform.io — local_file data source</a> (arguments: <code>filename</code> required; attributes: <code>content</code>, <code>content_base64</code>, <code>content_md5</code>, <code>content_sha1</code>, <code>content_sha256</code>, and base64 hash variants) · <a href="https://developer.hashicorp.com/terraform/tutorials/aws-get-started/aws-change" target="_blank" rel="noopener">developer.hashicorp.com — AWS Get Started: Change infrastructure</a> (source of the <code>aws_ami</code> example) — all verified 2026-07-30. The <code>aws_ami</code> example is conceptual/illustrative only — it is not run as part of this zero-cost course.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Mental model: <code>resource</code> = Terraform owns it and will create/change/destroy it. <code>data</code> = Terraform only reads it, and never touches the real thing no matter what the config does.</li>
+    <li>Syntax: <code>data "&lt;TYPE&gt;" "&lt;LOCAL_NAME&gt;" { ... }</code>, referenced elsewhere as <code>data.&lt;TYPE&gt;.&lt;LOCAL_NAME&gt;.&lt;ATTRIBUTE&gt;</code> — note the extra <code>data.</code> prefix resources don't need.</li>
+    <li>Data sources are re-read on every <code>plan</code>, not cached — if the real thing changes outside Terraform, your next plan reflects it immediately.</li>
+    <li>The most common real pattern: a <code>data</code> block looks up something that already exists, and its attribute feeds into a <code>resource</code> block that Terraform actually creates.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0008-resources-and-arguments.html">&larr; Lesson 8: Resources & arguments</a></span>
+  <span><a href="0010-expressions-and-functions.html">Lesson 10: Expressions & functions &rarr;</a></span>
+</div>
+
+</body>
+</html>

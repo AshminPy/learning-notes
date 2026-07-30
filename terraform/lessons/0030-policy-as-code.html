@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 30 — Policy as code (Sentinel/OPA)</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 30 of 37</p>
+<h1>Policy as code (Sentinel/OPA)</h1>
+
+<p>You now have two real safety nets. Lesson 26 taught you to actually read a <code>terraform plan</code> before approving it — a human check. Lesson 29 wired that into a CI/CD pipeline, so nothing gets applied without passing through review and automation. Both are genuinely good. Both also share the same weak point: they depend on a person, or a pipeline someone configured, to remember to check for a specific thing. This lesson is about closing that gap — teaching your organization's rules to a machine so they get enforced every single time, automatically, with nobody needing to remember anything.</p>
+
+<h2>The gap plan review and CI don't close</h2>
+<p>Think about what Lesson 26's plan review actually catches: whatever the reviewer happens to notice. A careful engineer reading a plan will probably catch "wait, this destroys a database" or "this security group looks too open." But plan review doesn't scale to rules like:</p>
+<ul>
+<li>"No S3 bucket (or GCS bucket, or Azure Storage account) may ever be created with public read access, anywhere, by anyone, in any workspace."</li>
+<li>"Every resource must carry a <code>cost-center</code> tag so finance can attribute cloud spend."</li>
+<li>"No production workspace may run <code>terraform apply</code> outside business hours."</li>
+</ul>
+<p>A human reviewer can miss these — they're tired, the plan is 400 lines long, the violating resource is buried on line 217, or the reviewer simply doesn't know that rule exists. Lesson 29's CI pipeline runs the same lint and validate steps on every PR, but "does this bucket have public access" isn't something <code>terraform validate</code> checks — validate only confirms your HCL is syntactically and internally consistent, not that it complies with your organization's rules.</p>
+<p class="callout"><strong>Mental model:</strong> plan review is a human reading comprehension exercise, applied inconsistently. Policy as code is a rule written once, in a language a machine executes, applied to <em>every</em> plan, <em>every</em> time, with zero chance of "I didn't notice." It doesn't replace review — it catches the class of mistakes review is bad at catching.</p>
+
+<h2>Sentinel — HashiCorp's own policy-as-code framework</h2>
+<p>Sentinel is HashiCorp's policy-as-code framework, built into HCP Terraform (and Terraform Enterprise) as one of the ways to enforce policy on runs. You write policies in Sentinel's own language, using imports like <code>tfplan</code>, <code>tfconfig</code>, and <code>tfrun</code> to inspect the plan, the configuration, and run metadata, then write rules that pass or fail based on what they find — for example, checking every resource in the plan for a required tag, or scanning for any S3 bucket resource with a public-access argument set to true.</p>
+<p>Sentinel policies in HCP Terraform run at one of three enforcement levels, and this is the part worth remembering precisely, because it changes what happens on failure:</p>
+<ul>
+<li><strong>Advisory</strong> — a failed policy shows a warning, but the run continues regardless. Good for rolling out a new rule without breaking anyone yet.</li>
+<li><strong>Soft-mandatory</strong> — a failed policy blocks the run, but a user with override permissions can approve it anyway. HCP Terraform logs every override, so there's an audit trail.</li>
+<li><strong>Hard-mandatory</strong> — a failed policy blocks the run, full stop. No override exists. The apply cannot happen until the plan complies.</li>
+</ul>
+
+<h2>OPA — a general, cloud-native policy engine</h2>
+<p>Open Policy Agent (OPA) is a different kind of tool: a general-purpose policy engine, not built by HashiCorp and not specific to Terraform at all. The same OPA engine is used to enforce policy on Kubernetes admission control, API authorization, CI/CD gates — anywhere you need "evaluate this JSON input against a rule, get pass or fail." Policies are written in OPA's query language, Rego.</p>
+<p>To use OPA with Terraform, the workflow is: run <code>terraform plan</code>, convert that plan to JSON with <code>terraform show -json</code>, then hand that JSON to OPA (directly via <code>opa eval</code>/<code>opa exec</code>, or through a Terraform-focused wrapper tool like <code>conftest</code>, which is built specifically to run OPA/Rego policies against structured config files including Terraform plan JSON). Your Rego policy queries that JSON — commonly a rule like <code>data.terraform.deny</code> that collects violations into a list. An empty list means the policy passed; anything in the list is a violation, and the calling tool fails the pipeline step.</p>
+<p>HCP Terraform actually supports OPA natively as a second policy framework alongside Sentinel — you're not limited to Sentinel just because you're on HashiCorp's platform. Outside HCP Terraform (plain open-source Terraform plus your own CI), OPA/conftest is usually the more common choice precisely because it isn't tied to a HashiCorp product — the same policy engine and the same skillset carry over to Kubernetes and other parts of your stack.</p>
+
+<table>
+<tr><th>Sentinel</th><th>OPA</th></tr>
+<tr><td>HashiCorp-built, HashiCorp-only policy language</td><td>Vendor-neutral (CNCF-adjacent project), general-purpose</td></tr>
+<tr><td>Native to HCP Terraform / Terraform Enterprise</td><td>Also supported natively in HCP Terraform; usable anywhere via CLI/conftest</td></tr>
+<tr><td>Three built-in enforcement levels (advisory / soft-mandatory / hard-mandatory)</td><td>Pass/fail per policy — enforcement behavior is up to how your pipeline treats a non-empty deny list</td></tr>
+<tr><td>Only useful for Terraform (and other HashiCorp products)</td><td>One engine, reusable across Terraform, Kubernetes, APIs, and more</td></tr>
+</table>
+
+<p class="callout"><strong>Mental model:</strong> Sentinel is the deeply-integrated, HashiCorp-native option — pick it if you're all-in on HCP Terraform and want the built-in override/audit workflow. OPA is the general-purpose option — pick it if you want one policy engine and one policy language across your whole stack, Terraform included. Both do fundamentally the same job: take the plan as structured data, run rules against it, return pass or fail.</p>
+
+<h2>Where policy checks run in the pipeline</h2>
+<p>Go back to the pipeline you built in Lesson 29: commit, PR, CI runs <code>fmt</code>/<code>validate</code>/plan, a human reviews the plan, then apply. A policy check slots in <strong>after the plan is generated but before the apply is allowed to proceed</strong> — it needs the plan as input (it's checking what's <em>about</em> to happen, not the raw HCL), and it needs to run early enough to block a bad apply before it touches real infrastructure. In HCP Terraform, this happens automatically as part of the run workflow: HCP Terraform checks the plan against your policy set for every run in a workspace with policies attached. In a self-hosted CI pipeline, you'd add an explicit step — generate the plan, convert to JSON, run <code>conftest test</code> (or your Sentinel/OPA equivalent) against it — positioned between the plan step and the apply step, with the apply step configured to only run if that policy step exits successfully.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your org has a rule: "every resource must be tagged with an <code>owner</code>." In the Lesson 29 pipeline (commit → PR → CI: fmt/validate/plan → human review → apply), where exactly would a policy check for this rule run, and why there and not somewhere else?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">It runs right after the plan is generated and before apply is allowed — typically as its own CI step (or, in HCP Terraform, automatically as part of the run) sitting between the plan step and the apply step. It has to come after the plan because the check needs the plan's JSON output to see every resource that would actually be created, including their tags — checking raw <code>.tf</code> files wouldn't reliably catch tags set via variables, defaults, or modules. It has to come before apply because the entire point is to stop a non-compliant resource from ever being created, not to notice after the fact.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A plan violates that owner-tag rule. What should happen next, and what's the difference between how a hard-mandatory Sentinel policy and a soft-mandatory one would each handle it?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The pipeline should block the apply — the policy step should fail (non-zero exit / a non-empty "deny" result), which stops CI from ever reaching the apply job. Under hard-mandatory enforcement, that's final: the run cannot proceed until the offending resource gets an <code>owner</code> tag and a new plan passes. Under soft-mandatory, the run is still blocked by default, but someone with override permission could explicitly approve it anyway — and that override gets logged, so there's a record of who let an untagged resource through and why. Advisory would just warn and let the apply happen regardless, which is why you wouldn't use advisory for a rule you actually want enforced.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/cloud-docs/policy-enforcement" target="_blank" rel="noopener">developer.hashicorp.com — HCP Terraform policy enforcement overview</a> (confirms HCP Terraform supports Sentinel and Open Policy Agent/OPA with Rego as policy frameworks, that policies are checked against the Terraform plan for each run, and that failed policies can stop a run depending on enforcement level) · <a href="https://developer.hashicorp.com/terraform/cloud-docs/policy-enforcement/opa" target="_blank" rel="noopener">developer.hashicorp.com — OPA policy enforcement in HCP Terraform</a> (confirms OPA policies are written in Rego, evaluated against combined plan/run JSON via a query such as <code>data.terraform.deny</code>, with an empty result meaning pass) · <a href="https://www.openpolicyagent.org/docs/latest/terraform/" target="_blank" rel="noopener">openpolicyagent.org — Terraform integration</a> (confirms the standalone OPA workflow of <code>terraform plan</code> → <code>terraform show -json</code> → OPA evaluation, and that Conftest is part of the OPA/Terraform ecosystem) · <a href="https://developer.hashicorp.com/sentinel/docs/concepts/enforcement-levels" target="_blank" rel="noopener">developer.hashicorp.com — Sentinel enforcement levels</a> (confirms the three levels: advisory notifies without stopping a run, soft-mandatory blocks but allows an authorized override, hard-mandatory blocks with no override) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Plan review (Lesson 26) and CI (Lesson 29) catch mistakes a person happens to notice — they don't automatically enforce organization-wide rules like "no public buckets" or "every resource needs a cost-center tag."</li>
+    <li>Sentinel is HashiCorp's own policy-as-code framework, built into HCP Terraform, with three enforcement levels: advisory (warn only), soft-mandatory (block, but overridable and logged), hard-mandatory (block, no override).</li>
+    <li>OPA is a general-purpose, vendor-neutral policy engine using the Rego language — usable with Terraform via <code>terraform show -json</code> plus OPA/conftest, and also supported natively inside HCP Terraform.</li>
+    <li>Policy checks run between plan and apply: they need the plan as structured input, and they must be able to block the apply before real infrastructure changes.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0029-cicd-pipeline.html">&larr; Lesson 29: A real CI/CD pipeline</a></span>
+  <span><a href="0031-iam-for-terraform.html">Lesson 31: Least-privilege IAM for Terraform itself &rarr;</a></span>
+</div>
+
+</body>
+</html>

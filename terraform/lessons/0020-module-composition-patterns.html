@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 20 — Module composition patterns</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 20 of 37</p>
+<h1>Module composition patterns</h1>
+
+<p>You now know how to write a module, how to call one, and how to source and version one. What this lesson adds is judgment: given a real infrastructure need, how do you decide what becomes a module, how many modules, and how they talk to each other? There's no new syntax here. This is the lesson that closes out the Modules phase of the course — everything from here on assumes you can look at a pile of resources and design a sensible module boundary around them.</p>
+
+<h2>One giant module vs several focused modules</h2>
+<p>Picture a typical small platform: a VPC with subnets and route tables, a couple of EC2 instances or an ECS service behind a load balancer, and an RDS database. A beginner instinct is often "let's put this all in one module" — one <code>main.tf</code> with every resource, one set of variables, one set of outputs. It works, technically. But it doesn't scale as judgment.</p>
+<p>The alternative — and the pattern almost every real Terraform codebase converges on — is several small, focused modules, each responsible for one part of the system: a <code>networking</code> module that owns the VPC, subnets, and route tables; a <code>database</code> module that owns the RDS instance and its subnet group; a <code>compute</code> module that owns the app servers or ECS service. The root module then calls all three and wires them together.</p>
+<p>This isn't just taste. HashiCorp's own module design guidance says a module should "raise the level of abstraction by describing a new concept in your architecture" — their example is a whole "Consul cluster running in AWS" being one module, rather than exposing individual <code>aws_instance</code> and <code>aws_elb</code> resources one by one. A <code>networking</code> module is a new concept in your architecture. A single security group is usually not.</p>
+
+<h2>Data flow between modules: outputs feeding inputs</h2>
+<p>Focused modules only work together if they can pass data between each other, and the mechanism is one you already know: outputs and variables. A <code>networking</code> module outputs its VPC ID and subnet IDs. The root module takes those outputs and passes them as input variables into the <code>compute</code> and <code>database</code> modules.</p>
+<pre><code>module "networking" {
+  source = "./modules/networking"
+  cidr_block = "10.0.0.0/16"
+}
+
+module "database" {
+  source    = "./modules/database"
+  vpc_id    = module.networking.vpc_id
+  subnet_ids = module.networking.private_subnet_ids
+}
+
+module "compute" {
+  source    = "./modules/compute"
+  vpc_id    = module.networking.vpc_id
+  subnet_ids = module.networking.public_subnet_ids
+  db_endpoint = module.database.endpoint
+}</code></pre>
+<p>Notice the wiring happens entirely in the root module, using <code>module.&lt;name&gt;.&lt;output&gt;</code> references — the same expression syntax you'd use to reference one resource's attribute from another. None of the child modules know about each other directly; they only know about their own inputs and outputs. The root module is the only place that understands how the pieces fit together.</p>
+<p class="callout"><strong>Mental model:</strong> this is HashiCorp's own recommended pattern, sometimes called dependency inversion for modules — a module shouldn't create its own prerequisites internally if another module could supply them instead. Passing dependencies in as variables (rather than a module reaching out and creating what it needs) is what keeps modules swappable and testable in isolation. It's the same reason you inject a database connection into a function instead of having the function open its own connection.</p>
+
+<h2>When NOT to modularize</h2>
+<p>This is the part beginners get wrong most often, usually in the direction of overdoing it. Not every resource block deserves to become a module. If you have exactly one security group, used in exactly one place, wrapping it in a module buys you nothing — you've added a file, an indirection, a set of variables and outputs that just pass values straight through, and a debugging step (now you have to go look inside the module to see what it actually does) for zero reuse benefit.</p>
+<p>HashiCorp says this directly: "We do not recommend writing modules that are just thin wrappers around single other resource types." Their practical test — if you can't come up with a module name that's different from the name of the primary resource type inside it, you probably don't need a module. A module called <code>security_group</code> that contains one <code>aws_security_group</code> resource is a wrapper, not an abstraction.</p>
+<p>The broader principle from the same page: "Over-using modules can make your overall Terraform configuration harder to understand and maintain, so we recommend moderation." Indirection has a real cost — every module boundary is a place a reader has to jump to another file to understand what's happening. Reserve modules for things that are genuinely reused, or that represent a real concept in your architecture (a whole subsystem), not for every individual resource.</p>
+
+<h2>Modules you write vs modules you consume</h2>
+<p>By now you've done both. Lesson 19 covered pulling a module from the public Terraform Registry (a <code>source</code> pointing at <code>terraform-aws-modules/vpc/aws</code> or similar) — that's a module you <em>consume</em>. This lesson has been about modules you <em>write</em> yourself, usually with a local <code>source = "./modules/..."</code> path, tailored to your own environment.</p>
+<p>Real root modules mix both freely, and that's normal, not a compromise. A common pattern: use a well-maintained registry module for something generic and widely solved (VPC networking, an EKS cluster) where reinventing it buys you nothing, and write your own local modules for anything specific to your organization (your naming conventions, your particular compute + database pairing, your internal service pattern). The registry module handles the commodity part; your own modules handle the part that's actually yours.</p>
+
+<h2>Keep each module focused on one responsibility</h2>
+<p class="callout"><strong>Best practice:</strong> a <code>networking</code> module should create networking resources — VPCs, subnets, route tables, maybe a NAT gateway. It should not also create IAM roles, or an S3 bucket, or a database, just because those happened to be needed on the same project. Mixing unrelated responsibilities into one module makes it harder to reuse (you can't take the networking half without dragging in IAM you don't want elsewhere) and harder to reason about (a person reading <code>modules/networking</code> shouldn't need to also understand your IAM strategy to know what it does). One module, one clear responsibility — the same single-responsibility instinct you'd apply to a function or a class in any other codebase.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You have a networking module and a database module. The database needs to be created inside the VPC's private subnets. How does the database module find out which subnet IDs to use, given it doesn't create the VPC itself?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The networking module outputs its private subnet IDs. The root module reads that output with an expression like <code>module.networking.private_subnet_ids</code> and passes it in as an input variable to the database module. The database module never talks to the networking module directly — the root module wires them together.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You have one <code>aws_s3_bucket</code> resource, used in exactly one place, with no plans to reuse it anywhere. A teammate suggests wrapping it in a module called <code>s3_bucket</code> "for consistency." Is this a good idea? Use HashiCorp's own guidance to justify your answer.</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No. HashiCorp explicitly advises against modules that are "just thin wrappers around single other resource types" — and their own naming test applies here: the module's name (<code>s3_bucket</code>) is the same as the resource type inside it (<code>aws_s3_bucket</code>), which is a strong sign it's not adding abstraction. With no reuse benefit, the module only adds an indirection layer someone has to open and read to understand what a single resource block would have told them directly. Just write the resource in the root module.</div>
+</div>
+
+<h2>Hands-on: sketch the module boundaries</h2>
+<p>Scenario: you need to provision a VPC, a database, and three near-identical microservices (same container image family, same scaling pattern, different names and a couple of config values each). No code to write for this exercise — do it on paper or in a text file.</p>
+<ul>
+<li>Decide: does the VPC become its own module? Justify it — is it a distinct concept, reused, or complex enough to warrant its own boundary?</li>
+<li>Decide: does the database become its own module, or a resource block living in the root module? Consider whether you'll ever need a second database in another project.</li>
+<li>Decide: do the three microservices share one module, called three times with different variables, or do you write three separate copies of the same resources? Think about what happens when you need to add a fourth microservice, or change the scaling policy for all three at once.</li>
+<li>For every module you decided to create, write down its one responsibility in a single sentence. If you can't, that's a sign the boundary is wrong.</li>
+<li>Sketch (in words) how outputs flow: what does the VPC module output that the database and microservice modules need as inputs?</li>
+</ul>
+<div class="quiz">
+<p>Reveal one reasonable design (not the only correct answer — the point is defensible reasoning, not memorizing this one)</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">
+<p><strong>VPC → its own module.</strong> Networking is a distinct concept, has real internal complexity (subnets, route tables, gateways), and is the kind of thing you'll likely reuse across other projects.</p>
+<p><strong>Database → a resource block in the root module (or a small module only if you expect a second database elsewhere).</strong> A single RDS instance with no reuse case is close to the "thin wrapper" HashiCorp warns against — unless your org provisions databases this same way repeatedly across projects, in which case a shared module earns its keep.</p>
+<p><strong>Three microservices → one module, called three times.</strong> This is the textbook reuse case: near-identical resources with only a few varying inputs (name, image tag, maybe replica count) is exactly what modules are for. Three copy-pasted resource blocks would mean fixing the same bug three times later; a fourth microservice becomes one more <code>module</code> block instead of a fresh copy-paste.</p>
+<p><strong>Data flow:</strong> the VPC module outputs <code>vpc_id</code> and subnet IDs. The root module passes those into both the database module and each of the three microservice module calls, so every piece lands in the right network without any module reaching out to find its own dependencies.</p>
+</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/modules" target="_blank" rel="noopener">developer.hashicorp.com — Modules Overview</a> (confirms root/child module structure and that modules are for repeated, standardized provisioning) · <a href="https://developer.hashicorp.com/terraform/language/modules/develop" target="_blank" rel="noopener">developer.hashicorp.com — Creating Modules (Module Development)</a> (source of the "raise the level of abstraction," "thin wrappers around single other resource types," and "over-using modules... we recommend moderation" guidance) · <a href="https://developer.hashicorp.com/terraform/language/modules/develop/composition" target="_blank" rel="noopener">developer.hashicorp.com — Module Composition</a> (confirms the flat module tree recommendation and the pattern of passing dependencies as inputs rather than having a module create its own prerequisites) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Prefer several small, focused modules (e.g. networking, database, compute) over one giant module — each should represent a real concept in your architecture, not just group unrelated resources.</li>
+    <li>Modules pass data to each other through outputs feeding into other modules' input variables, wired together in the root module — child modules don't talk to each other directly.</li>
+    <li>Don't modularize a single-use resource with no reuse benefit — HashiCorp explicitly warns against "thin wrappers around single other resource types"; indirection has a real readability and debugging cost.</li>
+    <li>Real projects mix modules you write (local, tailored) with modules you consume (registry, generic and well-maintained) — that's normal, not a compromise.</li>
+    <li>Keep each module to one clear responsibility — a networking module shouldn't also create IAM roles — for the same reason a function or class should do one thing.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0019-module-sources-and-versioning.html">&larr; Lesson 19: Module sources &amp; versioning</a></span>
+  <span><a href="0021-workspaces.html">Lesson 21: Terraform workspaces &rarr;</a></span>
+</div>
+
+</body>
+</html>

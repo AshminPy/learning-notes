@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 19 — Module sources & versioning</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 19 of 37</p>
+<h1>Module sources & versioning</h1>
+
+<p>In Lesson 18 every module you called used <code>source = "./path"</code> — a folder sitting right next to your root config. That's the simplest case, but it's only one of several source types Terraform understands. This lesson covers the other two you'll use constantly in real work: the <strong>Terraform Registry</strong> and <strong>git repositories</strong> — plus the versioning discipline that keeps either of them from quietly breaking your infrastructure.</p>
+
+<h2>Local paths — a quick recap</h2>
+<p>A local path source always starts with <code>./</code> or <code>../</code>. Terraform treats it as a folder on disk, copies nothing, and just reads the <code>.tf</code> files there directly.</p>
+<pre><code>module "servers" {
+  source = "./modules/app-cluster"
+}</code></pre>
+<p>Local paths are great for organizing your own repo into reusable pieces. They're not great for sharing a module across teams or projects — there's no versioning, no registry listing, nothing but a relative path that only makes sense inside this one repo.</p>
+
+<h2>The Terraform Registry</h2>
+<p><a href="https://registry.terraform.io" target="_blank" rel="noopener">registry.terraform.io</a> is the same registry you met in Lesson 4 for providers — it hosts modules too. Anyone can publish a module there; some are maintained by HashiCorp partners and verified, most are community-published. A registry module's <code>source</code> is written as a three-part address: <code>namespace/name/provider</code>.</p>
+<pre><code>module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "6.0.1"
+}</code></pre>
+<p><code>terraform-aws-modules</code> is the namespace (the publisher), <code>vpc</code> is the module name, and <code>aws</code> is the target provider it's written for. No <code>https://</code>, no <code>.git</code> — the registry resolves that short address to the actual source behind the scenes. This is the same mental shift as Lesson 4's provider <code>source = "hashicorp/aws"</code>: a short address that a registry resolves for you, instead of a raw URL you have to know.</p>
+
+<h2>Git repositories</h2>
+<p>Not every module lives on the public registry — private company modules, or modules that just haven't been published, are commonly pulled straight from a git repo. The <code>source</code> string is prefixed with <code>git::</code> followed by the repo URL:</p>
+<pre><code>module "vpc" {
+  source = "git::https://example.com/vpc.git?ref=v1.2.0"
+}</code></pre>
+<p>The <code>?ref=</code> query parameter is how you pin <em>which</em> commit gets pulled. Per the official docs, <code>ref</code> accepts "any value supported by the <code>git checkout</code> command" — a tag, a branch name, or a full commit SHA:</p>
+<pre><code>module "storage" {
+  source = "git::https://example.com/storage.git?ref=51d462976d84fdea54b47d80dcabbf680badcdb8"
+}</code></pre>
+<p>A tag like <code>v1.2.0</code> is the most common choice — readable, and it assumes the repo owner doesn't move tags around. A commit SHA is the strongest possible pin: that exact content, guaranteed, forever. A branch name (<code>?ref=main</code>) is the weakest — the branch tip moves every time someone pushes, so you're back to "whatever is there right now."</p>
+
+<h2>Why version pinning matters for modules — same problem as Lesson 4, one level up</h2>
+<p>Lesson 4 covered this for providers: an unpinned <code>version</code> in <code>required_providers</code> lets Terraform silently install whatever is newest at <code>init</code> time, and that can change on a teammate's machine or in CI with no warning. Modules have the exact same failure mode, and it's arguably worse, because a module isn't one plugin — it's a whole bundle of resources, variables, and defaults that someone else controls.</p>
+<p class="callout"><strong>Mental model:</strong> a module source without a version pin is a promise that can be broken without telling you. The registry address <code>terraform-aws-modules/vpc/aws</code> with no <code>version</code> argument doesn't point at fixed code — it points at "whatever the latest published version is right now." The module's maintainer can publish a new major version tomorrow that renames a variable, changes a default, or removes a resource. Your config didn't change. Your <code>terraform init</code> output did.</p>
+
+<h2>The <code>version</code> argument and constraint operators</h2>
+<p><code>version</code> is only valid for registry modules (git and local sources use <code>ref</code> and the path itself instead). It accepts the same constraint operators you already learned for providers in Lesson 4:</p>
+<table>
+<tr><th>Operator</th><th>Example</th><th>Meaning</th></tr>
+<tr><td><code>=</code> (or nothing)</td><td><code>version = "6.0.1"</code></td><td>Exactly this version — cannot combine with other conditions</td></tr>
+<tr><td><code>!=</code></td><td><code>!= 6.0.0</code></td><td>Excludes a specific version</td></tr>
+<tr><td><code>&gt;=</code> / <code>&lt;=</code></td><td><code>&gt;= 6.0.0</code></td><td>This version or newer / older, no other bound</td></tr>
+<tr><td><code>&gt;</code> / <code>&lt;</code></td><td><code>&lt; 7.0.0</code></td><td>Strictly newer / older than this version</td></tr>
+<tr><td><code>~&gt;</code></td><td><code>~&gt; 6.0.1</code></td><td>Pessimistic constraint — only the rightmost segment can increment: allows <code>6.0.5</code>, blocks <code>6.1.0</code></td></tr>
+<tr><td><code>~&gt;</code></td><td><code>~&gt; 6.0</code></td><td>Allows <code>6.1</code>, <code>6.10</code>, blocks <code>7.0</code></td></tr>
+</table>
+<p>Same recommendation as Lesson 4: reach for <code>~></code> by default. It lets patch or minor fixes in without a manual bump, but blocks the kind of major-version jump that's likely to break your config outright.</p>
+
+<p class="callout"><strong>Best practice — vet third-party registry modules before you use them:</strong> anyone can publish to the Terraform Registry, "verified" or not. Before pulling a community module into production, check: <strong>maintenance activity</strong> (when was the last release — is this abandoned?), <strong>open issues</strong> (are there long-standing unresolved bugs, especially security ones?), and <strong>download counts / adoption</strong> (a module with a few dozen downloads and no other signal is a bigger unknown than one used by thousands of configs). Read the source before you trust it with real infrastructure — a module can create IAM policies, security groups, or storage buckets just as easily as your own code can, and you're the one who ends up owning whatever it deploys.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your root config calls a registry module with no <code>version</code> constraint. Six months later, <code>terraform init</code> pulls a different version than what you tested. What went wrong, and how do you prevent it?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">With no <code>version</code> argument, the <code>source</code> address doesn't point at fixed code — it resolves to whatever the latest published version is at the moment <code>init</code> runs. In six months the maintainer may have published new minor or major releases, so a fresh <code>init</code> (a new machine, a CI run, a teammate's laptop) can silently pull a newer version than the one you originally tested against, potentially with breaking changes. Prevent it the same way you pin providers (Lesson 4): add a <code>version</code> constraint, ideally a pessimistic one like <code>~> 6.0</code>, so you get patch/minor fixes automatically but a major bump requires you to deliberately raise the constraint.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You need a private, unpublished module from your company's git server, pinned to an exact, unchangeable point in history. Which source syntax and which query parameter do you use, and what value gives you the strongest possible guarantee?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>source = "git::https://your-server/repo.git?ref=&lt;value&gt;"</code>. The <code>ref</code> parameter accepts anything <code>git checkout</code> accepts — branch, tag, or commit SHA. A branch name is the weakest guarantee (it moves on every push); a tag is stronger but can technically be moved by the repo owner; a full commit SHA is the strongest — that exact content, permanently, since a commit hash can't be reassigned to different content.</div>
+</div>
+
+<h2>Hands-on: point your Lesson 18 module at a version-pinned source</h2>
+<p>Reuse the root config from Lesson 18 (the one that called your local <code>./modules/app-cluster</code> module). Add a second module block that pulls a small, real, free registry module — no cloud account needed to just read its inputs:</p>
+<pre><code>module "example_vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 6.0"
+
+  name = "learning-vpc"
+  cidr = "10.0.0.0/16"
+}</code></pre>
+<ul>
+<li>run <code>terraform init</code> and read the output — Terraform reports the exact version it resolved and downloaded into <code>.terraform/modules/</code></li>
+<li>open <code>.terraform.lock.hcl</code> if present, and separately check <code>.terraform/modules/modules.json</code> — this is where Terraform records precisely which version of each module it pulled, the module equivalent of the provider lock file from Lesson 4</li>
+<li>now delete the <code>version</code> line entirely and run <code>terraform init -upgrade</code> — notice Terraform is free to jump to whatever the newest published version is, with no constraint stopping it</li>
+<li>put the <code>version = "~> 6.0"</code> line back before doing anything else with this config</li>
+</ul>
+<p>You don't need to <code>apply</code> this — the point is watching <code>init</code> resolve a version, and seeing exactly where that decision gets recorded.</p>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/modules/sources" target="_blank" rel="noopener">developer.hashicorp.com — Module Sources</a> (confirms local path syntax with <code>./</code>, registry address format <code>namespace/name/provider</code>, the <code>version</code> argument for registry modules, and the <code>git::</code> prefix with <code>?ref=</code> for branch/tag/commit pinning) · <a href="https://developer.hashicorp.com/terraform/language/expressions/version-constraints" target="_blank" rel="noopener">developer.hashicorp.com — Version Constraints</a> (confirms operators <code>=</code>, <code>!=</code>, <code>&gt;</code>, <code>&gt;=</code>, <code>&lt;</code>, <code>&lt;=</code>, and the pessimistic constraint <code>~&gt;</code> behavior) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Module sources beyond local paths: the Terraform Registry (<code>namespace/name/provider</code>, with a <code>version</code> argument) and git repos (<code>source = "git::https://..."</code> with <code>?ref=</code> for a tag/branch/commit).</li>
+    <li>An unpinned module source resolves to "whatever's latest right now" — it can change under you exactly like an unpinned provider (Lesson 4).</li>
+    <li>Use version constraint operators (<code>=</code>, <code>!=</code>, <code>&gt;=</code>, <code>&lt;=</code>, <code>~&gt;</code>) on registry modules; use <code>ref</code> (ideally a commit SHA) on git modules.</li>
+    <li>Before trusting a third-party registry module, check maintenance activity, open issues, and download counts — don't blindly deploy someone else's IAM policies and resources.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0018-writing-your-first-module.html">&larr; Lesson 18 — Writing your first module</a></span>
+  <span><a href="0020-module-composition-patterns.html">Lesson 20 — Module composition patterns &rarr;</a></span>
+</div>
+
+</body>
+</html>

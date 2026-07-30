@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 29 — A real CI/CD pipeline (plan on PR, apply on merge)</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 29 of 37</p>
+<h1>A real CI/CD pipeline (plan on PR, apply on merge)</h1>
+
+<p>Every lesson so far has been building toward this one. You know state (Lesson 13), remote backends and locking (Lessons 14–15), modules (Lessons 17–20), workspaces and environments (Lessons 21–22), how to keep secrets out of state and logs (Lesson 24), and how <code>fmt</code>/<code>validate</code> catch mistakes before they cost you anything (Lesson 25). This lesson wires all of that into the pattern almost every real Terraform team runs in production: <strong>plan on pull request, apply on merge.</strong> No more typing <code>terraform apply</code> from your laptop and hoping.</p>
+
+<h2>The shape of the pipeline</h2>
+<p>Strip away the YAML and the pattern is two rules:</p>
+<ul>
+<li><strong>Open a pull request that changes <code>.tf</code> files</strong> → a CI job runs <code>terraform fmt -check</code>, <code>terraform validate</code>, and <code>terraform plan</code>, then posts the plan output as a comment on the PR. Nothing gets applied. This is Lesson 26's plan-review discipline, automated — every reviewer sees the exact diff of real-world changes before they approve.</li>
+<li><strong>That pull request gets merged to <code>main</code></strong> → a separate CI job checks out the now-merged code and runs <code>terraform apply</code>, automatically, no human typing <code>yes</code>.</li>
+</ul>
+<p class="callout"><strong>Mental model:</strong> a pull request becomes the approval gate for infrastructure changes, the same way it's already the approval gate for application code. The plan comment is the diff. A human reviewing and approving the PR <em>is</em> the "yes" that used to happen at your terminal — it just happens once, in one place, with a permanent record of who approved what and why. <code>apply</code> only ever runs on code that already passed review on <code>main</code>.</p>
+
+<h2>Why review the plan on the PR — not trust the pipeline blindly</h2>
+<p>It's tempting to think "the pipeline ran <code>validate</code>, it's automated, it must be safe." It isn't. <code>validate</code> only checks syntax and internal consistency — it has no idea that your plan is about to destroy and recreate a production database, or that a variable default changed and will now resize every instance in the account. Only <code>plan</code> shows that, and only a human reading that plan output catches it before it happens. That's exactly why this pipeline posts the plan as a <em>comment</em> instead of silently applying it — it forces a person to read "1 to add, 0 to change, 1 to <strong>destroy</strong>" before clicking merge, not after.</p>
+<p>Automation is there to make the review easier and more consistent — same commands, same output format, every single time — not to replace the review. The apply step running unattended after merge is safe specifically <em>because</em> a human already looked at the plan for that exact code before it reached <code>main</code>.</p>
+
+<h2>Credentials in CI — never in the workflow file</h2>
+<p>Your pipeline needs cloud credentials to run <code>plan</code> and <code>apply</code>. The one rule that matters more than any other: <strong>never hardcode an access key, secret, or token in the workflow YAML.</strong> That file lives in git, git history is forever, and a credential committed once is compromised forever — the same discipline Lesson 24 covers for <code>sensitive = true</code> variables and state applies here too, just one layer up the stack.</p>
+<p>Two acceptable ways to hand credentials to CI:</p>
+<ul>
+<li><strong>The CI platform's secrets store</strong> — GitHub Actions has repository/environment secrets (<code>Settings → Secrets and variables → Actions</code>). Reference them in the workflow as <code>${{ secrets.AWS_ACCESS_KEY_ID }}</code>; the value is encrypted at rest, masked in logs, and never appears in the YAML itself.</li>
+<li><strong>OIDC / short-lived credentials</strong> — the stronger option. Instead of storing a long-lived cloud access key at all, the CI job requests a short-lived token directly from the cloud provider at run time, using GitHub's own OIDC identity token as proof of who's asking. No secret to leak, no key to rotate, and the token expires automatically once the job finishes. The exact setup step differs per cloud (AWS, GCP, Azure each publish their own official GitHub Action for it) — check that provider's current docs when you wire it up, but the workflow always needs <code>permissions: id-token: write</code> to allow the OIDC token request in the first place.</li>
+</ul>
+<p>Either way, the workflow file itself never contains a credential — only a reference to where one lives or how to fetch one.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your plan-on-PR job runs <code>terraform validate</code> and it passes with no errors. Does that mean it's safe to merge without reading the plan output? Why or why not?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. <code>validate</code> only checks that your configuration is syntactically correct and internally consistent — it has no knowledge of what real infrastructure exists or what the change would actually do. A config can validate perfectly and still plan to destroy a production resource. Only reading the actual <code>plan</code> output (the add/change/destroy summary) tells you what will really happen — that's why the plan gets posted as a PR comment for a human to read, not just run silently.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Why is <code>terraform apply</code> allowed to run unattended (no human typing "yes") after merge to <code>main</code>, when Lesson 5 taught you to always read the interactive apply prompt?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Because the review already happened — on the pull request, before merge. A human read the exact plan output for that exact code and approved it. The unattended apply after merge runs against code that's already been through that human checkpoint, so skipping the interactive prompt isn't skipping review, it's just moving the review to happen once, earlier, in a place everyone can see — instead of alone, at apply time, on someone's laptop.</div>
+</div>
+
+<h2>Hands-on: a full plan-on-PR / apply-on-merge workflow</h2>
+<p>This uses the official <code>hashicorp/setup-terraform</code> GitHub Action to install the Terraform CLI on the runner. Save this as <code>.github/workflows/terraform.yml</code> in a repo whose Terraform code lives in a <code>terraform/</code> folder, and adjust the working directory to match your own layout.</p>
+<pre><code>name: Terraform
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ["terraform/**"]
+  push:
+    branches: [main]
+    paths: ["terraform/**"]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write   # needed only if you switch to OIDC cloud auth
+
+env:
+  working_dir: terraform
+
+jobs:
+  plan:
+    name: Plan (on pull request)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.working_dir }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.9.0"
+
+      - name: Terraform fmt
+        id: fmt
+        run: terraform fmt -check
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color -input=false
+        continue-on-error: true
+
+      - name: Comment plan on PR
+        uses: actions/github-script@v7
+        env:
+          PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `#### Terraform Format \`${{ steps.fmt.outcome }}\`
+            #### Terraform Validate \`${{ steps.validate.outcome }}\`
+            #### Terraform Plan \`${{ steps.plan.outcome }}\`
+
+            &lt;details&gt;&lt;summary&gt;Show plan&lt;/summary&gt;
+
+            \`\`\`
+            ${process.env.PLAN}
+            \`\`\`
+
+            &lt;/details&gt;
+
+            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Fail job if plan errored
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  apply:
+    name: Apply (on merge to main)
+    if: github.event_name == 'push' &amp;&amp; github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.working_dir }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.9.0"
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -input=false
+</code></pre>
+<p>Read the shape of it, not just the syntax: two jobs, gated by two different <code>if:</code> conditions on the same trigger file. <code>plan</code> only runs on <code>pull_request</code> events and never touches real infrastructure — every step that could change something (<code>plan</code> itself) uses <code>continue-on-error: true</code> purely so the PR comment step still runs and shows you the failure, then a final step explicitly fails the job if the plan errored. <code>apply</code> only runs on a <code>push</code> to <code>main</code>, which in a protected-branch setup only happens via a merged, reviewed pull request. Credentials in both jobs come from <code>secrets.*</code> — nothing sensitive is written in this file, matching Lesson 24's rule.</p>
+
+<h2>Source</h2>
+<p><a href="https://github.com/hashicorp/setup-terraform" target="_blank" rel="noopener">github.com/hashicorp/setup-terraform</a> (confirms the action is invoked as <code>hashicorp/setup-terraform@v4</code>, its inputs including <code>terraform_version</code> and <code>terraform_wrapper</code>, and the official example workflow pattern of <code>fmt -check</code> → <code>init</code> → <code>validate</code> → <code>plan</code> → posting the plan via <code>actions/github-script@v7</code> as a PR comment gated on <code>github.event_name == 'pull_request'</code> with <code>permissions: pull-requests: write</code>) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Production CI/CD pattern: <code>terraform fmt -check</code> + <code>validate</code> + <code>plan</code> run on every pull request, with the plan posted as a PR comment for review — nothing is applied yet.</li>
+    <li><code>terraform apply</code> runs automatically only after merge to <code>main</code>, triggered by the <code>push</code> event on that branch.</li>
+    <li>The PR review is the safety gate. Automation makes the plan easy to see; a human reading it before merge is what makes the unattended apply afterward safe.</li>
+    <li>Never hardcode cloud credentials in the workflow file — use the CI platform's secrets store, or better, OIDC/short-lived credentials with <code>permissions: id-token: write</code>.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0028-hcp-terraform-workspaces.html">&larr; Lesson 28 — HCP Terraform workspaces &amp; remote execution</a></span>
+  <span><a href="0030-policy-as-code.html">Lesson 30 — Policy as code (Sentinel/OPA) &rarr;</a></span>
+</div>
+
+</body>
+</html>

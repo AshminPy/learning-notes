@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 4 — Providers & the terraform block</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 4 of 37</p>
+<h1>Providers & the terraform block</h1>
+
+<p>Terraform's core engine knows nothing about AWS, Azure, GCP, or anything else. It only knows how to read HCL, build a dependency graph, and talk to plugins. Those plugins are called <strong>providers</strong> — this lesson is about what they are, and the two blocks you write to bring one into your config.</p>
+
+<h2>What a provider actually is</h2>
+<p class="callout"><strong>Simple example:</strong> think of Terraform core as a translator that only speaks one language — HCL. A provider is a dictionary for one specific system. The <code>aws</code> provider translates your HCL into AWS API calls. The <code>random</code> provider translates HCL into "generate a random value locally." Without a provider, Terraform has nothing to talk to.</p>
+
+<p>Each provider is a separate downloadable plugin, published to the <a href="https://registry.terraform.io" target="_blank" rel="noopener">Terraform Registry</a> by HashiCorp, a cloud vendor, or the community. Common ones: <code>hashicorp/aws</code>, <code>hashicorp/azurerm</code>, <code>hashicorp/google</code>. There are also small, credential-free providers like <code>hashicorp/random</code> and <code>hashicorp/local</code> — useful for learning Terraform's mechanics without needing a cloud account or spending any money. That's what you'll use in this lesson.</p>
+
+<h2>The <code>terraform</code> block</h2>
+<p>Every root module should start with a <code>terraform</code> block. It configures Terraform itself — not your infrastructure. Two settings you'll use constantly: <code>required_version</code> (which Terraform CLI versions are allowed to run this config) and <code>required_providers</code> (which provider plugins this config needs, and which versions).</p>
+
+<pre><code>terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
+  }
+}</code></pre>
+
+<p>Inside <code>required_providers</code>, each entry has a <strong>local name</strong> (here, <code>random</code> — the name you'll use elsewhere in your config), a <code>source</code> (the provider's global address, usually <code>namespace/type</code>, e.g. <code>hashicorp/aws</code>), and a <code>version</code> constraint.</p>
+
+<h2>The <code>provider</code> block</h2>
+<p>The <code>terraform</code> block only declares that you <em>need</em> a provider. The <code>provider</code> block configures <em>how</em> to use it — region, credentials, project ID, whatever that specific system needs.</p>
+
+<pre><code>provider "aws" {
+  region = "us-east-1"
+}</code></pre>
+
+<p>You don't need an AWS account to understand this — just the shape. Every cloud provider block typically needs a region or endpoint, and credentials (usually picked up from environment variables or a config file, not hardcoded in the block — never put a secret key directly in HCL). The <code>random</code> provider needs neither, which is why it's the perfect first example:</p>
+
+<pre><code>provider "random" {}</code></pre>
+
+<p>An empty provider block is valid. It just means "use this provider with no extra configuration."</p>
+
+<h2>Version constraint operators</h2>
+<p>Version constraints stop Terraform from silently grabbing a provider update that changes behavior underneath you. Here are the operators you'll see:</p>
+
+<table>
+<tr><th>Operator</th><th>Example</th><th>Meaning</th></tr>
+<tr><td><code>=</code></td><td><code>= 3.6.0</code></td><td>Exactly this version (rarely used — too rigid)</td></tr>
+<tr><td><code>&gt;=</code></td><td><code>&gt;= 3.0</code></td><td>This version or newer, no upper bound</td></tr>
+<tr><td><code>&lt;=</code></td><td><code>&lt;= 3.9.0</code></td><td>This version or older</td></tr>
+<tr><td><code>~&gt;</code></td><td><code>~&gt; 3.5</code></td><td>Allow the rightmost segment to increase — here, <code>3.5.x</code> but not <code>3.6</code></td></tr>
+<tr><td><code>~&gt;</code></td><td><code>~&gt; 3.5.0</code></td><td>Allow patch updates only — <code>3.5.x</code>, same as above but explicit</td></tr>
+</table>
+
+<p class="callout"><strong>Best-practice tip:</strong> always pin a version constraint in <code>required_providers</code>. If you leave it out, Terraform installs whatever the latest version is at the time — and that can silently change on a teammate's machine or in CI, upgrading a provider and breaking your config with no warning. <code>~></code> ("pessimistic constraint") is the common default: it lets you get bug fixes but blocks breaking major/minor changes.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. What's the difference between the <code>terraform</code> block and a <code>provider</code> block?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The <code>terraform</code> block declares <em>which</em> providers you need and what versions are acceptable. The <code>provider</code> block configures <em>how</em> to use one of them (region, credentials, etc.).</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You write <code>version = "~> 2.1"</code> for a provider. The registry has versions 2.1.4, 2.2.0, and 3.0.0 available. Which one does Terraform install?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">2.2.0. <code>~> 2.1</code> allows the last segment to increase, so any <code>2.x</code> ≥ 2.1 is fine, but <code>3.0.0</code> is a major-version bump and is blocked.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Create a new folder for this lesson, e.g. <code>lesson-04/</code>, and inside it a file called <code>main.tf</code> containing:</p>
+<ul>
+<li>a <code>terraform</code> block requiring the <code>hashicorp/random</code> provider, version <code>~> 3.0</code></li>
+<li>an empty <code>provider "random" {}</code> block</li>
+</ul>
+<p>Then open a terminal in that folder and run:</p>
+<pre><code>terraform init</code></pre>
+<p>Watch the output. Terraform will report that it's finding and installing the <code>hashicorp/random</code> provider, then confirm it initialized successfully. It downloads the plugin binary into a hidden <code>.terraform</code> folder and writes a <code>.terraform.lock.hcl</code> file that records the exact version it picked — that lock file is what keeps everyone on your team using the same provider version, not just "something matching <code>~> 3.0</code>."</p>
+<p>Try it before looking at the answer.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
+  }
+}
+
+provider "random" {}</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/providers" target="_blank" rel="noopener">developer.hashicorp.com/terraform/language/providers</a> and <a href="https://registry.terraform.io/providers/hashicorp/random/latest/docs" target="_blank" rel="noopener">registry.terraform.io/providers/hashicorp/random</a> — official provider docs, verified current at time of writing (random provider latest release: 3.9.0).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A provider is a plugin that lets Terraform talk to one specific system (AWS, Azure, GCP, random, local, ...).</li>
+    <li>The <code>terraform</code> block's <code>required_providers</code> declares which providers and versions you need — the <code>provider</code> block configures how to use one.</li>
+    <li>Always pin versions (e.g. <code>~> 3.0</code>). Unpinned providers can silently upgrade and break your config.</li>
+    <li><code>terraform init</code> downloads the providers you declared and locks the exact version in <code>.terraform.lock.hcl</code>.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got an error message you don't understand? Paste the exact text and ask — reading Terraform's init/plan/apply errors is a skill you'll build lesson by lesson.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0003-what-is-iac.html">&larr; Lesson 3 — What is Infrastructure as Code?</a></span>
+  <span><a href="0005-first-resource-apply.html">Lesson 5 — Your first resource &rarr;</a></span>
+</div>
+
+</body>
+</html>

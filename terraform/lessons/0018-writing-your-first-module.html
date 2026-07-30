@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 18 — Writing your first module</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 18 of 37</p>
+<h1>Writing your first module</h1>
+
+<p>Lesson 17 made the case for modules — reuse, organization, a clean interface between "what a thing does" and "how many of it you want." This lesson is where you actually build one. And here's the reassurance up front: a module's own files use <code>resource</code>, <code>variable</code>, and <code>output</code> blocks — the exact same syntax you've been writing since Lesson 5. Nothing new to learn there. The only genuinely new thing is the <code>module</code> block you use to <em>call</em> it, plus a folder to put it in.</p>
+
+<p class="callout"><strong>Mental model:</strong> a module is a function. <code>variables.tf</code> is its parameter list, <code>main.tf</code> is its body, <code>outputs.tf</code> is its return statement. You already wrote all three concepts in your root config — you were just writing them inline instead of packaging them into something callable more than once.</p>
+
+<h2>What you're building</h2>
+<p>A tiny reusable module called <code>named-file</code>: give it a <code>name_prefix</code>, and it generates a random pet name (<code>random_pet</code>, from Lesson 5) and writes that name into a text file (<code>local_file</code>, from Lessons 7–10) whose filename starts with your prefix. Both providers are free and need no cloud account, so you can run every command in this lesson without spending a cent. Then you'll call that one module twice from a root config — once for "dev," once for "prod" — proving the whole point of a module: write the logic once, reuse it with different inputs.</p>
+
+<h2>Step 1 — the module's folder</h2>
+<p>Inside your working directory, create a subfolder for the module. The standard convention (confirmed by HashiCorp's own module-development docs) is a <code>modules/</code> directory at the root, with one subfolder per module:</p>
+<pre><code>your-project/
+├── main.tf              # root config — calls the module
+├── modules/
+│   └── named-file/
+│       ├── main.tf      # the module's own resources
+│       ├── variables.tf # the module's inputs
+│       └── outputs.tf   # the module's outputs
+</code></pre>
+<p>Make the folders now:</p>
+<pre><code>mkdir -p modules/named-file</code></pre>
+
+<h2>Step 2 — the module's input: <code>modules/named-file/variables.tf</code></h2>
+<p>Same <code>variable</code> block syntax from Lesson 6 — nothing module-specific about it:</p>
+<pre><code>variable "name_prefix" {
+  description = "Prefix used in the generated file's name (e.g. \"dev\", \"prod\")"
+  type        = string
+}</code></pre>
+
+<h2>Step 3 — the module's resources: <code>modules/named-file/main.tf</code></h2>
+<p>Same <code>resource</code> block syntax from Lessons 5, 7, and 8. The only thing to notice is that <code>local_file</code>'s <code>filename</code> now uses <code>var.name_prefix</code> instead of a hardcoded string — that's what makes this module reusable with different inputs:</p>
+<pre><code>resource "random_pet" "name" {}
+
+resource "local_file" "pet_file" {
+  filename = "${path.module}/${var.name_prefix}-pet.txt"
+  content  = random_pet.name.id
+}</code></pre>
+<p><code>path.module</code> (not <code>path.root</code>) resolves to <em>this module's own folder</em> — so the file lands next to the module's <code>.tf</code> files, not wherever the root config happens to live. That matters once a module gets called from a different directory than where it's defined.</p>
+
+<h2>Step 4 — the module's output: <code>modules/named-file/outputs.tf</code></h2>
+<p>Same <code>output</code> block syntax from Lesson 7. This is the module's public interface — the only thing the calling config gets to see:</p>
+<pre><code>output "file_path" {
+  description = "Path to the generated pet-name file"
+  value       = local_file.pet_file.filename
+}</code></pre>
+
+<p class="callout"><strong>Why this matters:</strong> <code>random_pet.name</code> and <code>local_file.pet_file</code> exist only inside the module — the root config can never reference them directly, even by their full local names. The <em>only</em> thing that crosses the boundary is what the module explicitly outputs. This is the same "outputs are the only sanctioned way to hand something back" idea from Lesson 7, just applied at the module level instead of the resource level.</p>
+
+<h2>Step 5 — call the module twice from the root: <code>main.tf</code></h2>
+<p>Back in your project root (not inside <code>modules/</code>), delete or comment out any leftover <code>random_pet</code>/<code>local_file</code> resource blocks from earlier lessons — the module owns those now. Your root <code>main.tf</code> needs the provider block (same as always, Lesson 4) plus two <code>module</code> blocks:</p>
+<pre><code>terraform {
+  required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.5"
+    }
+  }
+}
+
+module "dev_pet" {
+  source      = "./modules/named-file"
+  name_prefix = "dev"
+}
+
+module "prod_pet" {
+  source      = "./modules/named-file"
+  name_prefix = "prod"
+}
+
+output "dev_file_path" {
+  description = "Path to the dev environment's generated file"
+  value       = module.dev_pet.file_path
+}
+
+output "prod_file_path" {
+  description = "Path to the prod environment's generated file"
+  value       = module.prod_pet.file_path
+}</code></pre>
+
+<p>Two new pieces of syntax here, both small:</p>
+<ul>
+<li><code>module "dev_pet" { ... }</code> — the label (<code>dev_pet</code>) is a local name you choose, exactly like a resource's local name. <code>source</code> is required and points at the module's folder — a relative path starting with <code>./</code> or <code>../</code> tells Terraform "this is a local module, not a registry one" (registry sources are Lesson 19's topic).</li>
+<li><code>module.dev_pet.file_path</code> — how you read a module's output from outside it. Same dotted syntax as reading a resource attribute (<code>random_pet.example.id</code>), just with <code>module.&lt;local name&gt;.&lt;output name&gt;</code> instead of <code>&lt;type&gt;.&lt;local name&gt;.&lt;attribute&gt;</code>.</li>
+</ul>
+
+<p>Every argument you set inside a <code>module</code> block (here, just <code>name_prefix</code>) must match a <code>variable</code> the module actually declares — Terraform validates this at <code>plan</code> time, the same way it validates arguments against a resource's schema.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Inside <code>modules/named-file/main.tf</code>, could you write <code>output "pet_id" { value = random_pet.name.id }</code> directly in that file and expect the root config to read it as <code>random_pet.name.id</code>?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">You could add that output block, but the root config would never read it as <code>random_pet.name.id</code> — that resource is private to the module. The root config can only reach it through the module's declared output, as <code>module.dev_pet.pet_id</code> (or whatever you name the output). The resource's local name inside the module is invisible outside it.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You call the same module twice, as <code>dev_pet</code> and <code>prod_pet</code>. Do they share one <code>random_pet</code> resource, or does each call get its own?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Each call gets its own, completely separate copy of every resource inside the module. <code>module.dev_pet</code> and <code>module.prod_pet</code> are two independent instances — two separate <code>random_pet</code> resources, two separate <code>local_file</code> resources, two separate state entries. That's the entire point of calling a module more than once: it's not shared state, it's the same logic stamped out twice with different inputs.</div>
+</div>
+
+<h2>Hands-on: build it, call it twice, inspect the plan</h2>
+<p>Build the exact structure above in a fresh (or existing) project folder:</p>
+<ul>
+<li>create <code>modules/named-file/variables.tf</code>, <code>main.tf</code>, and <code>outputs.tf</code> with the content from Steps 2–4</li>
+<li>create the root <code>main.tf</code> from Step 5, calling the module twice as <code>dev_pet</code> and <code>prod_pet</code></li>
+<li>run <code>terraform init</code> — Terraform needs to discover the local module as well as the two providers; watch the output mention <code>Initializing modules...</code> before <code>Initializing provider plugins...</code></li>
+<li>run <code>terraform plan</code> and read the resource addresses carefully. You should see four resources to add, addressed as:
+  <ul>
+    <li><code>module.dev_pet.random_pet.name</code></li>
+    <li><code>module.dev_pet.local_file.pet_file</code></li>
+    <li><code>module.prod_pet.random_pet.name</code></li>
+    <li><code>module.prod_pet.local_file.pet_file</code></li>
+  </ul>
+</li>
+<li>notice the pattern: <code>module.&lt;call name&gt;.&lt;resource type&gt;.&lt;resource local name&gt;</code> — the module call name becomes a prefix on every resource address inside it. That prefix is exactly what keeps <code>dev_pet</code>'s resources and <code>prod_pet</code>'s resources from colliding, even though both instances declare a resource literally named <code>random_pet.name</code> inside the module</li>
+<li>run <code>terraform apply</code>, type <code>yes</code></li>
+<li>run <code>terraform output</code> — you should see both <code>dev_file_path</code> and <code>prod_file_path</code>, each pointing at a different generated file (e.g. <code>./modules/named-file/dev-pet.txt</code> and <code>./modules/named-file/prod-pet.txt</code>)</li>
+<li>open both files and confirm each contains its own independently generated pet name</li>
+<li>run <code>terraform destroy</code>, type <code>yes</code>, to clean up</li>
+</ul>
+<p>Try it yourself before checking the reference below.</p>
+
+<div class="quiz">
+<p>Reveal the full reference file set</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code># modules/named-file/variables.tf
+variable "name_prefix" {
+  description = "Prefix used in the generated file's name (e.g. \"dev\", \"prod\")"
+  type        = string
+}
+
+# modules/named-file/main.tf
+resource "random_pet" "name" {}
+
+resource "local_file" "pet_file" {
+  filename = "${path.module}/${var.name_prefix}-pet.txt"
+  content  = random_pet.name.id
+}
+
+# modules/named-file/outputs.tf
+output "file_path" {
+  description = "Path to the generated pet-name file"
+  value       = local_file.pet_file.filename
+}
+
+# main.tf (root)
+terraform {
+  required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.5"
+    }
+  }
+}
+
+module "dev_pet" {
+  source      = "./modules/named-file"
+  name_prefix = "dev"
+}
+
+module "prod_pet" {
+  source      = "./modules/named-file"
+  name_prefix = "prod"
+}
+
+output "dev_file_path" {
+  value = module.dev_pet.file_path
+}
+
+output "prod_file_path" {
+  value = module.prod_pet.file_path
+}
+
+# then:
+terraform init
+terraform plan
+# look for: module.dev_pet.random_pet.name, module.prod_pet.random_pet.name, etc.
+terraform apply
+# type: yes
+terraform output
+terraform destroy
+# type: yes</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/modules/develop" target="_blank" rel="noopener">developer.hashicorp.com — Module Development</a> (confirms a module is a container of resources, defined with input variables and output values, called via a <code>module</code> block) · <a href="https://developer.hashicorp.com/terraform/language/modules/develop/structure" target="_blank" rel="noopener">developer.hashicorp.com — Standard Module Structure</a> (confirms the <code>main.tf</code> / <code>variables.tf</code> / <code>outputs.tf</code> file convention, and nested modules living under a <code>modules/</code> subdirectory) · <a href="https://developer.hashicorp.com/terraform/language/modules/syntax" target="_blank" rel="noopener">developer.hashicorp.com — Module Blocks</a> (confirms <code>source</code> is required, local paths must begin with <code>./</code> or <code>../</code>, and each argument must correspond to a declared variable) · <a href="https://registry.terraform.io/providers/hashicorp/local/latest/docs/resources/file" target="_blank" rel="noopener">registry.terraform.io — local_file resource docs</a> — all verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A module's own files (<code>main.tf</code>, <code>variables.tf</code>, <code>outputs.tf</code>) use the exact same <code>resource</code>/<code>variable</code>/<code>output</code> syntax you already know — modules are an organizational feature, not a new language.</li>
+    <li>The standard layout is a <code>modules/&lt;name&gt;/</code> subfolder with those three files; the root config calls it with a <code>module</code> block whose <code>source</code> points at that folder.</li>
+    <li>A module's internal resources are private — the calling config can only reach values the module explicitly exposes via <code>output</code>, read as <code>module.&lt;call name&gt;.&lt;output name&gt;</code>.</li>
+    <li>Calling the same module more than once creates fully independent resource instances, addressed as <code>module.&lt;call name&gt;.&lt;resource type&gt;.&lt;resource name&gt;</code> — that's how <code>dev_pet</code> and <code>prod_pet</code> coexist without colliding.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0017-why-modules.html">&larr; Lesson 17 — Why modules?</a></span>
+  <span><a href="0019-module-sources-and-versioning.html">Lesson 19 — Module sources &amp; versioning &rarr;</a></span>
+</div>
+
+</body>
+</html>

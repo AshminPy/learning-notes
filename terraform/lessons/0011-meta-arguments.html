@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 11 — Meta-arguments: count, for_each, depends_on</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 11 of 37</p>
+<h1>Meta-arguments: count, for_each, depends_on</h1>
+
+<p>Every resource block you've written so far creates exactly one thing, in an order Terraform figures out on its own. Real infrastructure isn't that tidy — you often want five identical subnets, or one IAM policy per team, or a resource that must wait for something Terraform can't see through a reference. This lesson covers the three meta-arguments that handle those cases: <code>count</code>, <code>for_each</code>, and <code>depends_on</code>. "Meta-argument" just means it's not specific to any provider — you can add it to almost any resource or module block, and Terraform itself interprets it.</p>
+
+<h2><code>count</code> — create N copies, indexed 0..N-1</h2>
+<p><code>count</code> takes a whole number and creates that many instances of the resource. Inside the block, <code>count.index</code> gives you the current instance's position, starting at <code>0</code>:</p>
+<pre><code>resource "aws_instance" "server" {
+  count = 4
+  # count.index is 0, 1, 2, 3 across the four instances
+}</code></pre>
+<p>Each instance gets addressed with bracket notation — <code>aws_instance.server[0]</code>, <code>aws_instance.server[1]</code>, and so on. You'll see this same numbered pattern in <code>terraform plan</code> output.</p>
+
+<p class="callout"><strong>Mental model:</strong> <code>count</code> turns one resource block into an array. <code>count.index</code> is the array position — nothing more. Terraform doesn't know or care what instance 2 "means"; it only knows there are 4 slots, numbered 0 to 3.</p>
+
+<h2>The pitfall — removing from the middle shifts everything after it</h2>
+<p>Because <code>count.index</code> is just a position, Terraform's state ties each instance's identity to its <em>index</em>, not to anything about what that instance actually is. Say you have three servers built from a list:</p>
+<pre><code>variable "server_names" {
+  default = ["alpha", "beta", "gamma"]
+}
+
+resource "aws_instance" "server" {
+  count = length(var.server_names)
+  tags  = { Name = var.server_names[count.index] }
+}</code></pre>
+<p>This creates <code>server[0]</code> = alpha, <code>server[1]</code> = beta, <code>server[2]</code> = gamma. Now delete <code>"beta"</code> from the middle of the list. The list is now <code>["alpha", "gamma"]</code>, so <code>server[1]</code> is now gamma instead of beta. Terraform doesn't see "beta was deleted" — it sees "the thing at index 1 changed from beta to gamma," and plans to destroy and recreate <code>server[1]</code> (and everything after it, if the list were longer). You wanted to delete one server. Terraform's plan touches every server after it in the list.</p>
+
+<p class="callout"><strong>Best practice — avoid <code>count</code> over lists you expect to change.</strong> This isn't a bug, it's the direct consequence of indexing by position. It's fine for genuinely interchangeable copies (four identical worker nodes, where losing any one and getting a new one back is a non-event). It's a trap for named, distinct things — servers, users, buckets — where each item has an identity you care about keeping stable.</p>
+
+<h2><code>for_each</code> — one resource per item, keyed by a stable key</h2>
+<p><code>for_each</code> solves exactly this problem. It takes a map or a set of strings, and creates one instance per entry — keyed by the map's key (or the string itself, for a set) instead of a numeric position:</p>
+<pre><code>resource "aws_iam_user" "example" {
+  for_each = toset(["Todd", "James", "Alice"])
+  name     = each.key
+}</code></pre>
+<p>Or with a map, when you need a value alongside the key:</p>
+<pre><code>resource "azurerm_resource_group" "rg" {
+  for_each = tomap({
+    a_group       = "eastus"
+    another_group = "westus2"
+  })
+  name     = each.key
+  location = each.value
+}</code></pre>
+<p>Inside the block: <code>each.key</code> is the map key (or the set member itself), <code>each.value</code> is the map's value (for a set, it's identical to <code>each.key</code>). Instances are addressed by their key, not a number — <code>aws_iam_user.example["Todd"]</code>, <code>azurerm_resource_group.rg["a_group"]</code>.</p>
+
+<p>Now replay the earlier problem with <code>for_each</code> instead of <code>count</code>: remove <code>"beta"</code> from a set of server names, and Terraform destroys exactly <code>server["beta"]</code>. Nothing else moves, because <code>server["alpha"]</code> and <code>server["gamma"]</code> were never identified by position in the first place — their keys didn't change.</p>
+
+<p class="callout"><strong>Best practice, per HashiCorp's own guidance:</strong> "Use the <code>count</code> argument when you want to create nearly identical instances. Use <code>for_each</code> when some instance arguments must have distinct values that can't be directly derived from an integer index." In practice, that steers most real-world "one resource per named thing" cases toward <code>for_each</code> — the key-based identity is what avoids the reshuffling pitfall above. Note one restriction: the keys of a map, or every value in a set of strings, must be values Terraform can know before <code>apply</code> — you can't <code>for_each</code> over something only known after a resource is created.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You have <code>count = 3</code> building three S3 buckets from <code>var.bucket_names[count.index]</code>, where the list is <code>["logs", "backups", "archive"]</code>. You remove <code>"backups"</code> from the list, leaving <code>["logs", "archive"]</code>. What does <code>terraform plan</code> propose, and why?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">It proposes destroying and recreating <code>bucket[1]</code> (previously "backups", now "archive") — and destroying <code>bucket[2]</code> entirely, since the list is now shorter. Terraform tracks instances by index, not by name, so shifting positions looks like a change to the resource at that index, not a clean removal of one item.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Same scenario, but built with <code>for_each = toset(var.bucket_names)</code> instead of <code>count</code>. What happens when you remove <code>"backups"</code>?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Only <code>bucket["backups"]</code> is destroyed. <code>bucket["logs"]</code> and <code>bucket["archive"]</code> are untouched, because their keys never changed — <code>for_each</code> identifies instances by key, not position.</div>
+</div>
+
+<h2>Implicit dependencies, recapped</h2>
+<p>Lesson 8 covered this without naming the contrast yet: when one resource's argument references another resource's attribute (<code>random_pet.example.id</code>, for instance), Terraform automatically works out the create order from that reference. No ordering keyword needed — this is an <strong>implicit dependency</strong>, and it's how Terraform builds its dependency graph the vast majority of the time.</p>
+
+<h2><code>depends_on</code> — for the order Terraform can't see</h2>
+<p>Occasionally a resource depends on another resource's <em>behavior</em>, not its data — nothing you can reference in an argument. The classic example: an IAM policy that must finish propagating before an application tries to use the role it's attached to. Terraform has no attribute reference to infer that ordering from, so you state it explicitly:</p>
+<pre><code>resource "aws_instance" "example" {
+  # ... configuration ...
+  depends_on = [
+    aws_iam_role_policy.example
+  ]
+}</code></pre>
+<p><code>depends_on</code> takes a list of resource (or module) references. Terraform completes all actions on everything listed before it touches this resource — same ordering effect as an implicit dependency, just declared instead of inferred.</p>
+
+<p class="callout"><strong>Best practice — last resort, not a habit.</strong> HashiCorp's own guidance is direct: "You should only use <code>depends_on</code> as a last resort because it can cause Terraform to create more conservative plans that replace more resources than necessary." Reach for it only when you've confirmed there's genuinely no attribute you can reference to create the dependency implicitly. If you find yourself adding <code>depends_on</code> out of habit "just to be safe," that's usually a sign the config is missing a real reference — go find it first.</p>
+
+<div class="quiz">
+<p>Q3. You add <code>content = "Pet: ${random_pet.example.id}"</code> to a <code>local_file</code> resource. Do you also need <code>depends_on = [random_pet.example]</code> on that resource?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">No. Referencing <code>random_pet.example.id</code> already creates an implicit dependency — Terraform will create <code>random_pet.example</code> first automatically. Adding <code>depends_on</code> on top would be redundant, and redundant <code>depends_on</code> is exactly the habit the "last resort" guidance warns against.</div>
+</div>
+
+<h2>Hands-on: one <code>random_pet</code> per environment, with <code>for_each</code></h2>
+<p>Same folder as previous lessons, <code>random</code> provider already in your <code>required_providers</code> block from Lesson 8. Replace your single <code>random_pet</code> resource with this:</p>
+<pre><code>resource "random_pet" "env_pet" {
+  for_each = toset(["dev", "staging", "prod"])
+  length   = 2
+}</code></pre>
+<p>Add an output so you can see all three at once:</p>
+<pre><code>output "pet_names" {
+  value = { for env, pet in random_pet.env_pet : env => pet.id }
+}</code></pre>
+<p>Walk through it:</p>
+<ul>
+<li>run <code>terraform plan</code> and read the resource addresses in the output — you should see <code>random_pet.env_pet["dev"]</code>, <code>random_pet.env_pet["staging"]</code>, <code>random_pet.env_pet["prod"]</code>, each planned separately</li>
+<li>run <code>terraform apply</code>, type <code>yes</code></li>
+<li>check the <code>pet_names</code> output — three key/value pairs, one generated pet name per environment</li>
+<li>edit the <code>for_each</code> set to remove <code>"staging"</code>, run <code>terraform plan</code> again, and confirm only <code>random_pet.env_pet["staging"]</code> is planned for destruction — <code>dev</code> and <code>prod</code> don't move</li>
+<li>run <code>terraform destroy</code>, type <code>yes</code>, to clean up</li>
+</ul>
+<p>Try it yourself before checking the reference below.</p>
+
+<div class="quiz">
+<p>Reveal the reference config and commands</p>
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a4"><code>resource "random_pet" "env_pet" {
+  for_each = toset(["dev", "staging", "prod"])
+  length   = 2
+}
+
+output "pet_names" {
+  value = { for env, pet in random_pet.env_pet : env => pet.id }
+}
+
+# then:
+terraform plan
+terraform apply
+# type: yes
+# check the pet_names output — three env => pet-name pairs
+
+# remove "staging" from the for_each set, then:
+terraform plan
+# only random_pet.env_pet["staging"] should be planned for destruction
+
+terraform destroy
+# type: yes</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/meta-arguments/count" target="_blank" rel="noopener">developer.hashicorp.com — count meta-argument</a> (confirms <code>count.index</code> syntax and bracket-notation addressing, and the guidance "use <code>count</code> for nearly identical instances, <code>for_each</code> when instance arguments must have distinct values") · <a href="https://developer.hashicorp.com/terraform/language/meta-arguments/for_each" target="_blank" rel="noopener">developer.hashicorp.com — for_each meta-argument</a> (confirms map/set syntax, <code>each.key</code>/<code>each.value</code>, and that map keys or set string values must be known before apply) · <a href="https://developer.hashicorp.com/terraform/language/meta-arguments/depends_on" target="_blank" rel="noopener">developer.hashicorp.com — depends_on meta-argument</a> (confirms syntax and the explicit "use only as a last resort" guidance) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>count = N</code> creates N instances, indexed 0..N-1 via <code>count.index</code> — good for identical, interchangeable copies, risky for named lists that change, because removing a middle item shifts every index after it and Terraform recreates those instances.</li>
+    <li><code>for_each</code> creates one instance per entry in a map or set, keyed by <code>each.key</code>/<code>each.value</code> instead of a position — generally preferred over <code>count</code> whenever instances have distinct identities, since removing one item only touches that one key.</li>
+    <li>Implicit dependencies (referencing another resource's attribute) are how Terraform orders things almost all the time — no keyword needed.</li>
+    <li><code>depends_on</code> declares an ordering Terraform can't infer from any reference. Use it only as a last resort — it's official HashiCorp guidance, not just a style preference — since it can make plans more conservative than necessary.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0010-expressions-and-functions.html">&larr; Lesson 10: Expressions & functions</a></span>
+  <span><a href="0012-lifecycle-and-conditions.html">Lesson 12: Lifecycle rules & custom conditions &rarr;</a></span>
+</div>
+
+</body>
+</html>
