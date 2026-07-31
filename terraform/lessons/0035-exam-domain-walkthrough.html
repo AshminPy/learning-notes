@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 35 — Exam domain walkthrough & self-check</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 35 of 37</p>
+<h1>Exam domain walkthrough & self-check</h1>
+
+<p>You've now got 34 lessons of hands-on Terraform behind you — a state file you broke and fixed yourself, a module you wrote and versioned, a CI/CD pipeline that plans on PR and applies on merge, a full capstone stack. This lesson doesn't teach anything new. It does one job: map every one of the exam's 8 official domains back to the exact lessons that covered it, so you can spot-check any domain that feels shaky before you book the real thing. Treat it as a mirror, not a textbook — if a question below stops you cold, that's useful information, not a failure.</p>
+
+<p class="callout"><strong>The one thing to remember:</strong> this lesson is a self-test, not a lecture. There's no new syntax here. Read a domain, ask yourself the checklist questions honestly, and only open the linked lesson if you can't answer instantly. If you can answer everything below without opening a single linked lesson, you're ready for Lesson 36's practice scenarios.</p>
+
+<h2>The 8 official exam domains — reconfirmed</h2>
+<p>Re-checked directly against HashiCorp's own exam content outline (fetched 2026-07-30), same source already cited in <a href="0001-roadmap-and-cert-plan.html">Lesson 1</a> and <code>MISSION.md</code>: <a href="https://developer.hashicorp.com/terraform/tutorials/certification-004/associate-review-004" target="_blank" rel="noopener">Terraform Associate 004 exam objectives</a>. The 8 domains, in the order HashiCorp lists them:</p>
+<ol>
+<li>Infrastructure as Code (IaC) with Terraform</li>
+<li>Terraform fundamentals</li>
+<li>Core Terraform workflow</li>
+<li>Terraform configuration</li>
+<li>Terraform modules</li>
+<li>Terraform state management</li>
+<li>Maintain infrastructure with Terraform</li>
+<li>HCP Terraform</li>
+</ol>
+
+<h2>Domain-to-lesson map</h2>
+<p>Use this table to jump straight to the lesson behind any domain. Where a domain's official sub-objectives span several lessons, all of them are listed.</p>
+<table>
+<tr><th>Exam domain</th><th>Covered in</th></tr>
+<tr><td>1. Infrastructure as Code (IaC) with Terraform</td><td><a href="0003-what-is-iac.html">Lesson 3 — What is Infrastructure as Code?</a></td></tr>
+<tr><td>2. Terraform fundamentals</td><td><a href="0002-tools-setup.html">Lesson 2 — Tools setup</a>, <a href="0004-providers-and-terraform-block.html">Lesson 4 — Providers &amp; the terraform block</a>, <a href="0013-understanding-state.html">Lesson 13 — Understanding Terraform state</a></td></tr>
+<tr><td>3. Core Terraform workflow</td><td><a href="0005-first-resource-apply.html">Lesson 5 — Your first resource: init, plan, apply, destroy</a>, <a href="0025-fmt-validate-lint.html">Lesson 25 — fmt, validate &amp; linting</a>, <a href="0026-plan-review-discipline.html">Lesson 26 — Plan review discipline</a></td></tr>
+<tr><td>4. Terraform configuration</td><td><a href="0006-input-variables.html">Lesson 6 — Input variables</a>, <a href="0007-outputs.html">Lesson 7 — Outputs</a>, <a href="0008-resources-and-arguments.html">Lesson 8 — Resources &amp; arguments</a>, <a href="0009-data-sources.html">Lesson 9 — Data sources</a>, <a href="0010-expressions-and-functions.html">Lesson 10 — Expressions &amp; functions</a>, <a href="0011-meta-arguments.html">Lesson 11 — Meta-arguments</a>, <a href="0012-lifecycle-and-conditions.html">Lesson 12 — Lifecycle rules &amp; custom conditions</a>, <a href="0023-ephemeral-values.html">Lesson 23 — Ephemeral values</a>, <a href="0024-sensitive-data.html">Lesson 24 — Sensitive data</a></td></tr>
+<tr><td>5. Terraform modules</td><td><a href="0017-why-modules.html">Lesson 17 — Why modules?</a>, <a href="0018-writing-your-first-module.html">Lesson 18 — Writing your first module</a>, <a href="0019-module-sources-and-versioning.html">Lesson 19 — Module sources &amp; versioning</a>, <a href="0020-module-composition-patterns.html">Lesson 20 — Module composition patterns</a></td></tr>
+<tr><td>6. Terraform state management</td><td><a href="0013-understanding-state.html">Lesson 13 — Understanding state</a>, <a href="0014-remote-state-backends.html">Lesson 14 — Remote state &amp; backends</a>, <a href="0015-state-locking-and-drift.html">Lesson 15 — State locking &amp; drift</a>, <a href="0016-state-surgery.html">Lesson 16 — State surgery</a></td></tr>
+<tr><td>7. Maintain infrastructure with Terraform</td><td><a href="0016-state-surgery.html">Lesson 16 — State surgery (import, state list/show)</a>, <a href="0033-troubleshooting.html">Lesson 33 — Troubleshooting common errors (verbose logging)</a></td></tr>
+<tr><td>8. HCP Terraform</td><td><a href="0028-hcp-terraform-workspaces.html">Lesson 28 — HCP Terraform workspaces &amp; remote execution</a>, <a href="0029-cicd-pipeline.html">Lesson 29 — CI/CD pipeline</a>, <a href="0030-policy-as-code.html">Lesson 30 — Policy as code</a></td></tr>
+</table>
+
+<p class="callout"><strong>Why some lessons don't appear above:</strong> this course teaches more than the exam covers, on purpose (see Lesson 1 — the goal is production confidence, not a certificate). <a href="0021-workspaces.html">Lesson 21</a> and <a href="0022-managing-environments.html">Lesson 22</a> (CLI workspaces, environments), <a href="0027-automated-testing.html">Lesson 27</a> (automated testing), and <a href="0031-iam-for-terraform.html">Lesson 31</a>/<a href="0032-cost-awareness.html">32</a> (least-privilege IAM, cost) are real production skills that don't map to one of the 8 official domains — keep them in your working knowledge, but you won't be tested on them by name. <a href="0034-capstone-project.html">Lesson 34</a>'s capstone deliberately exercises all 8 domains together, which is exactly why it comes right before this lesson.</p>
+
+<h2>Self-check: can you do this without looking?</h2>
+<p>Go domain by domain. Read each question, answer it out loud or on paper before you check the lesson. If you hesitate more than a few seconds, that's your signal — not a failure, just where to spend the next 20 minutes.</p>
+
+<h3>1. Infrastructure as Code (IaC) with Terraform</h3>
+<ul>
+<li>Can you explain declarative vs. imperative infrastructure management without looking? → <a href="0003-what-is-iac.html">Lesson 3</a></li>
+<li>Can you say why Terraform works across multiple clouds instead of locking you into one? → <a href="0003-what-is-iac.html">Lesson 3</a></li>
+</ul>
+
+<h3>2. Terraform fundamentals</h3>
+<ul>
+<li>Can you explain what a provider is and why every config declares one? → <a href="0004-providers-and-terraform-block.html">Lesson 4</a></li>
+<li>Can you say, in one sentence, why Terraform needs state at all? → <a href="0013-understanding-state.html">Lesson 13</a></li>
+</ul>
+
+<h3>3. Core Terraform workflow</h3>
+<ul>
+<li>Can you name the core workflow commands in order and what each one does — init, plan, apply, destroy? → <a href="0005-first-resource-apply.html">Lesson 5</a></li>
+<li>Can you explain the difference between what <code>terraform fmt</code> checks and what <code>terraform validate</code> checks? → <a href="0025-fmt-validate-lint.html">Lesson 25</a></li>
+<li>Can you say what you're actually looking for when you review a plan before typing "yes"? → <a href="0026-plan-review-discipline.html">Lesson 26</a></li>
+</ul>
+
+<h3>4. Terraform configuration</h3>
+<ul>
+<li>Can you write a <code>for_each</code> loop from memory? → <a href="0011-meta-arguments.html">Lesson 11</a></li>
+<li>Can you explain the difference between a <code>resource</code> block and a <code>data</code> block? → <a href="0008-resources-and-arguments.html">Lesson 8</a>, <a href="0009-data-sources.html">Lesson 9</a></li>
+<li>Can you write a custom <code>precondition</code> or <code>postcondition</code> from memory? → <a href="0012-lifecycle-and-conditions.html">Lesson 12</a></li>
+<li>Can you explain why marking a variable <code>sensitive = true</code> doesn't keep it out of the state file? → <a href="0024-sensitive-data.html">Lesson 24</a></li>
+</ul>
+
+<h3>5. Terraform modules</h3>
+<ul>
+<li>Can you explain how variable scope inside a module differs from the root module? → <a href="0018-writing-your-first-module.html">Lesson 18</a></li>
+<li>Can you say why an unpinned module <code>version</code> is a real production risk, not just tidiness? → <a href="0019-module-sources-and-versioning.html">Lesson 19</a></li>
+</ul>
+
+<h3>6. Terraform state management</h3>
+<ul>
+<li>Can you explain the three-way comparison Terraform runs on every plan — config, state, real infrastructure? → <a href="0013-understanding-state.html">Lesson 13</a></li>
+<li>Can you explain concretely what state locking prevents? → <a href="0015-state-locking-and-drift.html">Lesson 15</a></li>
+<li>Can you write a <code>backend</code> block from memory? → <a href="0014-remote-state-backends.html">Lesson 14</a></li>
+</ul>
+
+<h3>7. Maintain infrastructure with Terraform</h3>
+<ul>
+<li>Can you explain when you'd reach for <code>terraform import</code> instead of just deleting and recreating a resource? → <a href="0016-state-surgery.html">Lesson 16</a></li>
+<li>Can you name the CLI commands that inspect state without changing it — the ones that list every tracked resource and show one resource's full attributes? → <a href="0016-state-surgery.html">Lesson 16</a></li>
+<li>Can you name the environment variable that turns on verbose debug logging, and when you'd actually reach for it? → <a href="0033-troubleshooting.html">Lesson 33</a></li>
+</ul>
+
+<h3>8. HCP Terraform</h3>
+<ul>
+<li>Can you explain why an HCP Terraform workspace and a CLI <code>terraform workspace</code> are two unrelated concepts that happen to share a name? → <a href="0028-hcp-terraform-workspaces.html">Lesson 28</a></li>
+<li>Can you say what "remote execution" means concretely, and what problem it solves that plain remote state storage doesn't? → <a href="0028-hcp-terraform-workspaces.html">Lesson 28</a></li>
+<li>Can you describe the plan-on-PR / apply-on-merge pattern end to end? → <a href="0029-cicd-pipeline.html">Lesson 29</a>, <a href="0030-policy-as-code.html">Lesson 30</a></li>
+</ul>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Without scrolling back up: name all 8 official exam domains, in any order.</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Infrastructure as Code (IaC) with Terraform · Terraform fundamentals · Core Terraform workflow · Terraform configuration · Terraform modules · Terraform state management · Maintain infrastructure with Terraform · HCP Terraform. If you missed one, that's a fine result too — it tells you which lesson group to skim before Lesson 36.</div>
+</div>
+
+<h2>What to do next</h2>
+<p>Don't try to "fix" every gap this lesson surfaced in one sitting. Pick the 1-2 domains where you hesitated the most, reread just those linked lessons, then move to <a href="0036-practice-scenarios.html">Lesson 36 — Practice scenarios</a>, which puts this same material into exam-style questions instead of a checklist.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>The exam has 8 official domains (reconfirmed against HashiCorp's exam content outline, 2026-07-30): IaC with Terraform, fundamentals, core workflow, configuration, modules, state management, maintaining infrastructure, HCP Terraform.</li>
+    <li>Every domain maps to specific lessons already completed in this course — Lessons 3-33, with the capstone (Lesson 34) exercising all 8 together.</li>
+    <li>Some lessons (workspaces/environments, automated testing, IAM, cost) go beyond the exam on purpose — real skills, not exam-scored.</li>
+    <li>This lesson is a mirror: the value is in honestly answering the checklist, not in reading it passively.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">If a checklist question exposed a real gap, don't just reread the lesson passively — try to rebuild that one example from scratch in your own terminal. That's what actually closes the gap before the exam.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0034-capstone-project.html">&larr; Lesson 34: Capstone project</a></span>
+  <span><a href="0036-practice-scenarios.html">Lesson 36: Practice scenarios &rarr;</a></span>
+</div>
+
+</body>
+</html>

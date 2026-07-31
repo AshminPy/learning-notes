@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 — Your roadmap: zero to Terraform expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 1 of 37</p>
+<h1>Your roadmap: zero to Terraform expert</h1>
+
+<p>You want to be able to open a real cloud account, describe the infrastructure it needs in code, and run that code with confidence — on a real team, against real production accounts. You currently know zero Terraform. That gap closes in stages, not in one leap. This lesson is the map — read it once now, come back to it whenever you feel lost.</p>
+
+<p class="callout"><strong>The one thing to remember:</strong> the goal of this course is production confidence, not a certificate. The HashiCorp Certified Terraform Associate exam shows up later as a checkpoint — a way to prove to yourself (and an employer) that the fundamentals are solid — but passing it is not the finish line. Being able to write, review, and safely operate Terraform on a real team is the finish line.</p>
+
+<h2>The 11 phases</h2>
+<p>37 short lessons, grouped into 11 phases. You don't need to memorize this — it's on the <a href="../objectives.html">roadmap tracker</a>, which you can check off as you go.</p>
+<table>
+<tr><th>Phase</th><th>What you learn</th></tr>
+<tr><td>A. Orientation &amp; Setup</td><td>This lesson + installing Terraform, an editor, your first provider</td></tr>
+<tr><td>B. IaC &amp; Fundamentals</td><td>What Infrastructure as Code actually solves, providers, your first resource, variables, outputs</td></tr>
+<tr><td>C. Core Language</td><td>Resources, data sources, expressions, functions, meta-arguments (count, for_each, depends_on), lifecycle rules</td></tr>
+<tr><td>D. State Management</td><td>What state is, remote backends, locking, drift, and how to safely perform state surgery</td></tr>
+<tr><td>E. Modules</td><td>Writing reusable modules, sourcing/versioning them, composition patterns</td></tr>
+<tr><td>F. Workspaces &amp; Environments</td><td>Terraform workspaces, managing dev/stage/prod safely</td></tr>
+<tr><td>G. Ephemeral Values &amp; Sensitive Data</td><td>Write-only arguments, ephemeral values, handling secrets properly</td></tr>
+<tr><td>H. Testing &amp; Validation</td><td>fmt/validate/lint discipline, reading plans critically, automated `terraform test`</td></tr>
+<tr><td>I. CI/CD &amp; Collaboration</td><td>HCP Terraform, remote execution, PR-triggered plan/apply pipelines, policy as code</td></tr>
+<tr><td>J. Production Patterns</td><td>Secrets management, least-privilege IAM for Terraform's own credentials, cost awareness, blast radius, rollback</td></tr>
+<tr><td>K. Certification &amp; Review</td><td>HashiCorp Certified Terraform Associate exam prep and full course review</td></tr>
+</table>
+
+<h2>Why this order</h2>
+<p>Every phase is a prerequisite for the one after it — skipping ahead just means backfilling later, so trust the sequence:</p>
+<ul>
+<li><strong>You can't learn state (Phase D) before you've applied a resource (Phase B).</strong> State is Terraform's record of what it already created. Until you've run <code>terraform apply</code> yourself and watched a resource come into existence, "a JSON file that tracks reality" is just an abstract sentence.</li>
+<li><strong>You can't learn modules (Phase E) before you understand resources and variables (Phases B-C).</strong> A module is just a reusable wrapper around resources, variables, and outputs. If you don't know what's being wrapped, you'll copy module syntax without understanding what it buys you — and you won't know when NOT to build one.</li>
+<li><strong>You can't safely use workspaces and environments (Phase F) before you understand state (Phase D).</strong> Workspaces exist to isolate state between environments. Without the state mental model first, workspace mistakes look mysterious instead of obvious.</li>
+<li><strong>You can't reason about production concerns (Phase J) before you've seen the full lifecycle (Phases B-I).</strong> Least-privilege IAM, blast radius, and rollback only make sense once you've felt what it's like to run plan/apply/destroy, break state, write a module, and wire up CI/CD. Production patterns are what experienced engineers do differently once they've already made the beginner mistakes — so you make those mistakes first, safely, in this course.</li>
+<li><strong>The certification (Phase K) comes near the end, not the start.</strong> The exam's 8 official domains span IaC concepts through HCP Terraform — content you won't have touched yet in Phase A. Studying for it before Phase J would mean memorizing terms with no hands-on grounding underneath them.</li>
+</ul>
+
+<h2>The certification — and why it's a milestone, not the goal</h2>
+<p>Checked directly against HashiCorp's own certification page (2026-07-30) — here's what's actually true about the <strong><a href="https://developer.hashicorp.com/certifications/infrastructure-automation" target="_blank" rel="noopener">HashiCorp Certified: Terraform Associate</a></strong> right now:</p>
+<ul>
+<li><strong>Exam code:</strong> 004</li>
+<li><strong>Tests:</strong> Terraform 1.12</li>
+<li><strong>Format:</strong> multiple choice, delivered online-proctored</li>
+<li><strong>Duration:</strong> 1 hour</li>
+<li><strong>Cost:</strong> $70.50 USD, plus locally applicable taxes and fees (no free retake included)</li>
+<li><strong>Prerequisites:</strong> none required — basic terminal skills and an understanding of on-premises/cloud architecture are recommended, and professional experience is recommended but not mandatory</li>
+<li><strong>Validity:</strong> 2 years before recertification is needed</li>
+</ul>
+
+<p class="callout">This course places the exam at Phase K — around lesson 34-37 — deliberately late. A certificate that isn't backed by hands-on scars (a broken state file you fixed yourself, a module you wrote and later regretted, a CI pipeline you wired up) is a badge with nothing behind it. By the time you sit the exam here, you'll have already done the real work; the exam just confirms it.</p>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/certifications/infrastructure-automation" target="_blank" rel="noopener">HashiCorp Certified: Terraform Associate — official certification page</a>. Fetched and confirmed directly 2026-07-30: exam 004, Terraform 1.12, 1 hour, multiple choice/online-proctored, $70.50 USD, no hard prerequisites, valid 2 years.</p>
+
+<h2>What to do next</h2>
+<p>Go to <a href="0002-tools-setup.html">Lesson 2 — Tools setup</a> and install Terraform and an editor. You can't write a line of Terraform until that's done.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>37 lessons, 11 phases (A-K): Orientation &rarr; IaC Fundamentals &rarr; Core Language &rarr; State &rarr; Modules &rarr; Workspaces &rarr; Ephemeral/Sensitive Data &rarr; Testing &rarr; CI/CD &rarr; Production Patterns &rarr; Certification &amp; Review.</li>
+    <li>Order matters: state needs a resource you've already applied, modules need resources/variables you already understand, production patterns need the full lifecycle behind you.</li>
+    <li>Cert: HashiCorp Certified Terraform Associate (004) — $70.50, 1 hour, tests Terraform 1.12, no hard prerequisites, valid 2 years. It's a Phase K milestone, not the course's actual goal.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Confused about anything here, or want to change the plan (timeline, cloud provider for hands-on examples, pace)? Ask — this roadmap should fit you, not the other way around.</footer>
+
+<div class="lesson-nav">
+  <span>&larr; Start</span>
+  <span><a href="0002-tools-setup.html">Next: Tools setup &rarr;</a></span>
+</div>
+
+</body>
+</html>

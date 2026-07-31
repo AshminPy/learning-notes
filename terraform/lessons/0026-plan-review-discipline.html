@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 26 — Plan review discipline</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 26 of 37</p>
+<h1>Plan review discipline</h1>
+
+<p>Back in Lesson 5 you got a callout: "read the plan before you type <code>yes</code> — this is the single most important safety habit in all of Terraform," with a promise that Lesson 26 would build on it. This is that lesson. Lesson 25 gave you the offline checkpoint — <code>fmt</code>, <code>validate</code>, <code>tflint</code> — that runs before a plan even talks to a provider. This lesson is about the step right after: once <code>terraform plan</code> does talk to the provider and hands you real output, how do you actually read it so it catches mistakes instead of rubber-stamping them?</p>
+
+<h2>The symbol legend, properly this time</h2>
+<p>You've seen pieces of this already — <code>+</code> in Lesson 5, <code>-/+</code> in Lesson 12. Here's the complete set, confirmed against HashiCorp's own plan output and tutorials:</p>
+
+<table>
+<tr><th>Symbol</th><th>Meaning</th><th>What Terraform will do</th></tr>
+<tr><td><code>+</code></td><td>create</td><td>A resource in config has no matching entry in state — build it new.</td></tr>
+<tr><td><code>-</code></td><td>destroy</td><td>A resource in state has no matching block in config — tear it down.</td></tr>
+<tr><td><code>~</code></td><td>update in-place</td><td>The resource stays; only some of its attributes change on the existing object.</td></tr>
+<tr><td><code>-/+</code></td><td>destroy and then create replacement</td><td>The default replace order: old object destroyed first, then a new one built. There's a gap where nothing exists.</td></tr>
+<tr><td><code>+/-</code></td><td>create replacement and then destroy</td><td>Replace with <code>create_before_destroy = true</code> (Lesson 12): new object built first, old one destroyed only after it succeeds.</td></tr>
+</table>
+
+<p>The two single-character symbols are the ones beginners read correctly. The two combined ones — <code>-/+</code> and <code>+/-</code> — are where most plan-review mistakes actually happen, because at a glance they both just look like "some kind of change," and it's easy to skim past the fact that a <em>destroy</em> is one half of that symbol.</p>
+
+<h2><code>-/+</code> — the one that's most dangerous to miss</h2>
+<p>A "replace" happens whenever you change an argument that the provider can't update on the live object — the only way to apply that change is to destroy the existing resource and create a new one. Terraform calls this out explicitly in the plan, on the line right above the resource block:</p>
+
+<pre><code># aws_instance.web must be replaced
+-/+ resource "aws_instance" "web" {
+      ~ ami           = "ami-0old11111" -&gt; "ami-0new22222" # forces replacement
+        id            = "i-0abc123" -&gt; (known after apply)
+        instance_type = "t3.micro"
+    }
+
+Plan: 1 to add, 0 to change, 1 to destroy.</code></pre>
+
+<p>Two things worth noticing in that output. First, the comment <code># forces replacement</code> next to the changed argument — Terraform tells you exactly <em>which</em> attribute triggered the replace, so you don't have to guess. Second, the summary line: <code>Plan: 1 to add, 0 to change, 1 to destroy</code>, not "1 to change." A replace is not a change — it's a destroy and a create, counted as both, even though it reads to a skimming eye like a routine update to one resource.</p>
+
+<p class="callout"><strong>Mental model, tying back to Lesson 12:</strong> by default, a replace is destroy-then-create — there's a moment where the resource doesn't exist at all. <code>create_before_destroy = true</code> flips the order and the symbol to <code>+/-</code>, so the new object exists before the old one is torn down. Seeing <code>-/+</code> in a plan for anything users depend on — a running server, a database, a DNS record — is exactly the moment to stop and ask: "should this have <code>create_before_destroy</code> set, and does it?" If the resource doesn't have that lifecycle rule, <code>-/+</code> means real downtime, not just a diff.</p>
+
+<h2>The costly mistake: skimming because "it'll probably be fine"</h2>
+<p>Here's the single most expensive habit beginners fall into with <code>plan</code>. The output can run long — twenty, fifty, a hundred lines for a config with several resources — and it's tempting to jump straight to the last line, see <code>Plan: 3 to add, 1 to change, 1 to destroy</code>, decide that roughly matches what you expected, and type <code>yes</code>. Most of the time nothing bad happens. That's exactly what makes the habit dangerous: it works often enough to feel safe, right up until the one time it doesn't — the day the <code>1 to destroy</code> is your production database, not the throwaway test resource you assumed it was.</p>
+
+<p class="callout"><strong>Best practice — read every resource line, not just the count:</strong> the summary line <code>Plan: X to add, Y to change, Z to destroy</code> tells you <em>how many</em>, never <em>which</em>. A plan reading <code>1 to add, 0 to change, 1 to destroy</code> is completely consistent with two totally different realities: a harmless rename, or your production database about to be dropped and rebuilt empty. The count is the same either way. The only way to tell them apart is to actually read the <code># resource_type.name will be &lt;action&gt;</code> line for every single resource listed above the summary — not just the resources you expected to see, but confirming nothing <em>unexpected</em> showed up too. Make this a fixed habit before every <code>yes</code>, not something you do only when the numbers look surprising — by the time you notice a number looks wrong, you're already trusting the numbers more than the detail.</p>
+
+<h2><code>terraform plan -out=tfplan</code> + <code>terraform apply tfplan</code> — apply exactly what you reviewed</h2>
+<p>There's a gap in the plain <code>terraform plan</code> then <code>terraform apply</code> workflow you've used since Lesson 5: those are two separate commands, run at two separate moments. <code>apply</code> on its own does not remember the plan you just read — per HashiCorp's own docs, running <code>apply</code> without a saved plan file "automatically generates a new plan and prompts for you to approve it." If anything changed state in between — a teammate applied their own config, a resource drifted, an automated process ran — the plan <code>apply</code> actually executes can differ from the one you reviewed with your own eyes.</p>
+
+<p>The fix is to save the plan to a file and apply that exact file:</p>
+<pre><code>$ terraform plan -out=tfplan
+...
+Saved the plan to: tfplan
+
+To perform exactly these actions, run the following command to apply:
+    terraform apply "tfplan"
+
+$ terraform apply tfplan
+...
+Apply complete! Resources: 1 added, 0 changed, 1 destroyed.</code></pre>
+
+<p><code>-out=tfplan</code> writes the generated plan to an opaque file. <code>terraform apply tfplan</code> then applies precisely that saved plan — no re-computation, no fresh round-trip to the provider to see if anything changed underneath you. What you reviewed is, byte for byte, what gets executed.</p>
+
+<p class="callout"><strong>Best practice:</strong> in any workflow where a human reviews a plan before approving it — which, per Lesson 5's earlier promise, includes team pull-request workflows where a plan gets posted as a PR comment for a teammate to review — always review a <em>saved</em> plan file, and apply that same file. Reviewing one plan and then running a bare <code>terraform apply</code> (which silently recomputes a new one) means the thing that actually executes was never the thing anyone looked at. This is exactly how CI/CD pipelines for Terraform are built: a plan stage that saves <code>-out</code>, a human or automated approval gate, then an apply stage that applies that exact saved artifact.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A plan shows <code>-/+ resource "aws_db_instance" "prod"</code> with the comment <code># forces replacement</code> next to a <code>storage_type</code> argument you changed. What does this symbol actually mean is about to happen, and what Lesson 12 setting would change the order (and the symbol) if it were applied to this resource?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">It means the database will be destroyed first, then a brand-new one created to replace it — not updated in place. Changing <code>storage_type</code> isn't something the provider can apply to the live object, so Terraform has no choice but to replace it. Adding <code>lifecycle { create_before_destroy = true }</code> (Lesson 12) would flip the order to create-then-destroy and change the symbol to <code>+/-</code> — though for a database, the real question to ask first is whether this attribute should be changing at all, since even create-before-destroy means a brand-new, empty database unless data migration is handled separately.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Why is <code>Plan: 2 to add, 3 to change, 1 to destroy</code> not enough information to safely type <code>yes</code>, even if those numbers match what you expected?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The summary line tells you counts, not identities. "1 to destroy" is consistent with a harmless resource you meant to remove, or with a critical resource you never intended to touch — the number alone can't distinguish them. You have to read the actual <code># resource_type.name will be &lt;action&gt;</code> line for every resource in the plan to confirm the specific resources being destroyed, replaced, or changed are the ones you actually intended.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. You run <code>terraform plan -out=tfplan</code>, review it carefully, then five minutes later a teammate applies an unrelated change to the same state. You then run <code>terraform apply tfplan</code>. Does your apply pick up your teammate's change, or apply exactly what you reviewed?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">It applies exactly what you reviewed — the saved plan file is a frozen snapshot, not a live recomputation. This is precisely why <code>-out</code> plus applying that saved file is safer than a bare <code>terraform apply</code>: a bare apply would regenerate a fresh plan against the now-changed state, which could differ from what you approved. (In practice, if the underlying state changed enough to make the saved plan invalid, Terraform will refuse to apply it rather than silently apply something else — but the discipline is the same either way: what you reviewed is what should run.)</div>
+</div>
+
+<h2>Hands-on: spot the hidden replace</h2>
+<p>Go back to the <code>random_pet</code> rename scenario from Lesson 16. Suppose your <code>main.tf</code> currently has two resources:</p>
+<pre><code>resource "random_pet" "example" {}
+
+resource "random_pet" "sidecar" {
+  length = 2
+}</code></pre>
+
+<p>You do a small refactor: rename <code>example</code> to <code>buddy</code> for clarity, and bump <code>sidecar</code>'s <code>length</code> from <code>2</code> to <code>3</code> because a teammate asked for slightly longer names. You forget the <code>moved</code> block from Lesson 16. Run <code>terraform plan</code>, and this is what you'd see:</p>
+
+<pre><code>$ terraform plan
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  -/+ destroy and then create replacement
+
+Terraform will perform the following actions:
+
+  # random_pet.buddy will be created
+  + resource "random_pet" "buddy" {
+      + id        = (known after apply)
+      + length    = 2
+      + separator = "-"
+    }
+
+  # random_pet.example will be destroyed
+  - resource "random_pet" "example" {
+      - id        = "climbing-mudfish" -&gt; null
+      - length    = 2 -&gt; null
+      - separator = "-" -&gt; null
+    }
+
+  # random_pet.sidecar must be replaced
+-/+ resource "random_pet" "sidecar" {
+      ~ id        = "quick-marmot" -&gt; (known after apply)
+      ~ length    = 2 -&gt; 3 # forces replacement
+        separator = "-"
+    }
+
+Plan: 2 to add, 0 to change, 2 to destroy.</code></pre>
+
+<p>Look at the summary line by itself: <code>2 to add, 0 to change, 2 to destroy</code>. If you only glanced at that and thought "yeah, two adds and two destroys sounds about right for a rename plus a tweak," you'd approve it — and you'd be wrong about what actually happens. The rename correctly needs a destroy-and-create (that's the whole point of the missing <code>moved</code> block). But <code>sidecar</code> was supposed to be a simple, harmless length change — a one-line tweak — and it's actually a full destroy-and-recreate too, because <code>length</code> forces replacement on <code>random_pet</code>. Read only the count, and both destroys look identical and equally expected. Read the individual resource lines, and <code>sidecar</code>'s <code># random_pet.sidecar must be replaced</code> plus the <code># forces replacement</code> comment on <code>length</code> tells you this "small tweak" is not the in-place update you assumed.</p>
+
+<div class="quiz">
+<p>Q4. In the plan above, which resource's action would most likely surprise someone who only skimmed the summary line, and why?</p>
+<input type="text" id="q4" placeholder="type your answer">
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4"><code>random_pet.sidecar</code>. The rename of <code>example</code> to <code>buddy</code> is expected to show up as a destroy-plus-create, because no <code>moved</code> block was added. But <code>sidecar</code> was only supposed to be a length tweak — something that sounds like a routine in-place update — and it's actually a full replace, because <code>length</code> forces replacement. The summary line's "2 to destroy" hides this: it makes the intentional rename-destroy and the surprise replace-destroy look identical. Only reading the <code># random_pet.sidecar must be replaced</code> line and its <code># forces replacement</code> comment reveals it.</div>
+</div>
+
+<p>Fix it two ways, matching Lesson 16: add a <code>moved</code> block for the rename (<code>random_pet.example</code> &rarr; <code>random_pet.buddy</code>), which removes that pair from the plan entirely. The <code>sidecar</code> replace, though, isn't a mistake to "fix" — <code>length</code> genuinely can't be changed in place on a <code>random_pet</code>, so a replace is the correct plan. The discipline this hands-on teaches isn't "make every plan show zero destroys" — it's "know, resource by resource, exactly what's about to happen, and confirm each one is a replace you actually intended before you type <code>yes</code>."</p>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/cli/commands/plan" target="_blank" rel="noopener">developer.hashicorp.com — terraform plan</a> (confirms the <code>-out</code> flag writes the plan to an opaque file that can later be passed to <code>terraform apply</code>, and that applying without a saved plan file causes Terraform to automatically generate a new plan and prompt for approval) · <a href="https://developer.hashicorp.com/terraform/tutorials/state/resource-lifecycle" target="_blank" rel="noopener">developer.hashicorp.com — Manage resource lifecycle tutorial</a> (confirms the resource-action symbol legend, including <code>~ update in-place</code> and <code>+/- create replacement and then destroy</code> for a <code>create_before_destroy</code> replace) — verified 2026-07-30. Symbols <code>+</code>/<code>-</code> and the default <code>-/+</code> replace order previously confirmed against live <code>terraform plan</code>/<code>apply</code> output in Lessons 5 and 12 of this course.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Five symbols: <code>+</code> create, <code>-</code> destroy, <code>~</code> update in-place, <code>-/+</code> destroy-then-create (default replace), <code>+/-</code> create-then-destroy (replace with <code>create_before_destroy</code>, Lesson 12).</li>
+    <li><code>-/+</code> is the one most dangerous to miss — it reads like "some kind of change" but means the resource is destroyed and rebuilt, often triggered by an argument that forces replacement (look for the <code># forces replacement</code> comment).</li>
+    <li>The costliest beginner habit: trusting the <code>Plan: X to add, Y to change, Z to destroy</code> summary line alone. It tells you counts, never identities — always read every individual resource line before approving.</li>
+    <li><code>terraform plan -out=tfplan</code> then <code>terraform apply tfplan</code> applies exactly the plan you reviewed, instead of letting a bare <code>apply</code> silently recompute a fresh one against whatever state looks like by the time you run it.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0025-fmt-validate-lint.html">&larr; Lesson 25 — fmt, validate & linting</a></span>
+  <span><a href="0027-automated-testing.html">Lesson 27 — Automated testing (terraform test) &rarr;</a></span>
+</div>
+
+</body>
+</html>

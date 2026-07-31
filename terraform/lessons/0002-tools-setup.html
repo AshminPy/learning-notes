@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2 — Tools setup: install Terraform, editor, first provider</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 2 of 37</p>
+<h1>Tools setup: install Terraform, editor, first provider</h1>
+
+<p>Three things, once, before any code: the Terraform CLI itself, an editor that understands Terraform files, and a working folder you commit to as you go. Do all three now — every later lesson assumes they exist.</p>
+
+<p class="callout"><strong>Simple example:</strong> the Terraform CLI is a single command-line program, <code>terraform</code>. You write plain-text files describing the infrastructure you want, and the CLI reads them and does the work — nothing to run in the cloud yet, just a program on your own machine.</p>
+
+<h2>1. Install the Terraform CLI</h2>
+<p>Pick the row for your operating system. These are the current official methods from HashiCorp's own install page.</p>
+
+<table>
+<tr><th>OS</th><th>Method</th><th>Command</th></tr>
+<tr><td>macOS</td><td>Homebrew</td><td><code>brew tap hashicorp/tap</code><br><code>brew install hashicorp/tap/terraform</code></td></tr>
+<tr><td>Linux (Ubuntu/Debian)</td><td>apt repository</td><td><code>wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg</code><br><code>echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list</code><br><code>sudo apt update && sudo apt install terraform</code></td></tr>
+<tr><td>Windows</td><td>Binary download</td><td>Download the <code>.zip</code> for your architecture (AMD64 or ARM64) from the official install page, unzip it, and put <code>terraform.exe</code> somewhere on your <code>PATH</code></td></tr>
+</table>
+
+<p class="callout">HashiCorp's install page does not currently list a package-manager option (winget, Chocolatey) for Windows — only signed binary downloads. macOS and Debian/Ubuntu Linux both have proper package-manager methods, which auto-update more easily. If you're on Windows, the binary-download step is normal, not a workaround.</p>
+
+<h2>2. Confirm the install</h2>
+<p>Open a terminal (or PowerShell on Windows) and run:</p>
+<pre><code>terraform -version</code></pre>
+<p>You should see a line like <code>Terraform v1.x.x on darwin_arm64</code> — the exact version number will be whatever is current when you install, and that's fine. If the command isn't found, your terminal can't see the <code>terraform</code> binary on its <code>PATH</code> yet — close and reopen the terminal, or re-check the install step above.</p>
+
+<h2>3. Editor setup — VS Code + the Terraform extension</h2>
+<ol>
+<li>Install VS Code from <a href="https://code.visualstudio.com" target="_blank" rel="noopener">code.visualstudio.com</a> if you don't already have it</li>
+<li>Open the Extensions panel (the four-squares icon in the sidebar) and search for <strong>HashiCorp Terraform</strong></li>
+<li>Install the one published by <strong>HashiCorp</strong> — it gives you syntax highlighting, auto-formatting, and inline validation as you write <code>.tf</code> files</li>
+</ol>
+<p>You don't need any other editor plugin for this course. Syntax highlighting alone will save you from a lot of silly typos once we start writing real configuration files.</p>
+
+<h2>4. Working folder + your GitHub repo</h2>
+<p>Same pattern as every course on this site: one repo, committed to as you go.</p>
+<ol>
+<li>Create a folder on your machine, e.g. <code>terraform-learning-log</code></li>
+<li>Create a free account at <a href="https://github.com" target="_blank" rel="noopener">github.com</a> if you don't have one</li>
+<li>Follow GitHub's own <a href="https://docs.github.com/en/get-started/quickstart/hello-world" target="_blank" rel="noopener">"Hello World" quickstart</a> to turn that folder into a repository and push your first commit</li>
+</ol>
+
+<p class="callout">Most hands-on exercises in this course use Terraform's <code>local</code> and <code>random</code> providers — they create files and random values on your own machine, not real cloud resources. That means you can follow along with zero cloud account and zero cost. A free-tier cloud account (AWS is the most common) becomes useful later, once we reach the lessons that deploy to a real provider — but you don't need one today.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Why do most lessons in this course not require a cloud account?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The hands-on examples mostly use the <code>local</code> and <code>random</code> providers, which only touch your own machine — no real cloud infrastructure is created, so nothing to sign up for or pay for.</div>
+</div>
+
+<h2>Now do it yourself</h2>
+<p>Checklist — do these in order, don't skip ahead:</p>
+<ul>
+<li>[ ] Install Terraform CLI for your OS</li>
+<li>[ ] Run <code>terraform -version</code> and confirm you see a version number printed</li>
+<li>[ ] Install VS Code and the HashiCorp Terraform extension</li>
+<li>[ ] Create a project folder (e.g. <code>terraform-learning-log</code>) and connect it to a new GitHub repo</li>
+</ul>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/install" target="_blank" rel="noopener">HashiCorp — Install Terraform</a>, official documentation, checked against the live page for this lesson.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Terraform CLI installed via Homebrew (macOS), apt (Linux), or a binary download (Windows).</li>
+    <li><code>terraform -version</code> is how you confirm the install worked.</li>
+    <li>VS Code + the official HashiCorp Terraform extension gives you syntax highlighting and validation.</li>
+    <li>Your working folder is a GitHub repo, committed to as you go — most exercises need no cloud account at all.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck installing anything, or an error you don't understand? Paste it and ask — this is exactly what the teacher is for.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0001-roadmap-and-cert-plan.html">&larr; Lesson 1 — Your roadmap</a></span>
+  <span><a href="0003-what-is-iac.html">Lesson 3 — What is Infrastructure as Code? &rarr;</a></span>
+</div>
+
+</body>
+</html>

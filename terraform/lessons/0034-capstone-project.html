@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 34 — Capstone project: end-to-end stack</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 34 of 37 — CAPSTONE</p>
+<h1>Capstone project: end-to-end stack</h1>
+
+<p class="callout"><strong>This is the capstone — the longest lesson in the course, on purpose.</strong> It doesn't teach anything new. It combines everything from Lessons 1–33 into one working project: providers and resources (Lessons 4–8), <code>for_each</code> (Lesson 11), lifecycle preconditions (Lesson 12), state and backends (Lessons 13–14), modules (Lessons 17–20), and automated testing (Lesson 27). Like every hands-on example in this course, it uses only the free, zero-cost <code>random</code> and <code>local</code> providers — no cloud account, no billing, runnable on any machine with Terraform installed. Budget real time for this one. Rushing it costs you more later than slowing down now.</p>
+
+<h2>What you're building</h2>
+<p>A small "stack" module, called once per environment from a variable-driven list, wired together the way a real team's root config is structured — just pointed at free local providers instead of a cloud account:</p>
+<ul>
+<li>a root config that calls a child module using <code>for_each</code> over <code>var.environments</code>, so adding or removing an environment name is the only thing you ever touch (Lessons 11, 17–20)</li>
+<li>a local backend, structured so that switching to a real remote backend later is a small, contained change — not a rewrite (Lesson 14)</li>
+<li>an output that surfaces every generated name across every environment, in one place (Lesson 7)</li>
+<li>a <code>lifecycle</code> block with a <code>precondition</code> that refuses to proceed if <code>var.environments</code> is empty — there's nothing to build a stack from (Lesson 12)</li>
+<li>a minimal <code>.tftest.hcl</code> test file asserting the stack produces exactly one generated name per environment, plus a second test proving the precondition actually fires (Lesson 27)</li>
+</ul>
+<p>By the end you'll have a small, real, working Terraform project — plus a README write-up and GitHub commit, so it becomes an actual portfolio piece, not just a folder on your laptop.</p>
+
+<h2>Step 0 — project folder</h2>
+<p>Start a fresh folder, separate from earlier lesson folders — this one's a keeper:</p>
+<pre><code>mkdir -p capstone-stack/modules/env-stack
+mkdir -p capstone-stack/tests
+cd capstone-stack</code></pre>
+<p>The layout you're building toward:</p>
+<pre><code>capstone-stack/
+├── main.tf                    # providers + backend block
+├── variables.tf                # var.environments
+├── outputs.tf                  # generated_names output
+├── modules/
+│   └── env-stack/
+│       ├── variables.tf        # module input: environment
+│       ├── main.tf              # random_pet + local_file per environment
+│       └── outputs.tf           # module output: generated_name
+└── tests/
+    └── stack.tftest.hcl        # terraform test file
+</code></pre>
+
+<h2>Step 1 — the child module: <code>modules/env-stack/</code></h2>
+<p>Same three-file module shape from Lesson 18 — <code>variables.tf</code>, <code>main.tf</code>, <code>outputs.tf</code>. This module knows nothing about "environments" as a list — it just knows how to build one named thing, given one environment name. That's the whole point of a module: the list-handling logic lives outside it, in the root.</p>
+<pre><code># modules/env-stack/variables.tf
+variable "environment" {
+  description = "Name of the environment this module instance represents"
+  type        = string
+}</code></pre>
+<pre><code># modules/env-stack/main.tf
+resource "random_pet" "name" {
+  length = 2
+}
+
+resource "local_file" "record" {
+  filename = "${path.module}/${var.environment}-stack.txt"
+  content  = "environment=${var.environment}\nname=${random_pet.name.id}\n"
+}</code></pre>
+<pre><code># modules/env-stack/outputs.tf
+output "generated_name" {
+  description = "The generated pet name for this environment"
+  value       = random_pet.name.id
+}</code></pre>
+<p>Nothing here is new syntax — <code>path.module</code> and the <code>${var.environment}-stack.txt</code> filename pattern are exactly Lesson 18's <code>named-file</code> module, just with <code>environment</code> instead of <code>name_prefix</code> as the input name.</p>
+
+<h2>Step 2 — root providers and backend: <code>main.tf</code></h2>
+<p>Same <code>required_providers</code> block you've used since Lesson 18, plus an explicit <code>backend "local"</code> block (Lesson 14). Local state is the right choice for a solo learning project — but the config is written so that swapping to a team backend later touches only this one block:</p>
+<pre><code># main.tf
+terraform {
+  required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.5"
+    }
+  }
+
+  backend "local" {
+    path = "terraform.tfstate"
+  }
+
+  # Production version of this same project, one variable-of-a-different-
+  # kind away (Lesson 14): swap the block above for something like this.
+  # Note this is NOT a variable substitution — Lesson 14 established that a
+  # backend block can't reference var.* at all. Instead, leave the
+  # environment-specific values (bucket, key, region) out of the block
+  # entirely and supply them at `terraform init` time with
+  # `-backend-config=prod.backend.hcl`, so the .tf files never change
+  # between environments — only which config file you pass in does:
+  #
+  # backend "s3" {
+  #   bucket       = ""
+  #   key          = ""
+  #   region       = ""
+  #   use_lockfile = true
+  # }
+}</code></pre>
+<p class="callout"><strong>Why not just a variable?</strong> It's tempting to think "make the backend type a variable." Lesson 14 already covered why that doesn't work: a <code>backend</code> block can't refer to input variables, locals, or data sources — it has to be resolvable before Terraform has even loaded the rest of your config. The realistic version of "one change away" is exactly what HashiCorp calls <strong>partial configuration</strong>: leave the backend's arguments blank (or omit them) in code, and supply the real values via a separate <code>-backend-config</code> file or flags at <code>terraform init</code> — so the same <code>.tf</code> files work unchanged across dev, staging, and a real remote backend.</p>
+
+<h2>Step 3 — <code>var.environments</code> and the module call: <code>variables.tf</code></h2>
+<p>One list variable drives the whole stack. The module block calls the child module once per entry, using <code>for_each</code> instead of <code>count</code> (Lesson 11) — so renaming or removing one environment never reshuffles the others:</p>
+<pre><code># variables.tf
+variable "environments" {
+  description = "Names of the environments to build a stack for"
+  type        = list(string)
+  default     = ["dev", "staging", "prod"]
+}</code></pre>
+<pre><code># main.tf, continued — the module call
+module "env_stack" {
+  source   = "./modules/env-stack"
+  for_each = toset(var.environments)
+
+  environment = each.key
+}</code></pre>
+<p><code>for_each</code> on a <code>module</code> block works exactly like <code>for_each</code> on a <code>resource</code> block from Lesson 11 — HashiCorp's own docs confirm the meta-argument applies to module blocks the same way, keyed by <code>each.key</code>/<code>each.value</code>, addressed from outside as <code>module.env_stack["dev"]</code>. Each entry in <code>var.environments</code> gets its own fully independent copy of everything inside <code>modules/env-stack</code> — its own <code>random_pet</code>, its own <code>local_file</code>, its own state entry — exactly like <code>dev_pet</code> and <code>prod_pet</code> in Lesson 18, just driven by a list instead of two hand-written module blocks.</p>
+
+<h2>Step 4 — the output surfacing every name: <code>outputs.tf</code></h2>
+<p>One output, built the same way you built <code>pet_names</code> back in Lesson 11's hands-on — a <code>for</code> expression over the module's instances, turned into a map:</p>
+<pre><code># outputs.tf
+output "generated_names" {
+  description = "Generated name for every environment in var.environments"
+  value       = { for env, mod in module.env_stack : env => mod.generated_name }
+}</code></pre>
+<p>After <code>apply</code>, this one output shows you every environment's generated name at a glance — <code>{ dev = "...", staging = "...", prod = "..." }</code> — without digging through <code>terraform show</code> or the state file.</p>
+
+<h2>Step 5 — the lifecycle precondition: back in <code>main.tf</code></h2>
+<p>Lesson 12 covered <code>precondition</code> nested inside a resource's <code>lifecycle</code> block — an assumption that must hold before Terraform proceeds. Here, the thing worth asserting is simple: there's no point building a stack for zero environments. Attach the precondition to a small root-level resource that references the whole list — a manifest file summarizing every generated name:</p>
+<pre><code># main.tf, continued — the manifest + its precondition
+resource "local_file" "manifest" {
+  filename = "${path.module}/generated/manifest.txt"
+  content  = join("\n", [for env, mod in module.env_stack : "${env} = ${mod.generated_name}"])
+
+  lifecycle {
+    precondition {
+      condition     = length(var.environments) > 0
+      error_message = "var.environments must contain at least one environment name — nothing to build a stack from."
+    }
+  }
+}</code></pre>
+<p>This is the exact same shape as Lesson 12's AMI-architecture example — <code>condition</code>, <code>error_message</code>, nested in <code>lifecycle</code> on a resource block. Because <code>length(var.environments)</code> is known before anything is created, this precondition runs and can fail during <code>terraform plan</code> — you don't need to wait for <code>apply</code> to find out your environments list was accidentally emptied.</p>
+<p class="callout"><strong>Note on directories:</strong> <code>generated/</code> doesn't need to exist beforehand — the <code>local</code> provider's own docs confirm <code>local_file</code> creates any missing parent directories in its <code>filename</code> path automatically.</p>
+
+<h2>Step 6 — the test file: <code>tests/stack.tftest.hcl</code></h2>
+<p>Lesson 27's native <code>terraform test</code> framework, testing the root config directly (no <code>module</code> block override needed here — omitting it just tests the current configuration, same as running <code>terraform apply</code> in this folder). Two run blocks: one proving the happy path produces the right count of outputs, one proving the precondition actually fires:</p>
+<pre><code># tests/stack.tftest.hcl
+run "one_generated_name_per_environment" {
+  command = apply
+
+  variables {
+    environments = ["dev", "staging"]
+  }
+
+  assert {
+    condition     = length(output.generated_names) == length(var.environments)
+    error_message = "Expected exactly one generated name per environment in var.environments."
+  }
+}
+
+run "rejects_empty_environment_list" {
+  command = plan
+
+  variables {
+    environments = []
+  }
+
+  expect_failures = [
+    local_file.manifest,
+  ]
+}</code></pre>
+<p>The first run applies real (free, local) resources and checks the count matches — a genuine integration test, per Lesson 27. The second uses <code>expect_failures</code>, which HashiCorp's docs describe as a list of "checkable objects... that should fail their custom conditions" — here, <code>local_file.manifest</code>, whose <code>precondition</code> you just wrote in Step 5. This run block <em>passes</em> precisely because the precondition <em>fails</em> as designed — proving the guardrail from Step 5 actually works, not just that it compiles.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. The module call uses <code>for_each = toset(var.environments)</code> instead of <code>count = length(var.environments)</code>. If someone removes <code>"staging"</code> from the middle of the list, what's the practical difference between the two approaches, and which lesson covered why?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Lesson 11. With <code>for_each</code>, only <code>module.env_stack["staging"]</code> is destroyed — <code>dev</code> and <code>prod</code> are untouched, because they're keyed by name, not position. With <code>count</code>, removing the middle entry would shift every index after it, and Terraform would plan to destroy and recreate everything past that point in the list, even though only one environment was actually meant to go away.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Why can't you write <code>backend "s3" { bucket = var.bucket_name }</code> to make the backend "swap in" automatically based on an environment variable — and what's the real mechanism from Lesson 14 that gets you close to that?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">A <code>backend</code> block can't reference input variables, locals, or data sources at all — it has to be resolvable before the rest of the configuration is even loaded, so <code>var.bucket_name</code> simply isn't available there. The real mechanism is partial configuration: leave the backend's arguments blank or omitted in the <code>.tf</code> file, and supply the actual values with <code>-backend-config=&lt;file&gt;</code> (or repeated <code>-backend-config="key=value"</code> flags) at <code>terraform init</code> time — so the code stays identical across environments, only the init-time input changes.</div>
+</div>
+
+<h2>Step 7 — run it end to end</h2>
+<p>From the <code>capstone-stack/</code> folder:</p>
+<pre><code>terraform init
+# watch it discover the local module (Initializing modules...)
+# and download the random + local provider plugins
+
+terraform plan
+# read the resource addresses: module.env_stack["dev"].random_pet.name,
+# module.env_stack["staging"]..., module.env_stack["prod"]...
+# plus local_file.manifest, and its precondition passing silently
+
+terraform apply
+# type: yes
+
+terraform output generated_names
+# { dev = "...", staging = "...", prod = "..." }
+
+cat generated/manifest.txt
+# dev = ...
+# staging = ...
+# prod = ...
+
+terraform test
+# expect both run blocks in tests/stack.tftest.hcl to report success —
+# one_generated_name_per_environment applies real resources then checks
+# the count; rejects_empty_environment_list expects (and gets) a failure
+
+terraform destroy
+# type: yes</code></pre>
+<p>Then try breaking it on purpose: temporarily set <code>default = []</code> on <code>var.environments</code> in <code>variables.tf</code> and run <code>terraform plan</code> again. You should see the precondition's <code>error_message</code> stop the plan cold — the exact same mechanism <code>tests/stack.tftest.hcl</code> already proved automatically. Set the default back to your real list afterward.</p>
+
+<h2>What to put in your project README</h2>
+<p>Same discipline as every project in a real portfolio: code alone doesn't explain itself. Use this structure, filled in with what <em>your</em> run actually produced:</p>
+<pre><code>## Capstone: End-to-End Terraform Stack
+
+**Problem statement**
+Provision a small, named "stack" of resources per environment
+(dev/staging/prod), from a single variable-driven list, in a way
+that's structured to scale to a real team workflow later.
+
+**Approach**
+- Root config calls a reusable child module (modules/env-stack)
+  once per entry in var.environments, via for_each — not count,
+  so removing one environment never touches the others.
+- Local backend, structured for a partial-configuration swap to a
+  real remote backend (S3/GCS/Azure) with no change to the .tf files.
+- A precondition on local_file.manifest refuses to plan against an
+  empty environments list.
+- tests/stack.tftest.hcl asserts the right output count on apply,
+  and proves the precondition actually fires on an empty list.
+
+**What each part demonstrates**
+- for_each over a variable-driven list (Lesson 11)
+- lifecycle precondition as a guardrail, not just a rule (Lesson 12)
+- state + backend structured for a future remote swap (Lessons 13-14)
+- a reusable child module, called for_each instead of by hand (17-20)
+- terraform test with both an apply-based and a plan-based run,
+  including expect_failures (Lesson 27)
+
+**What I'd change for real production**
+- Swap random_pet/local_file for real provider resources (aws,
+  google, azurerm) inside modules/env-stack — the calling pattern
+  (for_each, outputs, precondition) doesn't need to change.
+- Swap the local backend for a real remote one (S3 + use_lockfile,
+  or GCS/azurerm) using -backend-config per environment, per Lesson 14.
+- Add sensitive-data handling (Lesson 24) for anything the real
+  provider resources generate that shouldn't sit in state in plain
+  text, and wire terraform test into CI (Lesson 29).
+
+**Results**
+- terraform apply: [paste your actual generated_names output]
+- terraform test: [paste your actual pass/fail summary]
+</code></pre>
+<p>Fill in the bracketed parts with your own run's real output — same rule as every project in this course: never paste someone else's numbers into your own write-up.</p>
+
+<h2>Commit it as a portfolio piece</h2>
+<p>This is a capstone, not a throwaway exercise — put it somewhere it'll be seen:</p>
+<ul>
+<li>create a new GitHub repo (e.g. <code>terraform-capstone-stack</code>), or a <code>capstone/</code> folder inside your existing Terraform learning-log repo from Lesson 2</li>
+<li>add a <code>.gitignore</code> excluding <code>.terraform/</code>, <code>terraform.tfstate</code>, <code>terraform.tfstate.backup</code>, and <code>generated/</code> — Lesson 13 already covered why state should never be committed, and generated output files don't belong in source control either</li>
+<li>add all your <code>.tf</code> files, <code>tests/stack.tftest.hcl</code>, and the README from the previous step</li>
+<li>commit with a clear message, e.g. <code>git commit -m "Capstone: end-to-end for_each stack with tests"</code></li>
+<li>push to GitHub: <code>git push</code></li>
+</ul>
+<p>This is the piece you point to when someone asks "have you actually used Terraform?" — a real module, real meta-arguments, a real guardrail, and a real test suite, not just a syntax exercise.</p>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/tests" target="_blank" rel="noopener">developer.hashicorp.com — Tests</a> (confirms <code>run</code>/<code>assert</code>/<code>variables</code> block syntax, <code>command = apply</code> as the default vs <code>command = plan</code>, and <code>expect_failures</code> as a list of checkable objects — resources, data sources, check blocks, input variables, and outputs — expected to fail their custom conditions) · <a href="https://developer.hashicorp.com/terraform/language/expressions/custom-conditions" target="_blank" rel="noopener">developer.hashicorp.com — Custom conditions</a> (confirms <code>precondition</code>/<code>postcondition</code> syntax nested in a resource's <code>lifecycle</code> block) · <a href="https://developer.hashicorp.com/terraform/language/meta-arguments/for_each" target="_blank" rel="noopener">developer.hashicorp.com — for_each meta-argument</a> (confirms <code>for_each</code> applies to <code>module</code> blocks the same way it applies to resources, keyed by <code>each.key</code>/<code>each.value</code>) · <a href="https://developer.hashicorp.com/terraform/language/backend" target="_blank" rel="noopener">developer.hashicorp.com — Backend block configuration</a> (confirms a backend block cannot reference input variables, locals, or data source attributes, and confirms partial configuration via <code>-backend-config=&lt;file&gt;</code> or repeated <code>-backend-config="key=value"</code> flags at <code>terraform init</code>) · <a href="https://developer.hashicorp.com/terraform/language/modules/develop" target="_blank" rel="noopener">developer.hashicorp.com — Module Development</a> · <a href="https://registry.terraform.io/providers/hashicorp/local/latest/docs/resources/file" target="_blank" rel="noopener">registry.terraform.io — local_file resource docs</a> (confirms missing parent directories in <code>filename</code> are created automatically) — all verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>The capstone combines Lessons 1–33 into one working project: a root config calling a reusable child module <code>for_each</code> over a variable-driven environment list, a local backend structured for a future remote swap, an aggregated output, a <code>lifecycle</code> precondition guardrail, and a <code>.tftest.hcl</code> test suite — all on the free <code>random</code>/<code>local</code> providers.</li>
+    <li><code>for_each</code> on a <code>module</code> block behaves exactly like <code>for_each</code> on a resource — keyed by name, not position, so removing one environment never touches the others.</li>
+    <li>A <code>backend</code> block can never reference <code>var.*</code> — the real mechanism for environment-specific backend config is partial configuration via <code>-backend-config</code> at <code>terraform init</code>, not a variable.</li>
+    <li>A <code>lifecycle</code> precondition (Lesson 12) can guard an entire stack, not just one resource's own inputs — and <code>expect_failures</code> in a test file (Lesson 27) is how you prove that guardrail actually fires, not just that it compiles.</li>
+    <li>A capstone belongs in a real GitHub repo with a README written the same way as every other project in this course: problem, approach, what it demonstrates, what you'd change for production, and your own actual results.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together. This one has more moving parts than any lesson so far, so take it step by step rather than pasting the whole thing in at once.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0033-troubleshooting.html">&larr; Lesson 33 — Troubleshooting common errors</a></span>
+  <span><a href="0035-exam-domain-walkthrough.html">Lesson 35 — Exam domain walkthrough &rarr;</a></span>
+</div>
+
+</body>
+</html>

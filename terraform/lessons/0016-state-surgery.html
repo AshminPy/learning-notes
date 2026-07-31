@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 16 — State surgery: import, mv, rm, moved blocks</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 16 of 37</p>
+<h1>State surgery: import, mv, rm, moved blocks</h1>
+
+<p>Lessons 13–15 taught you what state <em>is</em> and how it stays safe under a team. This lesson teaches you how to operate on it directly — on purpose. Real infrastructure work is messy: someone clicks "create" in the console before Terraform exists for that project, you rename a resource while refactoring, or a resource genuinely needs to leave Terraform's management without being destroyed. Terraform has a specific toolset for exactly this, and it's called "state surgery" for a reason — done carefully, these commands are precise and safe; done carelessly, they can make Terraform's next <code>plan</code> propose something you really don't want.</p>
+
+<h2>First: look, don't touch</h2>
+<p>Before changing anything, you need to see what's actually in state. Two read-only commands cover this, and you should reach for them constantly — they cannot modify anything, so there's no risk in running them.</p>
+
+<p><code>terraform state list</code> prints every resource address currently tracked in state:</p>
+<pre><code>$ terraform state list
+aws_instance.foo
+aws_instance.bar[0]
+aws_instance.bar[1]
+module.elb.aws_elb.main</code></pre>
+<p>You can filter it to a specific resource or module by passing an address: <code>terraform state list aws_instance.bar</code>, or <code>terraform state list module.elb</code> to include everything nested inside that module.</p>
+
+<p><code>terraform state show &lt;ADDRESS&gt;</code> prints every attribute Terraform has recorded for one specific resource — the same detail you'd otherwise have to go dig out of the raw JSON file by hand (Lesson 13):</p>
+<pre><code>$ terraform state show 'aws_instance.foo'
+# aws_instance.foo:
+resource "aws_instance" "foo" {
+    ami           = "ami-0c55b159cbfafe1f0"
+    id            = "i-0abc123"
+    instance_type = "t2.micro"
+    ...
+}</code></pre>
+<p>Neither command writes to state or touches real infrastructure. Get comfortable with both before you go anywhere near the commands below — <code>state list</code> plus <code>state show</code> is how you confirm, before and after any surgery, exactly what Terraform believes exists.</p>
+
+<h2><code>terraform import</code> — bring existing infrastructure under management</h2>
+<p>Real-world scenario: someone created an S3 bucket by hand in the AWS console, months before your team started using Terraform. That bucket is real, it's in use, and you don't want to destroy and recreate it just to get it under Terraform's control — that would mean data loss and downtime for no reason. <code>terraform import</code> exists for exactly this: it tells Terraform "this real object, at this address, is now yours to track," without touching the real resource at all.</p>
+
+<p>Syntax:</p>
+<pre><code>terraform import [options] ADDRESS ID</code></pre>
+<p>where <code>ADDRESS</code> is the resource address in your config (it must already exist as an empty-ish resource block — more on that below), and <code>ID</code> is whatever identifier the provider uses for that resource type — an EC2 instance ID like <code>i-abcd1234</code>, an S3 bucket name, a Route53 zone ID. The exact ID format is documented on each resource's page in the Terraform Registry, because every provider and resource type defines its own.</p>
+<pre><code>$ terraform import aws_instance.foo i-abcd1234</code></pre>
+
+<p class="callout"><strong>The step people miss:</strong> <code>terraform import</code> only writes to state. It does <strong>not</strong> generate the matching <code>resource</code> block in your <code>.tf</code> files — HashiCorp's docs are explicit that "importing via the CLI does not generate configuration." You have to write the <code>resource "aws_instance" "foo" {}</code> block yourself <em>first</em> (even a mostly-empty one is enough to give the import a target address), run the import, then run <code>terraform plan</code> and fill in your config's arguments until the plan shows no changes. If your config doesn't match what got imported, Terraform will plan to "fix" the real resource to match your incomplete config — which can mean unwanted changes on the very next apply.</p>
+
+<h2><code>terraform state mv</code> — rename or relocate a resource in state</h2>
+<p>Different scenario: no real infrastructure changed, but you renamed a resource in your config — maybe <code>aws_instance.worker</code> became <code>aws_instance.app_server</code> during a refactor, or you moved a resource into a module. As far as Terraform's default comparison logic is concerned (Lesson 13), a resource with a new address that isn't in state looks like a brand-new resource to create, and the old address that's no longer in config looks like something to destroy. Left alone, that's a real destroy-and-recreate — exactly what you don't want for a rename.</p>
+
+<p><code>terraform state mv</code> fixes the state file directly, telling Terraform "the object at this old address is the same object now living at this new address":</p>
+<pre><code>terraform state mv [options] SOURCE DESTINATION</code></pre>
+<pre><code>$ terraform state mv aws_instance.worker aws_instance.app_server</code></pre>
+<p>It also handles moving something into a module (<code>terraform state mv aws_instance.worker module.compute.aws_instance.worker</code>), and addresses with <code>count</code> or <code>for_each</code> indices (<code>terraform state mv 'aws_instance.worker[0]' 'aws_instance.helper[0]'</code>).</p>
+
+<p>The official docs flag a real collaboration risk here: because <code>state mv</code> is an imperative command you run once, from your own terminal, it isn't something your teammates automatically see. HashiCorp's guidance: "if you are using Terraform in a collaborative environment, you must ensure that... you communicate carefully with your coworkers to ensure that nobody makes any other changes between your configuration change and your <code>terraform state mv</code> command." That gap — a manual command outside version control — is exactly what <code>moved</code> blocks (below) were built to close.</p>
+
+<h2><code>terraform state rm</code> — stop managing a resource, without destroying it</h2>
+<p>This is the command most likely to be confused with <code>terraform destroy</code>, so be precise about the difference:</p>
+<ul>
+<li><code>terraform destroy</code> — deletes the <strong>real infrastructure</strong>, then removes it from state.</li>
+<li><code>terraform state rm</code> — removes the entry from <strong>state only</strong>. The real infrastructure is untouched and keeps running exactly as it was — Terraform simply stops knowing about it, forgets it, and stops managing it.</li>
+</ul>
+
+<pre><code>terraform state rm [options] ADDRESS...</code></pre>
+<pre><code>$ terraform state rm 'aws_instance.legacy'</code></pre>
+<p>The docs describe it as removing "the binding to an existing remote object without first destroying it. The remote object continues to exist but is no longer managed by Terraform." You'd reach for this when a resource is being handed off to a different team's Terraform config, being migrated to manual/ClickOps management on purpose, or being adopted by a completely different tool.</p>
+
+<p class="callout"><strong>Watch this consequence:</strong> after you run <code>state rm</code>, the resource is still sitting in your <code>.tf</code> config (unless you also delete that block). So the very next <code>terraform plan</code> sees "config wants this, state doesn't have it" — the same logic as Lesson 13's three-way comparison — and will propose <strong>creating a brand-new copy</strong> of that resource. If you meant to stop managing it, delete the config block too, or you'll get a surprise duplicate on the next apply.</p>
+
+<h2><code>moved</code> blocks — the modern, declarative alternative</h2>
+<p>Since Terraform 1.1, there's a second way to handle renames and relocations: instead of running <code>state mv</code> from your terminal, you write the intent directly into your configuration as a <code>moved</code> block, and Terraform applies it automatically during the next <code>plan</code>/<code>apply</code>.</p>
+
+<pre><code>moved {
+  from = aws_instance.a
+  to   = aws_instance.b
+}</code></pre>
+<p>HashiCorp's docs describe the mechanism plainly: "by default, Terraform interprets a change as an instruction to destroy the existing resource and create a new resource at the new address. You can use a <code>moved</code> block to update a resource address without destroying it." When you run <code>plan</code>, Terraform checks state for an object at the <code>from</code> address and, if found, treats it as the same object now at the <code>to</code> address — no destroy, no recreate.</p>
+
+<p>Why prefer this over <code>state mv</code> where you can: a <code>moved</code> block lives in a <code>.tf</code> file, which means it's committed to git, shows up in your pull request diff, and gets reviewed by a teammate exactly like any other config change. <code>state mv</code> is a one-off command that runs against one person's local (or remote) state right now, invisible to anyone not in that terminal at that moment — which is precisely the coordination risk the official docs warn about above. For refactors that ship through normal version control and code review, <code>moved</code> blocks are the safer default; reach for the imperative <code>state mv</code> command mainly for one-off, ad-hoc fixes outside your normal config workflow.</p>
+
+<p class="callout"><strong>Safety callout — this is the whole point of the lesson:</strong> <code>terraform state rm</code> and <code>terraform state mv</code> change what Terraform <em>believes</em> exists, not what actually exists. Get one wrong, and the next <code>plan</code>/<code>apply</code> can try to recreate a resource that's still running (duplicate real infrastructure) or lose track of a resource Terraform should still be managing (orphaned drift). HashiCorp's own tooling treats this risk as serious enough that "backups for state modification can not be disabled" — every state-modifying command writes an automatic local backup file before it touches anything. Even so, before doing state surgery on anything real: confirm your backend has versioning enabled (Lesson 14), or manually copy <code>terraform.tfstate</code> somewhere safe first, and run <code>terraform state list</code> before and after so you can see exactly what changed.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You rename a resource's local name in your config — <code>aws_instance.worker</code> becomes <code>aws_instance.app_server</code> — and change nothing else. What happens on the next <code>terraform plan</code> if you do nothing further, versus if you add a <code>moved</code> block?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">If you do nothing: Terraform's three-way comparison sees <code>aws_instance.app_server</code> in config with no matching state entry (looks new → plan to create) and <code>aws_instance.worker</code> in state with no matching config (looks removed → plan to destroy). You get a destroy-and-recreate of a resource that didn't actually need to change — real downtime/data loss risk for what was just a rename. If you add a <code>moved { from = aws_instance.worker to = aws_instance.app_server }</code> block: Terraform finds the object at the old address in state and renames it in place to the new address, with no destroy and no create. The plan shows no changes (or only genuine attribute changes, if any), because Terraform now understands it's the same object.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What is the actual difference between <code>terraform destroy</code> on a resource and <code>terraform state rm</code> on that same resource?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>terraform destroy</code> deletes the real infrastructure and then removes it from state. <code>terraform state rm</code> only removes the state entry — the real infrastructure keeps running untouched, Terraform just stops tracking and managing it. If you then leave the resource block in your config, the next <code>plan</code> will propose creating a new one, since config now says "should exist" and state says "doesn't exist."</div>
+</div>
+
+<h2>Hands-on: inspect state safely, then simulate a rename</h2>
+<p>Use the <code>random_pet</code> example from earlier lessons (same folder as Lesson 13's exercise).</p>
+<ul>
+<li>run <code>terraform apply</code> if you don't already have a live pet</li>
+<li>run <code>terraform state list</code> — confirm you see <code>random_pet.example</code></li>
+<li>run <code>terraform state show random_pet.example</code> — confirm you see its attributes, including the generated <code>id</code></li>
+<li>in <code>main.tf</code>, rename the resource: change <code>resource "random_pet" "example"</code> to <code>resource "random_pet" "buddy"</code></li>
+<li>run <code>terraform plan</code> — without a <code>moved</code> block, watch it propose destroying <code>random_pet.example</code> and creating <code>random_pet.buddy</code></li>
+<li>now add this to <code>main.tf</code>:
+<pre><code>moved {
+  from = random_pet.example
+  to   = random_pet.buddy
+}</code></pre>
+</li>
+<li>run <code>terraform plan</code> again — this time it should show no destroy/create, just the rename applied in state</li>
+<li>run <code>terraform apply</code> to confirm, then <code>terraform destroy</code> to clean up when done</li>
+</ul>
+<p>This is the whole lesson in miniature: the resource never changed, only its address did — and the tool you choose (do nothing, <code>state mv</code>, or <code>moved</code>) determines whether Terraform treats that as "same thing, new name" or "destroy this, build a new one."</p>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/cli/commands/state" target="_blank" rel="noopener">developer.hashicorp.com — state command</a> (confirms subcommands including list/show/mv/rm and that state-modification backups cannot be disabled) · <a href="https://developer.hashicorp.com/terraform/cli/commands/state/list" target="_blank" rel="noopener">state list</a> · <a href="https://developer.hashicorp.com/terraform/cli/commands/state/show" target="_blank" rel="noopener">state show</a> · <a href="https://developer.hashicorp.com/terraform/cli/commands/state/mv" target="_blank" rel="noopener">state mv</a> (confirms syntax and the coworker-communication warning) · <a href="https://developer.hashicorp.com/terraform/cli/commands/state/rm" target="_blank" rel="noopener">state rm</a> (confirms it removes tracking only, not the real object, and that a later plan will propose recreating "forgotten" instances) · <a href="https://developer.hashicorp.com/terraform/cli/import" target="_blank" rel="noopener">terraform import</a> and <a href="https://developer.hashicorp.com/terraform/cli/commands/import" target="_blank" rel="noopener">import command reference</a> (confirms syntax, that CLI import does not generate configuration, and ID format varies per resource) · <a href="https://developer.hashicorp.com/terraform/language/moved" target="_blank" rel="noopener">moved blocks</a> and <a href="https://developer.hashicorp.com/terraform/language/modules/develop/refactoring" target="_blank" rel="noopener">refactoring guide</a> (confirms <code>moved</code> block syntax, v1.1+ requirement, and that it updates a resource address without destroying it) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>terraform state list</code> and <code>terraform state show &lt;address&gt;</code> are read-only — always inspect before you operate.</li>
+    <li><code>terraform import ADDRESS ID</code> brings an existing real resource under Terraform's management without recreating it — but it only touches state, you must still write the matching config block yourself.</li>
+    <li><code>terraform state mv SOURCE DESTINATION</code> renames/relocates a resource in state without destroy/recreate — coordinate with your team, since it's an imperative command outside version control.</li>
+    <li><code>terraform state rm ADDRESS</code> stops Terraform managing a resource <strong>without destroying it</strong> — very different from <code>terraform destroy</code>. Remove the config block too, or the next plan will propose creating a duplicate.</li>
+    <li><code>moved</code> blocks are the modern, declarative alternative to <code>state mv</code> — written in config, committed to git, reviewable in a PR. Prefer them for refactors that go through your normal workflow.</li>
+    <li>State surgery changes what Terraform believes, not what's real — back up state (or confirm backend versioning) before running <code>state rm</code>/<code>mv</code> on anything that matters.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0015-state-locking-and-drift.html">&larr; Lesson 15 — State locking &amp; drift detection</a></span>
+  <span><a href="0017-why-modules.html">Lesson 17 — Why modules? DRY infrastructure &rarr;</a></span>
+</div>
+
+</body>
+</html>

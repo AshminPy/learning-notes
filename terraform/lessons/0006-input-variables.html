@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 6 — Input variables</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 6 of 37</p>
+<h1>Input variables</h1>
+
+<p>In Lesson 5 you wrote <code>resource "random_pet" "example" {}</code> — every value baked straight into the file. That's fine for a one-off experiment, but real configs get reused: the same <code>main.tf</code> deployed for dev and prod, or shared with a teammate who needs slightly different settings without editing your code. <strong>Input variables</strong> are how you pull those settings out of the resource block and let the caller supply them.</p>
+
+<p class="callout"><strong>Mental model:</strong> a variable block is a function parameter. The rest of your config is the function body — it uses <code>var.something</code> the same way a function uses an argument name, without caring where the value came from. Terraform figures out the actual value from several possible sources before it ever evaluates your resources.</p>
+
+<h2>Declaring a variable</h2>
+<p>Variables are declared with a <code>variable</code> block, named in the label. A full declaration has three common arguments — all optional, but you should get in the habit of setting at least <code>type</code> and <code>description</code>:</p>
+
+<pre><code>variable "pet_length" {
+  type        = number
+  description = "Number of words in the generated pet name"
+  default     = 2
+}</code></pre>
+
+<ul>
+<li><code>type</code> — a type constraint. Terraform checks any value it receives against this and errors out if it doesn't match, before <code>plan</code> even runs. Confirmed against HashiCorp's docs.</li>
+<li><code>description</code> — a one-line explanation shown in <code>terraform plan</code> prompts and generated docs. Cheap to add, always worth it.</li>
+<li><code>default</code> — the value used if nothing else supplies one. A variable with no <code>default</code> is <strong>required</strong> — Terraform will stop and prompt you for it interactively if you don't provide it another way.</li>
+</ul>
+
+<h2>Using a variable: <code>var.&lt;name&gt;</code></h2>
+<p>Anywhere inside your config, reference the value with <code>var.</code> followed by the variable's name — no quotes needed even though the value itself might be a string, because this is an expression, not a literal:</p>
+
+<pre><code>resource "random_pet" "example" {
+  length = var.pet_length
+}</code></pre>
+
+<h2>Three ways to set a value</h2>
+<p>Terraform will look in several places for a variable's value. You've already met the first — the <code>default</code> in the block itself. Here are the two you'll use constantly on top of that:</p>
+
+<table>
+<tr><th>Method</th><th>Example</th><th>Best used for</th></tr>
+<tr><td>Default in the block</td><td><code>default = 2</code></td><td>A safe fallback that works for most cases — the config still runs with zero extra input.</td></tr>
+<tr><td><code>-var</code> on the CLI</td><td><code>terraform apply -var="pet_length=3"</code></td><td>One-off overrides and CI/CD pipelines, where the value is generated or injected at run time rather than stored in a file.</td></tr>
+<tr><td>A <code>.tfvars</code> file</td><td><code>terraform apply -var-file="prod.tfvars"</code>, or a file literally named <code>terraform.tfvars</code> which Terraform loads automatically</td><td>Environment-specific values you want checked into version control (or kept alongside it) — one file per environment, e.g. <code>dev.tfvars</code>, <code>prod.tfvars</code>.</td></tr>
+</table>
+
+<p>A <code>terraform.tfvars</code> file just holds plain assignments, no <code>variable</code> keyword:</p>
+
+<pre><code># terraform.tfvars
+pet_length = 3</code></pre>
+
+<p>Terraform loads <code>terraform.tfvars</code> and any <code>*.auto.tfvars</code> file automatically, with no flag needed — any other <code>.tfvars</code> file needs an explicit <code>-var-file</code> flag. If a value shows up in more than one place, the CLI <code>-var</code>/<code>-var-file</code> flags win, then <code>*.auto.tfvars</code> files, then <code>terraform.tfvars</code>, then environment variables (<code>TF_VAR_pet_length</code>), and the block's own <code>default</code> loses to all of them. You rarely need to memorize that full order — just avoid setting the same variable in two places at once, and it never comes up.</p>
+
+<p class="callout"><strong>Best practice:</strong> keep <code>default</code> for values that are genuinely safe to leave alone, use a <code>.tfvars</code> file per environment for anything that should differ between dev/staging/prod, and reach for <code>-var</code> only for a quick manual override or when a CI pipeline needs to inject a value it just computed (like a build number). Don't use <code>-var</code> for anything you'd want to reuse tomorrow — it's not saved anywhere.</p>
+
+<h2>Type constraints, briefly</h2>
+<p>Confirmed against HashiCorp's type-constraints docs. The three primitive types:</p>
+<ul>
+<li><code>string</code> — text, like <code>"prod"</code></li>
+<li><code>number</code> — whole or fractional, like <code>2</code> or <code>6.28</code></li>
+<li><code>bool</code> — <code>true</code> or <code>false</code></li>
+</ul>
+<p>And the complex ones you'll meet soon, at an introductory level for now:</p>
+<ul>
+<li><code>list(string)</code> — an ordered sequence, e.g. <code>["a", "b", "c"]</code></li>
+<li><code>map(string)</code> — key/value pairs, e.g. <code>{ dev = "t2.micro", prod = "t2.large" }</code></li>
+<li><code>object({ name = string, age = number })</code> — a fixed set of named attributes, each with its own type — useful when one variable needs to bundle several related values together</li>
+</ul>
+
+<h2>The <code>validation</code> block</h2>
+<p>A type constraint only checks the <em>shape</em> of a value. A <code>validation</code> block checks the <em>content</em> — custom rules with a message when they fail. Confirmed against HashiCorp's docs, exact syntax:</p>
+
+<pre><code>variable "pet_length" {
+  type        = number
+  description = "Number of words in the generated pet name"
+  default     = 2
+
+  validation {
+    condition     = var.pet_length &gt; 0 &amp;&amp; var.pet_length &lt;= 5
+    error_message = "pet_length must be between 1 and 5."
+  }
+}</code></pre>
+
+<p><code>condition</code> is any expression that evaluates to <code>true</code> or <code>false</code>; <code>error_message</code> is what Terraform prints when it's <code>false</code>. This runs during <code>plan</code>, before anything is created — catching a bad value here is far cheaper than catching it after <code>apply</code>.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You declare <code>variable "region" { type = string }</code> with no <code>default</code>, and run <code>terraform plan</code> without passing a value any other way. What happens?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Terraform stops and interactively prompts you to type a value for <code>region</code>, because a variable with no <code>default</code> is required — it has no fallback to fall back on.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You have <code>default = 2</code> in the block, <code>pet_length = 3</code> in <code>terraform.tfvars</code>, and you also run <code>terraform apply -var="pet_length=5"</code>. What value does <code>random_pet.example</code> actually get?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>5</code>. Command-line <code>-var</code> beats a <code>.tfvars</code> file, which beats the block's own <code>default</code>.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In the same folder from Lesson 5:</p>
+<ul>
+<li>add a <code>variable "pet_length"</code> block: <code>type = number</code>, a <code>description</code>, and <code>default = 2</code></li>
+<li>change your <code>random_pet</code> resource to <code>length = var.pet_length</code> instead of leaving it unset</li>
+<li>run <code>terraform plan</code> — confirm <code>length</code> still shows <code>2</code>, coming from the default</li>
+<li>create a file named <code>terraform.tfvars</code> in the same folder containing <code>pet_length = 4</code></li>
+<li>run <code>terraform plan</code> again — confirm <code>length</code> now shows <code>4</code>, with no flag needed, because Terraform loads <code>terraform.tfvars</code> automatically</li>
+<li><em>(optional)</em> try <code>terraform plan -var="pet_length=1"</code> and confirm the CLI flag wins over the file</li>
+</ul>
+<p>Try it yourself before checking the reference config below.</p>
+
+<div class="quiz">
+<p>Reveal the reference config</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code># main.tf
+variable "pet_length" {
+  type        = number
+  description = "Number of words in the generated pet name"
+  default     = 2
+}
+
+resource "random_pet" "example" {
+  length = var.pet_length
+}
+
+# terraform.tfvars
+pet_length = 4</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/values/variables" target="_blank" rel="noopener">developer.hashicorp.com — Input Variables</a> (variable block arguments, precedence order, <code>validation</code> block syntax) · <a href="https://developer.hashicorp.com/terraform/language/expressions/type-constraints" target="_blank" rel="noopener">developer.hashicorp.com — Type Constraints</a> (primitive and complex types) — both verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A <code>variable</code> block declares an input; <code>var.&lt;name&gt;</code> reads it anywhere in the config — think function parameter, not hardcoded value.</li>
+    <li>Set values with a <code>default</code> (safe fallback), a <code>.tfvars</code> file (per-environment values), or <code>-var</code> on the CLI (one-off overrides, CI) — CLI beats <code>.tfvars</code> beats <code>default</code>.</li>
+    <li><code>type</code> constrains the shape of a value (<code>string</code>, <code>number</code>, <code>bool</code>, <code>list</code>, <code>map</code>, <code>object</code>...); a <code>validation</code> block constrains its content, and both are checked before anything is created.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0005-first-resource-apply.html">&larr; Lesson 5 — Your first resource</a></span>
+  <span><a href="0007-outputs.html">Lesson 7 — Outputs &rarr;</a></span>
+</div>
+
+</body>
+</html>

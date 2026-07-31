@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 5 — Your first resource: init, plan, apply, destroy</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 5 of 37</p>
+<h1>Your first resource: init, plan, apply, destroy</h1>
+
+<p>Lesson 4 gave you a <code>terraform</code> block and a <code>provider</code> block — the paperwork. This lesson you finally write a <strong>resource</strong>, the thing Terraform actually manages, and run it through the full lifecycle every Terraform config goes through, from an empty folder to real infrastructure and back to nothing.</p>
+
+<p>Four commands, always in this order, for the rest of your Terraform career:</p>
+
+<table>
+<tr><th>Command</th><th>What it does</th><th>Changes anything?</th></tr>
+<tr><td><code>terraform init</code></td><td>Downloads providers, sets up the working directory</td><td>No</td></tr>
+<tr><td><code>terraform plan</code></td><td>Shows what <em>would</em> change</td><td>No</td></tr>
+<tr><td><code>terraform apply</code></td><td>Executes the plan, after you confirm</td><td>Yes</td></tr>
+<tr><td><code>terraform destroy</code></td><td>Tears down everything Terraform manages, after you confirm</td><td>Yes</td></tr>
+</table>
+
+<p class="callout"><strong>Mental model:</strong> think of <code>plan</code> as a building inspector walking through with a clipboard, writing down every change they'd make — nothing gets touched. <code>apply</code> is the crew showing up and actually doing the work on that clipboard. Terraform never lets the crew in without showing you the clipboard first.</p>
+
+<h2>The resource we'll use: <code>random_pet</code></h2>
+<p>We need something to provision that costs nothing and needs no cloud account, so you can run this lesson right now. The <code>random</code> provider's <code>random_pet</code> resource generates a random pet name like <code>climbing-mudfish</code> — it exists only inside Terraform's state, never touches any real infrastructure, and is genuinely used in real configs (commonly to give a unique, human-readable suffix to a resource name).</p>
+
+<p>Every argument on <code>random_pet</code> is optional, so the smallest valid block is just this. In your <code>main.tf</code> from Lesson 4 (which already has the <code>terraform</code> and <code>provider "random"</code> blocks), add:</p>
+
+<pre><code>resource "random_pet" "example" {}</code></pre>
+
+<p><code>random_pet</code>'s optional arguments, confirmed against the provider's docs: <code>length</code> (words in the name, default <code>2</code>), <code>separator</code> (default <code>"-"</code>), <code>prefix</code>, and <code>keepers</code> (a map that forces a new name when it changes). Leaving the block empty just takes the defaults. It exposes one read-only attribute, <code>id</code> — the generated name itself.</p>
+
+<h2>Step 1 — <code>terraform init</code></h2>
+<p>Run this once per config, in the folder that holds your <code>.tf</code> files. It reads your <code>required_providers</code> block from Lesson 4, downloads the <code>random</code> provider plugin, and writes a lock file pinning the exact version it downloaded.</p>
+
+<pre><code>$ terraform init
+
+Initializing the backend...
+Initializing provider plugins...
+- Finding hashicorp/random versions matching "~&gt; 3.6"...
+- Installing hashicorp/random v3.9.0...
+- Installed hashicorp/random v3.9.0 (signed by HashiCorp)
+
+Terraform has created a lock file .terraform.lock.hcl to record the provider
+selections it made above. Include this file in your version control
+repository so that Terraform can guarantee to make the same selections by
+default when you run "terraform init" in the future.
+
+Terraform has been successfully initialized!
+
+You may now begin working with Terraform. Try running "terraform plan" to see
+any changes that are required for your infrastructure. All Terraform commands
+should now work.</code></pre>
+
+<p>You'll see a new <code>.terraform</code> folder (the downloaded plugin) and a <code>.terraform.lock.hcl</code> file (the version pin — commit this one to git, ignore the folder). You only need to run <code>init</code> again if you add a new provider or module to the config, or if someone else's version of the lock file changes.</p>
+
+<h2>Step 2 — <code>terraform plan</code></h2>
+<p><code>plan</code> compares your <code>.tf</code> files against what Terraform currently knows exists (its <em>state</em> — more on this in a later lesson), and prints exactly what it would do to make reality match your config. It changes nothing on disk or in the cloud — it's a dry run.</p>
+
+<pre><code>$ terraform plan
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # random_pet.example will be created
+  + resource "random_pet" "example" {
+      + id        = (known after apply)
+      + length    = 2
+      + separator = "-"
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.</code></pre>
+
+<p>Read this output line by line, it's a skill you'll use every single day:</p>
+<ul>
+<li><code>+ create</code> — the symbol legend. <code>+</code> means add, <code>~</code> means change in place, <code>-</code> means destroy.</li>
+<li><code># random_pet.example will be created</code> — which resource, addressed as <code>&lt;type&gt;.&lt;name&gt;</code>, matching your block.</li>
+<li><code>id = (known after apply)</code> — Terraform can't know the generated name until the resource actually exists; it fills this in during <code>apply</code>.</li>
+<li><code>length = 2</code>, <code>separator = "-"</code> — the defaults you didn't set explicitly, shown so you can see exactly what will be created.</li>
+<li><code>Plan: 1 to add, 0 to change, 0 to destroy.</code> — the summary line. Always check this number matches what you expected before you go any further.</li>
+</ul>
+
+<p class="callout"><strong>Best practice — read the plan before you type yes:</strong> this is the single most important safety habit in all of Terraform. Every production incident caused by Terraform traces back to someone approving a plan they didn't actually read. A plan that says <code>1 to add</code> when you expected a small tweak, or <code>1 to destroy</code> when you didn't touch that resource, is Terraform warning you <em>before</em> the damage happens — but only if you read it. In Lesson 26 you'll build on this exact habit for reviewing plans in a team pull-request workflow, so treat it as non-negotiable from day one, not an optional extra.</p>
+
+<h2>Step 3 — <code>terraform apply</code></h2>
+<p><code>apply</code> generates the same plan again, shows it to you, and then — only after you type <code>yes</code> — actually executes it.</p>
+
+<pre><code>$ terraform apply
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # random_pet.example will be created
+  + resource "random_pet" "example" {
+      + id        = (known after apply)
+      + length    = 2
+      + separator = "-"
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+
+Do you want to perform these actions?
+  Terraform will perform the actions described above.
+  Only 'yes' will be accepted to approve.
+
+  Enter a value: yes
+
+random_pet.example: Creating...
+random_pet.example: Creation complete after 0s [id=climbing-mudfish]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.</code></pre>
+
+<p>Your pet name will be different — it's randomly generated at apply time, that's the whole point of the resource. Notice the prompt only accepts the literal word <code>yes</code>; anything else, including Enter, cancels. Terraform also just wrote a <code>terraform.tfstate</code> file to this folder — that's how it remembers "I created a <code>random_pet</code> named <code>climbing-mudfish</code>" for next time you run <code>plan</code>.</p>
+
+<h2>Step 4 — <code>terraform destroy</code></h2>
+<p>Run this to tear down everything Terraform is tracking in this config. For this course's free practice resources it's completely safe and expected — you'll run it constantly. In a real production environment it is one of the most dangerous commands that exists: it deletes real infrastructure, with real data, for real users. Never run it against a production working directory without a second person's eyes on the plan first.</p>
+
+<pre><code>$ terraform destroy
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  - destroy
+
+Terraform will perform the following actions:
+
+  # random_pet.example will be destroyed
+  - resource "random_pet" "example" {
+      - id        = "climbing-mudfish" -&gt; null
+      - length    = 2 -&gt; null
+      - separator = "-" -&gt; null
+    }
+
+Plan: 0 to add, 0 to change, 1 to destroy.
+
+Do you really want to destroy all resources?
+  Terraform will destroy all your managed infrastructure, as shown above.
+  There is no undo. Only 'yes' will be accepted to confirm.
+
+  Enter a value: yes
+
+random_pet.example: Destroying... [id=climbing-mudfish]
+random_pet.example: Destruction complete after 0s
+
+Destroy complete! Resources: 1 destroyed.</code></pre>
+
+<p>Notice the wording is deliberately scarier than <code>apply</code>'s prompt — "Do you <em>really</em> want to destroy" and "There is no undo" — because HashiCorp wants this specific command to make you stop and think. After this runs, check your folder: the <code>.tf</code> file is untouched (destroy never deletes your code, only the infrastructure it describes), but <code>terraform.tfstate</code> now shows zero resources.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Which of the four commands is the only one that is guaranteed to never change anything?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>terraform plan</code> (and <code>init</code>, in the sense that it only sets up tooling — but <code>plan</code> is the one whose entire job is to preview changes to infrastructure without making them).</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You run <code>terraform plan</code> and the summary line reads <code>Plan: 0 to add, 0 to change, 3 to destroy</code> — but you only meant to add one new resource. What should you do?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Stop and do not type <code>yes</code>. Read the full plan output to find out why 3 resources are marked for destruction — this is exactly the scenario the plan-reading habit exists to catch, before real infrastructure is deleted.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In the same folder you set up in Lesson 4:</p>
+<ul>
+<li>add the <code>resource "random_pet" "example" {}</code> block to your <code>main.tf</code></li>
+<li>run <code>terraform init</code> (skip this if you already ran it in Lesson 4 and haven't changed providers)</li>
+<li>run <code>terraform plan</code> and read every line of the output before moving on</li>
+<li>run <code>terraform apply</code>, type <code>yes</code>, and note the generated pet name</li>
+<li>run <code>terraform plan</code> again — confirm it now says <code>No changes</code>, because reality matches your config</li>
+<li>run <code>terraform destroy</code>, type <code>yes</code>, and confirm the resource is gone</li>
+</ul>
+<p>Try the full cycle yourself before checking the reference commands below.</p>
+
+<div class="quiz">
+<p>Reveal the reference commands</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>terraform init
+terraform plan
+terraform apply
+# type: yes
+terraform plan
+# should report: No changes. Your infrastructure matches the configuration.
+terraform destroy
+# type: yes</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/pet" target="_blank" rel="noopener">registry.terraform.io — random_pet resource docs</a> (schema: <code>length</code>, <code>prefix</code>, <code>separator</code>, <code>keepers</code> all optional; <code>id</code> read-only) · <a href="https://developer.hashicorp.com/terraform/cli/commands/init" target="_blank" rel="noopener">terraform init</a> · <a href="https://developer.hashicorp.com/terraform/cli/commands/plan" target="_blank" rel="noopener">terraform plan</a> · <a href="https://developer.hashicorp.com/terraform/cli/commands/apply" target="_blank" rel="noopener">terraform apply</a> · <a href="https://developer.hashicorp.com/terraform/cli/commands/destroy" target="_blank" rel="noopener">terraform destroy</a> — all developer.hashicorp.com, verified 2026-07-30. Example output adapted from HashiCorp's official AWS "Build infrastructure" and "Destroy infrastructure" get-started tutorials, with resource names swapped for this lesson's <code>random_pet</code> example.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>The core workflow, always in order: <code>init</code> (once, downloads providers) → <code>plan</code> (preview, changes nothing) → <code>apply</code> (executes, asks for confirmation) → <code>destroy</code> (tears down, asks for confirmation).</li>
+    <li>Only <code>apply</code> and <code>destroy</code> touch real infrastructure — and both refuse to act until you type the literal word <code>yes</code>.</li>
+    <li>Reading the plan output before approving it is the single most important safety habit in Terraform — check the resource names and the summary line against what you actually intended.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0004-providers-and-terraform-block.html">&larr; Lesson 4: Providers & the terraform block</a></span>
+  <span><a href="0006-input-variables.html">Lesson 6: Input variables &rarr;</a></span>
+</div>
+
+</body>
+</html>

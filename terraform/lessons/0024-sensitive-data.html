@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 24 — Handling sensitive data</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 24 of 37</p>
+<h1>Handling sensitive data</h1>
+
+<p>Back in Lesson 13 you opened <code>terraform.tfstate</code> and saw, in plain readable JSON, every attribute a provider handed back — including things like generated passwords. Last lesson (23) you met <code>ephemeral</code> values, which solve that by never letting a value touch state at all. This lesson covers the older, far more common tool for sensitive data: the <code>sensitive</code> argument. It's on variables and outputs everywhere in real Terraform code, so you need to know exactly what it protects — and, just as important, exactly what it doesn't.</p>
+
+<h2>What <code>sensitive = true</code> actually does</h2>
+<p>You can mark either a variable or an output as sensitive:</p>
+<pre><code>variable "api_key" {
+  type      = string
+  sensitive = true
+}
+
+output "api_key_out" {
+  value     = var.api_key
+  sensitive = true
+}</code></pre>
+<p>With that in place, Terraform redacts the value everywhere it would normally show up in the CLI: <code>terraform plan</code> and <code>terraform apply</code> print <code>(sensitive value)</code> instead of the real string, and a plain <code>terraform output</code> prints <code>&lt;sensitive&gt;</code>. HashiCorp's own docs describe it plainly: the argument exists "to prevent Terraform from displaying the value in CLI output."</p>
+<p>Sensitivity also <strong>propagates</strong>. If <code>var.api_key</code> is sensitive, any expression that uses it becomes sensitive too — which is why the <code>output</code> block above also needs <code>sensitive = true</code>. If you try to output a sensitive value without marking the output sensitive, Terraform refuses and errors out, forcing you to confirm you meant to expose it.</p>
+
+<h2>The limitation you must not forget</h2>
+<p class="callout"><strong>Critical:</strong> <code>sensitive = true</code> is a CLI display filter. It is <strong>not</strong> encryption, and it does <strong>not</strong> remove the value from state. The official docs are explicit about this: "Terraform still stores the values of sensitive variables in your state," and the same is true for sensitive outputs. Open <code>terraform.tfstate</code> in a text editor and the real value is sitting there in plaintext, exactly as if <code>sensitive</code> had never been set. The redaction is also easy to bypass on purpose: running <code>terraform output -json</code> or <code>terraform output -raw &lt;name&gt;</code> prints the plaintext value, by design — those flags exist so scripts can consume the real value.</p>
+<p>This is exactly why Lesson 13 told you to never commit <code>terraform.tfstate</code> to git, and why a remote backend with encryption at rest (Lesson 14) matters — encryption of the state file itself is the only thing in this picture that actually protects the value once it's stored. <code>sensitive = true</code> only stops it from flashing across your terminal or CI logs by accident.</p>
+<p>Contrast this with Lesson 23's <code>ephemeral</code> values: an ephemeral variable is never written to state or plan files at all, which is a stronger guarantee — but it also means the value can't persist for later reference the way a normal resource attribute can. <code>sensitive</code> and <code>ephemeral</code> solve different problems: one hides output, the other avoids persistence. Neither one encrypts anything.</p>
+
+<h2>Never hardcode real secrets</h2>
+<p>None of this matters if the secret is sitting in plaintext in a file you're about to <code>git add</code>. Two habits to build now, before you have real credentials in play:</p>
+<ul>
+<li><strong>Never write a real API key, password, or token directly into a <code>.tf</code> file.</strong> Even with <code>sensitive = true</code> on the variable, the literal default value would still be readable by anyone who opens the file — <code>sensitive</code> only affects CLI output, not source-code readability.</li>
+<li><strong>Never commit a <code>.tfvars</code> file that contains real secret values.</strong> A <code>terraform.tfvars</code> full of passwords committed to git is exactly as bad as committing state — it's a plaintext secrets file in your repo history forever, even if you delete it later.</li>
+</ul>
+<p>Instead, feed secret values in from outside your config at apply time:</p>
+<ul>
+<li><strong>Environment variables</strong> — Terraform reads any <code>TF_VAR_&lt;name&gt;</code> environment variable as the value for a matching <code>variable "&lt;name&gt;"</code> block. <code>export TF_VAR_api_key="..."</code> in your shell (or as a CI secret) never puts the value in a file at all.</li>
+<li><strong>A dedicated secrets manager</strong> — for real production use, tools like AWS Secrets Manager, HashiCorp Vault, or Azure Key Vault store the secret centrally, with access control and audit logging, and a Terraform <code>data</code> source fetches it at apply time. The secret still ends up in state (same limitation as above), but it's never typed into a <code>.tf</code> or <code>.tfvars</code> file, and rotating it doesn't mean editing code.</li>
+</ul>
+
+<h2>A <code>.gitignore</code> every Terraform project needs</h2>
+<p>Before your first commit in any Terraform project, add these lines:</p>
+<pre><code>terraform.tfstate*
+*.tfvars
+.terraform/</code></pre>
+<ul>
+<li><code>terraform.tfstate*</code> — covers <code>terraform.tfstate</code> and its automatic <code>terraform.tfstate.backup</code>. Both can hold plaintext secrets, per Lesson 13.</li>
+<li><code>*.tfvars</code> — blocks any <code>.tfvars</code> file by default, since that's the most common place real secret values end up. If you have a <code>.tfvars</code> file that's genuinely safe to share (no secrets in it), you can add a narrower exception for it — but the safe default is to block the pattern and opt specific files back in, not the other way around.</li>
+<li><code>.terraform/</code> — the local working directory Terraform creates (provider binaries, module cache). Not sensitive by itself, but it's large, machine-specific, and never belongs in git.</li>
+</ul>
+
+<div class="quiz">
+<p>Q1. You mark a variable <code>sensitive = true</code> and run <code>terraform apply</code>. The plan output shows <code>(sensitive value)</code> instead of the real string — great, it's hidden. Is the value actually gone from your project once <code>apply</code> finishes? Where would you go to check?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — it's only hidden from CLI output. The real value is still written into <code>terraform.tfstate</code> in plaintext, same as any other resource attribute. Open the state file directly in a text editor to see it. <code>sensitive</code> never encrypts or removes anything from state.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A teammate says "we don't need a secrets manager, we just mark every password variable <code>sensitive = true</code> and we're good." What's wrong with that reasoning?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>sensitive</code> only stops the value from printing in the terminal or logs — it does nothing to protect the value in state, and does nothing to stop someone hardcoding the secret into a <code>.tf</code> or <code>.tfvars</code> file and committing it. Real protection needs encrypted state (remote backend, Lesson 14), secrets never typed into source files, and ideally a dedicated secrets manager for rotation and access control.</div>
+</div>
+
+<h2>Hands-on: watch it get redacted — then find it anyway</h2>
+<p>Make a new folder for this exercise, with a <code>main.tf</code>:</p>
+<pre><code>variable "api_key" {
+  type      = string
+  sensitive = true
+  default   = "totally-real-secret-abc123"
+}
+
+output "api_key_out" {
+  value     = var.api_key
+  sensitive = true
+}</code></pre>
+<ul>
+<li>run <code>terraform init</code>, then <code>terraform apply</code>. In the plan, notice the output line reads <code>api_key_out = (sensitive value)</code> instead of the real string</li>
+<li>type <code>yes</code> to apply</li>
+<li>run <code>terraform output</code> — <code>api_key_out</code> shows as <code>&lt;sensitive&gt;</code></li>
+<li>now run <code>terraform output -raw api_key_out</code> — the real value prints in plaintext. This is the documented bypass, not a bug</li>
+<li>finally, open <code>terraform.tfstate</code> in a text editor (no <code>terraform</code> command, just read the file) and find the <code>outputs</code> section — the real value <code>totally-real-secret-abc123</code> is sitting there in plaintext, exactly like every other value you saw in Lesson 13</li>
+<li>run <code>terraform destroy</code> and type <code>yes</code> to clean up</li>
+</ul>
+<p>That's the whole lesson in one exercise: the CLI hid it, and the state file never did.</p>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/values/variables#suppressing-values-in-cli-output" target="_blank" rel="noopener">developer.hashicorp.com — Suppressing values in CLI output (variables)</a> (confirms <code>sensitive</code> hides a variable's value from CLI output, that Terraform "still stores the values of sensitive variables in your state," and that <code>ephemeral</code> is the option that actually omits a value from state) · <a href="https://developer.hashicorp.com/terraform/language/values/outputs" target="_blank" rel="noopener">developer.hashicorp.com — Output Values</a> (confirms the same CLI-only redaction for outputs, that sensitive output values are still stored in state, and that <code>-json</code>/<code>-raw</code> flags print the plaintext value) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>sensitive = true</code> on a variable or output hides the value from <code>plan</code>/<code>apply</code>/<code>output</code> CLI display — it prints <code>(sensitive value)</code> or <code>&lt;sensitive&gt;</code> instead.</li>
+    <li>It does <strong>not</strong> encrypt or remove the value from state — the real value is still in <code>terraform.tfstate</code> in plaintext, and <code>terraform output -json</code>/<code>-raw</code> bypasses the redaction on purpose.</li>
+    <li>Real protection comes from never committing state (Lesson 13) and using an encrypted remote backend (Lesson 14) — <code>sensitive</code> is a display filter, not a security boundary.</li>
+    <li>Never hardcode real secrets in <code>.tf</code> files or commit <code>.tfvars</code> containing them. Use environment variables (<code>TF_VAR_*</code>) or a secrets manager (AWS Secrets Manager, Vault, Azure Key Vault) instead.</li>
+    <li>Every Terraform project's <code>.gitignore</code> should include <code>terraform.tfstate*</code>, <code>*.tfvars</code>, and <code>.terraform/</code>.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0023-ephemeral-values.html">&larr; Lesson 23: Ephemeral values &amp; write-only arguments</a></span>
+  <span><a href="0025-fmt-validate-lint.html">Lesson 25: fmt, validate &amp; linting &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 12 — Lifecycle rules & custom conditions</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 12 of 37</p>
+<h1>Lifecycle rules & custom conditions</h1>
+
+<p>By default, Terraform decides how to change a resource for you: update in place if it can, destroy-and-recreate if it can't. Most of the time that's fine. This lesson covers the escape hatch — the <code>lifecycle</code> block, nested inside a <code>resource</code> block — for the cases where you need to override that default behavior: change the order of a replace, block a destroy outright, tell Terraform to stop caring about a specific attribute, or assert your own rules about what a good plan or a good result looks like.</p>
+
+<h2>Where lifecycle sits</h2>
+<pre><code>resource "TYPE" "LOCAL_NAME" {
+  argument = "value"
+
+  lifecycle {
+    # rules go here
+  }
+}</code></pre>
+<p><code>lifecycle</code> is not an argument on the resource — it's a nested block with its own fixed set of settings. It doesn't configure the infrastructure itself; it configures how Terraform is <em>allowed to change</em> that infrastructure.</p>
+
+<h2><code>create_before_destroy</code> — build the replacement first</h2>
+<p>Some changes can't be done in place — Terraform has to destroy the old resource and create a new one (a "replace"). By default, that happens in the order the words suggest: destroy old, then create new. For anything users depend on — a server, a load balancer target, a DNS record — that ordering means a gap where nothing exists at all.</p>
+
+<pre><code>resource "aws_instance" "web" {
+  ami           = "ami-0abcd1234"
+  instance_type = "t3.micro"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}</code></pre>
+
+<p>Set <code>create_before_destroy = true</code> and Terraform flips the order: create the new resource first, wait for it to succeed, <em>then</em> destroy the old one. There's a moment where both exist side by side, but never a moment where neither does. This is a named objective on the Terraform Associate exam, so remember the plain-English reason, not just the setting name: it exists to avoid downtime during a replace.</p>
+
+<p class="callout"><strong>Mental model:</strong> default replace is "move out, then move in" — there's a night with no roof. <code>create_before_destroy</code> is "move into the new place, then give up the old lease" — never homeless, briefly paying for two.</p>
+
+<p>Two consequences worth knowing before you flip this on:</p>
+<ul>
+<li>Anything that must be unique (a name, an IP, a port) will briefly need <em>two</em> valid values — the old resource and the new one existing at once. If your config hard-codes a name that can't be duplicated, the create step fails before the old one is ever destroyed.</li>
+<li>Terraform automatically carries this ordering into resources that depend on the one you set it on, so a replace doesn't tear down something a still-live dependency needs.</li>
+</ul>
+
+<h2><code>prevent_destroy</code> — a safety guardrail</h2>
+<pre><code>resource "aws_db_instance" "prod" {
+  # ...
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}</code></pre>
+<p>With <code>prevent_destroy = true</code>, any plan that would destroy this resource — a manual <code>terraform destroy</code>, or an ordinary change that Terraform can only achieve by replacing it — is rejected with an error instead of proceeding. It's a deliberate speed bump against the single most expensive kind of mistake: deleting a production database or its data by accident.</p>
+
+<p class="callout"><strong>Best practice:</strong> put <code>prevent_destroy = true</code> on anything where an accidental delete would be a genuinely bad day — production databases, stateful storage, anything holding data you can't regenerate. It costs nothing day to day and only ever gets in the way on the one occasion you'd actually want the pause.</p>
+
+<p>It's a guardrail, not a lock: it only stops Terraform from planning the destroy while the resource block still exists in your config. If someone removes the resource block entirely, that removal is itself the change, and <code>prevent_destroy</code> won't stop it. Treat it as "make destroying this resource require a deliberate, reviewable code change," not "this can never be destroyed."</p>
+
+<h2><code>ignore_changes</code> — stop caring about drift on specific attributes</h2>
+<p>Sometimes something outside Terraform legitimately changes an attribute after creation — a teammate adds a tag in the AWS console, an autoscaler changes an instance count, a CI pipeline stamps a build tag on. Left alone, Terraform sees that as drift and wants to "fix" it back on every plan. <code>ignore_changes</code> tells Terraform: for these specific attributes, don't try to correct drift.</p>
+
+<pre><code>resource "aws_instance" "web" {
+  ami           = "ami-0abcd1234"
+  instance_type = "t3.micro"
+  tags = {
+    Name = "web"
+  }
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
+}</code></pre>
+
+<p>Take a list of attribute names — or the special value <code>all</code> to ignore every attribute on the resource after creation. Listed attributes are still used normally when the resource is first <em>created</em>; after that, Terraform stops comparing them against your config, so changes made outside Terraform survive future plans without being reverted.</p>
+
+<p class="callout"><strong>Best practice:</strong> reach for <code>all</code> rarely and deliberately — it silences drift detection for the whole resource, which can hide real problems, not just the one field you meant to ignore. Prefer naming the exact attribute (<code>tags</code>, or a specific key like <code>tags["LastDeployedBy"]</code>) over ignoring everything.</p>
+
+<h2>Custom conditions — <code>precondition</code> and <code>postcondition</code></h2>
+<p>The three settings above change <em>how</em> Terraform applies a change. <code>precondition</code> and <code>postcondition</code> are different: they let you assert something must be true, and fail the run with your own message if it isn't. Both are blocks nested inside <code>lifecycle</code>, on a <code>resource</code> or <code>data</code> block:</p>
+
+<pre><code>precondition {
+  condition     = &lt;boolean expression&gt;
+  error_message = "&lt;string shown when condition is false&gt;"
+}
+
+postcondition {
+  condition     = &lt;boolean expression&gt;
+  error_message = "&lt;string shown when condition is false&gt;"
+}</code></pre>
+
+<p><code>condition</code> must evaluate to a boolean, and <code>error_message</code> is required on both — it's what shows up in the failed plan or apply. The difference between the two is timing:</p>
+
+<table>
+<tr><th></th><th><code>precondition</code></th><th><code>postcondition</code></th></tr>
+<tr><td><strong>When it runs</strong></td><td>After the plan is generated, before the resource is created or changed</td><td>After the resource has been created or changed</td></tr>
+<tr><td><strong>What it checks</strong></td><td>Something must be true <em>before</em> Terraform proceeds — an assumption about inputs</td><td>Something must be true <em>after</em> Terraform acts — a promise about the result</td></tr>
+<tr><td><strong>Can reference <code>self</code></strong></td><td>No</td><td>Yes — the resource/data source's own resulting attributes</td></tr>
+</table>
+
+<p>A <code>precondition</code> catches a bad input before Terraform wastes an apply on it — for example, refusing to use an AMI that isn't the right CPU architecture:</p>
+
+<pre><code>resource "aws_instance" "example" {
+  instance_type = "t3.micro"
+  ami           = data.aws_ami.example.id
+
+  lifecycle {
+    precondition {
+      condition     = data.aws_ami.example.architecture == "x86_64"
+      error_message = "The selected AMI must be for the x86_64 architecture."
+    }
+  }
+}</code></pre>
+
+<p>A <code>postcondition</code> checks the actual result, and can use <code>self</code> to read the resulting attributes of the very resource or data source it's attached to — something a precondition can't do, since those attributes don't exist yet at precondition time:</p>
+
+<pre><code>data "aws_ami" "example" {
+  most_recent = true
+  owners      = ["self"]
+  filter {
+    name   = "name"
+    values = ["myami-*"]
+  }
+
+  lifecycle {
+    postcondition {
+      condition     = self.tags["Component"] == "nomad-server"
+      error_message = "tags[\"Component\"] must be \"nomad-server\"."
+    }
+  }
+}</code></pre>
+
+<p class="callout"><strong>Mental model:</strong> a <code>precondition</code> is a bouncer at the door — checks you before you're let in. A <code>postcondition</code> is a receipt check on the way out — confirms what you actually got matches what was promised. Both stop the run and show your <code>error_message</code> if the check fails; neither one changes what Terraform does, they only decide whether Terraform is allowed to consider the result acceptable.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You add <code>prevent_destroy = true</code> to a resource. A teammate later deletes that resource's entire block from the <code>.tf</code> file and runs <code>terraform apply</code>. Does <code>prevent_destroy</code> stop this?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. <code>prevent_destroy</code> only blocks a plan that would destroy the resource while its <code>resource</code> block (and the <code>lifecycle</code> setting on it) still exists in config. Once the block itself is removed, there's no <code>lifecycle</code> rule left to enforce anything — the removal goes through.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What's the real difference between <code>ignore_changes</code> and <code>prevent_destroy</code> — aren't they both just "protect this resource"?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Different jobs. <code>ignore_changes</code> stops Terraform from reverting drift on specific attributes — the resource can still be destroyed or replaced, Terraform just stops "fixing" those fields back to match config. <code>prevent_destroy</code> stops the whole resource from being destroyed at all. You can use either alone, or both together on the same resource.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Why can a <code>postcondition</code> reference <code>self.tags["Component"]</code> but a <code>precondition</code> can't reference <code>self</code> at all?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">A <code>precondition</code> runs before the resource is created or changed — its own resulting attributes don't exist yet, so there's nothing for <code>self</code> to point to. A <code>postcondition</code> runs after the action, once the resource actually has real attribute values, so <code>self</code> can read them.</div>
+</div>
+
+<h2>Hands-on: watch <code>create_before_destroy</code> change the apply order</h2>
+<p>Same folder as previous lessons. Start with a plain resource that forces a replace when changed — <code>random_pet</code>'s <code>length</code> triggers a replace, same as you saw in Lesson 10:</p>
+
+<pre><code>resource "random_pet" "example" {
+  length = 2
+}</code></pre>
+
+<p>Walk through the <strong>default</strong> behavior first:</p>
+<ul>
+<li>run <code>terraform apply</code>, type <code>yes</code> — note the pet name it generates</li>
+<li>change <code>length = 2</code> to <code>length = 3</code></li>
+<li>run <code>terraform plan</code> and read the plan output carefully — it shows <code>-/+ resource "random_pet" "example"</code>, meaning destroy, then create, in that order (Terraform prints <code>-/+</code> for exactly this reason)</li>
+</ul>
+
+<p>Now add the <code>lifecycle</code> block:</p>
+<pre><code>resource "random_pet" "example" {
+  length = 3
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}</code></pre>
+
+<ul>
+<li>run <code>terraform plan</code> again — the symbol changes to <code>+/-</code>, meaning create, then destroy — the order is now flipped</li>
+<li>run <code>terraform apply</code>, type <code>yes</code></li>
+<li>run <code>terraform destroy</code>, type <code>yes</code>, to clean up</li>
+</ul>
+
+<p>What actually changed, step by step:</p>
+<ol>
+<li><strong>Default (no lifecycle block):</strong> Terraform destroys <code>random_pet.example</code> first, freeing its state slot, then creates a brand new one with <code>length = 3</code>. Between those two steps, as far as your config is concerned, the resource doesn't exist.</li>
+<li><strong>With <code>create_before_destroy = true</code>:</strong> Terraform creates the new <code>random_pet.example</code> (new name, new id) <em>first</em>. Only once that succeeds does it destroy the old one. For one brief moment, Terraform's plan is tracking two instances of what will become the same resource address before the old one drops out.</li>
+<li>For a throwaway resource like <code>random_pet</code> this doesn't matter much — but picture the same flip on <code>aws_instance.web</code> behind a load balancer: default order means the server briefly doesn't exist at all; <code>create_before_destroy</code> means the new server is up and could be serving traffic before the old one goes away.</li>
+</ol>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/meta-arguments/lifecycle" target="_blank" rel="noopener">developer.hashicorp.com — the lifecycle meta-argument</a> (confirms <code>create_before_destroy</code>, <code>prevent_destroy</code>, and <code>ignore_changes</code> defaults and behavior, and that <code>ignore_changes</code> accepts a list of attribute names or the special <code>all</code> keyword) · <a href="https://developer.hashicorp.com/terraform/language/expressions/custom-conditions" target="_blank" rel="noopener">developer.hashicorp.com — custom conditions</a> (confirms <code>precondition</code>/<code>postcondition</code> syntax, that both require <code>condition</code> and <code>error_message</code>, precondition runs after plan but before create/change, postcondition runs after, and only postcondition can use <code>self</code>) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>lifecycle</code> is a block nested inside <code>resource</code> (and, for conditions, <code>data</code>) that changes how Terraform is allowed to apply changes — it doesn't configure the infrastructure itself.</li>
+    <li><code>create_before_destroy = true</code> flips a replace from destroy-then-create to create-then-destroy, avoiding a gap with nothing live — a named exam objective, and the right default instinct for anything users depend on.</li>
+    <li><code>prevent_destroy = true</code> rejects any plan that would destroy the resource while its config still exists — a strong best practice for production databases and anything irreplaceable. It doesn't stop destruction caused by removing the resource block itself.</li>
+    <li><code>ignore_changes = [attr, ...]</code> (or <code>all</code>) tells Terraform to stop reverting drift on specific attributes — for values legitimately changed outside Terraform. Prefer naming exact attributes over <code>all</code>.</li>
+    <li><code>precondition</code> checks an assumption before Terraform acts; <code>postcondition</code> checks a promise after it acts and can reference <code>self</code>. Both require <code>condition</code> and <code>error_message</code>.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0011-meta-arguments.html">&larr; Lesson 11: Meta-arguments</a></span>
+  <span><a href="0013-understanding-state.html">Lesson 13: Understanding Terraform state &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 27 — Automated testing (terraform test)</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 27 of 37</p>
+<h1>Automated testing (terraform test)</h1>
+
+<p>Lesson 25 gave you <code>fmt</code>, <code>validate</code>, and lint — all of them check that your code is well-formed. None of them check that your code does what you meant it to do. <code>terraform validate</code> will happily pass on a module whose logic is completely wrong, as long as the syntax is legal HCL. This lesson closes that gap with Terraform's native <code>terraform test</code> framework: real assertions, run against real (or planned) infrastructure, that fail loudly when a module's behavior breaks.</p>
+
+<h2>Why test Terraform at all</h2>
+<p>Think back to the modules you built in Lessons 17–20: <code>named-file</code>, and whatever else you composed on top of it. The whole point of a module is that other people — or other-future-you — call it without reading its internals. That's convenient right up until you change something inside the module and don't notice it broke a case you weren't thinking about. The person who finds out is whoever runs <code>terraform apply</code> next, possibly against production, possibly weeks later, possibly not you.</p>
+<p>That's the problem automated tests solve: catch the broken module <em>before</em> someone else's apply does. A test suite you run in CI, on every change to a module, tells you in seconds whether your edit still produces the outputs and resources the module promises — instead of that answer arriving as a production incident.</p>
+
+<p class="callout"><strong>Mental model:</strong> <code>terraform validate</code> checks grammar — is this valid HCL, do argument types match. <code>terraform test</code> checks behavior — given these inputs, does this module actually produce the outputs and resources it's supposed to. Validate answers "is this well-formed?" Test answers "is this correct?" You need both, and they catch completely different classes of bugs.</p>
+
+<h2>The native framework: <code>.tftest.hcl</code> files</h2>
+<p>Since Terraform 1.6, testing is a built-in feature — no extra tooling, no extra language, just more HCL. Test files live in a <code>tests/</code> directory by default (next to your module or root config) and end in <code>.tftest.hcl</code>. You run them with <code>terraform test</code>.</p>
+<p>A test file is built from a small set of blocks:</p>
+<ul>
+<li><strong><code>run</code> blocks</strong> — the core unit of a test. Each one executes either a <code>plan</code> or an <code>apply</code> against your configuration (or a specific module), then checks assertions against the result. A test file needs at least one.</li>
+<li><strong><code>assert</code> blocks</strong> — nested inside a <code>run</code> block. Each one has a <code>condition</code> (an expression that must evaluate to <code>true</code>) and an <code>error_message</code> (shown when it doesn't).</li>
+<li><strong><code>variables</code> blocks</strong> — supply input variable values, either for the whole file or scoped to one <code>run</code> block.</li>
+<li><strong><code>module</code> blocks</strong> — optional, nested inside a <code>run</code> block, used when you want that run to test a specific module (via <code>source</code>) rather than the root configuration.</li>
+<li><strong><code>provider</code> blocks</strong> — optional, same syntax as your normal provider configuration, for when a test needs specific provider settings.</li>
+</ul>
+<p>Here's the shape, straight from HashiCorp's own docs:</p>
+<pre><code>variables {
+  bucket_prefix = "test"
+}
+
+run "valid_string_concat" {
+  command = plan
+
+  assert {
+    condition     = aws_s3_bucket.bucket.bucket == "test-bucket"
+    error_message = "S3 bucket name did not match expected"
+  }
+}</code></pre>
+<p>Assertions can also reference outputs — <code>output.some_name</code> for the current run, or <code>run.earlier_run_name.some_output</code> to chain off a previous <code>run</code> block's result. That chaining is what lets you build multi-step tests: run one creates a dependency, run two tests against it.</p>
+
+<h2><code>command = plan</code> vs <code>command = apply</code></h2>
+<p>This is the one distinction to really internalize, because it changes what a test can and can't catch.</p>
+<ul>
+<li><strong><code>command = plan</code></strong> — Terraform builds a plan and checks your assertions against the <em>planned</em> values. No real resource is created. Fast, cheap, safe to run constantly. But: any value that only becomes known once a resource is actually created (a cloud provider's generated ID, a randomly generated name) is still <em>unknown</em> at plan time — and per HashiCorp's docs, "there are instances when Terraform does not execute a custom condition during the planning stage, because that condition is relying on computed attributes that are only available after Terraform creates the referenced resource." A plan-only assertion on that kind of value simply doesn't run.</li>
+<li><strong><code>command = apply</code></strong> (the default if you omit <code>command</code>) — Terraform actually applies the configuration, creating real infrastructure, then checks assertions against the real, fully-known result. Slower, and it genuinely creates and destroys resources — but it's the only way to test the things plan-only can't see. HashiCorp describes this as "analogous to integration testing," because you're validating what Terraform actually built, not just what it intended to build.</li>
+</ul>
+<p>At the end of a test file, Terraform "attempts to destroy every resource it created during the execution of that test file" — in reverse <code>run</code> block order. So an apply-based test cleans up after itself. It's still real infrastructure for the duration of the test, though.</p>
+
+<p class="callout"><strong>Cost and safety callout:</strong> apply-based tests create real infrastructure — the HashiCorp docs are direct that this can incur real cost, and they recommend a dedicated testing account/subscription you can purge routinely, in case a run gets interrupted before cleanup finishes. For the free local providers you've used throughout this course (<code>random</code>, <code>local</code>), there's nothing to worry about. Once you're testing modules that create real cloud resources, treat an apply-based test suite with the same caution as any other <code>apply</code>.</p>
+
+<h2>A pointer, not a deep dive: Terratest</h2>
+<p>You'll see <strong>Terratest</strong> mentioned constantly once you start reading about Terraform testing in the wild. It's a third-party, Go-based testing library — you write real Go test functions that run <code>terraform apply</code>, make live assertions against the resulting infrastructure (HTTP calls, SDK calls, whatever you need), then tear it down. It's more powerful than <code>terraform test</code> in the sense that you get a full general-purpose programming language to write assertions in, not just HCL expressions. The trade-off is a real learning curve: you need to know Go, and you're maintaining a separate test codebase alongside your Terraform. For most teams, native <code>terraform test</code> covers module-level correctness just fine, and Terratest earns its complexity only once you need assertions that go beyond what plan/apply output can express — for now, just know it exists.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Why does testing matter more for the reusable modules from Lessons 17–20 than for a one-off root config you'll only ever apply yourself?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">A module is meant to be called by other configs, other environments, maybe other people — the whole point is reuse without reading the internals every time. If you change the module's logic and it breaks a case you weren't thinking about, the person who discovers that is whoever calls the module next, potentially against production, potentially long after you've forgotten the change. A one-off root config only ever hurts the person who wrote it, and they find out immediately at apply time. A broken module can hurt someone else, later, silently — that's exactly the failure mode automated tests are built to catch early.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You write an assert block checking that a resource's provider-generated ID is a non-empty string. You put it in a <code>run</code> block with <code>command = plan</code>. What happens, and why?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">A provider-generated ID doesn't exist until the resource is actually created — at plan time it's still an unknown value, not a real string. Per the docs, Terraform doesn't execute a custom condition during the planning stage when that condition depends on a computed attribute only available after creation. So the assertion effectively can't run as intended against a plan-only run block. To actually check that value, the run block needs <code>command = apply</code>, so the resource is genuinely created first and the ID is a real, known string by the time the assertion runs.</div>
+</div>
+
+<h2>Hands-on: test the module from Lesson 18</h2>
+<p>Go back to the project folder from Lesson 18 — the one with root <code>main.tf</code> calling <code>module "dev_pet"</code> and <code>module "prod_pet"</code>, both pointing at <code>./modules/named-file</code>.</p>
+<ul>
+<li>from that project root, create the default test directory: <code>mkdir -p tests</code></li>
+<li>create <code>tests/named_file.tftest.hcl</code> with a run block that tests the module directly, applies it, and asserts its <code>file_path</code> output is not empty</li>
+<li>run <code>terraform test</code> and read the output — it should report the run block as a pass, and confirm resources were created then destroyed</li>
+<li>then add a second run block using <code>command = plan</code> with an identical assertion, and notice it also passes — because <code>file_path</code> here is built only from <code>path.module</code> and the <code>name_prefix</code> input variable, both fully known before anything is created. Not every output needs an apply to verify.</li>
+</ul>
+<p>Write the file yourself first — the module block syntax, the assert block, the two commands — then check the reference below.</p>
+
+<div class="quiz">
+<p>Reveal the full test file</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code># tests/named_file.tftest.hcl
+
+run "plan_only_check" {
+  command = plan
+
+  module {
+    source = "./modules/named-file"
+  }
+
+  variables {
+    name_prefix = "planonly"
+  }
+
+  assert {
+    condition     = output.file_path != ""
+    error_message = "file_path should be a known, non-empty value even at plan time"
+  }
+}
+
+run "apply_and_check" {
+  command = apply
+
+  module {
+    source = "./modules/named-file"
+  }
+
+  variables {
+    name_prefix = "test"
+  }
+
+  assert {
+    condition     = output.file_path != ""
+    error_message = "file_path output was empty after apply"
+  }
+}
+
+# then, from the project root:
+terraform test
+# expect both run blocks to report success;
+# apply_and_check will create a real random_pet + local_file, then destroy them</code></pre>
+</div>
+
+<p><strong>Stretch goal, optional:</strong> add <code>output "pet_id" { value = random_pet.name.id }</code> to <code>modules/named-file/outputs.tf</code>, then write a third run block asserting <code>output.pet_id != ""</code>. Try it first with <code>command = apply</code> — it passes, because the pet name is a real generated value by then. Then switch that same run block to <code>command = plan</code> and re-run <code>terraform test</code>. <code>random_pet.name.id</code> is unknown until the resource is actually created, so this is the concrete case from Q2 above, happening in your own terminal instead of in the abstract.</p>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/tests" target="_blank" rel="noopener">developer.hashicorp.com — Tests</a> (confirms <code>.tftest.hcl</code> file structure: <code>run</code>, <code>assert</code>, <code>variables</code>, <code>module</code>, and <code>provider</code> blocks; confirms <code>command = apply</code> is the default and creates real infrastructure "analogous to integration testing," while <code>command = plan</code> does not create infrastructure; confirms Terraform "attempts to destroy every resource it created during the execution of that test file" in reverse run-block order; confirms custom conditions relying on post-creation computed attributes are not executed during the planning stage) · <a href="https://developer.hashicorp.com/terraform/cli/commands/test" target="_blank" rel="noopener">developer.hashicorp.com — the <code>terraform test</code> command</a> (confirms the default <code>tests</code> directory and <code>-test-directory</code> override, and the cost/cleanup guidance for apply-based tests) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>terraform test</code> checks behavior, not just syntax — it catches broken modules before someone else's apply does, which matters most for the reusable modules built in Lessons 17–20.</li>
+    <li>Test files (<code>.tftest.hcl</code>, in a <code>tests/</code> directory by default) are built from <code>run</code> blocks containing <code>assert</code> blocks, each with a <code>condition</code> and an <code>error_message</code>.</li>
+    <li><code>command = plan</code> is fast and creates nothing real, but can't verify values that stay unknown until a resource is actually created. <code>command = apply</code> (the default) creates real infrastructure, checks against real results, and Terraform destroys it afterward.</li>
+    <li>Terratest exists as a more powerful, Go-based third-party alternative — know it exists, reach for it only once native <code>terraform test</code> genuinely isn't enough.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0026-plan-review-discipline.html">&larr; Lesson 26 — Plan review discipline</a></span>
+  <span><a href="0028-hcp-terraform-workspaces.html">Lesson 28 — HCP Terraform workspaces &amp; remote execution &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Final Review — Terraform Cheat Sheet</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 37 of 37 (Final Review)</p>
+<h1>Final review: the cheat sheet</h1>
+
+<p>Reference doc, not a new lesson — no new content. Every line compresses something already taught across Lessons 1-36. Bookmark this page for exam morning or your next production `apply`.</p>
+
+<h2>1. Core workflow, one line each</h2>
+<table>
+<tr><th>Command</th><th>What it does</th><th>Lesson</th></tr>
+<tr><td><code>terraform init</code></td><td>Downloads providers/modules, sets up the working directory</td><td>5</td></tr>
+<tr><td><code>terraform fmt</code></td><td>Auto-formats HCL to canonical style</td><td>25</td></tr>
+<tr><td><code>terraform validate</code></td><td>Checks syntax/internal consistency, no provider calls</td><td>25</td></tr>
+<tr><td><code>terraform plan</code></td><td>Shows what WOULD change — changes nothing</td><td>5, 26</td></tr>
+<tr><td><code>terraform apply</code></td><td>Executes a plan, asks for confirmation</td><td>5</td></tr>
+<tr><td><code>terraform destroy</code></td><td>Tears down everything the config manages</td><td>5</td></tr>
+<tr><td><code>terraform state list / show</code></td><td>Inspect state, read-only</td><td>16</td></tr>
+<tr><td><code>terraform import</code></td><td>Bring existing infra under management without recreating it</td><td>16</td></tr>
+<tr><td><code>terraform workspace new/select</code></td><td>Switch between state instances of one config</td><td>21</td></tr>
+<tr><td><code>terraform test</code></td><td>Run <code>.tftest.hcl</code> tests</td><td>27</td></tr>
+</table>
+
+<h2>2. Plan output symbols</h2>
+<table>
+<tr><th>Symbol</th><th>Meaning</th></tr>
+<tr><td><code>+</code></td><td>Create</td></tr>
+<tr><td><code>-</code></td><td>Destroy</td></tr>
+<tr><td><code>~</code></td><td>Update in place</td></tr>
+<tr><td><code>-/+</code></td><td>Destroy then recreate — the one to never skim past</td></tr>
+</table>
+<p>Read every resource line, not just the summary count. See Lesson 26.</p>
+
+<h2>3. HCL building blocks</h2>
+<table>
+<tr><th>Block</th><th>Purpose</th><th>Lesson</th></tr>
+<tr><td><code>terraform { required_providers { ... } }</code></td><td>Pin provider versions</td><td>4</td></tr>
+<tr><td><code>provider "name" { ... }</code></td><td>Configure a provider</td><td>4</td></tr>
+<tr><td><code>resource "type" "name" { ... }</code></td><td>Something Terraform creates and manages</td><td>8</td></tr>
+<tr><td><code>data "type" "name" { ... }</code></td><td>Something Terraform only reads, never touches</td><td>9</td></tr>
+<tr><td><code>variable "name" { ... }</code></td><td>Input</td><td>6</td></tr>
+<tr><td><code>output "name" { ... }</code></td><td>Surface a value after apply</td><td>7</td></tr>
+<tr><td><code>module "name" { source = ... }</code></td><td>Call a reusable group of resources</td><td>17-20</td></tr>
+<tr><td><code>lifecycle { ... }</code></td><td>create_before_destroy, prevent_destroy, ignore_changes, custom conditions</td><td>12</td></tr>
+</table>
+
+<h2>4. Mental models that matter more than syntax</h2>
+<ul>
+<li><strong>Declarative, not imperative.</strong> You describe the end state; Terraform figures out the steps. (Lesson 3)</li>
+<li><strong>State is Terraform's memory.</strong> Plan/apply compare config, state, and real infrastructure — a three-way diff, not just config vs. reality. (Lesson 13)</li>
+<li><strong>Resource vs. data:</strong> resource = Terraform owns and changes it; data = Terraform only reads it. (Lesson 9)</li>
+<li><strong><code>count</code> vs. <code>for_each</code>:</strong> prefer <code>for_each</code> — a stable key avoids the "removing one item shifts every index after it" trap. (Lesson 11)</li>
+<li><strong>State must never be committed to git</strong> — it can contain plaintext sensitive values even when a variable is marked <code>sensitive = true</code>. (Lessons 13, 24)</li>
+<li><strong>Remote backend + locking in production, always.</strong> Local state is for learning only. (Lessons 14, 15)</li>
+<li><strong>A module you use once, with no reuse benefit, doesn't need to be a module.</strong> Indirection has a cost. (Lesson 20)</li>
+</ul>
+
+<h2>5. Certification checklist</h2>
+<table>
+<tr><th>Domain</th><th>Covered in</th></tr>
+<tr><td>IaC concepts</td><td>Lesson 3</td></tr>
+<tr><td>Terraform fundamentals</td><td>Lessons 4-7</td></tr>
+<tr><td>Core workflow</td><td>Lesson 5, 26</td></tr>
+<tr><td>Configuration</td><td>Lessons 8-12, 23-24</td></tr>
+<tr><td>Modules</td><td>Lessons 17-20</td></tr>
+<tr><td>State management</td><td>Lessons 13-16</td></tr>
+<tr><td>Maintaining infrastructure</td><td>Lessons 16, 25, 33</td></tr>
+<tr><td>HCP Terraform</td><td>Lesson 28</td></tr>
+</table>
+<p>Full self-check: <a href="0035-exam-domain-walkthrough.html">Lesson 35</a>. Practice questions: <a href="0036-practice-scenarios.html">Lesson 36</a>. Book the exam via the <a href="https://developer.hashicorp.com/certifications/infrastructure-automation" target="_blank" rel="noopener">official HashiCorp certification page</a> (exam 004, $70.50, 1 hour, verified 2026-07-30).</p>
+
+<h2>What's next</h2>
+<ul>
+<li><strong>Book the Terraform Associate exam</strong> once Lesson 36's practice scenarios feel easy, not before.</li>
+<li><strong>Apply this to a real cloud account.</strong> Every hands-on example in this course deliberately used the zero-cost <code>random</code>/<code>local</code> providers — the next real step is redoing the <a href="0034-capstone-project.html">capstone</a> against AWS, Azure, or GCP.</li>
+<li><strong>Go deeper:</strong> HashiCorp's own advanced-track cert, <a href="https://developer.hashicorp.com/certifications/terraform-operations-professional" target="_blank" rel="noopener">Terraform Authoring and Operations Professional</a>, is the natural next milestone — out of scope for this course, but worth knowing it exists.</li>
+</ul>
+
+<div class="recap">
+  <strong>You've completed the Terraform — Zero to Expert course.</strong>
+  <ul>
+    <li>37 lessons, one capstone project, a certification plan grounded in official sources.</li>
+    <li>Every fact on this page traces back to a specific earlier lesson — nothing here is new.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Questions about anything on this page, or ready to point this at a real cloud account? Ask — that's the natural next step.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0036-practice-scenarios.html">&larr; Back: Lesson 36 — Practice scenarios</a></span>
+  <span><a href="../objectives.html">Course roadmap tracker &rarr;</a></span>
+</div>
+
+</body>
+</html>

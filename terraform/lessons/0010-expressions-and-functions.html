@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 10 — Expressions & built-in functions</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 10 of 37</p>
+<h1>Expressions & built-in functions</h1>
+
+<p>So far you've written literal values (<code>length = 2</code>) and simple references (<code>var.name</code>, <code>random_pet.example.id</code>). Both of those are <strong>expressions</strong> — anything on the right-hand side of an argument that Terraform evaluates to produce a value. This lesson covers the three expression tools you'll reach for constantly: building strings out of other values, calling Terraform's built-in functions, and choosing between two values with a conditional.</p>
+
+<h2>String templates and interpolation</h2>
+<p>A quoted string like <code>"hello"</code> is just a literal. But put a <code>${ ... }</code> sequence inside a string, and Terraform evaluates the expression between the braces, converts the result to a string, and splices it into the surrounding text — this is called <strong>interpolation</strong>.</p>
+
+<pre><code>"Hello, ${var.name}!"
+# if var.name is "Ashmin" -> "Hello, Ashmin!"</code></pre>
+
+<p class="callout"><strong>Mental model:</strong> <code>${...}</code> is only needed <em>inside</em> a larger string, where Terraform has to know which parts are literal text and which parts are code to evaluate. If your entire argument value is nothing but a single reference — no surrounding text — write the bare reference instead of wrapping it:</p>
+
+<pre><code># modern style — write it directly
+length = var.pet_length
+
+# old style — still works, but the wrapping is redundant
+length = "${var.pet_length}"</code></pre>
+
+<p>Older Terraform (pre-0.12, and its ancestor HCL1) required the <code>${...}</code> wrapper almost everywhere. Since Terraform 0.12, any expression — a reference, a function call, a conditional — can be used directly as an argument value. Reserve <code>${...}</code> for what it's actually for: inserting a value into the middle of a longer string, like the file content you'll build in this lesson's hands-on.</p>
+
+<h2>Built-in functions</h2>
+<p>Terraform ships with a fixed set of built-in functions for transforming values — string manipulation, list/map operations, type conversions, math, and more. There is no way to define your own function in the Terraform language itself (that's a common surprise if you're coming from a general-purpose language) — you compose the built-ins instead. Call one like <code>function_name(arg1, arg2)</code>.</p>
+
+<p class="callout"><strong>Try functions live:</strong> run <code>terraform console</code> in a folder with a Terraform config. It opens a REPL that evaluates any expression you type — including calling functions with real values from your variables and state — without applying anything. Type <code>exit</code> or Ctrl+D to leave.</p>
+
+<p>The full reference lists dozens of functions across categories like string, collection, numeric, type conversion, encoding, filesystem, date/time, hash, and IP-network functions. Here are the handful you'll use most often, one from each of four core categories, confirmed against HashiCorp's function reference.</p>
+
+<h3>String functions</h3>
+<table>
+<tr><th>Function</th><th>Signature</th><th>Example</th></tr>
+<tr><td><code>format</code></td><td><code>format(spec, values...)</code></td><td><code>format("Hello, %s!", "Ander")</code> → <code>"Hello, Ander!"</code></td></tr>
+<tr><td><code>join</code></td><td><code>join(separator, list)</code></td><td><code>join("-", ["foo","bar","baz"])</code> → <code>"foo-bar-baz"</code></td></tr>
+<tr><td><code>split</code></td><td><code>split(separator, string)</code></td><td><code>split(",", "foo,bar,baz")</code> → <code>["foo","bar","baz"]</code></td></tr>
+</table>
+<p><code>format</code> works like C's <code>printf</code>: <code>%s</code> inserts a string, <code>%d</code> an integer, <code>%v</code> a value in its default format. <code>join</code> and <code>split</code> are inverses of each other — <code>join</code> turns a list into one string, <code>split</code> turns one string back into a list.</p>
+
+<h3>Collection functions</h3>
+<table>
+<tr><th>Function</th><th>Signature</th><th>Example</th></tr>
+<tr><td><code>length</code></td><td><code>length(value)</code></td><td><code>length(["a","b"])</code> → <code>2</code> · <code>length("hello")</code> → <code>5</code></td></tr>
+<tr><td><code>concat</code></td><td><code>concat(list1, list2, ...)</code></td><td><code>concat(["a"], ["b","c"])</code> → <code>["a","b","c"]</code></td></tr>
+<tr><td><code>merge</code></td><td><code>merge(map1, map2, ...)</code></td><td><code>merge({a="b",c="d"}, {c="z"})</code> → <code>{a="b",c="z"}</code></td></tr>
+</table>
+<p><code>length</code> works on lists (element count), maps (key count), and strings (character count). <code>concat</code> chains lists together in order. <code>merge</code> combines maps into one — when the same key appears in more than one map, the value from the <em>later</em> argument wins, which is exactly the pattern you'll use for layering default tags with resource-specific overrides.</p>
+
+<h3>Type conversion functions</h3>
+<table>
+<tr><th>Function</th><th>Signature</th><th>Example</th></tr>
+<tr><td><code>tostring</code></td><td><code>tostring(v)</code></td><td><code>tostring(1)</code> → <code>"1"</code></td></tr>
+<tr><td><code>tonumber</code></td><td><code>tonumber(v)</code></td><td><code>tonumber("1")</code> → <code>1</code></td></tr>
+</table>
+<p>Terraform converts types automatically wherever it safely can, so you'll reach for these rarely — mainly when a variable's declared type doesn't match what a resource argument expects, or a value came in as a string from somewhere (like an environment variable or a CSV file) and needs to be a real number.</p>
+
+<h3>Numeric functions</h3>
+<table>
+<tr><th>Function</th><th>Signature</th><th>Example</th></tr>
+<tr><td><code>min</code></td><td><code>min(number, ...)</code></td><td><code>min(12, 54, 3)</code> → <code>3</code></td></tr>
+<tr><td><code>max</code></td><td><code>max(number, ...)</code></td><td><code>max(12, 54, 3)</code> → <code>54</code></td></tr>
+</table>
+<p>Both accept either a plain list of numbers, or a single list expanded with the <code>...</code> spread operator: <code>min([12, 54, 3]...)</code>.</p>
+
+<h2>Conditional expressions</h2>
+<p>The conditional operator picks between two values based on a boolean condition — every language calls this the "ternary" operator:</p>
+
+<pre><code>condition ? true_val : false_val</code></pre>
+
+<p>If <code>condition</code> evaluates to <code>true</code>, the whole expression evaluates to <code>true_val</code>; otherwise it evaluates to <code>false_val</code>. A common use is filling in a default:</p>
+
+<pre><code>var.a == "" ? "default-a" : var.a</code></pre>
+
+<p>Both branches should produce the same type — Terraform will try to convert one side to match the other (for example a number to a string), but it's clearer to keep both branches the same type on purpose.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You write <code>environment = "${var.env}"</code> for an argument that is nothing but that one reference. Is this wrong?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Not wrong — it still works — but it's unnecessary. Since Terraform 0.12, a bare reference is a valid expression on its own. Write <code>environment = var.env</code> instead; save <code>${...}</code> for when the reference sits inside a longer string.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What does <code>merge({env = "dev", team = "sre"}, {env = "prod"})</code> return?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>{env = "prod", team = "sre"}</code>. The second map is later in the argument list, so its <code>env</code> value overwrites the first map's <code>env</code> value. Keys that only appear in one map pass through unchanged.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Building on the folder from Lesson 5, you'll add a <code>random_pet</code> whose length depends on a bool variable, and use <code>format()</code> to write a description of it to a local file.</p>
+
+<p>This needs a second provider — <code>hashicorp/local</code> — because <code>local_file</code> is a real resource that writes an actual file to disk (still free, still no cloud account needed). Add it to your <code>terraform</code> block in <code>main.tf</code>:</p>
+
+<pre><code>terraform {
+  required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = "~&gt; 3.6"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~&gt; 2.5"
+    }
+  }
+}
+
+provider "random" {}
+provider "local" {}</code></pre>
+
+<p>Add two variables:</p>
+
+<pre><code>variable "team_name" {
+  description = "Name to embed in the generated file"
+  type        = string
+  default     = "platform-team"
+}
+
+variable "use_short_pet" {
+  description = "If true, generate a 1-word pet name instead of 3"
+  type        = bool
+  default     = false
+}</code></pre>
+
+<p>Update your <code>random_pet</code> resource to use a conditional expression for <code>length</code>, and add a <code>local_file</code> resource whose content is built with <code>format()</code>:</p>
+
+<pre><code>resource "random_pet" "example" {
+  length = var.use_short_pet ? 1 : 3
+}
+
+resource "local_file" "pet_info" {
+  filename = "${path.module}/pet-info.txt"
+  content  = format("Team %s adopted a pet named: %s\n", var.team_name, random_pet.example.id)
+}</code></pre>
+
+<ul>
+<li>run <code>terraform init</code> (you added a new provider, so this is required, not optional this time)</li>
+<li>run <code>terraform plan</code> — check <code>length</code> shows <code>3</code>, since <code>use_short_pet</code> defaults to <code>false</code></li>
+<li>run <code>terraform apply</code>, type <code>yes</code></li>
+<li>open <code>pet-info.txt</code> in the same folder and confirm it reads something like <code>Team platform-team adopted a pet named: happy-raccoon-bass</code></li>
+<li>run <code>terraform apply -var="use_short_pet=true"</code>, type <code>yes</code> — notice the plan shows <code>random_pet.example</code> being replaced, not updated in place, because a different word count means a freshly generated name</li>
+<li>re-check <code>pet-info.txt</code> — it now has a 1-word pet name</li>
+<li>run <code>terraform destroy</code>, type <code>yes</code>, and confirm both resources and the file are gone</li>
+</ul>
+
+<div class="quiz">
+<p>Reveal the reference blocks</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>terraform {
+  required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = "~&gt; 3.6"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~&gt; 2.5"
+    }
+  }
+}
+
+provider "random" {}
+provider "local" {}
+
+variable "team_name" {
+  type    = string
+  default = "platform-team"
+}
+
+variable "use_short_pet" {
+  type    = bool
+  default = false
+}
+
+resource "random_pet" "example" {
+  length = var.use_short_pet ? 1 : 3
+}
+
+resource "local_file" "pet_info" {
+  filename = "${path.module}/pet-info.txt"
+  content  = format("Team %s adopted a pet named: %s\n", var.team_name, random_pet.example.id)
+}</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/functions" target="_blank" rel="noopener">developer.hashicorp.com — built-in functions reference</a> · <a href="https://developer.hashicorp.com/terraform/language/expressions/strings" target="_blank" rel="noopener">string literals & templates</a> · <a href="https://developer.hashicorp.com/terraform/language/expressions/conditionals" target="_blank" rel="noopener">conditional expressions</a> · <a href="https://developer.hashicorp.com/terraform/language/expressions/references" target="_blank" rel="noopener">references to named values</a> · <a href="https://registry.terraform.io/providers/hashicorp/local/latest/docs/resources/file" target="_blank" rel="noopener">registry.terraform.io — local_file resource</a> (schema: <code>filename</code> required; exactly one of <code>content</code> / <code>content_base64</code> / <code>source</code> required) — all verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>${...}</code> interpolates an expression inside a larger string. A bare reference used as a whole argument value doesn't need the wrapper — modern Terraform evaluates it directly.</li>
+    <li>Terraform's built-in functions cover strings (<code>format</code>, <code>join</code>, <code>split</code>), collections (<code>length</code>, <code>concat</code>, <code>merge</code>), type conversion (<code>tostring</code>, <code>tonumber</code>), and numbers (<code>min</code>, <code>max</code>) — there are no user-defined functions, only these built-ins composed together. Try any of them instantly with <code>terraform console</code>.</li>
+    <li><code>condition ? true_val : false_val</code> picks one of two values based on a boolean — useful for defaults and small on/off switches like the pet-length example.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0009-data-sources.html">&larr; Lesson 9: Data sources</a></span>
+  <span><a href="0011-meta-arguments.html">Lesson 11: Meta-arguments: count, for_each, depends_on &rarr;</a></span>
+</div>
+
+</body>
+</html>

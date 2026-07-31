@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 23 — Ephemeral values &amp; write-only arguments</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 23 of 37</p>
+<h1>Ephemeral values &amp; write-only arguments</h1>
+
+<p>Lesson 13 taught you a hard truth about state: it can contain sensitive values in plain text — passwords, tokens, keys — because Terraform stores every attribute a provider returns. Lesson 24 (next) will show you <code>sensitive = true</code>, which hides a value from your terminal output but does <strong>not</strong> stop it from landing in state. This lesson covers a newer, stronger tool: values that Terraform never writes to state or a plan file <em>at all</em>. This is a named objective on the current Terraform Associate (004) exam, and because it's a newer feature (introduced in Terraform 1.10 and extended in 1.11), it's covered less often in older tutorials — so this lesson stays close to the official docs and says plainly where certainty ends.</p>
+
+<h2>The problem: some values should never persist, not even hidden</h2>
+<p>Think about a short-lived database password you generate for one apply, or a one-time auth token you fetch from a secrets manager just to bootstrap a resource. That value only needs to exist for the few seconds Terraform is running. It never needs to be read again on the next <code>plan</code>. But before Terraform 1.10, if that value flowed through a normal resource argument, it got written into state anyway — because that's how state has always worked: every attribute a provider touches gets recorded, sensitive or not.</p>
+
+<p><code>sensitive = true</code> (Lesson 24) only solves half the problem. It masks the value in CLI output and logs, but the raw value is still sitting in the state file in plain text, exactly as Lesson 13 warned. Anyone with read access to that state file — or a copy of it in a backup, or a misconfigured backend — can still read it. For a value that truly never needs to be remembered, "hidden but present" isn't good enough. What's needed is "never written down in the first place."</p>
+
+<p class="callout"><strong>Mental model:</strong> <code>sensitive = true</code> is a redaction stamp — the value still exists in the file, just blacked out from the screen. An ephemeral value is a value that walks into the room, does its job, and leaves — Terraform never puts it in the file to begin with.</p>
+
+<h2>Ephemeral values: data Terraform uses but never remembers</h2>
+<p>Terraform 1.10 introduced <strong>ephemeral values</strong> as a first-class idea in the language. The official docs describe the core rule plainly: ephemeral values "are not persisted to the plan or state files." Three places in your configuration can now be marked ephemeral:</p>
+<ul>
+<li><strong>Ephemeral resources</strong> — a new resource mode, declared with the <code>ephemeral</code> keyword instead of <code>resource</code>:
+<pre><code>ephemeral "random_password" "db_password" {
+  length = 16
+}</code></pre>
+Terraform opens this resource fresh during each phase (plan, apply) and closes it before the phase ends. It is never written to state — there's nothing to refresh on the next run, because Terraform doesn't remember it existed.</li>
+<li><strong>Ephemeral input variables</strong> — add <code>ephemeral = true</code> to a <code>variable</code> block to mark it as temporary data, such as a short-lived token or session ID passed in from outside.</li>
+<li><strong>Ephemeral output values</strong> — an <code>output</code> block can also be marked ephemeral, so a value can be passed between modules for the duration of a run without being recorded.</li>
+</ul>
+
+<p>Terraform also restricts <em>where</em> an ephemeral value can be used in your configuration — you can't just drop one into any ordinary resource argument and expect it to work, because an ordinary argument's value gets written to state, and Terraform won't silently let an ephemeral value flow into a place designed to persist it. That restriction is exactly why write-only arguments (below) had to be built as their own thing.</p>
+
+<p class="callout"><strong>Verified via official docs:</strong> HashiCorp's own announcement confirms ephemeral resources shipped in Terraform 1.10, with early provider support in AWS (e.g. <code>aws_secretsmanager_secret_version</code>), Azure, Kubernetes, and the Random provider, and that "Terraform does not store information about ephemeral resources in state or plan files." See the Source section below for links.</p>
+
+<h2>Write-only arguments: passing a secret into a normal resource, once</h2>
+<p>Ephemeral resources and variables solve the "fetch a temporary value" problem. But what about a normal managed resource — like a database — that needs a password argument? That argument has always been a permanent part of the resource's state entry. Terraform 1.11 closed this gap with <strong>write-only arguments</strong>.</p>
+
+<p>A write-only argument is a specific argument that a provider has explicitly built to accept an ephemeral value, use it once during apply, and then let Terraform discard it — never storing it in state or a plan file. Per the official docs: "Write-only arguments let you securely pass temporary values to Terraform's managed resources during an operation without persisting those values to state or plan files." This requires <strong>Terraform 1.11 or later</strong>, and the specific resource argument must have been built by the provider to support it — it is not automatic or universal across every argument.</p>
+
+<p>Providers that support this follow a naming convention: a <code>_wo</code> suffix on the write-only argument itself, paired with a companion <code>_wo_version</code> argument. Since Terraform never stores the write-only value, it has no way to detect "did this value change?" on the next plan the normal way (by diffing against state) — so you bump the version number yourself to tell Terraform "re-send this." The official example, for an AWS RDS database:</p>
+<pre><code>resource "aws_db_instance" "test" {
+  # ...
+  password_wo         = ephemeral.random_password.db_password.result
+  password_wo_version  = local.db_password_version
+}</code></pre>
+<p>Here, <code>password_wo</code> takes its value from the ephemeral resource above. Terraform sends it to AWS at apply time, AWS sets the database password, and then the value is gone from Terraform's memory — not in state, not in the plan file. Bumping <code>local.db_password_version</code> on a later run is what tells Terraform to send a new value; without the version bump, Terraform assumes the write-only argument hasn't changed and won't resend it.</p>
+
+<p class="callout"><strong>Accuracy note:</strong> write-only argument support is decided by each provider, resource by resource — check the specific resource's documentation on the Terraform Registry for a "write-only" argument before assuming it exists. This lesson deliberately doesn't invent a locally-runnable hands-on demo for write-only arguments, because a genuinely reliable example needs a provider/resource confirmed to support them (like AWS RDS), which isn't something every learner can safely apply against without a cloud account. Read the trace-through below instead of typing this into your own terminal.</p>
+
+<h2>Why this matters for production security posture</h2>
+<p>Lesson 13 already convinced you state can hold real secrets. That single fact drives a lot of production practice: encrypted remote backends (Lesson 14), strict access control on who can read state, and now — a way to remove certain secrets from the equation entirely rather than just guarding them better. If a bootstrap credential, a rotation token, or a one-time password never touches state, then a leaked state file, a compromised backend, or an over-permissioned teammate simply has less to expose. Ephemeral values and write-only arguments don't replace encryption and access control — they shrink the blast radius by making sure some secrets were never sitting there to begin with.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A resource argument is set with <code>sensitive = true</code>. Is the actual value stored in <code>terraform.tfstate</code>? Where does the value actually get hidden — CLI output, or the state file?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Yes, the value is still stored in state, in plain text, exactly as Lesson 13 described. <code>sensitive = true</code> only hides the value from CLI output, logs, and the plan diff you see on screen — it does nothing to keep the value out of the state file itself.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A value is produced by an <code>ephemeral</code> resource block (or passed into a write-only argument). Is it stored in state? What's the real difference from <code>sensitive = true</code>?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No — it is never written to state or a plan file at all. The difference isn't "more hidden," it's categorical: <code>sensitive = true</code> masks a value that still persists; an ephemeral value (or a write-only argument fed by one) is a value Terraform uses for the current operation and then discards, so there's nothing sitting in a file to leak in the first place.</div>
+</div>
+
+<h2>Trace it yourself (read-along, no apply needed)</h2>
+<p>You don't need AWS credentials to learn from this. Walk through the verified example again, line by line, and answer for yourself before checking:</p>
+<pre><code>ephemeral "random_password" "db_password" {
+  length = 16
+}
+
+resource "aws_db_instance" "test" {
+  # ...
+  password_wo         = ephemeral.random_password.db_password.result
+  password_wo_version  = local.db_password_version
+}</code></pre>
+<ul>
+<li>Which line generates a value that is never stored anywhere by Terraform? (the <code>ephemeral "random_password"</code> block)</li>
+<li>Which line receives that value but is still a completely normal, permanent part of the resource? (none of these lines are "normal" — <code>password_wo</code> is the write-only argument, built specifically to accept the ephemeral value without persisting it)</li>
+<li>If you needed to rotate this password next month, what would you change, and why can't Terraform detect the change on its own? (bump <code>local.db_password_version</code> — Terraform can't diff a value it never stored, so the version number is the only signal it has that "this needs resending")</li>
+</ul>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/manage-sensitive-data/ephemeral" target="_blank" rel="noopener">developer.hashicorp.com — Ephemeral values in resources</a> (confirms ephemeral resources are not stored in state or plan files, and shows the <code>ephemeral "random_password" "db_password"</code> example) · <a href="https://developer.hashicorp.com/terraform/language/manage-sensitive-data/write-only" target="_blank" rel="noopener">developer.hashicorp.com — Use temporary write-only arguments</a> (confirms write-only arguments require Terraform 1.11+, the <code>_wo</code> / <code>_wo_version</code> naming convention, and that values are never stored in state or plan files) · <a href="https://developer.hashicorp.com/terraform/language/values/variables" target="_blank" rel="noopener">developer.hashicorp.com — Input Variables</a> (confirms the <code>ephemeral</code> argument on <code>variable</code> blocks omits the variable from state and plan files) · <a href="https://www.hashicorp.com/en/blog/terraform-1-10-improves-handling-secrets-in-state-with-ephemeral-values" target="_blank" rel="noopener">hashicorp.com — Terraform 1.10 blog</a> (confirms ephemeral resources, ephemeral input variables, and ephemeral output values all shipped in Terraform 1.10) · <a href="https://www.hashicorp.com/en/blog/terraform-1-11-ephemeral-values-managed-resources-write-only-arguments" target="_blank" rel="noopener">hashicorp.com — Terraform 1.11 blog</a> (confirms write-only arguments shipped in Terraform 1.11, with the <code>password_wo</code> / <code>password_wo_version</code> AWS RDS example) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>sensitive = true</code> (Lesson 24) hides a value from CLI output only — the value still lands in state, in plain text.</li>
+    <li>Ephemeral values (Terraform 1.10+) — ephemeral resources, ephemeral input variables, ephemeral outputs — are never written to state or plan files at all.</li>
+    <li>Write-only arguments (Terraform 1.11+) let a normal managed resource accept an ephemeral value for one apply, using a provider-defined <code>_wo</code> argument plus a <code>_wo_version</code> argument to signal when to resend it. Provider/resource support is required and not universal.</li>
+    <li>Production security benefit: some secrets never touch state at all, shrinking what a leaked state file or over-permissioned backend can expose.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0022-managing-environments.html">&larr; Lesson 22: Managing dev/stage/prod environments</a></span>
+  <span><a href="0024-sensitive-data.html">Lesson 24: Handling sensitive data &rarr;</a></span>
+</div>
+
+</body>
+</html>

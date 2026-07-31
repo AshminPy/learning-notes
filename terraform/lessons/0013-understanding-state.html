@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 13 — Understanding Terraform state</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 13 of 37</p>
+<h1>Understanding Terraform state</h1>
+
+<p>You've typed <code>terraform.tfstate</code> in passing since Lesson 5, and even referenced it when talking about local names in Lesson 8. It's time to stop treating it as background noise and actually open it up. This lesson is conceptual — no new resource types, no new syntax — but it's one of the most important lessons in the whole course. Almost every confusing Terraform error, and almost every team workflow decision (Lesson 14 onward), comes back to how state works.</p>
+
+<h2>What state actually is</h2>
+<p>The moment you run <code>terraform apply</code> for the first time in a folder, Terraform creates a file called <code>terraform.tfstate</code> right next to your <code>.tf</code> files. Strip away the mystery: it's a JSON text file. Nothing more exotic than that — you could open it in any text editor and read it, the same way you'd read a <code>.json</code> config file for any other tool.</p>
+
+<p>What's inside that JSON is a <strong>mapping</strong>: for every resource block in your config, an entry recording which real-world object it corresponds to. <code>random_pet.example</code> in your <code>.tf</code> file maps to an entry in state that says "this one's actual generated value is <code>climbing-mudfish</code>." <code>aws_instance.web</code> would map to an entry recording the real AWS instance ID, something like <code>i-0abc123</code>.</p>
+
+<h2>Why Terraform needs this at all</h2>
+<p>Here's the problem state solves. When you run <code>terraform plan</code>, Terraform has to answer: "what needs to change?" To answer that, it needs to know which real, already-existing infrastructure corresponds to which resource block in your config. But there's no reliable way to ask a cloud provider's API "which of your resources belong to this Terraform config?" — providers don't know Terraform exists. Tags could theoretically identify ownership, but not every resource type or every provider supports tags, so it's not a general solution.</p>
+
+<p>So Terraform keeps that mapping itself, in state. The official docs put it plainly: Terraform uses this mapping to know that a resource block "represents a real world object with the instance ID <code>i-abcd1234</code>." Without state, Terraform would have no memory between runs — every <code>plan</code> would be starting from zero, unable to tell "already created" apart from "needs creating."</p>
+
+<p class="callout"><strong>Mental model:</strong> state is Terraform's memory. Your <code>.tf</code> files describe what you <em>want</em> — they're stateless, they don't remember anything about previous runs. State is the only place Terraform records what it has <em>actually done</em>. Delete your config and Terraform forgets nothing about the past; delete your state and Terraform forgets everything it ever built, even though the real infrastructure is still sitting there in the cloud.</p>
+
+<h2>The three-way comparison</h2>
+<p>This is the mental model that makes <code>plan</code> and <code>apply</code> click. Every time you run <code>terraform plan</code>, Terraform is comparing three things, not two:</p>
+<ol>
+<li><strong>Your configuration</strong> — the <code>.tf</code> files, what you want to exist</li>
+<li><strong>The state file</strong> — what Terraform last recorded as existing</li>
+<li><strong>Real infrastructure</strong> — what's actually out there right now (Terraform checks this by querying the provider, a step called "refresh")</li>
+</ol>
+<p>Out of that three-way comparison, Terraform works out a plan: anything in config but not in state gets created; anything in state but not in config gets destroyed; anything where config and real infrastructure disagree gets updated to match config. If real infrastructure has drifted from state (someone changed something by hand in the console), that shows up too — Terraform will plan to bring it back in line with config.</p>
+
+<p>State also carries dependency metadata — which resource depends on which. You saw in Lesson 8 that Terraform infers creation order from references in your config (implicit dependencies). But when you <em>delete</em> a resource block entirely, that reference is gone — the order can no longer be read from the config, because the config no longer mentions it. State is what remembers "this one used to depend on that one," so <code>terraform destroy</code> can still tear things down in a safe order.</p>
+
+<h2>What's actually stored inside</h2>
+<p>Each resource's entry in state typically holds:</p>
+<ul>
+<li>the resource's real-world identity (its provider-assigned ID)</li>
+<li>every attribute value the provider returned — not just the ID, but things like IP addresses, ARNs, generated passwords, connection strings</li>
+<li>dependency metadata, so Terraform knows relationships even after config changes</li>
+<li>a small amount of internal bookkeeping Terraform uses to detect drift and plan changes efficiently</li>
+</ul>
+
+<p class="callout"><strong>Critical security callout:</strong> because state stores every attribute a provider returns, it can contain genuinely sensitive values — initial database passwords, API tokens, TLS private keys, anything a resource generates or receives as an argument. The official HashiCorp docs are direct about this: state and plan files "contain detailed information about your infrastructure, including resource attributes and metadata that can contain sensitive values, such as initial database passwords or API tokens," and locally, "Terraform stores your state in a plaintext file, which includes any secret values you defined in your configuration." <strong>Never commit <code>terraform.tfstate</code> to git, and never share it carelessly</strong> — treat it exactly like you'd treat a file full of passwords, because in practice, it often is one. Lesson 14 covers remote backends, which is the real fix for this (encryption at rest, access control, no plaintext file sitting in your repo).</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Terraform can't just ask AWS or GCP "which resources belong to my config" — why not, and what does Terraform use instead to know the answer?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Cloud provider APIs have no concept of Terraform or its configs — they just manage resources, with no reliable universal way (like tags) to mark "this belongs to config X" across every resource type and provider. Instead, Terraform keeps its own record: the state file, which maps each resource block to the real-world object it created.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You delete a <code>resource</code> block from your <code>.tf</code> file entirely, then run <code>terraform apply</code>. The real infrastructure still exists in the cloud. What does Terraform do, and how does it know to do it, given the block is no longer in your config?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Terraform plans to destroy that real resource. It knows to, because state still has an entry for it — config says "this shouldn't exist," state says "this exists," and Terraform reconciles the two by proposing a delete. Without state remembering that entry, Terraform would have no way to know that resource was ever under its management.</div>
+</div>
+
+<h2>Hands-on: open the state file yourself</h2>
+<p>Go back to the <code>random_pet</code> example from earlier lessons (same folder, same <code>main.tf</code> with <code>resource "random_pet" "example" {}</code>).</p>
+<ul>
+<li>run <code>terraform apply</code>, type <code>yes</code>, if you don't already have a live pet from a previous lesson</li>
+<li>now — do <strong>not</strong> use any <code>terraform</code> command. Open <code>terraform.tfstate</code> directly in a plain text editor (VS Code, nano, whatever you have)</li>
+<li>read the raw JSON. Find the <code>resources</code> array, find the entry for <code>random_pet.example</code>, and look inside its <code>instances</code> — you'll see an <code>attributes</code> object with an <code>id</code> field holding your actual pet name, e.g. <code>"id": "climbing-mudfish"</code></li>
+<li>notice there's no magic here — it's a plain, readable, mildly verbose JSON file, same as any config file you've opened for any other tool</li>
+<li>run <code>terraform destroy</code>, type <code>yes</code>, to clean up when you're done looking</li>
+</ul>
+<p>This is the whole point of the exercise: seeing "this is just a file" with your own eyes removes the mystery. State isn't a black box Terraform hides from you — it's a JSON file sitting right there in your folder, and now you know exactly what's in it and why it matters enough to never commit to git.</p>
+
+<div class="quiz">
+<p>Reveal what a trimmed-down state entry looks like</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>{
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "random_pet",
+      "name": "example",
+      "provider": "provider[\"registry.terraform.io/hashicorp/random\"]",
+      "instances": [
+        {
+          "attributes": {
+            "id": "climbing-mudfish",
+            "length": 2,
+            "separator": "-"
+          }
+        }
+      ]
+    }
+  ]
+}</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/language/state" target="_blank" rel="noopener">developer.hashicorp.com — State</a> (confirms state is stored by default as a local JSON file named <code>terraform.tfstate</code>, used to map real-world resources to configuration, track metadata, and improve performance) · <a href="https://developer.hashicorp.com/terraform/language/state/purpose" target="_blank" rel="noopener">developer.hashicorp.com — Purpose of Terraform State</a> (confirms the mapping problem, the performance-caching role, and that Terraform compares configuration, state, and real infrastructure to determine changes) · <a href="https://developer.hashicorp.com/terraform/language/state/sensitive-data" target="_blank" rel="noopener">developer.hashicorp.com — Sensitive Data in State</a> (confirms state can contain sensitive values like initial database passwords or API tokens, is stored in plaintext locally, and should never be committed to version control) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>State (<code>terraform.tfstate</code>) is a plain JSON file, created after your first apply, that maps your config's resources to real-world infrastructure IDs.</li>
+    <li>Terraform needs it because cloud provider APIs can't tell you which resources belong to which config — Terraform has to track that mapping itself.</li>
+    <li><code>plan</code>/<code>apply</code> work by a three-way comparison: your configuration, the state file, and real infrastructure.</li>
+    <li>State can contain sensitive values (passwords, tokens, keys) in plaintext — never commit it to git or share it carelessly.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0012-lifecycle-and-conditions.html">&larr; Lesson 12: Lifecycle rules &amp; custom conditions</a></span>
+  <span><a href="0014-remote-state-backends.html">Lesson 14: Remote state &amp; backends &rarr;</a></span>
+</div>
+
+</body>
+</html>

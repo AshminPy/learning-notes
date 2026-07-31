@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 25 — fmt, validate &amp; linting</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Terraform / Zero to Expert — Lesson 25 of 37</p>
+<h1>fmt, validate &amp; linting</h1>
+
+<p>Up to Lesson 24 you've focused on writing configuration — resources, variables, modules, sensitive data. Starting here, the course shifts into a new phase: <strong>Testing &amp; Validation</strong>. Before you ever run <code>plan</code> against real infrastructure, there's a cheap, fast, local checkpoint you should run every single time. This lesson covers the first three tools in that checkpoint: <code>terraform fmt</code>, <code>terraform validate</code>, and the open-source linter <code>tflint</code>.</p>
+
+<h2>terraform fmt — canonical style, automatically</h2>
+<p>HCL, like any language, can be written in inconsistent styles — different indentation, ragged alignment, spacing that varies from person to person. <code>terraform fmt</code> removes that problem entirely. Per the official docs, it "formats Terraform configuration file contents so that it matches the canonical format and style." It rewrites <strong>formatting only</strong> — indentation, spacing, alignment — never your logic. It cannot break your configuration, because it doesn't touch what the configuration does, only how it looks.</p>
+
+<p>Run it with no arguments in a directory and it scans your <code>.tf</code> files and overwrites them in place with the formatted version, listing which files it changed. Useful flags:</p>
+<ul>
+<li><code>-recursive</code> — also format subdirectories, not just the current one</li>
+<li><code>-diff</code> — show you the formatting diff instead of (or alongside) applying it</li>
+<li><code>-write=false</code> — check without overwriting files</li>
+<li><code>-check</code> — the CI-friendly one: don't write anything, just report whether files are already formatted. Exits <code>0</code> if everything's clean, non-zero if anything needs formatting</li>
+</ul>
+
+<p class="callout"><strong>Mental model:</strong> <code>fmt</code> is a style referee, not a proofreader. It guarantees every <code>.tf</code> file in a codebase — no matter who wrote it — reads the same way. That matters more than it sounds like: in a team repo, inconsistent formatting creates noisy diffs (a PR that changes one line but "changes" indentation on fifty others) and makes code review harder. Run <code>terraform fmt</code> before every commit as a habit — and wire <code>terraform fmt -check -recursive</code> into CI so nobody can merge unformatted HCL by accident.</p>
+
+<h2>terraform validate — catch mistakes before you even plan</h2>
+<p>Where <code>fmt</code> checks style, <code>validate</code> checks substance — but only the substance Terraform can verify without leaving your laptop. The official docs describe it as running "checks that verify whether a configuration is syntactically valid and internally consistent," including "correctness of attribute names and value types."</p>
+
+<p>The critical line, worth memorizing: <code>validate</code> explicitly "does not validate remote services, such as remote state or provider APIs." It never contacts AWS, GCP, Azure, or any backend. It's a purely local, offline check — it reads your <code>.tf</code> files and asks "is this internally coherent HCL?", not "will this actually work against the real cloud?" That's exactly why it's fast, and exactly why it's the second checkpoint, before the (slower, provider-talking) <code>plan</code> step.</p>
+
+<p>Two things worth knowing before you run it:</p>
+<ul>
+<li>it needs an initialized directory (<code>terraform init</code> first) — though you can init without a real backend using <code>terraform init -backend=false</code> if you only want to validate</li>
+<li>it's explicitly safe to run constantly — the docs say it's fine as "a post-save check in a text editor or as a test step for a reusable module in a CI system"</li>
+</ul>
+
+<p class="callout"><strong>What validate catches:</strong> a typo'd argument name, a string passed where a number is expected, a reference to something that doesn't exist, mismatched types between a variable and how it's used. What it can't catch: whether an AWS instance type actually exists, whether your credentials have permission to create the resource, whether a name is already taken in the real account. Those only surface later, at <code>plan</code> or <code>apply</code>, because they require talking to the provider.</p>
+
+<h2>tflint — the linter that looks further than validate</h2>
+<p><code>tflint</code> is a separate, open-source project (<a href="https://github.com/terraform-linters/tflint" target="_blank" rel="noopener">terraform-linters/tflint</a> on GitHub) — it is <strong>not</strong> built into Terraform and not maintained by HashiCorp. It's a "pluggable Terraform linter," built as a framework where "each feature is provided by plugins," and it's actively maintained (thousands of stars, thousands of commits).</p>
+
+<p>The reason it exists alongside <code>validate</code>: <code>validate</code> only checks that your HCL is internally coherent. It has no opinion on whether you're using deprecated syntax, whether you picked an invalid AWS instance type, or whether you declared a variable and never used it — because none of that breaks internal consistency. <code>tflint</code> fills that gap. It catches:</p>
+<ul>
+<li>deprecated syntax and outdated language features</li>
+<li>provider-specific mistakes — e.g. an instance type or region that doesn't actually exist for AWS/Azure/GCP</li>
+<li>unused declarations — variables or locals declared but never referenced</li>
+<li>naming-convention and best-practice violations, enforceable via its plugin/ruleset system</li>
+</ul>
+
+<p class="callout"><strong>Mental model:</strong> think of the three tools as concentric circles, each one catching problems the last one can't. <code>fmt</code> checks how it looks. <code>validate</code> checks whether the HCL is internally coherent — offline, no provider contact. <code>tflint</code> checks whether it follows sensible, provider-aware practice — still offline, no real changes, but it knows more about AWS/Azure/GCP specifics than core Terraform does. None of the three ever touch real infrastructure. That's exactly why they belong before <code>plan</code>, not after.</p>
+
+<h2>The pre-commit habit</h2>
+<p>Put these three in a fixed order, every time, before you run <code>plan</code> against anything real:</p>
+<ol>
+<li><code>terraform fmt</code> — fix style</li>
+<li><code>terraform validate</code> — catch syntax/type errors, offline</li>
+<li><code>tflint</code> — catch deprecated syntax and provider-specific mistakes, still offline</li>
+</ol>
+<p>Only after all three pass should you run <code>terraform plan</code> — the point where Terraform finally talks to the provider and refresh/state get involved (Lesson 13). Catching a typo at step 2 costs you a second. Catching the same typo at <code>plan</code> costs you a slower round trip; catching it at <code>apply</code> against real infrastructure can cost you a lot more.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You run <code>terraform validate</code> and it passes with no errors. Does that mean <code>terraform apply</code> will definitely succeed? Why or why not?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. <code>validate</code> only checks that your configuration is syntactically valid and internally consistent — it explicitly does not contact remote services like provider APIs or remote state. Your HCL could be perfectly valid and still fail at <code>apply</code> time for reasons validate can't see: bad credentials, a resource name already taken, an instance type that doesn't exist in that region, insufficient permissions, and so on.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Why would a team run <code>tflint</code> at all if <code>terraform validate</code> already passes? What does it catch that validate doesn't?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">validate only checks internal consistency of the HCL — it has no opinion on style/practice questions. tflint is a separate, provider-aware linter that catches things that are syntactically valid but still wrong or risky: deprecated syntax, provider-specific mistakes (like an AWS instance type that doesn't actually exist), unused variable declarations, and naming/best-practice violations — none of which break "internal consistency," so validate lets them through.</div>
+</div>
+
+<h2>Hands-on: write it broken, fix it in three steps</h2>
+<p>Create a fresh scratch folder and a file called <code>main.tf</code> with this deliberately messy, deliberately wrong snippet — bad indentation <em>and</em> a type error (a string passed where <code>count</code> needs a number):</p>
+<pre><code>resource "random_pet" "example" {
+    length = "3"
+        separator="-"
+count = "two"
+}
+</code></pre>
+<ul>
+<li>Run <code>terraform init</code> (or <code>terraform init -backend=false</code> if you just want validate to work without a real backend).</li>
+<li>Run <code>terraform fmt -diff</code>. Watch it show you the indentation/spacing it wants to fix — the ragged <code>length</code>/<code>separator</code> lines, the missing spaces around <code>=</code>. Run <code>terraform fmt</code> (no flags) to actually apply the fix, then open the file — it's now cleanly aligned.</li>
+<li>Notice <code>fmt</code> did <strong>not</strong> touch <code>count = "two"</code> — that's a logic problem, not a style problem, and fixing logic isn't fmt's job.</li>
+<li>Run <code>terraform validate</code>. It should now report an error on the <code>count</code> argument — a string ("two") where a number is required. This is exactly the kind of error validate is built to catch, fast, without ever touching a provider.</li>
+<li>Fix it: change <code>count = "two"</code> to <code>count = 2</code>. Run <code>terraform validate</code> again — it should now pass clean.</li>
+<li>If you have <code>tflint</code> installed, run it too, and compare: on this tiny snippet it likely won't find anything extra, which is expected — its value shows up on real provider-specific resources (like <code>aws_instance</code> with a bad instance type), not on a generic <code>random_pet</code> example.</li>
+</ul>
+<p>This is the muscle memory the lesson is really teaching: format, then validate, before you ever let <code>plan</code> near real infrastructure.</p>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/terraform/cli/commands/fmt" target="_blank" rel="noopener">developer.hashicorp.com — Command: fmt</a> (confirms fmt rewrites formatting/style only, the <code>-check</code>/<code>-recursive</code>/<code>-diff</code> flags, and CI usage via <code>-check</code>) · <a href="https://developer.hashicorp.com/terraform/cli/commands/validate" target="_blank" rel="noopener">developer.hashicorp.com — Command: validate</a> (confirms validate checks syntax and internal consistency, explicitly does not validate remote services/provider APIs, and is safe to run constantly) · <a href="https://github.com/terraform-linters/tflint" target="_blank" rel="noopener">github.com/terraform-linters/tflint</a> (confirms tflint is a real, actively maintained, third-party pluggable linter that catches deprecated syntax, provider-specific errors, and unused declarations beyond what validate checks) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>terraform fmt</code> rewrites HCL to canonical style only — never logic. Use <code>-check</code> in CI to enforce it without auto-writing.</li>
+    <li><code>terraform validate</code> checks syntax and internal consistency locally — it never contacts a provider or remote state, so a clean validate does not guarantee a clean apply.</li>
+    <li><code>tflint</code> is a separate, open-source, provider-aware linter that catches deprecated syntax and provider-specific mistakes that validate can't see.</li>
+    <li>Habit: fmt, then validate, then tflint — every time, before you ever run plan against real infrastructure.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what a Terraform error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0024-sensitive-data.html">&larr; Lesson 24: Handling sensitive data</a></span>
+  <span><a href="0026-plan-review-discipline.html">Lesson 26: Plan review discipline &rarr;</a></span>
+</div>
+
+</body>
+</html>

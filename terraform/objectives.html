@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terraform — Course roadmap tracker</title>
+<meta name="description" content="Zero-to-expert Terraform course roadmap: IaC fundamentals, state, modules, testing, CI/CD, production patterns, HashiCorp Terraform Associate exam prep. Free, independent study resource.">
+<link rel="canonical" href="https://ashminpy.github.io/learning-notes/terraform/objectives.html">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .domain { border: 1px solid var(--rule); border-radius: 6px; padding: 1.25rem 1.5rem; margin: 1.5rem 0; }
+  .domain-head { display: flex; justify-content: space-between; align-items: baseline; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  .domain-head h2 { margin: 0; padding: 0; border: none; font-size: 1.1rem; }
+  .domain-head p { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--muted); }
+  .count { color: var(--accent); font-weight: bold; font-size: 0.9rem; white-space: nowrap; }
+  .bar-track { height: 6px; background: var(--code-bg); border-radius: 3px; margin: 0.7rem 0 1rem; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s ease; }
+  .item-list { list-style: none; padding: 0; margin: 0; }
+  .item-list li { display: flex; align-items: baseline; gap: 0.6rem; padding: 0.35rem 0; }
+  .item-list input[type="checkbox"] { margin-top: 0.2rem; }
+  .item-list a { color: var(--fg); }
+  .item-list a:hover { color: var(--accent); }
+  .planned { color: var(--muted); font-size: 0.95rem; }
+  .planned-tag { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); border: 1px solid var(--rule); border-radius: 3px; padding: 0.05rem 0.35rem; }
+  .overall { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 0.9rem; color: var(--muted); }
+  .disclaimer { border-left: 3px solid var(--rule); background: var(--code-bg); padding: 0.6rem 1rem; margin: 1.25rem 0; font-size: 0.82rem; color: var(--muted); border-radius: 0 4px 4px 0; }
+  .meta-line { font-size: 0.78rem; color: var(--muted); margin-top: 0.4rem; }
+  .feedback-link { font-size: 0.85rem; }
+  .reset-btn { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 0.8rem; margin-top: 0.5rem; padding: 0.35rem 0.7rem; border-radius: 4px; border: 1px solid var(--rule); background: transparent; color: var(--muted); cursor: pointer; }
+  .reset-btn:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Terraform — Zero to Expert</p>
+<h1>Course roadmap tracker</h1>
+<p>The complete curriculum — <strong>37 lessons across 11 phases</strong>, IaC fundamentals through production patterns and the HashiCorp Certified Terraform Associate (004) exam. Check off a lesson once you can rebuild/explain it from memory — progress is saved in this browser only.</p>
+<p class="overall" id="overall"></p>
+<button class="reset-btn" id="reset-progress" type="button" aria-label="Reset Terraform tracker progress">Reset progress</button>
+
+<div class="disclaimer">
+  This is an independent study resource, not affiliated with, endorsed by, or sponsored by HashiCorp. Certification names, exam codes, and objectives may change — always verify against the official pages linked in RESOURCES.md.
+  <div class="meta-line">Certification details last reviewed: July 30, 2026</div>
+</div>
+<p class="feedback-link"><a href="https://github.com/AshminPy/learning-notes/issues/new?title=Learning%20notes%20correction%3A%20Terraform%20roadmap" target="_blank" rel="noopener">Report an issue / suggest a correction &rarr;</a></p>
+
+<div id="domains"></div>
+
+<div class="lesson-nav">
+  <a href="../index.html">&larr; Back to all courses</a>
+  <span></span>
+</div>
+
+<script>
+const PHASES = [
+  { key: "orientation", name: "A. Orientation & Setup", lessons: [
+    { id: "0001", title: "Your roadmap: zero to Terraform expert", href: "lessons/0001-roadmap-and-cert-plan.html" },
+    { id: "0002", title: "Tools setup: install Terraform, editor, first provider", href: "lessons/0002-tools-setup.html" }
+  ]},
+  { key: "iac-fundamentals", name: "B. IaC & Terraform Fundamentals", lessons: [
+    { id: "0003", title: "What is Infrastructure as Code?", href: "lessons/0003-what-is-iac.html" },
+    { id: "0004", title: "Providers & the terraform block", href: "lessons/0004-providers-and-terraform-block.html" },
+    { id: "0005", title: "Your first resource: init, plan, apply, destroy", href: "lessons/0005-first-resource-apply.html" },
+    { id: "0006", title: "Input variables", href: "lessons/0006-input-variables.html" },
+    { id: "0007", title: "Outputs", href: "lessons/0007-outputs.html" }
+  ]},
+  { key: "core-language", name: "C. Core Language", lessons: [
+    { id: "0008", title: "Resources & arguments", href: "lessons/0008-resources-and-arguments.html" },
+    { id: "0009", title: "Data sources", href: "lessons/0009-data-sources.html" },
+    { id: "0010", title: "Expressions & built-in functions", href: "lessons/0010-expressions-and-functions.html" },
+    { id: "0011", title: "Meta-arguments: count, for_each, depends_on", href: "lessons/0011-meta-arguments.html" },
+    { id: "0012", title: "Lifecycle rules & custom conditions", href: "lessons/0012-lifecycle-and-conditions.html" }
+  ]},
+  { key: "state", name: "D. State Management", lessons: [
+    { id: "0013", title: "Understanding Terraform state", href: "lessons/0013-understanding-state.html" },
+    { id: "0014", title: "Remote state & backends", href: "lessons/0014-remote-state-backends.html" },
+    { id: "0015", title: "State locking & drift detection", href: "lessons/0015-state-locking-and-drift.html" },
+    { id: "0016", title: "State surgery: import, mv, rm, moved blocks", href: "lessons/0016-state-surgery.html" }
+  ]},
+  { key: "modules", name: "E. Modules", lessons: [
+    { id: "0017", title: "Why modules? DRY infrastructure", href: "lessons/0017-why-modules.html" },
+    { id: "0018", title: "Writing your first module", href: "lessons/0018-writing-your-first-module.html" },
+    { id: "0019", title: "Module sources & versioning", href: "lessons/0019-module-sources-and-versioning.html" },
+    { id: "0020", title: "Module composition patterns", href: "lessons/0020-module-composition-patterns.html" }
+  ]},
+  { key: "environments", name: "F. Workspaces & Environments", lessons: [
+    { id: "0021", title: "Terraform workspaces", href: "lessons/0021-workspaces.html" },
+    { id: "0022", title: "Managing dev/stage/prod environments", href: "lessons/0022-managing-environments.html" }
+  ]},
+  { key: "advanced-config", name: "G. Ephemeral Values & Sensitive Data", lessons: [
+    { id: "0023", title: "Ephemeral values & write-only arguments", href: "lessons/0023-ephemeral-values.html" },
+    { id: "0024", title: "Handling sensitive data", href: "lessons/0024-sensitive-data.html" }
+  ]},
+  { key: "testing", name: "H. Testing & Validation", lessons: [
+    { id: "0025", title: "fmt, validate & linting", href: "lessons/0025-fmt-validate-lint.html" },
+    { id: "0026", title: "Plan review discipline", href: "lessons/0026-plan-review-discipline.html" },
+    { id: "0027", title: "Automated testing (terraform test)", href: "lessons/0027-automated-testing.html" }
+  ]},
+  { key: "cicd", name: "I. CI/CD & Collaboration", lessons: [
+    { id: "0028", title: "HCP Terraform workspaces & remote execution", href: "lessons/0028-hcp-terraform-workspaces.html" },
+    { id: "0029", title: "A real CI/CD pipeline (plan on PR, apply on merge)", href: "lessons/0029-cicd-pipeline.html" },
+    { id: "0030", title: "Policy as code (Sentinel/OPA)", href: "lessons/0030-policy-as-code.html" }
+  ]},
+  { key: "production", name: "J. Production Patterns", lessons: [
+    { id: "0031", title: "Least-privilege IAM for Terraform itself", href: "lessons/0031-iam-for-terraform.html" },
+    { id: "0032", title: "Cost awareness", href: "lessons/0032-cost-awareness.html" },
+    { id: "0033", title: "Troubleshooting common errors", href: "lessons/0033-troubleshooting.html" },
+    { id: "0034", title: "Capstone project: end-to-end stack", href: "lessons/0034-capstone-project.html" }
+  ]},
+  { key: "cert-review", name: "K. Certification & Review", lessons: [
+    { id: "0035", title: "Exam domain walkthrough & self-check", href: "lessons/0035-exam-domain-walkthrough.html" },
+    { id: "0036", title: "Practice scenarios", href: "lessons/0036-practice-scenarios.html" },
+    { id: "0037", title: "Final review & cheat sheet", href: "lessons/0037-final-review.html" }
+  ]}
+];
+
+const STORE_KEY = "terraform-objectives-progress";
+const state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+function renderPhase(d) {
+  const built = d.lessons.filter(l => l.href);
+  const wrap = document.createElement("div");
+  wrap.className = "domain";
+  const head = document.createElement("div");
+  head.className = "domain-head";
+  head.innerHTML = `<div><h2>${d.name}</h2><p>${built.length} of ${d.lessons.length} lessons published</p></div><span class="count">${d.lessons.length} planned</span>`;
+  wrap.appendChild(head);
+  const track = document.createElement("div");
+  track.className = "bar-track";
+  const fill = document.createElement("div");
+  fill.className = "bar-fill";
+  track.appendChild(fill);
+  wrap.appendChild(track);
+  const list = document.createElement("ul");
+  list.className = "item-list";
+  d.lessons.forEach(l => {
+    const li = document.createElement("li");
+    if (l.href) {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!state[l.id];
+      cb.setAttribute("aria-label", `Mark Lesson ${Number(l.id)} — ${l.title} as reviewed`);
+      cb.addEventListener("change", () => { state[l.id] = cb.checked; save(); updateBar(); updateOverall(); });
+      const a = document.createElement("a");
+      a.href = l.href;
+      a.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      li.appendChild(cb); li.appendChild(a);
+    } else {
+      const span = document.createElement("span");
+      span.className = "planned";
+      span.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      const tag = document.createElement("span");
+      tag.className = "planned-tag";
+      tag.textContent = "planned";
+      li.appendChild(span); li.appendChild(tag);
+    }
+    list.appendChild(li);
+  });
+  wrap.appendChild(list);
+  function updateBar() {
+    const done = built.filter(l => state[l.id]).length;
+    const pct = built.length ? Math.round((done / built.length) * 100) : 0;
+    fill.style.width = pct + "%";
+  }
+  updateBar();
+  return wrap;
+}
+
+function updateOverall() {
+  const all = PHASES.flatMap(d => d.lessons);
+  const built = all.filter(l => l.href);
+  const done = built.filter(l => state[l.id]).length;
+  document.getElementById("overall").textContent =
+    `${built.length} of ${all.length} lessons published — ${done} of ${built.length} published lessons checked off.`;
+}
+
+const container = document.getElementById("domains");
+PHASES.forEach(d => container.appendChild(renderPhase(d)));
+updateOverall();
+
+document.getElementById("reset-progress").addEventListener("click", () => {
+  if (confirm("Reset all Terraform tracker progress? This only clears this tracker's checkboxes in this browser.")) {
+    localStorage.removeItem(STORE_KEY);
+    location.reload();
+  }
+});
+</script>
+
+</body>
+</html>
