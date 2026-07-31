@@ -107,6 +107,8 @@ Every lesson ends with a `<h2>Source</h2>` section linking the primary official 
 
 Second-person, direct, warm-but-brisk. State the goal, name the current gap, teach the concept, give one worked example, then hand it to the learner to try. Simple English, short sentences — this site's audience includes complete beginners in a given topic even when they're experienced engineers in adjacent areas. Every lesson's teacher-reminder footer should invite real questions — the agent is the learner's tutor, not just a document author.
 
+**Never assume the reader already has anything set up.** This is a public site — every learner starts from zero for that lesson's topic, not from "the config you copied from a video" or any other specific prior state. Any worked example (a config file, a set of hosts, a dataset) must be introduced *inside* the lesson as something the learner builds or is given, never presupposed as already existing. This also rules out real personal details — specific hardware names, specific machines, specific accounts — as anything other than illustrative, clearly-generic examples. (Found and fixed 2026-07-31: `keyboard-workflow/lessons/0001` opened by assuming the reader already had a personal AeroSpace config "copied from a video" and named a specific monitor model — both are the failure mode this rule exists to prevent.)
+
 ## Diagrams
 
 None exist on this site today, deliberately. Keep the current all-text/table visual approach (tables for comparisons/matrices, prose for flow, code blocks for syntax) rather than adding images or SVGs. This was a considered decision (2026-07-30), not an oversight — don't reintroduce diagrams without it being an explicit, separate decision.

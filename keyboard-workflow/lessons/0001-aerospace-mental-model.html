@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lesson 1 — AeroSpace: the tree behind your config</title>
+<title>Lesson 1 — AeroSpace: the tree behind every config</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
@@ -11,20 +11,25 @@
 <p class="eyebrow">Keyboard Workflow — Lesson 1 of 8</p>
 <h1>AeroSpace, from first principles</h1>
 
-<p>You already have a working AeroSpace config, copied from a video. This lesson explains <em>why</em> it works, using your actual <code>~/.aerospace.toml</code>.</p>
+<p>AeroSpace is a tiling window manager for macOS. This lesson builds a real config from scratch and explains <em>why</em> each part is shaped the way it is — by the end you'll have a working <code>~/.aerospace.toml</code> and understand every line in it, not just have pasted someone else's.</p>
 
 <h2>The one idea that explains everything else</h2>
 <p>Stock macOS treats windows like papers on a desk — you drag each one where you want. AeroSpace is different: it's a <strong>tiling</strong> window manager. Windows live in a <strong>tree</strong>, and the tree decides position and size. You never drag a window by its edge.</p>
 
 <p class="callout">Tree, top to bottom: <strong>Workspace</strong> (a virtual desktop) → <strong>Container</strong> (a box holding windows or more containers) → <strong>Window</strong> (a leaf, holds nothing else).</p>
 
-<h2>Your config's two big decisions</h2>
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Install AeroSpace (<a href="https://nikitabobko.github.io/AeroSpace/guide#installation" target="_blank" rel="noopener">official guide</a>), then create an empty <code>~/.aerospace.toml</code>. Add each block below to it as you read about it — you'll have a complete, working config by the end of this lesson.</p>
+</div>
+
+<h2>Two decisions every config starts with</h2>
 <pre><code>default-root-container-layout = 'accordion'
 default-root-container-orientation = 'horizontal'</code></pre>
 <p><strong>Layout</strong> — how windows share a container:</p>
 <ul>
 <li><strong>tiles</strong> — grid. Every window gets a visible slice.</li>
-<li><strong>accordion</strong> (yours) — only the focused window is fully visible. The rest collapse to a thin strip, like file folders in a drawer.</li>
+<li><strong>accordion</strong> (the example above) — only the focused window is fully visible. The rest collapse to a thin strip, like file folders in a drawer.</li>
 </ul>
 <p><strong>Orientation</strong> — which way new splits happen. <code>horizontal</code> means left/right.</p>
 
@@ -50,18 +55,25 @@ default-root-container-orientation = 'horizontal'</code></pre>
 </div>
 
 <h2>Modes: a keybinding namespace switch</h2>
-<p>Your config has <code>[mode.main.binding]</code> and <code>[mode.service.binding]</code> — like Vim's normal/insert modes, but for windows. Service mode gives you <code>esc</code> (reload config), <code>r</code> (flatten tree), <code>f</code> (toggle floating), <code>backspace</code> (close all but current).</p>
+<p>A full config splits bindings into <code>[mode.main.binding]</code> and <code>[mode.service.binding]</code> — like Vim's normal/insert modes, but for windows. Add a service mode and it gives you <code>esc</code> (reload config), <code>r</code> (flatten tree), <code>f</code> (toggle floating), <code>backspace</code> (close all but current).</p>
 <p class="callout">"Floating" is the escape hatch — a floating window ignores the tree and drags like normal macOS. Good for dialogs and small utilities.</p>
 
 <h2>Workspace-to-monitor: pinning, not switching</h2>
 <pre><code>[workspace-to-monitor-force-assignment]
 "1" = "Built-in Retina Display"
-"2" = "LG ULTRAGEAR+"</code></pre>
-<p>Workspace 1 always lives on your laptop screen, workspace 2+ on your external monitor. Combined with <code>on-window-detected</code> rules (Chrome → 1, Warp → 4), every app has a fixed home, always.</p>
+"2" = "External Monitor"</code></pre>
+<p>In this example, workspace 1 is pinned to the laptop screen and workspace 2+ to an external monitor (use <code>aerospace list-monitors</code> to get your own monitors' exact names). Combine this with <code>on-window-detected</code> rules to give every app a fixed home, always:</p>
+<pre><code>[[on-window-detected]]
+if.app-id = 'com.google.Chrome'
+run = ['move-node-to-workspace 1']
+
+[[on-window-detected]]
+if.app-id = 'dev.warp.Warp-Stable'
+run = ['move-node-to-workspace 4']</code></pre>
 
 <div class="tryit">
 <p class="eyebrow">Try it</p>
-<p>Relaunch an app from your <code>on-window-detected</code> list (e.g. Warp). Check which workspace it lands in against the rule for its <code>app-id</code>.</p>
+<p>Add the two <code>on-window-detected</code> rules above to your config, reload (service mode → <code>esc</code>), then relaunch one of those apps. Confirm it lands on the workspace its rule specifies, not wherever it opened last.</p>
 </div>
 
 <h2>Quiz</h2>
