@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 31 — Automation controller and AWX</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 31 of 36</p>
+<h1>Automation controller and AWX</h1>
+
+<p>Every lesson so far has run from a terminal, on one machine, triggered by one person typing a command. That doesn't scale to a team: there's no shared record of who ran what, no control over which credentials people are allowed to use, and no way for a non-technical stakeholder to safely re-run yesterday's deployment without reading YAML. Automation controller — the exact term the EX374 exam itself uses — is Red Hat's answer: a supported product for running your existing playbooks under governance, as a service, instead of ad hoc from someone's laptop.</p>
+
+<p class="callout"><strong>Mental model:</strong> think of the difference between running scripts from your own laptop versus running them from a real job scheduler with permissions. Nothing about the Ansible content changes — same playbooks, same roles, same collections. What changes is that every run is now logged centrally, gated by role-based access control, and launchable by someone who has never opened a terminal.</p>
+
+<h2>AWX vs. Automation controller — the upstream/downstream relationship</h2>
+<p>Confirmed directly against the AWX project's own GitHub README and Red Hat's official FAQ: this is a real, standard upstream/downstream open-source relationship, not two competing products.</p>
+<table>
+<tr><th></th><th>AWX</th><th>Automation controller</th></tr>
+<tr><td>What it is</td><td>The open-source, community upstream project</td><td>The Red Hat Ansible Automation Platform component built from it</td></tr>
+<tr><td>Official relationship</td><td>"One of the upstream projects for Red Hat Ansible Automation Platform" (AWX's own README)</td><td>"Produced by taking selected releases of AWX, hardening them for long-term supportability" (Red Hat's own description)</td></tr>
+<tr><td>Support</td><td>Community-supported only — Red Hat provides no paid support for it</td><td>Fully supported by Red Hat, under an Ansible Automation Platform subscription</td></tr>
+<tr><td>Release pace</td><td>Fast-moving, frequent releases, all new development happens here first</td><td>Slower, hardened, long-term-supportable releases</td></tr>
+<tr><td>Production recommendation</td><td>Red Hat's own FAQ: not recommended for production</td><td>The supported choice for production use</td></tr>
+</table>
+<p>AWX is genuinely free and self-hostable (for example via the AWX Operator on Kubernetes), which makes it the honest way to get real hands-on practice with these concepts without an Automation Platform subscription — the same way this course has used free local tools throughout rather than assuming paid infrastructure.</p>
+
+<h2>Core concepts</h2>
+<p>The same four building blocks exist in both AWX and Automation controller — confirmed against Red Hat's own Automation controller documentation:</p>
+<table>
+<tr><th>Concept</th><th>What it is</th></tr>
+<tr><td>Project</td><td>A logical collection of playbooks — typically pointing at a git repository, so the controller always pulls the current, version-controlled source</td></tr>
+<tr><td>Inventory</td><td>The target hosts — static, or dynamically sourced (Lesson 20), managed centrally instead of as a file on someone's laptop</td></tr>
+<tr><td>Credential</td><td>Securely stored authentication material — SSH keys, Vault passwords, cloud API keys — used to run jobs without exposing the actual secret value to whoever launches them</td></tr>
+<tr><td>Job template</td><td>Combines a Project + Inventory + Credential(s) (+ execution environment, Lesson 30) into one named, reusable, launchable unit</td></tr>
+</table>
+
+<h2>Why teams actually move to this model</h2>
+<ul>
+<li><strong>Role-based access control</strong> — grant someone permission to launch a specific job template, without ever granting them the underlying credential or repo access.</li>
+<li><strong>Centralized logging</strong> — every run, every host, every result, in one place — an actual audit trail instead of "ask whoever ran it last."</li>
+<li><strong>Scheduling</strong> — recurring automation runs without a person, or a fragile personal cron job, remembering to trigger it.</li>
+<li><strong>Delegation</strong> — someone who has never written a line of YAML can safely click "Launch" on a job template someone else built and tested.</li>
+</ul>
+
+<p class="callout security"><strong>Security note:</strong> credentials in the controller are stored encrypted and injected into the job at run time. A user can be granted "use" permission on a credential — enough to launch a job with it — without ever being able to view or extract the actual secret value. It's the same underlying idea as Ansible Vault (Lesson 26): the secret stays usable without ever being exposed to the person using it.</p>
+
+<p class="callout production"><strong>Production note:</strong> the natural progression this whole course has been building toward: a role gets written, lint-checked (Lesson 27) and Molecule-tested (Lesson 28) locally, packaged into a pinned execution environment (Lesson 30), then registered as a Project and wired into a Job Template in Automation controller. The same tested artifact then runs identically whether it's triggered by a person clicking Launch, a schedule, or a CI pipeline — not three different ad hoc processes.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your team currently has one person SSH into their laptop and run <code>ansible-playbook</code> by hand whenever a deployment is needed. Name two concrete problems this creates that moving to Automation controller job templates fixes.</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Any two of: no audit trail of who ran what and when; no access control — anyone with laptop and repo access can run against production with full credentials; a single point of failure, since only that one person can trigger the deploy; credentials often end up stored locally and insecurely rather than centrally managed; nothing runs on a schedule unless a person remembers to do it manually.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. In Automation controller, what four building blocks does a Job Template combine into one reusable, launchable unit?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">A Project (the playbook source, typically a git repo), an Inventory (the target hosts), Credentials (the auth material needed to reach hosts and decrypt secrets), and typically an execution environment — combined so anyone with launch permission can run the exact same automation the same way, without touching any of the underlying pieces directly.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Is AWX something Red Hat provides paid support for? What's the practical implication if your production automation currently runs on AWX?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4">No. AWX is the fast-moving, community-supported upstream project — Red Hat provides no paid support for it, and its own FAQ doesn't recommend it for production. Automation controller is the hardened, Red Hat-supported downstream product built from selected AWX releases. Running production automation on AWX means you're relying entirely on community support, not a Red Hat support contract.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>A real controller is a licensed product, not something to spin up casually for a practice exercise — so this is a concept-mapping exercise instead, using material you've already built across this course. Imagine you're registering the Vault-protected playbook from Lesson 26 in Automation controller. Write down, in your own words, what you'd configure for each of the four building blocks:</p>
+<ul>
+<li>the <strong>Project</strong> — where would it point?</li>
+<li>the <strong>Inventory</strong> — what hosts does it target?</li>
+<li>the <strong>Credential(s)</strong> — what does the job need access to, and how many separate credentials might that be?</li>
+<li>the <strong>Job template</strong> — what does it tie all three together into?</li>
+</ul>
+<p>Try it yourself before checking a reasonable answer below.</p>
+
+<div class="quiz">
+<p>Reveal a reasonable mapping</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3"><strong>Project:</strong> the git repository holding the playbook and its Vault-encrypted variables file. <strong>Inventory:</strong> the target hosts the playbook manages (static list, or a dynamic source per Lesson 20). <strong>Credentials:</strong> at least two, kept separate — a machine credential (SSH key/password to reach the hosts) and a Vault credential (the password to decrypt <code>secrets.yml</code>) — the controller injects both at run time without ever showing either to the person launching the job. <strong>Job template:</strong> the named, launchable unit combining that Project + Inventory + both Credentials, so anyone with launch permission can run this exact automation without needing the SSH key, the Vault password, or even the repository access themselves.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://github.com/ansible/awx" target="_blank" rel="noopener">github.com/ansible/awx — AWX README</a> (confirmed AWX described as "one of the upstream projects for Red Hat Ansible Automation Platform," providing "a web-based user interface, REST API, and task engine built on top of Ansible") · <a href="https://www.redhat.com/en/ansible-collaborative/faq" target="_blank" rel="noopener">redhat.com — Ansible Collaborative FAQ</a> (confirmed "Automation controller is produced by taking selected releases of AWX, hardening them for long-term supportability," the community-vs-Red-Hat support distinction, and that Red Hat does not recommend AWX for production) · <a href="https://www.redhat.com/en/technologies/management/ansible/automation-controller" target="_blank" rel="noopener">redhat.com — Automation controller</a> (confirmed core concepts: job templates, projects, inventories, credentials, and RBAC/centralized-logging rationale) — all verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>AWX is the free, fast-moving, community-supported upstream project; Automation controller is Red Hat's hardened, fully-supported downstream product built from selected AWX releases — Red Hat does not recommend AWX itself for production.</li>
+    <li>Four core concepts, shared by both: Project (playbook source), Inventory (target hosts), Credential (secured auth material), Job template (combines all three into one launchable, reusable unit).</li>
+    <li>Credentials are usable without being exposed — the same "usable without being seen" idea as Ansible Vault (Lesson 26).</li>
+    <li>Teams move to this model for RBAC, centralized logging/audit, scheduling, and safe delegation to non-experts — not because the underlying playbooks change at all.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0030-execution-environments.html">&larr; Lesson 30: Execution environments</a></span>
+  <span><a href="0032-cicd-for-ansible.html">Lesson 32: CI/CD for Ansible &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 28 — Molecule testing</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 28 of 36</p>
+<h1>Molecule testing</h1>
+
+<p>ansible-lint (Lesson 27) reads your role's code and flags patterns known to cause problems — but it never actually runs anything. It can't tell you whether your role converges without errors against a real target, and it can't tell you whether it's genuinely idempotent (Lesson 7's central concept: running it twice should report changes on the first run and <em>zero</em> changes on the second). Right now, verifying that means manually spinning up a host, running your role twice, and eyeballing the output. <strong>Molecule</strong> automates exactly that, in a disposable test environment, with one command.</p>
+
+<p class="callout"><strong>Mental model:</strong> Molecule is a test harness built specifically for Ansible roles. It spins up a disposable instance (a container, by default), runs your role against it, runs it a second time and checks that nothing changed, optionally checks specific facts about the result, then tears the instance down — all repeatable, all scriptable in CI, no host of yours ever touched.</p>
+
+<h2>Why "it worked once" isn't enough</h2>
+<p>A role can converge successfully — every task reports <code>ok</code> or <code>changed</code>, no errors — and still be broken in the way Lesson 7 warned about: if you ran it a second time, would anything report <code>changed</code> again when it shouldn't? Molecule checks both things, not just the first:</p>
+<ul>
+<li><strong>Converge</strong> — does the role apply cleanly against a fresh instance, with no task failures?</li>
+<li><strong>Idempotence</strong> — run it again immediately. Does the second run report zero changes?</li>
+</ul>
+
+<h2>Installing it</h2>
+<p>Confirmed against Molecule's own docs — Molecule ships a "delegated" driver by default, but the common real-world setup adds a container driver plugin:</p>
+<pre><code># Base install
+$ python3 -m pip install --user molecule
+
+# Add the podman driver plugin (or swap podman for docker)
+$ python3 -m pip install --user "molecule-plugins[podman]"</code></pre>
+<p>You'll also need the container engine itself (Podman or Docker) installed and running — Molecule drives it, it doesn't replace it.</p>
+
+<h2>Scenario anatomy</h2>
+<p>Inside a role, <code>molecule init scenario</code> creates a <code>molecule/default/</code> directory — a <strong>scenario</strong> is a complete, named test configuration for that role:</p>
+<pre><code>my_role/
+  tasks/
+    main.yml
+  molecule/
+    default/
+      molecule.yml     # driver, platforms (what instance(s) to spin up), verifier config
+      converge.yml      # the playbook that applies your role to the test instance
+      verify.yml        # assertions run after converge, to check the result</code></pre>
+<p>A minimal <code>molecule.yml</code>:</p>
+<pre><code>driver:
+  name: podman
+platforms:
+  - name: instance
+    image: docker.io/library/rockylinux:9
+provisioner:
+  name: ansible</code></pre>
+<p>A minimal <code>converge.yml</code> — this is the playbook Molecule actually runs against the test instance:</p>
+<pre><code>- name: Converge
+  hosts: all
+  tasks:
+    - name: run the role under test
+      ansible.builtin.include_role:
+        name: my_role</code></pre>
+<p>A minimal <code>verify.yml</code> — assertions checked <em>after</em> convergence:</p>
+<pre><code>- name: Verify
+  hosts: all
+  tasks:
+    - name: confirm the config file exists
+      ansible.builtin.stat:
+        path: /etc/myapp/myapp.conf
+      register: config_file
+
+    - name: assert it's actually there
+      ansible.builtin.assert:
+        that:
+          - config_file.stat.exists</code></pre>
+
+<h2>The full test sequence</h2>
+<p>Confirmed against Molecule's workflow reference — <code>molecule test</code> runs every one of these steps in order:</p>
+<table>
+<tr><th>Step</th><th>What it does</th></tr>
+<tr><td>dependency</td><td>Installs the role's own dependencies (e.g. from a <code>requirements.yml</code>)</td></tr>
+<tr><td>create</td><td>Provisions the test instance(s) defined in <code>molecule.yml</code></td></tr>
+<tr><td>prepare</td><td>Any setup the instance needs before the role runs (rarely used)</td></tr>
+<tr><td>converge</td><td>Runs <code>converge.yml</code> — applies your role to the instance</td></tr>
+<tr><td>idempotence</td><td><strong>Re-runs</strong> <code>converge.yml</code> and fails the whole test if the second run reports any changes</td></tr>
+<tr><td>side_effect</td><td>Optional — simulate a failure or external event, if your scenario defines one</td></tr>
+<tr><td>verify</td><td>Runs <code>verify.yml</code> — your assertions about the end result</td></tr>
+<tr><td>destroy</td><td>Tears down the test instance(s)</td></tr>
+</table>
+<p>The <strong>idempotence</strong> step is the one that directly enforces Lesson 7's rule: it isn't satisfied by the role merely running without errors — it fails the test outright if anything reports <code>changed</code> on that second run.</p>
+
+<h2>The core commands</h2>
+<table>
+<tr><th>Command</th><th>Does</th></tr>
+<tr><td><code>molecule test</code></td><td>The full sequence above, start to finish, always ending in <code>destroy</code></td></tr>
+<tr><td><code>molecule converge</code></td><td>Just create + converge — leaves the instance running so you can keep iterating</td></tr>
+<tr><td><code>molecule verify</code></td><td>Just runs <code>verify.yml</code> against the already-running instance</td></tr>
+<tr><td><code>molecule login</code></td><td>Opens a shell inside the running test instance, for debugging</td></tr>
+<tr><td><code>molecule destroy</code></td><td>Tears the instance down when you're done</td></tr>
+</table>
+
+<p class="callout mistake"><strong>Common mistake:</strong> running <code>molecule test</code> in a tight edit-run-edit loop while actively developing a role. Every <code>molecule test</code> destroys and recreates the instance from scratch — slow, and wasteful when you're just iterating on one task. Use <code>molecule converge</code> repeatedly while you work (it reuses the running instance), then run the full <code>molecule test</code> once at the end to confirm idempotence and verification both pass.</p>
+
+<p class="callout production"><strong>Production note:</strong> CI runs <code>molecule test</code> on every change to a role — the full sequence, including idempotence and destroy, is exactly what you want enforced automatically on every PR. Locally, engineers live in the faster <code>converge</code> / <code>login</code> / <code>verify</code> loop and only run the full <code>test</code> before pushing.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You add a task to a role using <code>ansible.builtin.command: touch /etc/myapp.conf</code> with no idempotency handling. What would Molecule's idempotence step report, and why?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">It would fail. The idempotence step re-runs <code>converge.yml</code> and requires zero changes on that second run — a bare <code>command</code>/<code>touch</code> task always reports <code>changed: true</code> regardless of prior state, so the second run isn't "zero changes," and Molecule fails the test even though the role itself ran without errors.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. While actively iterating on a role's tasks, why would you run <code>molecule converge</code> repeatedly instead of <code>molecule test</code> each time?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>molecule test</code> runs the entire sequence — create, converge, idempotence, verify, destroy — every time, which recreates the test instance from scratch and is slow for a tight edit loop. <code>molecule converge</code> just re-applies the role to the already-running instance, so you iterate fast; you run the full <code>molecule test</code> once at the end to confirm idempotence and verification both actually pass.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. What are the three files in a default Molecule scenario, and what does each one do?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4"><code>molecule.yml</code> (the scenario's config — driver and platforms/instances to create), <code>converge.yml</code> (the playbook Molecule runs to apply your role to the test instance), and <code>verify.yml</code> (assertions checked after convergence, to confirm the role actually did what it should).</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In a practice folder, create a tiny role and give it a Molecule scenario:</p>
+<pre><code>$ mkdir -p my_role/tasks
+$ cat > my_role/tasks/main.yml <<'EOF'
+- name: create a marker file
+  ansible.builtin.file:
+    path: /tmp/molecule_marker.txt
+    state: touch
+    mode: '0644'
+EOF</code></pre>
+<p>Then, from inside <code>my_role/</code>:</p>
+<ul>
+<li>run <code>molecule init scenario</code> (or hand-create the <code>molecule/default/</code> files shown above, pointing <code>converge.yml</code> at <code>my_role</code>)</li>
+<li>run <code>molecule test</code> — watch it move through create, converge, idempotence, verify, destroy</li>
+<li>confirm the <strong>idempotence</strong> step passes — the <code>file</code> module is idempotent by design, so a second run of this task should report no change</li>
+<li>now break idempotence on purpose: change the task to <code>ansible.builtin.command: touch /tmp/molecule_marker.txt</code> and run <code>molecule test</code> again</li>
+<li>read the failure — the idempotence step should now fail, because <code>command</code> reports <code>changed</code> every run</li>
+</ul>
+<p>Try it yourself before checking the expected result below.</p>
+
+<div class="quiz">
+<p>Reveal what you should see</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">With the <code>file</code> module: all steps pass, including idempotence — the second converge reports zero changes. After switching to <code>ansible.builtin.command: touch ...</code>: converge still succeeds, but the <strong>idempotence step fails</strong>, because the second run of a bare <code>command</code> task reports <code>changed</code> again. This is Molecule directly enforcing Lesson 7's idempotency rule — not just "did it run," but "does running it again change nothing."</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/projects/molecule/" target="_blank" rel="noopener">docs.ansible.com — Molecule documentation</a> (what Molecule is, testing roles/collections against containers/VMs) · <a href="https://docs.ansible.com/projects/molecule/workflow/" target="_blank" rel="noopener">docs.ansible.com — Workflow reference</a> (confirmed the dependency/create/prepare/converge/idempotence/side_effect/verify/destroy sequence and that idempotence re-runs converge expecting zero changes) · <a href="https://docs.ansible.com/projects/molecule/installation/" target="_blank" rel="noopener">docs.ansible.com — Installation</a> (confirmed <code>pip install molecule</code>, delegated default driver, <code>molecule-plugins[podman]</code>/<code>[docker]</code> for container drivers) — all verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>ansible-lint reads code; Molecule actually runs your role against a disposable instance and checks the result — including whether it's truly idempotent, the thing Lesson 7 says matters most.</li>
+    <li>A scenario is <code>molecule.yml</code> (config), <code>converge.yml</code> (applies the role), <code>verify.yml</code> (assertions).</li>
+    <li><code>molecule test</code> runs the full sequence — create, converge, <strong>idempotence</strong> (re-run, expect zero changes), verify, destroy.</li>
+    <li>Iterate locally with <code>molecule converge</code> (fast, reuses the instance); run the full <code>molecule test</code> before pushing, and always in CI.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0027-ansible-lint.html">&larr; Lesson 27: ansible-lint</a></span>
+  <span><a href="0029-check-and-diff-mode.html">Lesson 29: Check and diff mode &rarr;</a></span>
+</div>
+
+</body>
+</html>

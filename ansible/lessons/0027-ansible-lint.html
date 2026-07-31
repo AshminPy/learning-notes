@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 27 — Ansible Lint</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 27 of 36</p>
+<h1>Ansible Lint</h1>
+
+<p>Since Lesson 6 you've been checking your playbooks with <code>ansible-playbook --syntax-check</code> before running them. That command only answers one question: is this valid YAML that Ansible can parse into tasks? It says nothing about whether the playbook is <em>good</em> Ansible — whether it's actually idempotent, whether it uses syntax Ansible is about to remove, or whether you just committed a plaintext password to your repo. A playbook can pass <code>--syntax-check</code> cleanly and still be full of real problems. <strong>ansible-lint</strong> is the tool that catches those.</p>
+
+<p class="callout"><strong>Mental model:</strong> Think of <code>--syntax-check</code> as a spell-checker — it confirms the words are real words. <code>ansible-lint</code> is closer to a style and correctness reviewer — it reads content that's already spelled correctly and flags patterns known to cause bugs, security exposure, or maintenance pain, based on rules the Ansible community has learned the hard way. It doesn't run your playbook against any host; it only reads the files.</p>
+
+<h2>What plain syntax-checking misses</h2>
+<p>Take this task. It's completely valid YAML, and <code>ansible-playbook --syntax-check</code> passes it without a single complaint:</p>
+<pre><code>- name: clean up an old config file
+  command: rm -f /etc/myapp/old.conf
+
+- name: make sure the app package is current
+  ansible.builtin.package:
+    name: myapp
+    state: latest
+
+- name: store the db password for later tasks
+  set_fact:
+    db_password: "S3cretPass!"</code></pre>
+<p>All three tasks are quietly broken in ways syntax-checking can't see:</p>
+<ul>
+<li>The <code>command</code> task always reports <code>changed: true</code>, every single run, whether or not the file existed — that's not idempotent reporting (Lesson 7), and it will fire any handler notified by this task on every run, forever.</li>
+<li><code>state: latest</code> means every run can silently pull in a new package version — the opposite of the repeatable, predictable behaviour you want from a playbook.</li>
+<li><code>db_password</code> is now sitting in plaintext, and if this task's output is ever logged (a CI log, a verbose run someone pastes into a ticket), the secret leaks in plain text.</li>
+</ul>
+<p>ansible-lint catches all three, by name: <code>no-changed-when</code>, <code>package-latest</code>, and <code>no-log-password</code>.</p>
+
+<h2>Installing it</h2>
+<p>Confirmed against ansible-lint's own docs — it installs alongside <code>ansible-core</code> automatically:</p>
+<pre><code># Plain install
+$ pip3 install ansible-lint
+
+# Isolated install (recommended if you don't want it in your project's venv)
+$ pipx install ansible-lint
+
+# Fedora / RHEL
+$ dnf install ansible-lint</code></pre>
+<p>Verify it landed correctly:</p>
+<pre><code>$ ansible-lint --version</code></pre>
+
+<h2>Running it and reading the output</h2>
+<p>Point it at a playbook or a whole role/project directory:</p>
+<pre><code>$ ansible-lint site.yml</code></pre>
+<p>Each finding names the rule, the file and line, and a short explanation — for example, running it against the three tasks above would report something in this shape:</p>
+<pre><code>site.yml:2: no-changed-when Commands should not change things if nothing needs doing
+site.yml:6: package-latest Package installs should not use latest
+site.yml:10: no-log-password Password should not be logged</code></pre>
+<p>Each rule name is exactly what you'd search for in the rule docs or grep in your CI logs — that's deliberate, so a failure is always traceable back to a specific, documented rule.</p>
+
+<h2>The rule categories</h2>
+<p>Confirmed against ansible-lint's current rule reference — over 55 rules, grouped roughly like this:</p>
+<table>
+<tr><th>Category</th><th>Example rules</th><th>Catches</th></tr>
+<tr><td>Idempotency / state</td><td><code>no-changed-when</code>, <code>package-latest</code></td><td>Tasks that misreport change, or drift on every run</td></tr>
+<tr><td>Deprecations</td><td><code>deprecated-module</code>, <code>deprecated-bare-vars</code></td><td>Syntax and modules a future Ansible release will remove</td></tr>
+<tr><td>Security</td><td><code>no-log-password</code>, <code>risky-file-permissions</code></td><td>Secrets that could leak into logs, files created world-writable</td></tr>
+<tr><td>Best practice</td><td><code>fqcn</code>, <code>literal-compare</code>, <code>command-instead-of-module</code></td><td>Style/maintainability issues — e.g. using <code>command: git ...</code> instead of the <code>git</code> module</td></tr>
+</table>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating <code>ansible-playbook --syntax-check</code> as "the linter." It isn't — it's a parser check. A playbook with terrible idempotency, deprecated modules, and a hardcoded secret can sail through <code>--syntax-check</code> with zero complaints. They're two different tools answering two different questions: "is this parseable?" vs. "is this good?"</p>
+
+<p class="callout security"><strong>Security note:</strong> <code>no-log-password</code> and similar rules exist because plaintext secrets in task output aren't hypothetical — CI logs get archived, verbose playbook runs get pasted into tickets and Slack, and neither of those is a secure place for a password to live. If a variable genuinely holds a secret, mark the task <code>no_log: true</code> and, per Lesson 26, keep the value itself in an Ansible Vault-encrypted file, not a plain <code>set_fact</code>.</p>
+
+<p class="callout production"><strong>Production note:</strong> ansible-lint is normally wired in at two points, not one: a <strong>pre-commit hook</strong> (so a violation never even gets committed locally) and a <strong>CI pipeline gate</strong> (so it's enforced centrally, even if someone skips the local hook). A minimal <code>.pre-commit-config.yaml</code> entry:</p>
+<pre><code>repos:
+  - repo: https://github.com/ansible/ansible-lint
+    rev: v25.1.0
+    hooks:
+      - id: ansible-lint</code></pre>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You run <code>ansible-playbook --syntax-check site.yml</code> and it passes with no errors. Does that mean the playbook follows Ansible best practices?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. <code>--syntax-check</code> only confirms the file is valid YAML that Ansible can parse into tasks — it says nothing about idempotency, deprecated syntax, or security issues like plaintext secrets. A playbook can pass syntax-check cleanly and still fail ansible-lint on multiple real problems.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A task uses <code>command: rm -f /tmp/old_config</code> with no <code>changed_when</code> set. What does ansible-lint flag here, and why does it matter?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The <code>no-changed-when</code> rule. <code>command</code>/<code>shell</code> tasks always report <code>changed: true</code> regardless of whether they actually changed anything, which breaks idempotent reporting and can trigger handlers unnecessarily on every run. Fix it with an explicit <code>changed_when</code> (often <code>changed_when: false</code> for a task that never meaningfully changes state).</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Where should ansible-lint run so a violating playbook never reaches production? Name two real integration points.</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4">A pre-commit hook (blocks the problem locally, before it's even committed) and a CI pipeline gate (enforces it centrally, so a skipped local hook doesn't let something through). Using both means a violation has to slip past two independent checks, not one.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In a practice folder, create <code>site.yml</code> with the three deliberately-broken tasks from earlier in this lesson (target <code>hosts: localhost</code> so you don't need any real inventory):</p>
+<pre><code>---
+- hosts: localhost
+  connection: local
+  tasks:
+    - name: clean up an old config file
+      command: rm -f /tmp/old.conf
+
+    - name: make sure the app package is current
+      ansible.builtin.package:
+        name: myapp
+        state: latest
+
+    - name: store the db password for later tasks
+      set_fact:
+        db_password: "S3cretPass!"</code></pre>
+<p>Then:</p>
+<ul>
+<li>run <code>ansible-playbook --syntax-check site.yml</code> — confirm it passes clean</li>
+<li>run <code>ansible-lint site.yml</code> — read every finding, and match each one back to the explanation earlier in this lesson</li>
+<li>fix all three: add <code>changed_when: false</code> to the <code>command</code> task (it never actually changes anything meaningful here), change <code>state: latest</code> to a pinned <code>state: present</code>, and add <code>no_log: true</code> to the <code>set_fact</code> task</li>
+<li>run <code>ansible-lint site.yml</code> again and confirm those three findings are gone</li>
+</ul>
+<p>Try it yourself before checking the reference fix below.</p>
+
+<div class="quiz">
+<p>Reveal the fixed playbook</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>---
+- hosts: localhost
+  connection: local
+  tasks:
+    - name: clean up an old config file
+      command: rm -f /tmp/old.conf
+      changed_when: false
+
+    - name: make sure the app package is current
+      ansible.builtin.package:
+        name: myapp
+        state: present
+
+    - name: store the db password for later tasks
+      set_fact:
+        db_password: "S3cretPass!"
+      no_log: true</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/projects/lint/en/latest/" target="_blank" rel="noopener">docs.ansible.com — Ansible Lint documentation</a> (what ansible-lint is and does, Ansible Galaxy content-quality use) · <a href="https://docs.ansible.com/projects/lint/installing/" target="_blank" rel="noopener">docs.ansible.com — Installing ansible-lint</a> (confirmed <code>pip3 install ansible-lint</code>, <code>pipx install ansible-lint</code> methods) · <a href="https://docs.ansible.com/projects/lint/rules/" target="_blank" rel="noopener">docs.ansible.com — Default Rules</a> (confirmed rule ids including <code>no-changed-when</code>, <code>package-latest</code>, <code>no-log-password</code>, <code>risky-file-permissions</code>, <code>fqcn</code>, <code>literal-compare</code>, <code>command-instead-of-module</code>, <code>deprecated-module</code>, <code>deprecated-bare-vars</code>) — all verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>ansible-playbook --syntax-check</code> only confirms valid, parseable YAML — it catches nothing about idempotency, deprecated syntax, best practices, or security.</li>
+    <li><code>ansible-lint</code> reads your playbooks/roles/collections and flags real problems by rule name: idempotency issues (<code>no-changed-when</code>), version drift (<code>package-latest</code>), deprecated syntax, security exposure (<code>no-log-password</code>, <code>risky-file-permissions</code>), and style/best-practice violations (<code>fqcn</code>, <code>command-instead-of-module</code>).</li>
+    <li>Install with <code>pip3 install ansible-lint</code> (or <code>pipx</code>); run with <code>ansible-lint &lt;path&gt;</code>.</li>
+    <li>Wire it in at two points: a pre-commit hook (catch it locally) and a CI gate (enforce it centrally) — not just one.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0026-ansible-vault.html">&larr; Lesson 26: Ansible Vault</a></span>
+  <span><a href="0028-molecule-testing.html">Lesson 28: Molecule testing &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 32 — CI/CD for Ansible</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 32 of 36</p>
+<h1>CI/CD for Ansible</h1>
+
+<p>Every playbook you've written so far, you've run yourself, from your own terminal. That's fine for learning. It's a real problem in production: "someone's laptop" is now the only thing standing between a typo and a broken fleet — no review, no lint, no staging check, no record of who ran what. A real team runs Ansible from a pipeline instead, the same way Lesson 27's <a href="0027-ansible-lint.html">ansible-lint</a> and Lesson 29's <a href="0029-check-and-diff-mode.html">check/diff mode</a> exist to catch problems before a human types "yes."</p>
+
+<p class="callout"><strong>Mental model:</strong> think of a pipeline as a series of gates, each one guarding the next. A change can't reach production until it's walked through every gate in order — lint, syntax, a dry run against a safe copy of production, then the real thing. Skipping a gate doesn't make the pipeline faster; it just moves the failure from "caught in 30 seconds by a robot" to "caught at 2am by a human."</p>
+
+<h2>The four gates</h2>
+<p>A realistic Ansible pipeline is a sequence, each stage depending on the previous one passing:</p>
+<table>
+<tr><th>Gate</th><th>What it checks</th><th>Tool</th></tr>
+<tr><td>1. Lint</td><td>Style, known-bad patterns, deprecated syntax — before anything even runs</td><td><code>ansible-lint</code> (Lesson 27)</td></tr>
+<tr><td>2. Syntax check</td><td>The YAML and playbook structure actually parses</td><td><code>ansible-playbook --syntax-check</code></td></tr>
+<tr><td>3. Dry run against staging</td><td>What would change, on a real (but safe) inventory, with nothing actually touched</td><td><code>ansible-playbook --check --diff</code> (Lesson 29)</td></tr>
+<tr><td>4. Apply</td><td>The real run — staging first, production only after that succeeds (often gated by a human approval)</td><td><code>ansible-playbook</code></td></tr>
+</table>
+<p>Notice the order: cheapest, fastest checks first. Lint takes seconds and needs no inventory at all. Syntax check takes seconds too. Only once both pass does the pipeline spend the time to actually connect to staging hosts. This is the same "fail fast, fail cheap" logic behind any CI pipeline — Terraform's plan-before-apply pipeline, if you took that course, is the exact same shape.</p>
+
+<h2>A real pipeline, in GitHub Actions</h2>
+<p>This mirrors what a small team would actually run. Each stage is a separate job; <code>needs:</code> makes each one wait for the last to succeed. GitHub's own official <code>ansible/ansible-lint@main</code> action runs the lint stage without you having to install anything yourself:</p>
+<pre><code># .github/workflows/ansible-ci.yml
+name: Ansible CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ansible/ansible-lint@main
+
+  syntax-check:
+    needs: lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install ansible-core
+      - run: ansible-playbook site.yml -i inventories/staging.ini --syntax-check
+
+  dry-run-staging:
+    needs: syntax-check
+    runs-on: ubuntu-24.04
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install ansible-core
+      - name: Dry-run against staging — makes no changes
+        env:
+          VAULT_PASS: ${{ secrets.STAGING_VAULT_PASSWORD }}
+        run: |
+          echo "$VAULT_PASS" > /tmp/vault-pass
+          ansible-playbook site.yml -i inventories/staging.ini \
+            --check --diff --vault-password-file /tmp/vault-pass
+          rm -f /tmp/vault-pass
+
+  apply-staging:
+    needs: dry-run-staging
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install ansible-core
+      - env:
+          VAULT_PASS: ${{ secrets.STAGING_VAULT_PASSWORD }}
+        run: |
+          echo "$VAULT_PASS" > /tmp/vault-pass
+          ansible-playbook site.yml -i inventories/staging.ini \
+            --vault-password-file /tmp/vault-pass
+          rm -f /tmp/vault-pass
+
+  apply-production:
+    needs: apply-staging
+    runs-on: ubuntu-24.04
+    environment: production   # protection rule: a human must approve this job
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install ansible-core
+      - env:
+          VAULT_PASS: ${{ secrets.PRODUCTION_VAULT_PASSWORD }}
+        run: |
+          echo "$VAULT_PASS" > /tmp/vault-pass
+          ansible-playbook site.yml -i inventories/production.ini \
+            --vault-password-file /tmp/vault-pass
+          rm -f /tmp/vault-pass</code></pre>
+<p>Two details carry the whole design: <code>needs:</code> chains the gates in order, and <code>environment: production</code> lets GitHub require a human reviewer to click approve before that one job runs — confirmed directly against GitHub's own Actions documentation: a job tied to a protected environment "must follow any protection rules for the environment before running," and an environment can require that "people or teams... must approve workflow jobs that use this environment." Staging applies automatically once the dry run is clean; production still gets a human in the loop.</p>
+
+<h2>Credentials and the vault password in CI</h2>
+<p>Lesson 26 already established the rule: commit the encrypted vault file, never the password. In CI, that means the vault password lives in the CI system's own secret store — a GitHub Actions secret (<code>secrets.STAGING_VAULT_PASSWORD</code> above), a GitLab CI protected variable, or an external secrets manager — never a file checked into the repo, and never hardcoded in the workflow YAML itself.</p>
+
+<p class="callout mistake"><strong>Common mistake:</strong> writing the vault password straight into the pipeline's <code>--vault-password-file</code> argument, or committing a <code>vault-pass.txt</code> "just to get CI working," meaning to remove it later. That "later" is exactly how vault passwords end up in git history permanently — the same mistake Lesson 26 covered, just moved into a YAML file instead of a vars file. Write the password to a temp file at run time, from a CI secret, and delete the temp file in the same step (as the workflow above does) — nothing sensitive should outlive the job that needed it.</p>
+
+<p class="callout security"><strong>Security note:</strong> a CI runner that can decrypt your vault and reach production is, functionally, a production credential holder. Scope its access the same way you'd scope a human's: separate secrets per environment (notice <code>STAGING_VAULT_PASSWORD</code> and <code>PRODUCTION_VAULT_PASSWORD</code> are different secrets above, not one reused everywhere), and restrict who can approve the production environment's protection rule. A pipeline that can silently touch production with no approval step isn't really safer than someone's laptop — it's the same risk, automated.</p>
+
+<h2>Why staging comes before production, always</h2>
+<p>A dry run (<code>--check --diff</code>) tells you what a playbook <em>would</em> do. It doesn't prove it actually works against real infrastructure — check mode has real limits (Lesson 29 covers why a task that depends on a previous task's registered result can't always be predicted in check mode). Running the real playbook against a staging inventory first — hosts that look like production but aren't — is how a team catches the failures check mode can't: a role that assumes a package repository staging doesn't have, a template that references a variable only defined in one environment's <code>group_vars</code>. Staging is disposable; production isn't.</p>
+
+<p class="callout production"><strong>Production note:</strong> real teams keep staging and production as separate inventory files (or separate dynamic inventory sources, Lesson 20) with the same group structure, so the exact same playbook and roles run against both — only <code>group_vars/staging.yml</code> vs <code>group_vars/production.yml</code> differ. If your "staging" playbook looks structurally different from your "production" playbook, staging isn't testing what production will actually do.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your pipeline has four stages: lint, syntax-check, dry-run-staging, apply-staging. A teammate suggests removing the lint stage "to make the pipeline faster." What's wrong with that reasoning?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Lint is the cheapest, fastest check in the whole pipeline — it runs in seconds with no inventory, no SSH connections, no real infrastructure involved. Removing it doesn't meaningfully speed up the pipeline; it just means a style/deprecation problem that lint would have caught in 5 seconds now gets caught later, by a slower and more expensive stage (or not caught at all until it breaks something in staging or production).</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A CI job needs to run a vault-protected playbook against production, unattended. Where should the vault password actually live, and where should it never live?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">It should live in the CI system's own secret store (a GitHub Actions secret, a GitLab CI protected variable, or an external secrets manager), injected into the job at run time. It should never live in a file committed to the repo, never be hardcoded in the workflow YAML, and ideally shouldn't even persist on disk on the runner past the step that needs it — write it to a temp file and delete the temp file in the same step, exactly like Lesson 26's rule about keeping the vault password completely out of git, extended to CI.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>You don't need a real GitHub repo or real hosts to practice the structure — build the pipeline file itself and reason through what each stage would do:</p>
+<ul>
+<li>create a folder <code>cicd-practice/</code> with a tiny playbook <code>site.yml</code> targeting a fake staging inventory (use the RFC 5737 documentation range, e.g. <code>192.0.2.10</code>, <code>192.0.2.11</code> as <code>[staging]</code> — you don't need these hosts to actually exist to write and syntax-check the pipeline)</li>
+<li>write <code>.github/workflows/ansible-ci.yml</code> following the four-stage shape above, adjusted to your playbook's real filename and inventory path</li>
+<li>run the first two gates locally, exactly as CI would: <code>ansible-lint site.yml</code>, then <code>ansible-playbook site.yml -i inventories/staging.ini --syntax-check</code></li>
+<li>fix anything either one flags — this is the same feedback loop CI gives you, just without waiting for a runner</li>
+</ul>
+<p>Try it yourself before checking the reference commands below.</p>
+
+<div class="quiz">
+<p>Reveal the reference commands</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>ansible-lint site.yml
+# fix any rule violations it reports
+
+ansible-playbook site.yml -i inventories/staging.ini --syntax-check
+# "playbook: site.yml" with no errors means it parses correctly
+
+# once both pass locally, they'll pass as the first two CI jobs too —
+# that's the whole point of running the same commands in the same order</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/projects/lint/installing/" target="_blank" rel="noopener">docs.ansible.com — Installing ansible-lint</a> (confirmed the official <code>ansible/ansible-lint@main</code> GitHub Action and its <code>args</code>/<code>setup_python</code>/<code>requirements_file</code> inputs) · <a href="https://docs.ansible.com/ansible/latest/cli/ansible-playbook.html" target="_blank" rel="noopener">docs.ansible.com — ansible-playbook CLI reference</a> (confirmed <code>--syntax-check</code>: "perform a syntax check on the playbook, but do not execute it") · <a href="https://docs.ansible.com/ansible/latest/vault_guide/vault_using_encrypted_content.html" target="_blank" rel="noopener">docs.ansible.com — Using encrypted variables and files</a> (confirmed <code>--vault-password-file</code>, same source as Lesson 26) · <a href="https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment" target="_blank" rel="noopener">docs.github.com — Using environments for deployment</a> (confirmed environment protection rules can require a human reviewer to approve a job before it runs) — all verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Running Ansible from a pipeline instead of a laptop turns "hope it works" into a sequence of gates: lint (Lesson 27) &rarr; syntax-check &rarr; dry-run against staging (<code>--check --diff</code>, Lesson 29) &rarr; apply — cheapest checks first.</li>
+    <li>A realistic pipeline chains jobs with <code>needs:</code> and gates production behind a human approval — in GitHub Actions, an <code>environment:</code> with a required reviewer.</li>
+    <li>The vault password (Lesson 26) belongs in the CI system's own secret store, injected at run time — never committed, never hardcoded in the pipeline file.</li>
+    <li>Staging and production should run the exact same playbook and roles, differing only in inventory and <code>group_vars</code> — if they're structurally different, staging isn't really testing what production will do.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real pipeline failing on you — a lint rule you don't understand, a syntax-check error, a CI secret that isn't reaching the job? Paste the exact error and ask, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0031-automation-platform-awx.html">&larr; Lesson 31: Ansible Automation Platform / AWX</a></span>
+  <span><a href="0033-performance-best-practices.html">Lesson 33: Performance &amp; best practices &rarr;</a></span>
+</div>
+
+</body>
+</html>
