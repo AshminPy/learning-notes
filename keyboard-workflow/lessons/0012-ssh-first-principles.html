@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 12 — SSH from first principles</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 12 of 24</p>
+<h1>SSH from first principles</h1>
+
+<p>Lessons 12 through 15 build one skill: reaching remote machines safely, entirely from the keyboard. SSH is the protocol underneath all of it — an encrypted remote shell, not just "the command that gets you a prompt on another box." Today you build the foundation: a real key pair, an agent that remembers it for you, and the host-key check that keeps a stolen password from becoming a stolen fleet.</p>
+
+<p class="callout"><strong>Mental model:</strong> a key pair is a lock and its one matching key. The <strong>public key</strong> is the lock — hand out copies freely, pin one to as many servers as you want. The <strong>private key</strong> is the only key that opens any of those locks. It never leaves your machine, never gets emailed, never gets pasted into a server.</p>
+
+<h2>What SSH actually does</h2>
+<p>SSH (Secure Shell) opens an encrypted channel between your machine and a remote one, then runs a shell — or a single command — on the far end through that channel. Two jobs happen every time you connect:</p>
+<ul>
+<li><strong>Encryption</strong> — everything you send and everything the server sends back is unreadable to anyone watching the network in between.</li>
+<li><strong>Authentication</strong> — the server proves who it is with its own host key, and you prove who you are with yours. A password can do this. A key pair does it better: nothing secret ever has to cross the network.</li>
+</ul>
+
+<h2>Generate a real key pair</h2>
+<pre><code>ssh-keygen -t ed25519 -C "generic-example@example.com"</code></pre>
+<p><code>-t ed25519</code> picks the key type. Ed25519 is the modern default for a reason: it's a newer elliptic-curve algorithm that gives strong security from a small, fixed-size key — faster to generate, faster to verify, and simpler to get right than RSA, which needs at least 3072 bits today to be considered adequate. Unless something you're connecting to genuinely can't support it, Ed25519 is the right default. <code>-C</code> just sets a comment on the public key, so use it to label which key this is — never to store anything secret.</p>
+<p>You'll be asked where to save the key (the default <code>~/.ssh/id_ed25519</code> is fine) and for a passphrase. Set one — an unencrypted private key file is one stolen laptop away from a stolen identity. This creates two files: <code>id_ed25519</code> (private — this stays put) and <code>id_ed25519.pub</code> (public — this is the one you hand out).</p>
+
+<p class="callout security"><strong>Security note:</strong> the private key file never gets copied to a server, never gets pasted into a chat for "quick debugging," and never gets committed to a repo — not even a private one. Only the <code>.pub</code> file is ever meant to leave your machine.</p>
+
+<h2>ssh-agent and ssh-add: stop retyping your passphrase</h2>
+<p>A passphrase-protected key is safer at rest, but typing that passphrase on every single connection gets old fast. <code>ssh-agent</code> is a small background process that holds your decrypted key in memory for your session — unlock it once, and every connection after that just uses the agent.</p>
+<pre><code>ssh-add ~/.ssh/id_ed25519   # unlock once, agent remembers it
+ssh-add -l                  # list what the agent currently holds</code></pre>
+<p>macOS starts an agent for you automatically at login, so you don't need to launch one by hand. <code>ssh-add -l</code> is your sanity check: if it reports no identities, the agent is empty and your next connection is about to ask for that passphrase again.</p>
+
+<h2>Host-key verification: known_hosts</h2>
+<p>The first time you connect to a new host, SSH shows you that host's fingerprint and asks you to confirm it. Accept it, and SSH stores that fingerprint in <code>~/.ssh/known_hosts</code>. Every connection after that, SSH quietly checks the host's key against what's on file — and if it ever doesn't match, you get this:</p>
+<pre><code>@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!</code></pre>
+<p>There are two real explanations. The boring one: the host was rebuilt, reimaged, or had its keys legitimately rotated. The dangerous one: something between you and that host is impersonating it — a machine-in-the-middle attack. The warning alone can't tell you which. That's the entire point of showing it to you instead of deciding for you.</p>
+
+<p class="callout"><strong>Common mistake:</strong> running <code>ssh-keygen -R hostname</code> to clear the old entry and reconnect, on autopilot, every time this shows up. That command makes the warning go away — it does not tell you whether the change was legitimate. Confirm out of band first: ask whoever manages that host whether it was rebuilt or had keys rotated recently. Only then clear the old entry and reconnect.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Generate a real key pair with the command above (a throwaway comment is fine). Load it — <code>ssh-add ~/.ssh/id_ed25519</code> — then confirm it's loaded with <code>ssh-add -l</code>. Now turn on Remote Login (System Settings → General → Sharing → Remote Login) and connect to your own Mac: <code>ssh yourusername@localhost</code>. Watch the first-connection fingerprint prompt happen for real, accept it, then check <code>~/.ssh/known_hosts</code> for the new line it added.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. What does the private key in an SSH key pair do?</p>
+<div class="opts">
+<label>A. Stays only on your machine, never leaves it</label>
+<label>B. Gets uploaded to each server you connect to</label>
+<label>C. Gets emailed to teammates who need access too</label>
+<label>D. Gets stored in the server's known_hosts file</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> The private key never leaves your machine — only its matching public key is ever handed out.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Why is Ed25519 the recommended default key type today?</p>
+<div class="opts">
+<label>A. Strong security from a small, fixed-size key</label>
+<label>B. It works only with passwordless authentication</label>
+<label>C. It is the sole type macOS terminals support</label>
+<label>D. It disables the need for any host key checks</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Ed25519 gives strong security from a small, fixed-size key — simpler and faster than RSA, which needs much larger keys to reach comparable strength.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. What problem does ssh-agent solve?</p>
+<div class="opts">
+<label>A. Typing your passphrase again on each connection</label>
+<label>B. Storing your public key on remote servers safely</label>
+<label>C. Verifying a remote host's identity automatically</label>
+<label>D. Encrypting the traffic between you and a server</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> The agent holds your decrypted key in memory so you unlock it once, not on every connection.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. A host shows "REMOTE HOST IDENTIFICATION HAS CHANGED." What should you do first?</p>
+<div class="opts">
+<label>A. Confirm the change out of band before reconnecting</label>
+<label>B. Delete known_hosts immediately and reconnect at once</label>
+<label>C. Ignore it since rebuilds happen there all the time</label>
+<label>D. Lower StrictHostKeyChecking so warnings stop showing</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> The warning can't tell you whether the cause is a legitimate rebuild or an attack — verify with whoever manages the host before clearing it.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. Where does SSH store a host's fingerprint after you first accept it?</p>
+<div class="opts">
+<label>A. In your local ~/.ssh/known_hosts file</label>
+<label>B. Inside the private key file on your disk</label>
+<label>C. On the remote server's authorized_keys file</label>
+<label>D. In a cloud service tied to your GitHub account</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> <code>~/.ssh/known_hosts</code> is the local record SSH checks on every later connection to that host.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://man.openbsd.org/ssh-keygen" target="_blank" rel="noopener">ssh-keygen(1)</a> · <a href="https://man.openbsd.org/ssh-agent" target="_blank" rel="noopener">ssh-agent(1)</a> · <a href="https://man.openbsd.org/ssh" target="_blank" rel="noopener">ssh(1)</a> — official OpenSSH manual pages, verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A key pair is a lock (public key, hand it out) and its one matching key (private key, never leaves your machine).</li>
+    <li><code>ssh-keygen -t ed25519 -C "..."</code> generates a modern key pair; <code>ssh-agent</code> + <code>ssh-add</code> mean you only type the passphrase once per session.</li>
+    <li><code>~/.ssh/known_hosts</code> remembers every host's fingerprint — a mismatch triggers a warning that needs a real answer, not a reflex <code>ssh-keygen -R</code>.</li>
+  </ul>
+  <p><strong>Try solo:</strong> next time you SSH into something new, actually read the fingerprint prompt before typing "yes" — get in the habit of treating it as a real question, not a formality.</p>
+</div>
+
+<footer class="teacher-reminder">Getting a different error than the ones covered here? Paste the exact message — SSH's error text is specific enough that it usually points straight at the fix.</footer>
+
+<div class="lesson-nav">
+  <a href="0011-dotfiles-as-code.html">&larr; Dotfiles as code</a>
+  <a href="0013-ssh-at-scale.html">Next: SSH at scale &rarr;</a>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 18 — AWS CLI: Profiles &amp; SSO</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 18 of 24</p>
+<h1>AWS CLI: profiles, SSO, and checking who you actually are</h1>
+
+<p>Identity and secrets are sorted for Git and SSH. The same problem shows up again with cloud CLIs: one AWS CLI install, several AWS accounts — personal sandbox, work dev, work production — and running a command against the wrong one is exactly how real incidents start. Today: named profiles that keep the accounts apart, and the one habit that catches a mistake before it becomes an outage.</p>
+
+<p class="callout"><strong>Simple example:</strong> imagine a terminal with two accounts open at once, but nothing on screen says which one is active. You run a deploy thinking you're in a sandbox account and you're actually in production. Named profiles turn "which account am I in" from a guess into something you check with one command before every risky action.</p>
+
+<h2>Two files, two jobs</h2>
+<p>The AWS CLI splits configuration across two files, and mixing up what goes where is a common early mistake:</p>
+<table>
+<tr><th>File</th><th>Holds</th><th>Section header</th></tr>
+<tr><td><code>~/.aws/config</code></td><td>Settings: region, output format, SSO details</td><td><code>[profile work]</code></td></tr>
+<tr><td><code>~/.aws/credentials</code></td><td>Secret material: access key ID and secret key</td><td><code>[work]</code> — no "profile" prefix</td></tr>
+</table>
+<pre><code># ~/.aws/config
+[profile work]
+region = us-east-1
+output = json
+
+[profile personal]
+region = us-west-2
+output = json</code></pre>
+<p>Select a profile with a flag or an environment variable — the flag wins if both are set:</p>
+<pre><code>aws s3 ls --profile work
+export AWS_PROFILE=work
+aws s3 ls</code></pre>
+
+<h2>Prefer SSO login over long-lived static keys</h2>
+<p>Static keys in <code>~/.aws/credentials</code> work, but they're long-lived secrets sitting in a plaintext file — if one leaks, it stays valid until someone notices and deactivates it. AWS's own recommended path is IAM Identity Center (SSO) instead, which issues short-lived, auto-expiring credentials:</p>
+<pre><code>aws configure sso
+SSO session name: example-sso
+SSO start URL: https://example-org.awsapps.com/start
+SSO region: us-east-1
+SSO registration scopes: sso:account:access</code></pre>
+<p>This writes a profile plus a linked <code>sso-session</code> block into <code>~/.aws/config</code> — no long-lived secret ever touches <code>~/.aws/credentials</code>:</p>
+<pre><code>[profile work]
+sso_session = example-sso
+sso_account_id = 111122223333
+sso_role_name = ExampleRole
+region = us-east-1
+output = json
+
+[sso-session example-sso]
+sso_region = us-east-1
+sso_start_url = https://example-org.awsapps.com/start
+sso_registration_scopes = sso:account:access</code></pre>
+<p>Sign in and out explicitly:</p>
+<pre><code>aws sso login --profile work
+aws sso logout</code></pre>
+<p>Credentials from a signed-in session auto-renew while the session is valid and simply expire when it isn't — nothing to manually rotate, nothing to leave lying around after you're done.</p>
+
+<h2>The one habit that catches a wrong-account mistake</h2>
+<p><code>aws sts get-caller-identity</code> needs no special permissions and returns exactly who you're authenticated as — run it before anything that changes real infrastructure:</p>
+<pre><code>aws sts get-caller-identity --profile work</code></pre>
+<pre><code>{
+    "UserId": "AIDAEXAMPLE000000000",
+    "Account": "111122223333",
+    "Arn": "arn:aws:iam::111122223333:user/example-user"
+}</code></pre>
+<p>If the <code>Account</code> field isn't the one you meant to be in, stop — you just avoided running a command against the wrong AWS account.</p>
+
+<p class="callout"><strong>Common mistake:</strong> running a command with neither <code>--profile</code> nor <code>AWS_PROFILE</code> set silently falls back to <code>[default]</code> — which may not be the account you think it is. Get in the habit of checking with <code>aws sts get-caller-identity</code> whenever the cost of being wrong is real.</p>
+
+<p class="callout security"><strong>Security note:</strong> never commit <code>~/.aws/credentials</code>, and never paste an <code>aws_secret_access_key</code> into a script, ticket, or chat message — treat a static key exactly like a password. Prefer SSO wherever your organization supports it. If a static key does leak, deactivate it immediately in the IAM console — don't wait for a scheduled rotation.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Create <code>~/.aws/config</code> with two example profiles (<code>work</code> and <code>personal</code>) using fake account IDs and different regions, as shown above. Run <code>export AWS_PROFILE=work</code> then <code>aws configure list</code> to see which profile and region are active without needing real credentials. Switch to <code>personal</code> and confirm the output changes. If you have real IAM Identity Center access, follow up with <code>aws configure sso</code> and <code>aws sts get-caller-identity</code> for real.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. Where do <code>aws_access_key_id</code> and <code>aws_secret_access_key</code> belong?</p>
+<div class="opts">
+<label>A. ~/.aws/credentials, under a profile section</label>
+<label>B. ~/.aws/config, under a profile section</label>
+<label>C. A .env file inside your project's git repository</label>
+<label>D. An environment variable set inside your shell history</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Secret material lives in credentials; settings like region and output live in config.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What does <code>aws configure sso</code> set up that static keys don't?</p>
+<div class="opts">
+<label>A. Short-lived credentials issued through IAM Identity Center</label>
+<label>B. A permanent access key that never needs to be rotated</label>
+<label>C. A local firewall rule blocking non-SSO network traffic</label>
+<label>D. A second AWS account created automatically on your behalf</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Session credentials expire on their own — nothing long-lived is left sitting in a file.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Which command confirms which account and identity you're using right now?</p>
+<div class="opts">
+<label>A. aws sts get-caller-identity</label>
+<label>B. aws configure list-profiles</label>
+<label>C. aws iam list-users</label>
+<label>D. aws ec2 describe-regions</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> It needs no special permissions and returns UserId, Account, and Arn for whoever is calling it.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. With no --profile flag and no AWS_PROFILE set, which profile runs?</p>
+<div class="opts">
+<label>A. The profile named [default]</label>
+<label>B. The most recently created named profile</label>
+<label>C. Whichever profile has the shortest name</label>
+<label>D. It refuses to run any command at all</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> The AWS CLI always falls back to [default] when nothing else selects a profile.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. What should you do if a static AWS access key leaks?</p>
+<div class="opts">
+<label>A. Deactivate it immediately in the IAM console, don't wait</label>
+<label>B. Wait until the next scheduled rotation to replace it</label>
+<label>C. Move it to a different, slightly less visible file</label>
+<label>D. Rename the profile so it's harder to find by search</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> A leaked key stays usable by anyone who has it until it's deactivated — every hour of delay is real exposure.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html" target="_blank" rel="noopener">AWS CLI — Configuration and credential files</a> · <a href="https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html" target="_blank" rel="noopener">AWS CLI — Configuring IAM Identity Center authentication</a> · <a href="https://docs.aws.amazon.com/cli/latest/reference/sts/get-caller-identity.html" target="_blank" rel="noopener">AWS CLI — sts get-caller-identity</a> · verified 2026-07-31</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>~/.aws/config</code> holds settings (<code>[profile name]</code>); <code>~/.aws/credentials</code> holds secrets (<code>[name]</code>).</li>
+    <li>Select a profile with <code>--profile</code> or <code>AWS_PROFILE</code> — no selector falls back to <code>[default]</code>.</li>
+    <li><code>aws configure sso</code> is the recommended path: short-lived credentials, nothing long-lived to leak.</li>
+    <li>Run <code>aws sts get-caller-identity</code> before anything that changes real infrastructure — always verify, never assume.</li>
+  </ul>
+  <p><strong>Try solo:</strong> next time you're about to run a command against a real AWS account, make <code>aws sts get-caller-identity</code> the very first thing you type, before the command that actually does something.</p>
+</div>
+
+<footer class="teacher-reminder">If a profile behaves differently than you expect, paste the output of <code>aws configure list</code> and <code>aws sts get-caller-identity</code> back to your teacher — together they show exactly which file supplied which setting.</footer>
+
+<div class="lesson-nav">
+  <a href="0017-1password-cli-ssh-agent.html">&larr; 1Password CLI / SSH agent</a>
+  <a href="0019-gcloud-cli-configurations.html">Next: gcloud CLI: configurations &amp; accounts &rarr;</a>
+</div>
+
+</body>
+</html>

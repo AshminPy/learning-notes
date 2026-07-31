@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 20 — direnv: Automatic Per-Directory Environment</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 20 of 24</p>
+<h1>direnv: stop switching profiles by hand</h1>
+
+<p>You now have multiple AWS profiles, multiple gcloud configurations, and soon multiple kubeconfigs too. Manually remembering to switch all three every time you <code>cd</code> between a work project and a personal one is exactly how "I thought I was on staging" mistakes happen — not because anyone was careless, but because remembering three separate commands, every single time, doesn't scale. direnv fixes this by making the switch automatic and tied to the directory itself.</p>
+
+<p class="callout"><strong>Simple example:</strong> today, moving from a personal project folder into a work one means manually running <code>export AWS_PROFILE=work</code>, <code>gcloud config configurations activate work</code>, and maybe <code>export KUBECONFIG=~/.kube/work-config</code> — three commands, every time, easy to forget one. direnv's fix: write those exports once, inside the project folder itself, and let <code>cd</code> do the switching from then on.</p>
+
+<h2>The .envrc file: environment that lives with the project</h2>
+<p>Install direnv and hook it into your shell:</p>
+<pre><code>brew install direnv</code></pre>
+<p>Add this line to <code>~/.zshrc</code>, then restart your terminal or run <code>source ~/.zshrc</code>:</p>
+<pre><code>eval "$(direnv hook zsh)"</code></pre>
+<p>Now, inside a project directory, create a file named <code>.envrc</code>:</p>
+<pre><code>export AWS_PROFILE=work
+export CLOUDSDK_ACTIVE_CONFIG_NAME=work
+export KUBECONFIG=~/.kube/work-config</code></pre>
+<p><code>cd</code> into that directory and direnv checks for the file on every prompt — but it won't load a file it hasn't seen before. You'll get a warning that the file isn't allowed yet. Approve it once:</p>
+<pre><code>direnv allow</code></pre>
+<p>From then on: <code>cd</code> into the directory and all three variables load automatically; <code>cd</code> back out and they unload automatically, with nothing left behind in your shell.</p>
+
+<h2>Why the allow step exists — and why not to route around it</h2>
+<p>An <code>.envrc</code> file is just shell code, and direnv would otherwise execute it automatically the instant you <code>cd</code> in — before you've opened the folder, read a README, or looked at a single file. If a malicious <code>.envrc</code> came bundled inside a cloned repo, that's arbitrary shell code running silently on nothing more than a directory change. The <code>allow</code> step forces a human decision the first time a file appears, and again any time its contents change — that's a deliberate safety feature, not friction to script around.</p>
+
+<p class="callout"><strong>Common mistake:</strong> editing an already-allowed <code>.envrc</code>, adding a new line, and being confused when it doesn't take effect. direnv detects the file changed and re-blocks it until you run <code>direnv allow</code> again — that's the same protection working correctly, not a bug.</p>
+
+<p class="callout security"><strong>Security note:</strong> never disable or bypass the allow check to save a step — treat every unfamiliar <code>.envrc</code> the same way you'd treat an unfamiliar shell script: read it before you approve it, especially in a repo you didn't write yourself.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Install direnv and add the shell hook. Create a folder, e.g. <code>~/example-work-project</code>, and inside it write an <code>.envrc</code> with the three example exports above. Run <code>echo $AWS_PROFILE</code> — nothing yet. <code>cd</code> into the folder, see the blocked warning, run <code>direnv allow</code>, then <code>cd</code> out and back in and run <code>echo $AWS_PROFILE</code> again to watch it appear and disappear on its own.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. What triggers direnv to load or unload variables?</p>
+<div class="opts">
+<label>A. Changing directory into or out of a folder with an .envrc</label>
+<label>B. Opening a new terminal application window from Finder</label>
+<label>C. Restarting the computer or logging out of macOS</label>
+<label>D. Running brew upgrade on any installed package</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> direnv checks for an .envrc on every prompt, keyed to the current directory.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What must you do before direnv loads a brand-new .envrc?</p>
+<div class="opts">
+<label>A. Run direnv allow to explicitly approve it</label>
+<label>B. Set AWS_PROFILE manually in that same terminal first</label>
+<label>C. Reboot the machine so the shell hook reloads</label>
+<label>D. Rename the file from .envrc to .env exactly</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Nothing else substitutes for the explicit allow step — that's the whole point of it.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Why does direnv require that explicit allow step at all?</p>
+<div class="opts">
+<label>A. It stops an untrusted .envrc from silently running code on cd</label>
+<label>B. It speeds up how quickly the shell prompt appears on screen</label>
+<label>C. It compresses environment variables to save shell memory</label>
+<label>D. It is required by Homebrew before any formula can install</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> An .envrc is arbitrary shell code — allow forces a human decision before it ever runs.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. You edit an already-allowed .envrc and add a new line. What happens on the next cd in?</p>
+<div class="opts">
+<label>A. direnv blocks it again until you run direnv allow once more</label>
+<label>B. The new line is ignored permanently until the file is deleted</label>
+<label>C. direnv uninstalls itself and reverts to having no shell hook</label>
+<label>D. Nothing changes, because .envrc files can't be edited safely</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> Any content change re-triggers the same allow check — expected behavior, not a glitch.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. What real problem does this .envrc setup actually solve?</p>
+<div class="opts">
+<label>A. Manually switching AWS_PROFILE, gcloud config, and KUBECONFIG on every cd</label>
+<label>B. Automatically writing Terraform code for a brand-new cloud project</label>
+<label>C. Replacing the need for named AWS or gcloud profiles entirely</label>
+<label>D. Preventing any file inside the project directory from being edited</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> direnv doesn't replace the profiles from the last two lessons — it automates switching between them.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://direnv.net/" target="_blank" rel="noopener">direnv.net</a> · <a href="https://direnv.net/docs/hook.html" target="_blank" rel="noopener">direnv — shell hook setup</a> · <a href="https://docs.cloud.google.com/sdk/docs/configurations" target="_blank" rel="noopener">Google Cloud — Managing gcloud CLI configurations</a> · verified 2026-07-31</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>An <code>.envrc</code> file auto-loads on <code>cd</code> in and auto-unloads on <code>cd</code> out — no manual export or unset.</li>
+    <li>Install with <code>brew install direnv</code>, hook into <code>~/.zshrc</code> with <code>eval "$(direnv hook zsh)"</code>.</li>
+    <li>A new or changed <code>.envrc</code> is blocked until you run <code>direnv allow</code> — a deliberate safety check, not friction.</li>
+    <li>Use it to bundle <code>AWS_PROFILE</code>, <code>CLOUDSDK_ACTIVE_CONFIG_NAME</code>, and <code>KUBECONFIG</code> per project, replacing three manual switches with one <code>cd</code>.</li>
+  </ul>
+  <p><strong>Try solo:</strong> add a real <code>.envrc</code> to one project folder you actually use, using your own real profile and configuration names — not the placeholders from this lesson.</p>
+</div>
+
+<footer class="teacher-reminder">If a variable isn't appearing after cd-ing in, run <code>direnv status</code> and paste the output back to your teacher — it usually pinpoints whether the file is blocked, has a syntax error, or was never found in the first place.</footer>
+
+<div class="lesson-nav">
+  <a href="0019-gcloud-cli-configurations.html">&larr; gcloud CLI: configurations &amp; accounts</a>
+  <a href="0021-kubeconfig-context-switching.html">Next: kubeconfig &amp; fast context switching &rarr;</a>
+</div>
+
+</body>
+</html>

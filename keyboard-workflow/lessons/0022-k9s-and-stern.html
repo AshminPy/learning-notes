@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 22 — k9s and stern</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 22 of 24</p>
+<h1>k9s and stern: a cockpit and a log scanner for your cluster</h1>
+
+<p><code>kubectl get pods</code>, then <code>kubectl describe pod</code>, then <code>kubectl logs -f</code> — one pod at a time, typed by hand, switching contexts in between. It works, but it's slow, and it's easy to lose track of what you're actually looking at. This lesson adds two small, keyboard-driven tools that remove that friction: <strong>k9s</strong>, a full terminal UI for a live cluster, and <strong>stern</strong>, which tails logs from many pods at once instead of one. Neither replaces <code>kubectl</code> — both just make the parts you do constantly faster.</p>
+
+<p class="callout"><strong>Mental model:</strong> plain <code>kubectl</code> is like checking on a building by phoning one room at a time — get pods, hang up, dial logs, hang up, dial describe. <strong>k9s</strong> is walking into the building's control room, where every floor is already on screen and you press a button to look closer. <strong>stern</strong> is a scanner that listens to every phone matching a name pattern simultaneously, instead of you dialing them one by one.</p>
+
+<h2>k9s: a terminal UI for a running cluster</h2>
+<p>Launch it with <code>k9s</code> (install: <code>brew install k9s</code>, actively maintained — latest release this year), and you land on a live, auto-refreshing pod list for your current context. Everything below is keyboard-only:</p>
+<table>
+<tr><th>Key</th><th>What it does</th></tr>
+<tr><td><code>:pod</code> ⏎ (or <code>:svc</code>, <code>:deploy</code>, …)</td><td>Jump to a resource type by name, singular or plural</td></tr>
+<tr><td><code>:ctx</code> ⏎</td><td>List contexts and switch — same idea as kubectx, from lesson 21</td></tr>
+<tr><td><code>:ns</code> ⏎</td><td>List namespaces and switch</td></tr>
+<tr><td><code>/pattern</code> ⏎</td><td>Filter the current list with a regex</td></tr>
+<tr><td><code>d</code></td><td>Describe the selected resource</td></tr>
+<tr><td><code>l</code></td><td>View logs for the selected pod</td></tr>
+<tr><td><code>y</code></td><td>View the resource's YAML</td></tr>
+<tr><td><code>s</code></td><td>Open a shell inside the selected container</td></tr>
+<tr><td><code>?</code></td><td>Show every key mapping available right now</td></tr>
+<tr><td><code>esc</code></td><td>Back out of the current view or filter</td></tr>
+</table>
+<p>That's the whole loop: type <code>:</code> and a resource name to go there, <code>/</code> to narrow the list, one letter to act on what's selected. No mouse, no separate terminal windows.</p>
+
+<h2>Safety inside k9s: it can delete things</h2>
+<p>k9s isn't read-only by default — it can edit and delete exactly what <code>kubectl</code> can, from inside the same view you're using to browse:</p>
+<ul>
+<li><code>ctrl-d</code> deletes the selected resource, but asks you to confirm with <code>TAB</code> then <code>ENTER</code> first.</li>
+<li><code>ctrl-k</code> kills it immediately — no confirmation step at all.</li>
+</ul>
+<p class="callout"><strong>Common mistake:</strong> browsing a live cluster with normal navigation muscle memory and landing a finger on <code>ctrl-k</code> instead of <code>ctrl-c</code> or <code>ctrl-d</code>. While you're still learning the keys, launch with <code>k9s --readonly</code> — it disables every modification command and turns k9s into a pure viewer, exactly the safe way to build muscle memory before trusting yourself with the real keys.</p>
+
+<h2>stern: tailing many pods at once</h2>
+<p><code>kubectl logs</code> only ever looks at one pod per invocation — you'd need a separate terminal, or <code>-f</code> restarted by hand, for each replica. <code>stern</code> tails several pods and containers in parallel from one command, color-coding each source so you can tell them apart:</p>
+<pre><code>stern api-                       # tails every pod whose name matches "api-"
+stern api- -c app                # ...only the "app" container in each
+stern -l release=canary          # tails pods matching a label selector
+stern --all-namespaces auth      # tails across every namespace at once</code></pre>
+<p><code>api-</code> here is a regular expression, not a literal pod name — it matches <code>api-frontend-7f8d</code> and <code>api-backend-2c1a</code> at once, in the same scrolling, color-coded stream. Install with <code>brew install stern</code> (also actively maintained, current release this year).</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Point at the practice kubeconfig from lesson 21 (<code>KUBECONFIG=~/.kube/config-practice</code>) and launch <code>k9s --readonly</code>. Type <code>:pod</code> to list pods, <code>/</code> plus a few letters to filter, then <code>l</code> on any result to view its logs, and <code>esc</code> to back out. Quit with <code>:q</code>. Separately, once you have a real sandbox cluster to point at, run <code>stern</code> against a made-up pattern like <code>web-</code> and watch several pods' logs interleave in one stream.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. What is k9s, in one sentence?</p>
+<div class="opts">
+<label>A. A terminal UI for browsing cluster resources</label>
+<label>B. A tool that only draws CPU and memory graphs</label>
+<label>C. A wrapper script that replaces kubectl on disk</label>
+<label>D. A hosted dashboard that runs inside a browser</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> It's a live, keyboard-driven view over whatever <code>kubectl</code> can already see — not a separate product or a browser dashboard.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Inside k9s, which key deletes a resource with no confirmation step at all?</p>
+<div class="opts">
+<label>A. ctrl-k kills the resource immediately</label>
+<label>B. ctrl-d deletes after a confirm step first</label>
+<label>C. the s key only opens a container shell</label>
+<label>D. the d key only shows a describe view</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> <code>ctrl-k</code> is the fast, no-confirmation kill — worth knowing which finger reaches for it before it happens by accident.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. How do you switch which namespace k9s is showing, from inside the UI?</p>
+<div class="opts">
+<label>A. Type :ns then enter, and pick one</label>
+<label>B. Type :ctx then enter, and pick one</label>
+<label>C. Press l to open the log view first</label>
+<label>D. Press y to open the yaml view first</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> <code>:ns</code> lists and switches namespaces; <code>:ctx</code> does the same job for contexts, not namespaces.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. What can stern do that plain kubectl logs cannot?</p>
+<div class="opts">
+<label>A. Tail many matching pods at once, color-coded</label>
+<label>B. Tail logs from exactly one pod, one at a time</label>
+<label>C. Change a pod's log verbosity while it runs</label>
+<label>D. Delete rotated log files stored on a node's disk</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> B is what plain <code>kubectl logs</code> already does; C and D aren't things either tool does. Aggregating many pods into one stream is stern's actual job.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. In a command like stern api-, what does "api-" actually mean?</p>
+<div class="opts">
+<label>A. A regex matched against pod names</label>
+<label>B. The exact, literal name of a single pod</label>
+<label>C. A namespace that must already exist first</label>
+<label>D. A container image tag being searched for</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> The pod-query argument is a regex, so it matches every pod name containing that pattern — not one specific pod.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://github.com/derailed/k9s" target="_blank" rel="noopener">derailed/k9s</a> · <a href="https://k9scli.io/topics/commands/" target="_blank" rel="noopener">k9scli.io — Commands reference</a> · <a href="https://github.com/stern/stern" target="_blank" rel="noopener">stern/stern</a> — verified 2026-07-31 against each project's README and current release history (k9s v0.51.0, June 2026; stern v1.34.0, May 2026).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><strong>k9s</strong> (<code>brew install k9s</code>) is a live terminal UI: <code>:</code> jumps to a resource type, <code>/</code> filters, <code>d</code>/<code>l</code>/<code>y</code>/<code>s</code> describe, view logs, view YAML, and shell in.</li>
+    <li>k9s can also delete or kill from inside the UI — <code>ctrl-d</code> confirms first, <code>ctrl-k</code> doesn't. Use <code>k9s --readonly</code> while you're still learning the keys.</li>
+    <li><strong>stern</strong> (<code>brew install stern</code>) tails logs from every pod matching a regex or label selector at once, color-coded, in one stream — something plain <code>kubectl logs</code> can't do.</li>
+  </ul>
+  <p><strong>Try solo:</strong> next time you'd normally open three terminal tabs to watch three replicas' logs separately, run one <code>stern</code> command against their shared name pattern instead.</p>
+</div>
+
+<footer class="teacher-reminder">Something not matching what you see on screen? Paste the actual key or command output back to your teacher — k9s bindings do shift slightly between versions.</footer>
+
+<div class="lesson-nav">
+  <a href="0021-kubeconfig-context-switching.html">&larr; kubeconfig and fast context switching</a>
+  <a href="0023-zshrc-best-practices.html">Next: .zshrc best practices &rarr;</a>
+</div>
+
+</body>
+</html>

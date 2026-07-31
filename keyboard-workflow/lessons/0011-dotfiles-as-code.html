@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 11 — Dotfiles as code</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 11 of 24</p>
+<h1>Dotfiles as code: bare repo vs. chezmoi</h1>
+
+<p>Three lessons in, you already have real config worth keeping: <code>~/.aerospace.toml</code> (Lesson 1), a Karabiner Hyper key rule (Lesson 10), a Brewfile (Lesson 9). None of it is backed up, versioned, or restorable on a new Mac — it just lives in <code>$HOME</code>, one accidental deletion away from gone. This lesson turns that scattered config into something you can back up, diff, and restore with one command.</p>
+
+<p class="callout"><strong>Mental model:</strong> treat your dotfiles like a production config, not a personal scribble. If you can't <code>git log</code> it, you can't tell what changed, when, or how to roll it back — the exact reason you wouldn't accept an unversioned config on a server.</p>
+
+<h2>Approach 1: the bare git repo</h2>
+<p>A normal <code>git init</code> creates a repo <em>and</em> a working tree in the same folder. You can't do that in <code>$HOME</code> — it would try to track your entire home directory, Downloads and all. A <strong>bare</strong> repo has no working tree of its own; you point it at <code>$HOME</code> separately, and an alias makes the whole thing feel like ordinary git:</p>
+<pre><code>git init --bare "$HOME/.dotfiles"
+alias dotfiles='git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME'
+dotfiles config --local status.showUntrackedFiles no</code></pre>
+<p>That last line matters: without it, <code>dotfiles status</code> would list every untracked file in your entire home directory. With it, only files you've explicitly added ever show up.</p>
+<p>Track your first real file and push it somewhere for backup:</p>
+<pre><code>dotfiles add ~/.aerospace.toml
+dotfiles commit -m "Track AeroSpace config"
+dotfiles remote add origin git@github.com:your-username/dotfiles.git
+dotfiles push -u origin main</code></pre>
+<p>Add the alias line to your shell config so it survives a new terminal tab — Lesson 23 covers exactly where in that file it belongs.</p>
+
+<h2>Approach 2: chezmoi</h2>
+<p>chezmoi takes a different shape: it keeps a separate <strong>source</strong> copy of each dotfile (an ordinary git repo at <code>~/.local/share/chezmoi</code>) and generates your real files from it — like a small build step for config. That extra layer is what buys you templating: one source file can produce different output per machine, so a hostname or a specific device name never has to be hardcoded twice.</p>
+<pre><code>brew install chezmoi
+chezmoi init
+chezmoi add ~/.aerospace.toml
+chezmoi edit ~/.aerospace.toml
+chezmoi diff
+chezmoi apply -v</code></pre>
+<p><code>chezmoi edit</code> opens the <em>source</em> copy, not the live file — <code>chezmoi diff</code> then shows exactly what would change, and <code>apply</code> writes it out for real. On a new Mac, restoring your whole setup is two commands:</p>
+<pre><code>chezmoi init https://github.com/your-username/dotfiles.git
+chezmoi apply</code></pre>
+
+<h2>Which one to pick</h2>
+<table>
+<tr><th></th><th>Bare git repo</th><th>chezmoi</th></tr>
+<tr><td>Extra tool needed</td><td>No — just git</td><td>Yes — one more CLI</td></tr>
+<tr><td>Editing a file</td><td>Edit the real file directly</td><td>Edit the source copy, then apply</td></tr>
+<tr><td>Per-machine values</td><td>Not built in</td><td>Built-in templating</td></tr>
+<tr><td>Best fit</td><td>One Mac, or near-identical Macs</td><td>Multiple machines with real differences</td></tr>
+</table>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Pick one approach and set it up for real. Track your actual <code>~/.aerospace.toml</code> from Lesson 1 as the first file — with the bare repo, <code>dotfiles log</code> should show your commit; with chezmoi, <code>chezmoi status</code> should show it as managed. Either way, confirm the file is now version-controlled, not just sitting loose in <code>$HOME</code>.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. Why can't you just run a normal <code>git init</code> inside <code>$HOME</code>?</p>
+<div class="opts">
+<label>A. It would try to track every file already living in $HOME</label>
+<label>B. Git refuses to ever initialize inside a user's home folder</label>
+<label>C. Homebrew formulae conflict with any repo placed inside $HOME</label>
+<label>D. macOS blocks git from writing hidden folders under $HOME entirely</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> A normal init makes the current folder both repo and working tree — in $HOME that means everything becomes trackable at once.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What does <code>--work-tree=$HOME</code> tell git, in the bare-repo alias?</p>
+<div class="opts">
+<label>A. Treat $HOME as the folder these tracked files live inside</label>
+<label>B. Store every commit's compressed data inside the $HOME folder itself</label>
+<label>C. Only track files whose name starts with a period character</label>
+<label>D. Push every commit automatically each time $HOME's contents change</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Work-tree is just "where the actual files are" — separate from <code>--git-dir</code>, which is where the repo's own data lives.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. In chezmoi, what does <code>chezmoi edit ~/.aerospace.toml</code> actually edit?</p>
+<div class="opts">
+<label>A. The source copy chezmoi keeps, not the live file directly</label>
+<label>B. The live file in place, exactly like opening it in vim</label>
+<label>C. A brand-new file chezmoi creates fresh every single time</label>
+<label>D. The Brewfile entry associated with that file's package name</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> chezmoi always edits its own source copy — <code>apply</code> is the separate step that writes those changes to the real file.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. What does chezmoi's templating solve that a bare repo doesn't?</p>
+<div class="opts">
+<label>A. Letting one source file produce different output per machine</label>
+<label>B. Letting you skip writing any commit message ever again</label>
+<label>C. Letting Homebrew install casks without any manual confirmation step</label>
+<label>D. Letting AeroSpace ignore workspace rules on a second monitor</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> Templating is specifically for machine-to-machine differences — a bare repo has no equivalent built in.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. Which is the better fit for one Mac, with no second Mac planned?</p>
+<div class="opts">
+<label>A. The bare git repo — no extra tool needed at all</label>
+<label>B. chezmoi — templating is required even for a single machine</label>
+<label>C. Neither approach works unless you already use multiple Macs</label>
+<label>D. Homebrew's own bundle command replaces both approaches entirely here</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> The bare repo's whole appeal is zero extra tooling — chezmoi's templating pays off once there's a second machine to diverge from.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://www.atlassian.com/git/tutorials/dotfiles" target="_blank" rel="noopener">Atlassian Git Tutorial — dotfiles (bare repository pattern)</a> · <a href="https://www.chezmoi.io/quick-start/" target="_blank" rel="noopener">chezmoi — Quick start</a> — verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><strong>Bare git repo</strong>: <code>git init --bare $HOME/.dotfiles</code> + a <code>--git-dir</code>/<code>--work-tree</code> alias — no extra tool, edits real files directly.</li>
+    <li><strong>chezmoi</strong>: a source copy plus templating — one extra tool, but handles per-machine differences cleanly.</li>
+    <li>Either way: <code>add</code>, commit, and push your Brewfile (Lesson 9) and AeroSpace config (Lesson 1) so a wiped Mac is a restore, not a rebuild.</li>
+  </ul>
+  <p><strong>Try solo:</strong> once your first file is tracked, add your Karabiner Hyper key rule from Lesson 10 as the second one — that's two real, working configs now backed up and diffable.</p>
+</div>
+
+<footer class="teacher-reminder">Not sure which approach fits your situation, or hit a git error setting up the alias? Bring the exact command and error back to your teacher — this is one of those steps worth getting right before you rely on it.</footer>
+
+<div class="lesson-nav">
+  <a href="0010-karabiner-hyper-key.html">&larr; Karabiner-Elements &amp; the Hyper key</a>
+  <a href="0012-ssh-first-principles.html">Next: SSH from first principles &rarr;</a>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mac Power User &amp; SRE Toolkit — Course roadmap tracker</title>
+<meta name="description" content="Mac Power User & SRE Toolkit roadmap: window management, launcher, terminal and CLI foundations, reproducible setup, SSH/YubiKey, multi-account cloud CLIs, Kubernetes ergonomics, shell mastery. 24 lessons, free independent study resource.">
+<link rel="canonical" href="https://ashminpy.github.io/learning-notes/keyboard-workflow/objectives.html">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .domain {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 1.25rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .domain-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .domain-head h2 { margin: 0; padding: 0; border: none; font-size: 1.1rem; }
+  .domain-head p { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--muted); }
+  .count { color: var(--accent); font-weight: bold; font-size: 0.9rem; white-space: nowrap; }
+  .bar-track {
+    height: 6px;
+    background: var(--code-bg);
+    border-radius: 3px;
+    margin: 0.7rem 0 1rem;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.2s ease;
+  }
+  .item-list { list-style: none; padding: 0; margin: 0; }
+  .item-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.35rem 0;
+  }
+  .item-list input[type="checkbox"] { margin-top: 0.2rem; }
+  .item-list a { color: var(--fg); }
+  .item-list a:hover { color: var(--accent); }
+  .overall {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .disclaimer {
+    border-left: 3px solid var(--rule);
+    background: var(--code-bg);
+    padding: 0.6rem 1rem;
+    margin: 1.25rem 0;
+    font-size: 0.82rem;
+    color: var(--muted);
+    border-radius: 0 4px 4px 0;
+  }
+  .meta-line { font-size: 0.78rem; color: var(--muted); margin-top: 0.4rem; }
+  .feedback-link { font-size: 0.85rem; }
+  .reset-btn {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .reset-btn:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Mac Power User &amp; SRE Toolkit</p>
+<h1>Course roadmap tracker</h1>
+<p>The complete curriculum — <strong>24 of 24 lessons published</strong>, from a first working window-manager config through SSH/YubiKey, multi-account cloud CLIs, and Kubernetes-from-the-terminal ergonomics, across 7 phases. Check off a lesson once you can rebuild/explain it from memory — progress is saved in this browser only. Skill-based course, no single certifying body — see MISSION.md's own success criteria rather than an exam blueprint.</p>
+<p class="overall" id="overall"></p>
+<button class="reset-btn" id="reset-progress" type="button" aria-label="Reset Mac Power User & SRE Toolkit tracker progress">Reset progress</button>
+
+<div class="disclaimer">
+  This is an independent study resource, not affiliated with, endorsed by, or sponsored by Apple, Homebrew, HashiCorp, AWS, Google Cloud, GitHub, 1Password, Yubico, or any other tool/vendor covered. Tool behavior and CLI syntax may change — always check the official docs linked in each lesson.
+  <div class="meta-line">Reviewed: July 31, 2026</div>
+</div>
+<p class="feedback-link"><a href="https://github.com/AshminPy/learning-notes/issues/new?title=Learning%20notes%20correction%3A%20Keyboard%20Workflow%20roadmap" target="_blank" rel="noopener">Report an issue / suggest a correction &rarr;</a></p>
+
+<div id="domains"></div>
+
+<div class="lesson-nav">
+  <a href="../index.html">&larr; Back to all courses</a>
+  <span></span>
+</div>
+
+<script>
+const PHASES = [
+  {
+    key: "wm-launcher-terminal",
+    name: "A. Window, Launcher &amp; Terminal Foundations",
+    lessons: [
+      { id: "0001", title: "AeroSpace, from first principles", href: "lessons/0001-aerospace-mental-model.html" },
+      { id: "0002", title: "Raycast, beyond app launching", href: "lessons/0002-raycast-fundamentals.html" },
+      { id: "0003", title: "Warp, from first principles", href: "lessons/0003-warp-fundamentals.html" }
+    ]
+  },
+  {
+    key: "shell-cli-toolkit",
+    name: "B. Shell &amp; CLI Toolkit",
+    lessons: [
+      { id: "0004", title: "Atuin and zoxide, from first principles", href: "lessons/0004-atuin-and-zoxide.html" },
+      { id: "0005", title: "eza, bat, fd: sharper defaults", href: "lessons/0005-eza-bat-fd.html" },
+      { id: "0006", title: "delta and lazygit", href: "lessons/0006-delta-and-lazygit.html" },
+      { id: "0007", title: "tldr and btop: fast reference, fast monitoring", href: "lessons/0007-tldr-and-btop.html" },
+      { id: "0008", title: "Tying it together: a real daily workflow", href: "lessons/0008-tying-it-together.html" }
+    ]
+  },
+  {
+    key: "reproducible-setup",
+    name: "C. Reproducible Setup Foundations",
+    lessons: [
+      { id: "0009", title: "Homebrew and the Brewfile: install once, reproduce anywhere", href: "lessons/0009-homebrew-and-brewfile.html" },
+      { id: "0010", title: "Karabiner-Elements and the Hyper key", href: "lessons/0010-karabiner-hyper-key.html" },
+      { id: "0011", title: "Dotfiles as code: bare repo vs. chezmoi", href: "lessons/0011-dotfiles-as-code.html" }
+    ]
+  },
+  {
+    key: "secure-access",
+    name: "D. Secure Remote Access",
+    lessons: [
+      { id: "0012", title: "SSH from first principles", href: "lessons/0012-ssh-first-principles.html" },
+      { id: "0013", title: "SSH at scale: jump hosts, multiplexing, troubleshooting", href: "lessons/0013-ssh-at-scale.html" },
+      { id: "0014", title: "YubiKey for SSH &amp; GPG on macOS", href: "lessons/0014-yubikey-ssh-gpg.html" },
+      { id: "0015", title: "tmux: persistent sessions", href: "lessons/0015-tmux-persistent-sessions.html" }
+    ]
+  },
+  {
+    key: "multi-account-cloud",
+    name: "E. Multi-Account Identity &amp; Cloud CLIs",
+    lessons: [
+      { id: "0016", title: "Git with multiple GitHub accounts, without the accidents", href: "lessons/0016-git-multiple-github-accounts.html" },
+      { id: "0017", title: "1Password's SSH agent and the op CLI: one secrets story", href: "lessons/0017-1password-cli-ssh-agent.html" },
+      { id: "0018", title: "AWS CLI: profiles, SSO, and checking who you actually are", href: "lessons/0018-aws-cli-profiles-sso.html" },
+      { id: "0019", title: "gcloud CLI: configurations, and the login command that trips everyone up", href: "lessons/0019-gcloud-cli-configurations.html" },
+      { id: "0020", title: "direnv: stop switching profiles by hand", href: "lessons/0020-direnv-per-directory-env.html" }
+    ]
+  },
+  {
+    key: "kubernetes-terminal",
+    name: "F. Kubernetes From the Terminal",
+    lessons: [
+      { id: "0021", title: "kubeconfig and fast context switching", href: "lessons/0021-kubeconfig-context-switching.html" },
+      { id: "0022", title: "k9s and stern: a cockpit and a log scanner for your cluster", href: "lessons/0022-k9s-and-stern.html" }
+    ]
+  },
+  {
+    key: "shell-mastery-review",
+    name: "G. Shell Mastery &amp; Review",
+    lessons: [
+      { id: "0023", title: ".zshrc best practices: load order, speed, and plugins", href: "lessons/0023-zshrc-best-practices.html" },
+      { id: "0024", title: "Final review: the cheat sheet", href: "lessons/0024-final-review.html" }
+    ]
+  }
+];
+
+const STORE_KEY = "keyboard-workflow-objectives-progress";
+const state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+function renderPhase(d) {
+  const wrap = document.createElement("div");
+  wrap.className = "domain";
+
+  const head = document.createElement("div");
+  head.className = "domain-head";
+  head.innerHTML = `<div><h2>${d.name}</h2><p>${d.lessons.length} lessons</p></div><span class="count">${d.lessons.length}</span>`;
+  wrap.appendChild(head);
+
+  const track = document.createElement("div");
+  track.className = "bar-track";
+  const fill = document.createElement("div");
+  fill.className = "bar-fill";
+  track.appendChild(fill);
+  wrap.appendChild(track);
+
+  const list = document.createElement("ul");
+  list.className = "item-list";
+  d.lessons.forEach(l => {
+    const li = document.createElement("li");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !!state[l.id];
+    cb.setAttribute("aria-label", `Mark Lesson ${Number(l.id)} — ${l.title} as reviewed`);
+    cb.addEventListener("change", () => {
+      state[l.id] = cb.checked;
+      save();
+      updateBar();
+      updateOverall();
+    });
+    const a = document.createElement("a");
+    a.href = l.href;
+    a.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+    li.appendChild(cb);
+    li.appendChild(a);
+    list.appendChild(li);
+  });
+  wrap.appendChild(list);
+
+  function updateBar() {
+    const done = d.lessons.filter(l => state[l.id]).length;
+    const pct = d.lessons.length ? Math.round((done / d.lessons.length) * 100) : 0;
+    fill.style.width = pct + "%";
+  }
+  updateBar();
+
+  return wrap;
+}
+
+function updateOverall() {
+  const all = PHASES.flatMap(d => d.lessons);
+  const done = all.filter(l => state[l.id]).length;
+  document.getElementById("overall").textContent =
+    `${done} of ${all.length} lessons checked off.`;
+}
+
+const container = document.getElementById("domains");
+PHASES.forEach(d => container.appendChild(renderPhase(d)));
+updateOverall();
+
+document.getElementById("reset-progress").addEventListener("click", () => {
+  if (confirm("Reset all Mac Power User & SRE Toolkit tracker progress? This only clears this tracker's checkboxes in this browser — it does not affect any other course on this site.")) {
+    localStorage.removeItem(STORE_KEY);
+    location.reload();
+  }
+});
+</script>
+
+</body>
+</html>

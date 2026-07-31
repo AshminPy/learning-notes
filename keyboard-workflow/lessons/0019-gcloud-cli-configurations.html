@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 19 — gcloud CLI: Configurations &amp; Accounts</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 19 of 24</p>
+<h1>gcloud CLI: configurations, and the login command that trips everyone up</h1>
+
+<p>Same multi-account problem as AWS, different cloud — and gcloud adds one extra wrinkle. There are two different "login" commands, and they authenticate two completely different things. Mixing them up is one of the most common GCP mistakes, including among people who've used gcloud for years. Today: named configurations to keep accounts apart, and the one distinction worth memorizing for good.</p>
+
+<p class="callout"><strong>Mental model:</strong> <code>gcloud auth login</code> is you badging into the building — it lets you personally walk around and open doors. <code>gcloud auth application-default login</code> is issuing a badge to a robot that acts on your behalf while you're not there — your code, Terraform, a client library. They're separate badges for separate wearers. Badging in yourself doesn't badge in your robot too.</p>
+
+<h2>Named configurations: account, project, and region, bundled</h2>
+<p>A gcloud "configuration" bundles an account, a default project, and default region/zone settings under one name, so switching contexts is one command instead of several:</p>
+<pre><code>gcloud config configurations create work
+gcloud config set account work@example.com
+gcloud config set project example-work-project
+gcloud config set compute/region us-central1
+gcloud config set compute/zone us-central1-a
+
+gcloud config configurations create personal
+gcloud config set account personal@example.com
+gcloud config set project example-personal-project</code></pre>
+<p>Switch between them, and check what's currently active:</p>
+<pre><code>gcloud config configurations activate personal
+gcloud config configurations list
+gcloud config list</code></pre>
+<p><code>gcloud config list</code> prints the active configuration's actual settings — account, project, region — so you can confirm the switch actually took before running anything else.</p>
+
+<h2>auth login vs. application-default login</h2>
+<p>This is the distinction that matters most. <code>gcloud auth login</code> authorizes the gcloud CLI itself — the commands you type interactively, like <code>gcloud compute instances list</code>. It obtains your user credentials through a web-based flow and sets the active account for your current configuration.</p>
+<p><code>gcloud auth application-default login</code> is separate: it produces Application Default Credentials (ADC), the credentials read by client libraries and tools like Terraform's Google provider — not by the gcloud CLI's own commands. Google's own docs are explicit about this: <em>"The gcloud CLI itself doesn't use ADC to access Google Cloud resources."</em></p>
+<pre><code>gcloud auth login
+gcloud auth application-default login</code></pre>
+<p>Running one does not authenticate the other. If Terraform can't authenticate against GCP, the fix is almost always <code>application-default login</code>, not logging in again with plain <code>auth login</code>.</p>
+
+<h2>Verify before you run anything</h2>
+<p>Two commands, two different questions:</p>
+<pre><code>gcloud config list
+gcloud auth list</code></pre>
+<p><code>gcloud config list</code> shows which configuration is active and what it's set to. <code>gcloud auth list</code> shows every account gcloud has stored credentials for, and marks which one is currently active — useful when a configuration says one account but the credentials backing it have gone stale.</p>
+
+<p class="callout"><strong>Common mistake:</strong> assuming <code>gcloud auth login</code> alone is enough for Terraform or a client library to work. Most tooling reads Application Default Credentials, not your interactive gcloud session — without <code>application-default login</code>, that tooling has nothing to authenticate with, even while <code>gcloud</code> itself works fine.</p>
+
+<p class="callout security"><strong>Security note:</strong> don't run <code>gcloud auth application-default login</code> casually on a shared or production server — any script or library on that machine picks up those credentials automatically, which widens the blast radius far past your own terminal session. Never commit an <code>application_default_credentials.json</code> file or a downloaded service account key to a repo, and never point <code>GOOGLE_APPLICATION_CREDENTIALS</code> at a key file sitting somewhere shared.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Create two named configurations, <code>work</code> and <code>personal</code>, with placeholder account and project values as shown above. Activate each in turn and run <code>gcloud config list</code> after every switch to confirm it changed. Then run <code>gcloud auth list</code> and compare it against <code>gcloud config list</code> — one tells you which configuration is active, the other tells you which accounts actually have valid credentials behind them.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. What does <code>gcloud auth login</code> authorize?</p>
+<div class="opts">
+<label>A. The gcloud CLI itself, for commands you type interactively</label>
+<label>B. Every client library and Terraform provider on the machine</label>
+<label>C. Only read-only access to Compute Engine resources</label>
+<label>D. A single named configuration's default project value</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> It's your own interactive session with the gcloud CLI — nothing more.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What does <code>gcloud auth application-default login</code> provide credentials for?</p>
+<div class="opts">
+<label>A. Client libraries and tools like Terraform, not the CLI itself</label>
+<label>B. Only the gcloud CLI's own interactive commands</label>
+<label>C. SSH access to Compute Engine virtual machine instances</label>
+<label>D. Renaming an existing named gcloud configuration</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Per Google's own docs, the gcloud CLI itself doesn't use ADC — this command is for everything else that does.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Which command switches which named configuration is active?</p>
+<div class="opts">
+<label>A. gcloud config configurations activate NAME</label>
+<label>B. gcloud config configurations create NAME</label>
+<label>C. gcloud auth application-default login</label>
+<label>D. gcloud config set account NAME</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Create makes a new one; activate switches which existing one is in use.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. Which command shows the properties of the currently active configuration?</p>
+<div class="opts">
+<label>A. gcloud config list</label>
+<label>B. gcloud auth application-default print-access-token</label>
+<label>C. gcloud init --reset</label>
+<label>D. gcloud config configurations describe</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> describe needs you to already know a configuration's name; list shows what's active right now.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. Why avoid running application-default login casually on a shared server?</p>
+<div class="opts">
+<label>A. Any script or library on that machine picks it up automatically</label>
+<label>B. It permanently deletes every other user's gcloud configuration</label>
+<label>C. It changes the server's system clock and time zone settings</label>
+<label>D. It uninstalls the gcloud CLI and requires a full reinstall</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> ADC is a shared, well-known location — anything running on that machine can read it, not just you.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/sdk/gcloud/reference/config" target="_blank" rel="noopener">Google Cloud SDK — gcloud config reference</a> · <a href="https://docs.cloud.google.com/docs/authentication/provide-credentials-adc" target="_blank" rel="noopener">Google Cloud — Application Default Credentials</a> · <a href="https://docs.cloud.google.com/sdk/gcloud/reference/auth/login" target="_blank" rel="noopener">gcloud auth login reference</a> · <a href="https://docs.cloud.google.com/sdk/gcloud/reference/auth/application-default/login" target="_blank" rel="noopener">gcloud auth application-default login reference</a> · verified 2026-07-31</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A named configuration bundles account, project, and region — switch with <code>configurations activate</code>, verify with <code>gcloud config list</code>.</li>
+    <li><code>gcloud auth login</code> authenticates the CLI itself; <code>gcloud auth application-default login</code> authenticates everything else (Terraform, client libraries).</li>
+    <li>The gcloud CLI does not use ADC for its own commands — that's Google's own stated distinction, not an implementation detail.</li>
+    <li><code>gcloud auth list</code> shows every stored account and which one is active — check it alongside <code>gcloud config list</code>.</li>
+  </ul>
+  <p><strong>Try solo:</strong> the next time a Terraform run fails to authenticate against GCP, resist the urge to run <code>gcloud auth login</code> again — check <code>gcloud auth application-default login</code> first.</p>
+</div>
+
+<footer class="teacher-reminder">If a tool "can't find credentials" even though gcloud itself works fine, paste the exact error back to your teacher along with the output of <code>gcloud auth list</code> — nine times out of ten it's the ADC vs. CLI-login mixup this lesson covers.</footer>
+
+<div class="lesson-nav">
+  <a href="0018-aws-cli-profiles-sso.html">&larr; AWS CLI: profiles &amp; SSO</a>
+  <a href="0020-direnv-per-directory-env.html">Next: direnv: automatic per-directory environment &rarr;</a>
+</div>
+
+</body>
+</html>

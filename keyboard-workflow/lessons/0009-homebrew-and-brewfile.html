@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 9 — Homebrew and Brewfile</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 9 of 24</p>
+<h1>Homebrew and the Brewfile: install once, reproduce anywhere</h1>
+
+<p>Every lesson from here on installs something — Karabiner next, then a long list of CLIs later in the course. Right now, if your Mac died today, none of that would come back on its own: you'd remember maybe half the tools you use daily, and none of the exact versions. This lesson fixes the root problem — how you install software on a Mac, and how you turn your whole install list into one file you can hand to a brand-new machine.</p>
+
+<p class="callout"><strong>Mental model:</strong> Homebrew is a package manager for macOS, the same job <code>apt</code> does on Debian or <code>yum</code> does on Red Hat — except everything it installs lives under one directory it owns (<code>/opt/homebrew</code> on Apple Silicon), never scattered across the system.</p>
+
+<h2>Formula, cask, tap: three nouns you'll see constantly</h2>
+<p>Homebrew's own docs define three terms that show up in every command you run:</p>
+<ul>
+<li><strong>Formula</strong> — a package definition for a command-line tool, usually built from source. Install one with <code>brew install &lt;name&gt;</code>.</li>
+<li><strong>Cask</strong> — a package definition for a GUI app distributed as a pre-built binary (something you'd otherwise drag into <code>/Applications</code>). Install one with <code>brew install --cask &lt;name&gt;</code>.</li>
+<li><strong>Tap</strong> — a Git repository of formulae and/or casks, beyond the default set Homebrew ships with. You add one with <code>brew tap &lt;user/repo&gt;</code> before its packages become installable.</li>
+</ul>
+<p>Try both of the first two now. <code>jq</code> is a formula — a small command-line JSON processor genuinely useful for reading API responses and log lines:</p>
+<pre><code>brew install jq</code></pre>
+<p>Docker Desktop is a cask — a full GUI application:</p>
+<pre><code>brew install --cask docker</code></pre>
+<p class="callout">No Homebrew yet? Install it with the official one-line installer, then restart your terminal: <code>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</code></p>
+
+<h2>Brewfile: snapshot your whole setup into one file</h2>
+<p>Installing tools one at a time is fine the first time. It doesn't scale to "set up a second Mac" or "recover after a wipe." <code>brew bundle</code> solves that by reading and writing a single file — a <strong>Brewfile</strong> — that lists everything you've installed:</p>
+<pre><code>brew bundle dump --file=~/Brewfile</code></pre>
+<p>This writes every installed formula, cask, and tap into <code>~/Brewfile</code>, in plain text:</p>
+<pre><code>tap "homebrew/bundle"
+brew "jq"
+brew "git"
+cask "docker"</code></pre>
+<p>On a new Mac — or after a wipe — one command reads that same file and installs everything it lists:</p>
+<pre><code>brew bundle install --file=~/Brewfile</code></pre>
+<p>This is the reproducibility foundation the rest of this course builds on. Lesson 11 puts this exact file under version control alongside your other dotfiles, so "set up a new Mac" becomes a handful of commands instead of a half-remembered checklist.</p>
+
+<h2>brew doctor: your first troubleshooting step</h2>
+<p>When something Homebrew-related misbehaves — a formula won't build, a command isn't found after install — run this before anything else:</p>
+<pre><code>brew doctor</code></pre>
+<p>It checks your Homebrew installation for common problems and exits non-zero if it finds any. Not every warning it prints means something is actually broken — Homebrew's own docs note that if your installation is working, some warnings are safe to ignore. Read what it reports before acting on it.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Install one real formula and one real cask (or reuse <code>jq</code> and <code>docker</code> above). Then run <code>brew bundle dump --file=~/Brewfile</code> and open the file — confirm both entries are in it. Finally, run <code>brew doctor</code> and read whatever it reports, even if it says everything's fine.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. What's the difference between a formula and a cask?</p>
+<div class="opts">
+<label>A. Formula installs from source recipe; cask installs a prebuilt app</label>
+<label>B. Formula only works for GUI apps; cask only works for CLI tools</label>
+<label>C. Formula needs a tap always; cask never needs a tap ever</label>
+<label>D. Formula and cask are two names for one identical process</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> A formula is typically built from a source recipe; a cask installs a binary someone else already compiled and signed.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What does <code>brew bundle dump</code> do?</p>
+<div class="opts">
+<label>A. Writes your installed formulae, casks, and taps to a Brewfile</label>
+<label>B. Deletes every formula and cask currently installed on your Mac</label>
+<label>C. Uploads your installed software list to Homebrew's public servers</label>
+<label>D. Runs every installed formula's test suite before finishing the task</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> It's a snapshot command — it reads your current install state and writes it to a file, nothing gets removed or uploaded anywhere.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. What does <code>brew bundle install --file=~/Brewfile</code> do on a fresh Mac?</p>
+<div class="opts">
+<label>A. Installs every formula, cask, and tap listed in that Brewfile</label>
+<label>B. Only checks the file for syntax errors, nothing gets installed</label>
+<label>C. Renames the Brewfile before continuing with the installation process</label>
+<label>D. Downloads Homebrew itself using the path inside that Brewfile</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> It's the restore half of the pair — it reads the file and installs everything listed, by default upgrading anything already present.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. What does <code>brew doctor</code> check for?</p>
+<div class="opts">
+<label>A. Potential problems with your current Homebrew installation setup</label>
+<label>B. The exact release date of every formula you've installed</label>
+<label>C. Whether your internet connection is currently fast enough now</label>
+<label>D. How many gigabytes of disk space casks have used total</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> It's a diagnostic scan of your Homebrew setup itself — not a version log, speed test, or disk report.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. Why does this course care about the Brewfile specifically?</p>
+<div class="opts">
+<label>A. It becomes the reproducible base the dotfiles lesson tracks</label>
+<label>B. It replaces the need to ever open Terminal again</label>
+<label>C. It automatically syncs your Mac's files to iCloud Drive</label>
+<label>D. It converts every cask into a formula for speed</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> Lesson 11 version-controls this exact file — it's the first piece of your reproducible, backed-up setup.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.brew.sh/Manpage" target="_blank" rel="noopener">Homebrew Manpage (brew bundle, brew doctor)</a> · <a href="https://docs.brew.sh/Formula-Cookbook" target="_blank" rel="noopener">Homebrew Formula Cookbook (formula/cask/tap terminology)</a> — verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><strong>Formula</strong> = CLI tool, usually built from source. <strong>Cask</strong> = GUI app, pre-built binary. <strong>Tap</strong> = a repo of either, beyond Homebrew's defaults.</li>
+    <li><code>brew bundle dump --file=~/Brewfile</code> snapshots everything installed; <code>brew bundle install --file=~/Brewfile</code> restores it, anywhere, in one command.</li>
+    <li><code>brew doctor</code> is the first thing to run when Homebrew itself is misbehaving.</li>
+  </ul>
+  <p><strong>Try solo:</strong> next time you install any tool with Homebrew, re-run <code>brew bundle dump --file=~/Brewfile</code> right after — make it a reflex, not a once-a-year cleanup task.</p>
+</div>
+
+<footer class="teacher-reminder">Command output look different from what's shown here? Homebrew updates constantly — run <code>brew --version</code> and check the linked docs before assuming something's broken.</footer>
+
+<div class="lesson-nav">
+  <a href="0008-tying-it-together.html">&larr; Tying it together</a>
+  <a href="0010-karabiner-hyper-key.html">Next: Karabiner-Elements &amp; the Hyper key &rarr;</a>
+</div>
+
+</body>
+</html>
