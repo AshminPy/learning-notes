@@ -19,49 +19,49 @@
 <div class="quiz">
 <p>Your config builds three S3 buckets with <code>count = length(var.bucket_names)</code>, naming each one from <code>var.bucket_names[count.index]</code>, where the list is <code>["logs", "backups", "archive"]</code>. You need to delete the <code>"backups"</code> bucket without touching <code>logs</code> or <code>archive</code> at all. What should you have used instead of <code>count</code> to make that possible?</p>
 <ol type="A">
-<li><code>depends_on</code>, so Terraform tracks deletion order explicitly</li>
-<li><code>for_each</code> over a set of the bucket names, so each instance is keyed by name instead of position</li>
-<li><code>lifecycle { prevent_destroy = true }</code> on the resource block</li>
-<li>A separate <code>resource</code> block for each bucket, written out by hand</li>
+<li>Add <code>depends_on</code> so Terraform can track deletion order</li>
+<li>Set <code>lifecycle { prevent_destroy = true }</code> on the resource</li>
+<li>Switch <code>count</code> to <code>for_each</code>, keyed by name instead of index</li>
+<li>Write a separate <code>resource</code> block for each bucket by hand</li>
 </ol>
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a1"><strong>Correct: B.</strong> <code>count</code> ties each instance's identity to its numeric position, so removing an item from the middle of the list shifts every index after it — Terraform sees that as a change, not a clean removal, and plans to destroy/recreate the shifted instances too. <code>for_each</code> keys each instance by name, so deleting <code>"backups"</code> only touches <code>bucket["backups"]</code>. See <a href="0011-meta-arguments.html">Lesson 11 — Meta-arguments</a>.</div>
+<div class="answer" id="a1"><strong>Correct: C.</strong> <code>count</code> ties each instance's identity to its numeric position, so removing an item from the middle of the list shifts every index after it — Terraform sees that as a change, not a clean removal, and plans to destroy/recreate the shifted instances too. <code>for_each</code> keys each instance by name, so deleting <code>"backups"</code> only touches <code>bucket["backups"]</code>. See <a href="0011-meta-arguments.html">Lesson 11 — Meta-arguments</a>.</div>
 </div>
 
 <h2>Scenario 2 — lifecycle rules</h2>
 <div class="quiz">
 <p>An <code>aws_instance</code> sits behind a load balancer, serving live traffic. You need to change an argument that forces a replace. Left at Terraform's default behavior, what happens during that replace — and which <code>lifecycle</code> setting fixes it?</p>
 <ol type="A">
-<li>Terraform updates the instance in place; no fix needed</li>
-<li>Terraform destroys the old instance, then creates the new one — a gap with nothing serving traffic. Add <code>lifecycle { create_before_destroy = true }</code> to flip the order</li>
-<li>Terraform refuses to plan the change at all unless <code>ignore_changes</code> is set</li>
-<li>Terraform creates the new instance and leaves the old one running forever unless you manually destroy it</li>
+<li><code>create_before_destroy</code> flips replace to create-then-destroy</li>
+<li>Terraform updates it in place, so nothing needs changing</li>
+<li>Plan is blocked unless <code>ignore_changes</code> is set on the resource</li>
+<li>Old instance keeps running forever unless destroyed by hand</li>
 </ol>
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a2"><strong>Correct: B.</strong> The default replace order is destroy-then-create (<code>-/+</code> in plan output) — there's a real moment where the resource doesn't exist. <code>create_before_destroy = true</code> flips it to create-then-destroy (<code>+/-</code>), so the new instance exists before the old one is torn down — the exact reason this setting is a named exam objective. See <a href="0012-lifecycle-and-conditions.html">Lesson 12 — Lifecycle rules &amp; custom conditions</a>.</div>
+<div class="answer" id="a2"><strong>Correct: A.</strong> The default replace order is destroy-then-create (<code>-/+</code> in plan output) — there's a real moment where the resource doesn't exist. <code>create_before_destroy = true</code> flips it to create-then-destroy (<code>+/-</code>), so the new instance exists before the old one is torn down — the exact reason this setting is a named exam objective. See <a href="0012-lifecycle-and-conditions.html">Lesson 12 — Lifecycle rules &amp; custom conditions</a>.</div>
 </div>
 
 <h2>Scenario 3 — state surgery</h2>
 <div class="quiz">
 <p>During a refactor you rename a resource in your config — <code>aws_instance.worker</code> becomes <code>aws_instance.app_server</code> — with no change to the real infrastructure. You want the next <code>terraform plan</code> to show no destroy and no create, just the address updated in state, and you want that intent committed to git and reviewed in your pull request like any other config change. What do you add?</p>
 <ol type="A">
-<li>Run <code>terraform state mv aws_instance.worker aws_instance.app_server</code> from your terminal only</li>
-<li>A <code>moved</code> block in your <code>.tf</code> config: <code>moved { from = aws_instance.worker to = aws_instance.app_server }</code></li>
-<li><code>lifecycle { ignore_changes = [all] }</code> on the renamed resource</li>
-<li>Nothing — Terraform detects renames automatically by comparing attribute values</li>
+<li>Run <code>terraform state mv</code> once from your own terminal only</li>
+<li>Terraform detects the rename automatically by comparing values</li>
+<li>Set <code>lifecycle { ignore_changes = [all] }</code> on the renamed resource</li>
+<li>Add a <code>moved</code> block in config, so the rename is versioned and reviewed</li>
 </ol>
 <button onclick="document.getElementById('a3').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a3"><strong>Correct: B.</strong> Without either fix, Terraform's three-way comparison sees a new address with no state entry (create) and an old address no longer in config (destroy) — a real destroy-and-recreate for what was just a rename. <code>terraform state mv</code> (option A) fixes it too, but only from one person's terminal, invisible to teammates until someone tells them. A <code>moved</code> block lives in version control, shows up in the PR diff, and gets reviewed — the safer default for refactors that go through normal review. See <a href="0016-state-surgery.html">Lesson 16 — State surgery</a>.</div>
+<div class="answer" id="a3"><strong>Correct: D.</strong> Without either fix, Terraform's three-way comparison sees a new address with no state entry (create) and an old address no longer in config (destroy) — a real destroy-and-recreate for what was just a rename. <code>terraform state mv</code> (option A) fixes it too, but only from one person's terminal, invisible to teammates until someone tells them. A <code>moved</code> block lives in version control, shows up in the PR diff, and gets reviewed — the safer default for refactors that go through normal review. See <a href="0016-state-surgery.html">Lesson 16 — State surgery</a>.</div>
 </div>
 
 <h2>Scenario 4 — environments</h2>
 <div class="quiz">
 <p>Ops tells you: prod's state must sit behind a different encryption key and a stricter IAM policy than dev's — only two senior engineers should even have read access to prod's backend. Dev and prod currently share one directory of <code>.tf</code> files, switched between with <code>terraform workspace select</code>. Does that setup satisfy the requirement, and if not, what pattern does?</p>
 <ol type="A">
-<li>Yes — just create a <code>prod</code> workspace with <code>terraform workspace new prod</code> and the access control follows automatically</li>
-<li>No — workspaces in one directory share a single backend, so they share the same storage, encryption, and IAM permissions. Use separate directories per environment, each with its own backend block, calling shared modules</li>
-<li>No — switch to a separate git branch per environment instead; branches give each environment its own backend automatically</li>
-<li>Yes, as long as <code>prevent_destroy = true</code> is set on prod's resources</li>
+<li>Create a <code>prod</code> workspace; access control follows automatically</li>
+<li>Separate directories per environment, each with its own backend</li>
+<li>Use a separate git branch per environment instead of workspaces</li>
+<li>Set <code>prevent_destroy = true</code> on every resource in prod</li>
 </ol>
 <button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
 <div class="answer" id="a4"><strong>Correct: B.</strong> Workspaces sharing one directory share one backend by design — same storage location, same encryption config, same IAM permissions for every workspace. There's no way to give one workspace a stricter policy than another. HashiCorp's own guidance for this exact case is separate directories, each with its own backend, calling shared modules for the actual resource logic — pattern 2. Branches (option C) don't solve access control either, and they carry their own drift risk since infrastructure state doesn't merge like code. See <a href="0021-workspaces.html">Lesson 21 — Workspaces</a> and <a href="0022-managing-environments.html">Lesson 22 — Managing dev/stage/prod environments</a>.</div>
@@ -76,49 +76,49 @@
     }</code></pre>
 <p>What does this actually mean is about to happen, and how could you have known <em>which</em> argument caused it before reading the detail line?</p>
 <ol type="A">
-<li>Nothing unusual — <code>-/+</code> means the same thing as <code>~</code>, an in-place update</li>
-<li>The resource will be destroyed, then a new one created — not updated in place. The <code># forces replacement</code> comment next to <code>length</code> is Terraform telling you exactly which argument triggered it</li>
-<li>Terraform made a mistake; <code>length</code> should never force a replacement</li>
-<li>You can only know this by checking the summary line at the bottom of the plan</li>
+<li>Nothing unusual — <code>-/+</code> behaves the same as an in-place update</li>
+<li>Terraform made a mistake; <code>length</code> should never force a replace</li>
+<li><code>-/+</code> means destroy-then-create; the inline comment names the cause</li>
+<li>Only the bottom summary line shows what actually changed</li>
 </ol>
 <button onclick="document.getElementById('a5').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a5"><strong>Correct: B.</strong> <code>-/+</code> means destroy-then-create, not an in-place update — some arguments (like <code>length</code> on <code>random_pet</code>) can't be changed on the live object, so Terraform has no choice but to replace it. The <code># forces replacement</code> comment appears right next to the specific argument responsible. The bottom summary line (option D) only gives you counts — "1 to change" vs "1 to destroy" — never which resource or which argument, which is exactly why skimming it is the costliest beginner habit in plan review. See <a href="0012-lifecycle-and-conditions.html">Lesson 12</a> and <a href="0026-plan-review-discipline.html">Lesson 26 — Plan review discipline</a>.</div>
+<div class="answer" id="a5"><strong>Correct: C.</strong> <code>-/+</code> means destroy-then-create, not an in-place update — some arguments (like <code>length</code> on <code>random_pet</code>) can't be changed on the live object, so Terraform has no choice but to replace it. The <code># forces replacement</code> comment appears right next to the specific argument responsible. The bottom summary line (option D) only gives you counts — "1 to change" vs "1 to destroy" — never which resource or which argument, which is exactly why skimming it is the costliest beginner habit in plan review. See <a href="0012-lifecycle-and-conditions.html">Lesson 12</a> and <a href="0026-plan-review-discipline.html">Lesson 26 — Plan review discipline</a>.</div>
 </div>
 
 <h2>Scenario 6 — sensitive data</h2>
 <div class="quiz">
 <p>A teammate marks a database password variable <code>sensitive = true</code> and says "great, now it's encrypted and safe." <code>terraform plan</code> does show <code>(sensitive value)</code> instead of the real string. Is your teammate right that the value is now protected?</p>
 <ol type="A">
+<li><code>sensitive = true</code> only hides CLI output, state still stores it plain</li>
 <li>Yes — <code>sensitive = true</code> encrypts the value everywhere it's stored</li>
-<li>No — <code>sensitive</code> only hides the value from CLI output (<code>plan</code>, <code>apply</code>, <code>output</code>). It's still written into <code>terraform.tfstate</code> in plaintext, and <code>terraform output -raw</code> prints it directly</li>
-<li>No — <code>sensitive</code> does nothing at all; it's purely cosmetic and has no effect on any command's output</li>
-<li>Yes, but only if the backend is remote (Lesson 14)</li>
+<li>No — <code>sensitive</code> has no effect on any command's output at all</li>
+<li>Yes, but only when the backend is configured as remote</li>
 </ol>
 <button onclick="document.getElementById('a6').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a6"><strong>Correct: B.</strong> <code>sensitive = true</code> is a CLI display filter, not encryption — HashiCorp's own docs are explicit that Terraform "still stores the values of sensitive variables in your state." The real protection is never committing state (Lesson 13) plus an encrypted remote backend (Lesson 14); <code>sensitive</code> only stops the value from flashing across a terminal or CI log by accident. See <a href="0024-sensitive-data.html">Lesson 24 — Handling sensitive data</a>.</div>
+<div class="answer" id="a6"><strong>Correct: A.</strong> <code>sensitive = true</code> is a CLI display filter, not encryption — HashiCorp's own docs are explicit that Terraform "still stores the values of sensitive variables in your state." The real protection is never committing state (Lesson 13) plus an encrypted remote backend (Lesson 14); <code>sensitive</code> only stops the value from flashing across a terminal or CI log by accident. See <a href="0024-sensitive-data.html">Lesson 24 — Handling sensitive data</a>.</div>
 </div>
 
 <h2>Scenario 7 — module versioning</h2>
 <div class="quiz">
 <p>Your root config calls a registry module: <code>source = "terraform-aws-modules/vpc/aws"</code>, with no <code>version</code> argument at all. Six months later, a teammate's fresh <code>terraform init</code> pulls a newer major version than the one you originally tested, and part of your config breaks. What single change would have prevented this, while still allowing safe patch/minor updates through automatically?</p>
 <ol type="A">
-<li>Add <code>version = "~> 6.0"</code> — a pessimistic constraint that allows patch/minor bumps but blocks a jump to <code>7.0.0</code></li>
 <li>Add <code>lifecycle { ignore_changes = [all] }</code> to the module block</li>
-<li>Switch the module source to a local path instead of the registry</li>
-<li>Nothing — registry modules always resolve to the version you first applied</li>
+<li>Point the module source at a local path instead of the registry</li>
+<li>Pin the module with a pessimistic constraint like <code>"~> 6.0"</code></li>
+<li>Nothing — registry modules always resolve to the first version applied</li>
 </ol>
 <button onclick="document.getElementById('a7').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a7"><strong>Correct: A.</strong> An unpinned registry module source resolves to "whatever's latest right now" at every fresh <code>init</code> — the same failure mode as an unpinned provider version. A pessimistic constraint like <code>~> 6.0</code> lets <code>6.1</code>, <code>6.10</code>, and so on in automatically, but blocks <code>7.0.0</code>, forcing a deliberate, reviewed bump instead of a silent one. See <a href="0019-module-sources-and-versioning.html">Lesson 19 — Module sources &amp; versioning</a>.</div>
+<div class="answer" id="a7"><strong>Correct: C.</strong> An unpinned registry module source resolves to "whatever's latest right now" at every fresh <code>init</code> — the same failure mode as an unpinned provider version. A pessimistic constraint like <code>~> 6.0</code> lets <code>6.1</code>, <code>6.10</code>, and so on in automatically, but blocks <code>7.0.0</code>, forcing a deliberate, reviewed bump instead of a silent one. See <a href="0019-module-sources-and-versioning.html">Lesson 19 — Module sources &amp; versioning</a>.</div>
 </div>
 
 <h2>Scenario 8 — CI/CD plan review</h2>
 <div class="quiz">
 <p>Your team's pipeline runs <code>terraform plan</code>, posts it as a pull-request comment for a human to review, then — after approval — runs a bare <code>terraform apply</code> (no saved plan file) in a separate pipeline step. What's the risk in that setup, and how do you close it?</p>
 <ol type="A">
-<li>There's no risk — <code>apply</code> always re-executes exactly the plan a human already approved</li>
-<li>Between the reviewed plan and the later <code>apply</code>, state could change (a teammate's apply, drift). A bare <code>apply</code> silently recomputes a fresh plan against current state, which may differ from what was reviewed — close the gap with <code>terraform plan -out=tfplan</code> in the plan step and <code>terraform apply tfplan</code> in the apply step</li>
-<li>Add <code>prevent_destroy = true</code> to every resource so nothing can change unexpectedly</li>
-<li>Skip the human review step entirely and trust <code>terraform plan</code>'s summary count</li>
+<li>Nothing changes — <code>apply</code> always re-runs the exact plan that was reviewed</li>
+<li>Save the plan with <code>-out</code> and apply that same saved file, not a fresh one</li>
+<li>Add <code>prevent_destroy = true</code> to every resource so nothing changes</li>
+<li>Skip human review and trust the plan's summary line instead</li>
 </ol>
 <button onclick="document.getElementById('a8').classList.add('shown')">Reveal answer</button>
 <div class="answer" id="a8"><strong>Correct: B.</strong> Per HashiCorp's own docs, running <code>apply</code> without a saved plan file "automatically generates a new plan and prompts for you to approve it" — meaning what actually executes was never guaranteed to be the exact thing a human reviewed. Saving the plan with <code>-out</code> and applying that same file makes the executed plan byte-for-byte identical to the reviewed one, which is exactly how real Terraform CI/CD pipelines are built. See <a href="0026-plan-review-discipline.html">Lesson 26 — Plan review discipline</a>.</div>
