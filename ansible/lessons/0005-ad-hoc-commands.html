@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 5 — Ad-hoc commands</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 5 of 36</p>
+<h1>Ad-hoc commands</h1>
+
+<p>Lesson 4 gave you an inventory — a list of hosts Ansible knows about. Now let's actually do something to them, without writing a single file. An <strong>ad-hoc command</strong> is a one-off Ansible task you run directly from the terminal: one line, one action, no playbook required. It's the fastest way to ask a fleet of machines a question or make a small change right now.</p>
+
+<h2>The shape of an ad-hoc command</h2>
+<p>Every ad-hoc command follows the same pattern:</p>
+
+<pre><code>$ ansible &lt;pattern&gt; -i &lt;inventory&gt; -m &lt;module&gt; -a "&lt;module args&gt;"</code></pre>
+
+<ul>
+<li><code>&lt;pattern&gt;</code> — which hosts or group to target, from your inventory (<code>all</code>, <code>localhost</code>, a group name like <code>webservers</code>).</li>
+<li><code>-i &lt;inventory&gt;</code> — path to the inventory file to use. If you skip this, Ansible falls back to its configured default inventory location.</li>
+<li><code>-m &lt;module&gt;</code> — the module to run. A module is a small, self-contained unit of work Ansible ships with — "check connectivity," "run a command," "gather facts" are all modules. If you omit <code>-m</code>, Ansible defaults to the <code>command</code> module.</li>
+<li><code>-a "&lt;module args&gt;"</code> — the arguments for that module, usually <code>key=value</code> pairs (some modules also accept a JSON string here).</li>
+</ul>
+
+<p class="callout"><strong>Mental model:</strong> a playbook is a written recipe you save and hand to someone else to cook from. An ad-hoc command is you walking into the kitchen and doing one thing yourself, right now, because you don't need a recipe for "check if the oven is on."</p>
+
+<h2>When ad-hoc is the right tool — and when it isn't</h2>
+<p>Ad-hoc commands are great for quick, one-time, single-step questions or fixes across many hosts at once:</p>
+<ul>
+<li>"Is this file present on every web server?"</li>
+<li>"Restart the <code>nginx</code> service on the whole <code>webservers</code> group, right now."</li>
+<li>"What's the disk usage on all my hosts?"</li>
+</ul>
+
+<p>Reach for a playbook instead — the subject of Lesson 6 — as soon as either of these is true:</p>
+<ul>
+<li><strong>You'll run it again.</strong> Anything you'll repeat belongs in a file you can save, version, and re-run identically, not retyped from memory or shell history.</li>
+<li><strong>It's more than one step.</strong> Ad-hoc commands do exactly one thing. "Install the package, then copy the config, then restart the service" is three dependent steps — that's a playbook's job, not three separate terminal commands you have to run in the right order by hand.</li>
+</ul>
+
+<p>Think of ad-hoc commands as the disposable, throwaway end of Ansible, and playbooks as the durable, reusable end. You'll use both for as long as you use Ansible — they're not a beginner stage you graduate out of.</p>
+
+<h2>A few modules worth knowing now</h2>
+
+<h3><code>ping</code> — is this host reachable and ready?</h3>
+<pre><code>$ ansible all -i inventory.ini -m ping</code></pre>
+<p>This is the module you reach for first on any new host or inventory, to sanity-check everything before you try anything real.</p>
+
+<p class="callout"><strong>Common beginner confusion — this is not ICMP ping.</strong> The <code>ping</code> module does not send network ping packets. Per Ansible's own docs, it "is NOT ICMP ping, this is just a trivial test module" — it connects over SSH, confirms it can log in, and confirms Python is available and working on the remote host. A successful run returns <code>"pong"</code>. If a host fails this, the problem is SSH access or a missing/broken Python interpreter — not network reachability in the ICMP sense.</p>
+
+<h3><code>command</code> and <code>shell</code> — run a raw command</h3>
+<pre><code># command is the default module if you don't pass -m at all
+$ ansible webservers -i inventory.ini -a "uptime"
+
+# shell explicitly, for when you need shell features
+$ ansible webservers -i inventory.ini -m shell -a "echo $TERM"</code></pre>
+<p><code>command</code> runs a command directly, without going through a shell on the remote host — so pipes, redirects, and environment variable expansion (like <code>|</code>, <code>&gt;</code>, or <code>$HOME</code>) don't work with it. <code>shell</code> runs the command through the remote host's shell, so all of that works — but it costs you the safety <code>command</code> gives you.</p>
+
+<p class="callout"><strong>Best practice — prefer a dedicated module over <code>shell</code> when one exists.</strong> Purpose-built modules (for installing packages, managing services, copying files, and so on — Lesson 7 covers a working set of them) are usually <em>idempotent</em>: run one twice and the second run changes nothing, because the module checks the current state first and only acts if reality doesn't already match what you asked for. A raw <code>shell</code> command has no such awareness — <code>ansible all -m shell -a "useradd bob"</code> run twice will error the second time, because it has no idea "bob" already exists. Reach for <code>command</code>/<code>shell</code> when no dedicated module covers what you need; reach for the dedicated module first whenever one does.</p>
+
+<h3><code>setup</code> — gather facts about a host</h3>
+<pre><code>$ ansible all -i inventory.ini -m ansible.builtin.setup</code></pre>
+<p>This module collects detailed information about each host — OS, IP addresses, memory, disks, and dozens more "facts" — and returns it as data. It's the same fact-gathering that runs automatically at the start of every playbook, which is why playbooks can reference things like a host's OS family without you ever asking for it explicitly. Lesson 9 goes deep on facts and how to use them; for now, just know the module exists and what it's for.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You need to check whether a config file exists on 40 servers, one time, right now. Do you write a playbook or run an ad-hoc command?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">An ad-hoc command — it's a one-time, single-step check. No need for a file you'll save and re-run.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. <code>ansible webservers -m ping</code> fails on one host. Does that mean the host is down on the network?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Not necessarily. The <code>ping</code> module isn't ICMP — it checks SSH login and Python availability. A failure here points to an SSH or Python problem on that host, not necessarily a network-down problem.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<p>Using the inventory file you built in Lesson 4:</p>
+<ul>
+<li>run <code>ansible localhost -m ping</code></li>
+<li>run <code>ansible localhost -m command -a "uptime"</code></li>
+<li>look closely at the output of each — it's JSON-ish key/value data, not plain text</li>
+</ul>
+
+<pre><code>$ ansible localhost -m ping
+localhost | SUCCESS =&gt; {
+    "ansible_facts": {
+        "discovered_interpreter_python": "/usr/bin/python3"
+    },
+    "changed": false,
+    "ping": "pong"
+}
+
+$ ansible localhost -m command -a "uptime"
+localhost | CHANGED =&gt; {
+    "changed": true,
+    "cmd": [
+        "uptime"
+    ],
+    "rc": 0,
+    "stdout": "10:14  up 2 days,  3:41, 4 users, load averages: 1.42 1.58 1.61",
+    "stdout_lines": [
+        "10:14  up 2 days,  3:41, 4 users, load averages: 1.42 1.58 1.61"
+    ],
+    "stderr": "",
+    "stderr_lines": []
+}</code></pre>
+
+<p>Two things worth noticing in that output:</p>
+<ul>
+<li><code>"changed": false</code> for <code>ping</code>, but <code>"changed": true</code> for <code>command</code>. Ansible tracks, per task, whether it believes it altered anything on the host — <code>ping</code> never changes state, so it always reports <code>false</code>; <code>command</code> has no way to know if running <code>uptime</code> "changed" anything, so it defaults to reporting <code>true</code> any time it runs. This <code>changed</code> flag is central to how playbooks report their results — you'll see it constantly from Lesson 6 onward.</li>
+<li><code>SUCCESS</code> vs <code>CHANGED</code> at the start of the line is a quick visual status — Ansible colors and labels these differently in a real terminal so you can scan a long run at a glance.</li>
+</ul>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/command_guide/intro_adhoc.html" target="_blank" rel="noopener">docs.ansible.com — Introduction to ad hoc commands</a> (general syntax, <code>command</code>/<code>shell</code> distinction, idempotence wording) · <a href="https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ping_module.html" target="_blank" rel="noopener">ansible.builtin.ping module docs</a> (confirms it is "NOT ICMP ping") · <a href="https://docs.ansible.com/ansible/latest/cli/ansible.html" target="_blank" rel="noopener">ansible CLI reference</a> (confirms <code>-i</code>, <code>-m</code>, <code>-a</code> flags and that <code>command</code> is the default module) — all docs.ansible.com, verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>An ad-hoc command is a one-off task run straight from the CLI: <code>ansible &lt;pattern&gt; -i &lt;inventory&gt; -m &lt;module&gt; -a "&lt;args&gt;"</code> — no playbook file needed.</li>
+    <li>Use ad-hoc for quick, one-time, single-step jobs. Reach for a playbook (Lesson 6) as soon as something repeats or needs more than one step.</li>
+    <li><code>ping</code> checks SSH + Python, not network reachability — it's not ICMP. Prefer dedicated modules over <code>shell</code>/<code>command</code> when one exists, because dedicated modules are usually idempotent. <code>setup</code> gathers host facts (more in Lesson 9).</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0004-inventory-basics.html">&larr; Lesson 4: Inventory basics</a></span>
+  <span><a href="0006-first-playbook.html">Lesson 6: Your first playbook &rarr;</a></span>
+</div>
+
+</body>
+</html>

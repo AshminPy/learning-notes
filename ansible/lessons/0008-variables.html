@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 8 — Variables</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 8 of 36</p>
+<h1>Variables</h1>
+
+<p>Every playbook you've written so far has hardcoded values straight into the tasks — a literal path, a literal message. That's fine for one host, but it breaks down the moment you want the same playbook to do slightly different things in different places: a different directory on dev vs. prod, a different package version this release vs. last. <strong>Variables</strong> are how you pull those changing values out of the task and give them a name — one place to change, everywhere it's used updates.</p>
+
+<p class="callout"><strong>Mental model:</strong> a task without variables is a sentence with the details baked in — "create /tmp/ansible-practice." A task with variables is a sentence with a blank to fill in — "create {{ directory_name }}" — and you decide what fills the blank, per run, without touching the task itself.</p>
+
+<h2>Defining a variable at the play level</h2>
+<p>The simplest place to define a variable is right in the play, with <code>vars:</code>, confirmed against Ansible's own docs:</p>
+
+<pre><code>- hosts: webservers
+  vars:
+    http_port: 80</code></pre>
+
+<p><code>vars:</code> sits at the same indentation level as <code>hosts:</code> and <code>tasks:</code> — it's a property of the play, not of any one task. As the docs state directly: "When you define variables in a play, they are visible only to tasks executed in that play." Every task in that play can read <code>http_port</code>; tasks in a different play in the same file can't, unless you define it there too.</p>
+
+<h2>Referencing a variable — Jinja2's <code>{{ }}</code></h2>
+<p>To use a variable's value inside a task, wrap its name in double curly braces:</p>
+
+<pre><code>ansible.builtin.template:
+  src: foo.cfg.j2
+  dest: '{{ remote_install_path }}/foo.cfg'</code></pre>
+
+<p>That <code>{{ }}</code> syntax isn't Ansible's own invention — it's <strong>Jinja2</strong>, a templating language Ansible uses throughout: for variable substitution here, and later (Lesson 13) for much more — conditionals, loops, filters, and full template files. For now, just remember the shape: <code>{{ variable_name }}</code> anywhere a value is expected, and Ansible substitutes the real value at run time.</p>
+
+<p class="callout"><strong>Watch the quotes:</strong> when a value starts with <code>{{ }}</code>, YAML can misparse it unless you quote the whole string — that's why the example above wraps <code>'{{ remote_install_path }}/foo.cfg'</code> in single quotes. If your value is <em>only</em> the variable with nothing else around it, quoting is usually optional, but quoting whenever <code>{{ }}</code> starts the value is a safe habit that avoids YAML parsing surprises.</p>
+
+<h2>Variable naming rules</h2>
+<p>Variable names aren't completely free-form. Straight from the docs:</p>
+<ul>
+<li>A variable name can only include <strong>letters, numbers, and underscores</strong>.</li>
+<li>A variable name <strong>cannot begin with a number</strong>.</li>
+<li>Variable names <strong>can</strong> begin with an underscore.</li>
+<li>You can't use a Python keyword (like <code>async</code>, <code>lambda</code>) or an Ansible playbook keyword (like <code>environment</code>) as a variable name.</li>
+</ul>
+<p>In practice, the rule that trips people up most: <strong>no dashes.</strong> <code>directory-name</code> is invalid — YAML and Jinja2 will both read the dash as a minus sign. Use an underscore: <code>directory_name</code>. No spaces and no dots either — stick to letters, numbers, and underscores, and start with a letter or underscore, and you'll never hit this.</p>
+
+<h2>Overriding a variable from the command line</h2>
+<p>A default in <code>vars:</code> is just that — a default. You can override it for a single run without editing the playbook, using <code>--extra-vars</code> or its short form <code>-e</code>:</p>
+
+<pre><code>$ ansible-playbook release.yml --extra-vars "version=1.23.45 other_variable=foo"</code></pre>
+
+<p>That's the simple key=value form — space-separated pairs, all quoted together as one string. For anything more structured (numbers, lists, nested values), the docs show a JSON form instead:</p>
+
+<pre><code>$ ansible-playbook arcade.yml --extra-vars '{"pacman":"mrs","ghosts":["inky","pinky","clyde","sue"]}'</code></pre>
+
+<p>You'll reach for the key=value form constantly — it's how you parameterize a playbook run without keeping a dozen near-duplicate playbook files around. <strong>Extra-vars set on the command line win over a play's <code>vars:</code></strong> — that's the one precedence fact you need for now. There's a full precedence order across every source Ansible can pull a variable from, but that's Lesson 22's job, not this one.</p>
+
+<h2>Where else variables come from (previews)</h2>
+<p><code>vars:</code> in a play and <code>-e</code> on the command line are the two you'll use starting today. Two more sources exist, and you'll meet them properly later in this course — just enough now so the names aren't a surprise:</p>
+<ul>
+<li><strong>Inventory variables</strong> — instead of a play's <code>vars:</code>, a variable can live next to the inventory itself, per-host in <code>host_vars/</code> or per-group in <code>group_vars/</code>. That's how you'd give every host in a group the same variable without repeating it in every playbook. Full treatment in Lesson 21.</li>
+<li><strong>Role defaults</strong> — once you start packaging tasks into reusable <strong>roles</strong> (Lesson 16), each role ships its own fallback values in <code>roles/x/defaults/main.yml</code>. They're the lowest-priority source — easy to override, which is exactly the point of a "default."</li>
+</ul>
+<p>All of these — play <code>vars:</code>, <code>-e</code>, inventory variables, role defaults, and a few more — feed into a single, well-defined precedence order when the same variable name is set in more than one place. Lesson 22 covers that order in full. For now, the two you're using today are enough to make playbooks reusable.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You write <code>vars: { dir-name: /tmp/app }</code> in your play. What's wrong, and what would you write instead?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The dash in <code>dir-name</code> is not allowed — variable names can only contain letters, numbers, and underscores. Write <code>dir_name: /tmp/app</code> instead.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Your play sets <code>vars: { app_env: staging }</code>. You run <code>ansible-playbook -i inventory playbook.yml -e "app_env=production"</code>. Which value does the task actually see: staging or production?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">production. Extra-vars passed with <code>-e</code> on the command line win over a play's <code>vars:</code> — that's why <code>-e</code> is the tool for one-off overrides without editing the playbook file.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Go back to the Lesson 6 playbook — the one that creates <code>/tmp/ansible-practice</code> with <code>ansible.builtin.file</code>. Parameterize the directory name with a variable, give it a default, and prove you can override that default from the command line.</p>
+
+<p>Edit <code>playbook.yml</code>:</p>
+
+<pre><code>- name: My first playbook
+  hosts: localhost
+  vars:
+    practice_dir: /tmp/ansible-practice
+
+  tasks:
+    - name: Print a message
+      ansible.builtin.debug:
+        msg: "Hello from my first playbook"
+
+    - name: Create a practice directory
+      ansible.builtin.file:
+        path: '{{ practice_dir }}'
+        state: directory</code></pre>
+
+<p>Then:</p>
+<ul>
+<li>run it with no extra flags: <code>ansible-playbook -i inventory playbook.yml</code> — confirm it still creates <code>/tmp/ansible-practice</code>, using the default from <code>vars:</code></li>
+<li>now override it: <code>ansible-playbook -i inventory playbook.yml -e "practice_dir=/tmp/ansible-override"</code></li>
+<li>confirm the second run created a <em>different</em> directory: <code>ls -ld /tmp/ansible-override</code></li>
+<li>confirm the first directory is untouched — the override only affects the run you passed it to, the playbook file itself didn't change</li>
+</ul>
+<p>Try it yourself before checking the reference commands below.</p>
+
+<div class="quiz">
+<p>Reveal the reference commands</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>ansible-playbook -i inventory playbook.yml
+ls -ld /tmp/ansible-practice
+ansible-playbook -i inventory playbook.yml -e "practice_dir=/tmp/ansible-override"
+ls -ld /tmp/ansible-override</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_variables.html" target="_blank" rel="noopener">docs.ansible.com — Using variables</a> (<code>vars:</code> play syntax, <code>{{ }}</code> Jinja2 referencing, variable naming rules, <code>--extra-vars</code>/<code>-e</code> key=value and JSON forms, <code>host_vars</code>/<code>group_vars</code> pointer, role <code>defaults/main.yml</code>) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Define a variable at the play level with <code>vars:</code>; reference it anywhere with Jinja2's <code>{{ variable_name }}</code>.</li>
+    <li>Variable names: only letters, numbers, underscores; can't start with a number; no dashes, spaces, or dots.</li>
+    <li>Override any variable for one run with <code>-e</code>/<code>--extra-vars "name=value"</code> — it beats a play's <code>vars:</code> default.</li>
+    <li>Variables can also come from inventory (<code>host_vars</code>/<code>group_vars</code>, Lesson 21) and role defaults (Lesson 16) — the full precedence order across every source is Lesson 22.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0007-idempotency.html">&larr; Lesson 7: Idempotency</a></span>
+  <span><a href="0009-facts.html">Lesson 9: Facts &rarr;</a></span>
+</div>
+
+</body>
+</html>

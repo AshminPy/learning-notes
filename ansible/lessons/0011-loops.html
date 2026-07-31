@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 11 — Loops</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 11 of 36</p>
+<h1>Loops</h1>
+
+<p>Without loops, installing three packages means writing three near-identical tasks — same module, same options, only the package name changes. That's noise: more lines to read, more places to make a typo, more work every time the list changes. Ansible's <code>loop</code> keyword lets you write the task once and hand it a list of items to repeat over.</p>
+
+<p class="callout"><strong>Mental model:</strong> a loop is one task with a list attached. Ansible runs that single task once per item in the list, substituting <code>{{ item }}</code> with the current value each time — same module, same logic, different data. You write the "what" once; the list supplies the "how many times."</p>
+
+<h2>The <code>loop</code> keyword</h2>
+<p>Add a <code>loop:</code> list to any task, and reference the current value inside the task as <code>item</code>. Confirmed against Ansible's own docs, this is the canonical shape:</p>
+
+<pre><code>- name: Add several users
+  ansible.builtin.user:
+    name: "{{ item }}"
+    state: present
+    groups: "wheel"
+  loop:
+     - testuser1
+     - testuser2</code></pre>
+
+<p>Ansible runs the <code>ansible.builtin.user</code> task twice — once with <code>item</code> set to <code>testuser1</code>, once with <code>item</code> set to <code>testuser2</code>. In the output you'll see two separate result lines for this one task, one per item, so you can tell at a glance which items changed and which were already <code>ok</code>.</p>
+
+<h2><code>loop</code> vs the older <code>with_items</code> / <code>with_*</code></h2>
+<p>If you read older playbooks or blog posts, you'll see <code>with_items</code> instead of <code>loop</code> — same idea, different keyword:</p>
+
+<pre><code># older style — still works, but not what to write today
+- name: Add several users
+  ansible.builtin.user:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - testuser1
+    - testuser2</code></pre>
+
+<p>Ansible's official guidance is direct about which one to reach for: <code>loop</code> was added as "a simpler way to do loops," and the docs recommend it for most use cases going forward. <code>with_items</code> and the rest of the <code>with_*</code> family (<code>with_dict</code>, <code>with_nested</code>, and so on) are not deprecated — they'll keep working — but they exist today mainly so older playbooks don't break. Ansible's own migration guidance says most <code>with_*</code> loops can be rewritten with <code>loop</code>.</p>
+
+<p class="callout"><strong>Best practice:</strong> in every new task you write, reach for <code>loop</code>. Only recognize <code>with_items</code> when you meet it in existing code — you don't need to go rewrite working playbooks just to swap the keyword, but don't introduce new <code>with_*</code> loops either.</p>
+
+<h2>The classic use case: a list of packages</h2>
+<p>The most common loop in real playbooks is installing a set of packages in one task instead of one task per package:</p>
+
+<pre><code>- name: Install required packages
+  ansible.builtin.apt:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - git
+    - curl
+    - vim</code></pre>
+
+<p>Three packages, one task. Add a fourth package later and you add one line to the list — you don't add a whole new task. The same pattern applies to creating a list of files or directories with the <code>ansible.builtin.file</code> module, which you'll use yourself in the hands-on below.</p>
+
+<h2>Combining <code>loop</code> with <code>when</code></h2>
+<p>Lesson 10 covered <code>when:</code> to skip a task based on a condition. Put a <code>when:</code> on a looping task and Ansible evaluates it separately for <em>every item</em> — it's not one decision for the whole list, it's one decision per item. Some items can run while others get skipped, in the same task, same run:</p>
+
+<pre><code>- name: Install packages, skipping one on Debian
+  ansible.builtin.apt:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - git
+    - curl
+    - some-redhat-only-tool
+  when: item != "some-redhat-only-tool" or ansible_facts['os_family'] != "Debian"</code></pre>
+
+<p>Watch the output closely when you run something like this: you'll see a <code>changed</code> or <code>ok</code> result for each item that ran, and a <code>skipped</code> result for each item that didn't — all under the one task name, one line per item.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A task loops over a list of 5 items using <code>loop</code>. How many times does the module in that task actually run?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Five times — once per item in the list. Each run substitutes <code>{{ item }}</code> with that item's value, and each gets its own result line in the output (ok / changed / skipped / failed), even though it's written as a single task.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You find a playbook written two years ago using <code>with_items</code>. Is it broken? Should you rewrite it before touching anything else in the file?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Not broken — <code>with_items</code> is not deprecated and still works. No need to rewrite it just to swap the keyword. The rule is forward-looking: write new tasks with <code>loop</code>, and only touch old <code>with_items</code> tasks if you're already editing that task for another reason.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Reuse the localhost inventory and playbook file from earlier lessons. Add a task that loops over a list of three directory names and creates all of them with the <code>ansible.builtin.file</code> module:</p>
+
+<pre><code>- name: Loops practice
+  hosts: localhost
+  tasks:
+    - name: Create practice directories
+      ansible.builtin.file:
+        path: "/tmp/{{ item }}"
+        state: directory
+      loop:
+        - ansible-loop-one
+        - ansible-loop-two
+        - ansible-loop-three</code></pre>
+
+<p>Then:</p>
+<ul>
+<li>run <code>ansible-playbook -i inventory playbook.yml</code></li>
+<li>find <code>TASK [Create practice directories]</code> — count the result lines. You should see three, one per directory</li>
+<li>confirm all three directories exist: <code>ls -d /tmp/ansible-loop-*</code></li>
+<li>run the playbook a second time and watch the <code>changed</code> count on that task — same idempotency lesson from Lesson 7, now applied to a loop</li>
+</ul>
+<p>Try it yourself before checking the reference command below.</p>
+
+<div class="quiz">
+<p>Reveal the reference command</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>ansible-playbook -i inventory playbook.yml
+ls -d /tmp/ansible-loop-*
+ansible-playbook -i inventory playbook.yml
+# second run — the three directory results should all show "ok", not "changed"</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html" target="_blank" rel="noopener">docs.ansible.com — Loops</a> (<code>loop</code> keyword, <code>{{ item }}</code> access, the recommendation to use <code>loop</code> over <code>with_items</code>/<code>with_*</code> for most use cases, <code>with_*</code> not deprecated but legacy, <code>when:</code> evaluated per item in a loop) · <a href="https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html" target="_blank" rel="noopener">ansible.builtin.file module docs</a> (<code>path</code>, <code>state: directory</code> parameters) — all verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>loop:</code> attaches a list to a task; Ansible runs the task once per item, accessed inside the task as <code>{{ item }}</code>.</li>
+    <li><code>loop</code> is the recommended keyword going forward. <code>with_items</code> and the rest of <code>with_*</code> still work and aren't deprecated, but are the older style — don't start new tasks with them.</li>
+    <li>Classic use case: one task looping over a list of packages or files/directories, instead of one task per item.</li>
+    <li>Combine <code>loop</code> with <code>when:</code> to skip specific items conditionally — the condition is checked separately for every item, not once for the whole list.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0010-conditionals.html">&larr; Lesson 10: Conditionals</a></span>
+  <span><a href="0012-handlers-and-notify.html">Lesson 12: Handlers &amp; notify &rarr;</a></span>
+</div>
+
+</body>
+</html>

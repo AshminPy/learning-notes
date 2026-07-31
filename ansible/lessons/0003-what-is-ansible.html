@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3 — What is Ansible? Agentless, push, idempotent</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 3 of 36</p>
+<h1>What is Ansible? Agentless, push, idempotent</h1>
+
+<p>You've got Ansible installed from Lesson 2. Before you run a single command, you need the mental model underneath it — what Ansible actually is, and what makes it different from the other tool people constantly confuse it with: Terraform. Three words do most of the work: <strong>agentless</strong>, <strong>push-based</strong>, and <strong>idempotent</strong>. This lesson unpacks each one.</p>
+
+<h2>Ansible, defined</h2>
+<p><strong>Ansible</strong> is a configuration management and automation tool. Its own getting-started docs put it simply: "Ansible automates the management of remote systems and controls their desired state." In practice that means: installing packages, editing config files, starting and stopping services, creating users, applying security patches — the day-to-day work of keeping a fleet of already-running machines in the state you want, written as a repeatable script called a <strong>playbook</strong> instead of done by hand over SSH.</p>
+
+<h2>Agentless — no software to install on the target</h2>
+<p>Some configuration management tools (Puppet and Chef, for example) work by installing a permanent background program — an <strong>agent</strong> — on every machine they manage. That agent has to be installed, kept updated, and kept running on every single target host, forever.</p>
+<p>Ansible doesn't do this. The official docs are direct about it: "Ansible is agentless, it can still communicate with devices without requiring an application or service to be installed on the managed node." Red Hat's own explainer describes the mechanics: "Ansible connects to managed nodes and pushes out small programs — called Ansible modules — to them," then "executes these modules (over SSH by default), and removes them when finished."</p>
+<p class="callout"><strong>Mental model:</strong> Ansible doesn't move in — it visits. It connects over plain SSH (using credentials you already have), drops off a small program, runs it, cleans up after itself, and disconnects. Nothing is left behind, running, or waiting on the target machine. That's why a brand-new server with nothing installed but SSH access is already a fully manageable Ansible target.</p>
+
+<h2>Push-based — you trigger the run</h2>
+<p>Because there's no resident agent, there's also nothing on the target machine periodically checking in on its own. You — from your <strong>control node</strong> (your laptop, or a CI runner) — decide when a playbook runs, and Ansible pushes the changes out to every target in that run, right then.</p>
+<p>Contrast that with a <strong>pull-based</strong> model: an agent installed on the managed machine wakes up on its own schedule, contacts a central server, and pulls down whatever configuration it should apply. Puppet and Chef are classic examples of this pattern — an agent on each node polls a master server at an interval and pulls its configuration down.</p>
+<table>
+<tr><th>Push (Ansible)</th><th>Pull (agent-based tools)</th></tr>
+<tr><td>You run the command, right now, from the control node</td><td>An agent on the target wakes up on its own schedule</td></tr>
+<tr><td>Nothing installed or running on the target between runs</td><td>An agent process runs permanently on every target</td></tr>
+<tr><td>You control exactly when and to which hosts a change goes out</td><td>Drift correction happens automatically, even if no one triggers it</td></tr>
+</table>
+<p>Neither model is universally "better" — push gives you tight, deliberate control over timing; pull gives you continuous self-healing without anyone needing to remember to run anything. Ansible chose push, and that choice is why the SSH-only, agentless model works: someone has to initiate the connection, and with Ansible, that someone is you.</p>
+
+<h2>Idempotent by design (preview)</h2>
+<p>The third word — <strong>idempotent</strong> — means running the same playbook twice should land you in the same end state, not double-apply the same changes. The official docs describe it this way: "When the system is in the state your playbook describes, Ansible does not change anything, even if the playbook runs multiple times." Or, more precisely at the module level: "These modules are designed to be idempotent when possible, so that they only make changes to a system when necessary."</p>
+<p class="callout">Quick preview, not the full picture: if a playbook says "nginx should be installed" and nginx is already installed, running that playbook again does nothing — Ansible checks first, sees the target state already matches, and skips the step. If you ran a raw bash script with <code>apt install nginx</code> twice, the second run would either error or waste time reinstalling. Idempotency is <em>why</em> it's safe to re-run playbooks constantly, and it gets a full dedicated lesson later (Lesson 7) once you've written your first playbook and can see it in action. For now, just hold onto the word.</p>
+
+<h2>Where Ansible fits next to Terraform</h2>
+<p>If you've taken this site's Terraform course, you've already met this split from the other side — Terraform's own Lesson 3 says it plainly: "Terraform provisions infrastructure; tools like Ansible configure what's already running." Here it is again, from Ansible's side of the fence:</p>
+<ul>
+<li><strong>Terraform provisions</strong> — it creates the VM, the network, the disk, the load balancer. Before Terraform runs, that infrastructure doesn't exist. After, it does.</li>
+<li><strong>Ansible configures</strong> — it takes a machine that already exists (whether Terraform created it, or it's been sitting in a data center for years) and installs packages, writes config files, and starts services on it.</li>
+</ul>
+<p class="callout"><strong>Mental model, matching the Terraform course:</strong> Terraform builds the kitchen — the walls, the plumbing, the outlets. Ansible stocks the fridge and turns on the stove. You need the kitchen to exist before you can stock it, which is exactly why many real teams run both, in order — Terraform first to provision the servers, then Ansible to configure what's now running on them.</p>
+<p>They are not competitors, even though newcomers often ask "should I use Terraform or Ansible?" as if it's one-or-the-other. The honest answer is usually "both, for different jobs." (This site's Terraform course covers the provisioning side in depth — see <a href="../../terraform/lessons/0003-what-is-iac.html">Terraform Lesson 3: What is Infrastructure as Code?</a> if you want the mirror image of this lesson.)</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. "Create a new EC2 instance in AWS with a specific instance type and security group." Is this a provisioning task or a configuration task?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Provisioning — the instance doesn't exist yet. This is Terraform's job, not Ansible's.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. "Install nginx and start the service on a server that's already running." Provisioning or configuration?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Configuration — the server already exists; this is about changing software on it. This is Ansible's job.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. True or false: to manage a server with Ansible, you must first install an Ansible agent on that server.</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">False — Ansible is agentless. It connects over SSH and pushes out modules that run and then remove themselves. Nothing persistent gets installed on the managed node.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. You run the same playbook twice in a row against a server that's already correctly configured. What should happen the second time?</p>
+<input type="text" id="q4" placeholder="type your answer">
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4">Nothing changes — Ansible checks the current state, sees it already matches the desired state, and skips the step. That's idempotency (full lesson coming in Lesson 7).</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/getting_started/index.html" target="_blank" rel="noopener">docs.ansible.com/ansible/latest/getting_started</a> — official Ansible "Getting started" docs, including the <a href="https://docs.ansible.com/ansible/latest/getting_started/introduction.html" target="_blank" rel="noopener">Introduction to Ansible</a> page (agentless architecture, SSH, idempotency). Also <a href="https://www.redhat.com/en/ansible-collaborative/how-ansible-works" target="_blank" rel="noopener">redhat.com/en/ansible-collaborative/how-ansible-works</a> (Ansible's vendor, Red Hat — module push/execute/remove mechanics).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Ansible is a configuration management/automation tool — it manages already-running machines, written as playbooks.</li>
+    <li>Agentless: no software to pre-install on managed hosts; it connects over SSH, pushes a module, runs it, removes it.</li>
+    <li>Push-based: you trigger the run from your control node — contrast with pull-based tools where an agent on the target checks in on its own schedule.</li>
+    <li>Idempotent by design: running the same playbook twice shouldn't double-apply changes — a full lesson (Lesson 7) is coming on this.</li>
+    <li>Terraform provisions infrastructure (creates it); Ansible configures what's already running (installs, edits, starts services). Many teams use both, Terraform first.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">If agentless/push/idempotent still feel like just words, that's fine — you'll feel push in action the moment you run your first playbook, and idempotency will click when you run that same playbook a second time and watch nothing happen. Come back and reread this lesson after Lesson 7 if you need to.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0002-tools-setup.html">&larr; Back: Lesson 2 — Tools setup</a></span>
+  <span><a href="0004-inventory-basics.html">Next: Lesson 4 — Inventory basics &rarr;</a></span>
+</div>
+
+</body>
+</html>

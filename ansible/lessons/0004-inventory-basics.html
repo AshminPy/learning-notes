@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 4 — Inventory basics</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 4 of 36</p>
+<h1>Inventory basics</h1>
+
+<p>Ansible has no agents. There's no daemon running on every server waiting for instructions. So how does Ansible know which machines to manage? You tell it — with a file called the <strong>inventory</strong>. This lesson is the mental model for that file: what it is, the two formats you can write it in, and how to organize hosts into groups so your playbooks can target "all my webservers" instead of listing every hostname by hand.</p>
+
+<h2>What an inventory actually is</h2>
+<p>An <strong>inventory</strong> is just a list of the hosts Ansible is allowed to manage, optionally organized into groups. That's the whole idea. It can be a plain text file, a YAML file, or even a script that generates the list dynamically (you'll meet dynamic inventory later in the course). For now, think of it as an address book: names (or IPs) of machines, sorted into folders by role.</p>
+<p class="callout"><strong>Mental model:</strong> a playbook says <em>what</em> to do. The inventory says <em>where</em> to do it. Without an inventory, a playbook is just a recipe with no kitchen to cook in.</p>
+
+<h2>The default inventory format: INI-style</h2>
+<p>The classic Ansible inventory is a plain text file in INI style — one hostname or IP per line, with <code>[groupname]</code> headers in square brackets marking the start of a group. Straight from the official inventory guide:</p>
+<pre><code>mail.example.com
+
+[webservers]
+foo.example.com
+bar.example.com
+
+[dbservers]
+one.example.com
+two.example.com
+three.example.com</code></pre>
+<p>Read that top to bottom: <code>mail.example.com</code> sits outside any group heading, so it isn't in a named group. Everything under <code>[webservers]</code> belongs to the <code>webservers</code> group; everything under <code>[dbservers]</code> belongs to <code>dbservers</code>. You can add per-host variables on the same line, separated by spaces — for example:</p>
+<pre><code>[atlanta]
+host1 http_port=80 maxRequestsPerChild=808</code></pre>
+<p>That sets <code>http_port</code> and <code>maxRequestsPerChild</code> as variables available to <code>host1</code> only, inside the <code>atlanta</code> group.</p>
+
+<h2>The modern alternative: YAML inventory</h2>
+<p>Ansible also accepts inventory written in YAML — the same format you'll use for playbooks, so many teams standardize on it for consistency. The INI example above, written as YAML, looks like this (from the official docs):</p>
+<pre><code>ungrouped:
+  hosts:
+    mail.example.com:
+webservers:
+  hosts:
+    foo.example.com:
+    bar.example.com:
+dbservers:
+  hosts:
+    one.example.com:
+    two.example.com:
+    three.example.com:</code></pre>
+<p>Notice the structure: each group is a top-level key, with a <code>hosts:</code> block listing its members. Host variables nest under the host itself instead of trailing on the same line:</p>
+<pre><code>atlanta:
+  hosts:
+    host1:
+      http_port: 80
+      maxRequestsPerChild: 808</code></pre>
+<p>Both formats describe the exact same information. INI is quicker to hand-type for a handful of hosts; YAML reads better once you have nested groups and lots of variables. Pick one per project and stay consistent — don't mix them in the same inventory file.</p>
+
+<h2>The two groups Ansible always gives you</h2>
+<p>You never have to create these — Ansible makes them automatically the moment you have an inventory:</p>
+<ul>
+<li><strong><code>all</code></strong> — every host in the inventory, no matter what group (if any) they're in. Target it in a playbook with <code>hosts: all</code> to run against everything.</li>
+<li><strong><code>ungrouped</code></strong> — every host that isn't listed under any <code>[groupname]</code> heading. In the INI example above, <code>mail.example.com</code> lands here because it sits outside any bracketed group.</li>
+</ul>
+<p>Official docs, word for word: "Even if you do not define any groups in your inventory, Ansible creates two default groups: <code>all</code> and <code>ungrouped</code>. The <code>all</code> group contains every host. The <code>ungrouped</code> group contains all hosts that do not belong to any other group."</p>
+<p>You'll also run into <strong><code>localhost</code></strong> a lot — that's just the machine Ansible itself is running on (your laptop, or a control node in a pipeline). It's useful for tasks that don't touch a remote server at all, like generating a report or calling a local API. You'll set it up explicitly in the hands-on below.</p>
+
+<h2>Why grouping matters</h2>
+<p>Grouping isn't decoration — it's what makes playbooks reusable. Instead of a playbook listing 20 hostnames by hand, it says <code>hosts: webservers</code>, and every host you add to that group later is automatically included, no playbook edit required. Group hosts by role, so the group name tells you what the machines <em>do</em>:</p>
+<pre><code>[webservers]
+web1.example.com
+web2.example.com
+
+[databases]
+db1.example.com</code></pre>
+<p class="callout"><strong>Mental model:</strong> groups are how you decouple "what to configure" (the playbook) from "which machines" (the inventory). Add a new web server to production? You edit the inventory, not the playbook. That separation is a big part of why Ansible scales from 2 servers to 2,000 without the playbooks getting more complicated.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. In this INI inventory, which group does <code>db1.example.com</code> belong to besides <code>all</code>?</p>
+<pre><code>app1.example.com
+
+[databases]
+db1.example.com</code></pre>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>databases</code> — it sits under the <code>[databases]</code> heading. <code>app1.example.com</code> sits above any heading, so it lands in <code>ungrouped</code> instead.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A playbook has <code>hosts: webservers</code>. You add a new host under <code>[webservers]</code> in the inventory file. Do you need to change the playbook to include the new host?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No. The playbook targets the group, not individual hostnames. Any host added to the group is automatically in scope the next time the playbook runs.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. What are the two groups Ansible creates automatically, even if your inventory file defines no groups at all?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3"><code>all</code> (every host) and <code>ungrouped</code> (every host not listed under a named group).</div>
+</div>
+
+<h2>Hands-on: write and verify a local inventory</h2>
+<p>You don't need any real servers for this — you're going to point Ansible at your own machine using <code>ansible_connection=local</code>, which tells Ansible to run tasks directly instead of connecting over SSH.</p>
+<ol>
+<li>Create a file named <code>inventory.ini</code> with this content:
+<pre><code>[local]
+127.0.0.1 ansible_connection=local</code></pre>
+</li>
+<li>Verify Ansible reads it correctly:
+<pre><code>ansible-inventory -i inventory.ini --list</code></pre>
+You should see JSON output with a <code>local</code> group containing <code>127.0.0.1</code>, plus the automatic <code>all</code> and <code>ungrouped</code> groups.
+</li>
+<li>Confirm which hosts a pattern resolves to, without running anything:
+<pre><code>ansible all -i inventory.ini --list-hosts</code></pre>
+This should print <code>127.0.0.1</code> as the one matching host.
+</li>
+<li>Optional — write the same inventory in YAML instead, as <code>inventory.yml</code>:
+<pre><code>local:
+  hosts:
+    127.0.0.1:
+      ansible_connection: local</code></pre>
+Run <code>ansible-inventory -i inventory.yml --list</code> and confirm you get the same result as the INI version.
+</li>
+</ol>
+<p class="callout"><strong>Why this matters:</strong> <code>ansible-inventory --list</code> and <code>--list-hosts</code> don't touch any servers — they just show you what Ansible <em>would</em> target. Get in the habit of running one of these before every playbook run against real infrastructure. It's the cheapest way to catch "I'm about to run this against the wrong 40 servers" before it happens.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html" target="_blank" rel="noopener">docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html</a> — official Ansible inventory guide (INI and YAML formats, <code>all</code>/<code>ungrouped</code> groups, host variables). Command syntax verified against the <a href="https://docs.ansible.com/ansible/latest/cli/ansible-inventory.html" target="_blank" rel="noopener">ansible-inventory CLI reference</a> and the <a href="https://docs.ansible.com/ansible/latest/cli/ansible.html" target="_blank" rel="noopener">ansible CLI reference</a> (<code>--list-hosts</code> option).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>An inventory is the list of hosts Ansible manages — the "where," separate from the playbook's "what."</li>
+    <li>INI format: one host per line, <code>[groupname]</code> headers in brackets, host variables trail on the same line.</li>
+    <li>YAML format: groups are top-level keys with a <code>hosts:</code> block; the same information, more nesting-friendly.</li>
+    <li><code>all</code> (every host) and <code>ungrouped</code> (hosts in no named group) are created automatically — you never define them yourself.</li>
+    <li><code>localhost</code> / <code>127.0.0.1</code> with <code>ansible_connection=local</code> lets Ansible run tasks on the control machine itself, no SSH needed.</li>
+    <li>Group hosts by role (<code>[webservers]</code>, <code>[databases]</code>) so playbooks target the group and stay correct as hosts are added or removed.</li>
+    <li><code>ansible-inventory -i &lt;file&gt; --list</code> and <code>ansible all -i &lt;file&gt; --list-hosts</code> both show what Ansible would target, without running anything.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">If the INI vs YAML choice feels arbitrary right now, that's fine — most real teams settle on one and never look back. What matters more is the group habit: always target a group in your playbooks, never a hardcoded hostname list. That single habit is what keeps playbooks working as infrastructure grows.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0003-what-is-ansible.html">&larr; Back: Lesson 3 — What is Ansible?</a></span>
+  <span><a href="0005-ad-hoc-commands.html">Next: Lesson 5 — Ad-hoc commands &rarr;</a></span>
+</div>
+
+</body>
+</html>

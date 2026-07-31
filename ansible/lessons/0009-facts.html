@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 9 — Facts</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 9 of 36</p>
+<h1>Facts</h1>
+
+<p>Back in Lesson 5 you ran <code>ansible.builtin.setup</code> ad-hoc and saw it dump a wall of data about a host. In Lesson 6 you saw <code>TASK [Gathering Facts]</code> run automatically before your own tasks, every single time. Now it's time to actually use what that step collects. A <strong>fact</strong> is a piece of information Ansible automatically discovers about a managed host at the start of a play — its operating system, IP addresses, memory, CPU count, hostname, and dozens more — without you asking for any of it by name.</p>
+
+<p class="callout"><strong>Mental model:</strong> variables (Lesson 8) are things <em>you</em> decide and write down. Facts are things Ansible <em>finds out</em> by asking the host directly. Same mechanism for using them in a task — but the value comes from the host itself, not from your YAML.</p>
+
+<h2>Where facts come from</h2>
+<p>Facts are gathered by the <code>ansible.builtin.setup</code> module — the same module you ran by hand in Lesson 5. A play runs it automatically before your first task, which is exactly the <code>TASK [Gathering Facts]</code> banner you've been seeing since Lesson 6. Nothing new is happening here; you're now learning to read and use the data that step was quietly collecting the whole time.</p>
+
+<h2><code>gather_facts</code> — on by default</h2>
+<p>Every play has a <code>gather_facts</code> keyword, and it defaults to <code>true</code>. You can set it explicitly:</p>
+
+<pre><code>- name: A play that needs facts
+  hosts: webservers
+  gather_facts: true
+  tasks:
+    - name: Show the OS family
+      ansible.builtin.debug:
+        var: ansible_facts['os_family']</code></pre>
+
+<p>Fact gathering isn't free — it's an extra round trip to every host before any of your tasks run, which adds up across large inventories. If a play's tasks never reference any facts, turn it off:</p>
+
+<pre><code>- name: A play that doesn't need facts
+  hosts: webservers
+  gather_facts: false
+  tasks:
+    - name: Just ping
+      ansible.builtin.ping:</code></pre>
+
+<p class="callout"><strong>Best practice:</strong> leave <code>gather_facts</code> on unless you have a specific, measured reason to turn it off (large inventories, tight time budgets, a play that genuinely never touches OS-specific behavior). Don't disable it by default "for speed" before you've confirmed you need to — most real playbooks end up needing at least one fact eventually, and re-adding it later is easy to forget.</p>
+
+<h2>Referencing a fact</h2>
+<p>Ansible's current docs give two ways to reach the same data:</p>
+
+<ul>
+<li><strong>The <code>ansible_facts</code> dictionary (current, recommended):</strong> <code>ansible_facts['os_family']</code>, <code>ansible_facts['distribution']</code>, <code>ansible_facts['memtotal_mb']</code>.</li>
+<li><strong>The older top-level style:</strong> <code>ansible_os_family</code>, <code>ansible_distribution</code>, <code>ansible_memtotal_mb</code> — these exist because, by default, Ansible also injects facts as top-level variables with an <code>ansible_</code> prefix. This can be turned off via the <code>INJECT_FACTS_AS_VARS</code> setting, which is one more reason to not depend on it.</li>
+</ul>
+
+<p>Both work today. Prefer the <code>ansible_facts['...']</code> dictionary form in anything you write from here on — it's explicit about where the value came from, and it doesn't rely on a setting someone could turn off in a different environment. Treat the bare <code>ansible_os_family</code> style as something you'll recognize in older playbooks, not something you write yourself.</p>
+
+<h2>Why facts matter — adapting instead of assuming</h2>
+<p>Here's the actual payoff. Without facts, a playbook that installs a package has to hardcode one OS's package manager:</p>
+
+<pre><code># Hardcoded — only works on Debian/Ubuntu hosts
+- name: Install nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present</code></pre>
+
+<p>Point that same task at a Red Hat-family host (which uses <code>dnf</code>/<code>yum</code>, not <code>apt</code>) and it fails outright. Facts let a playbook check what it's actually talking to and adapt:</p>
+
+<pre><code>- name: Show what package manager this host needs
+  ansible.builtin.debug:
+    msg: "This host is {{ ansible_facts['os_family'] }}"</code></pre>
+
+<p><code>ansible_facts['os_family']</code> comes back as something like <code>"Debian"</code> or <code>"RedHat"</code> — a normalized grouping, not the exact distro name (that's <code>ansible_facts['distribution']</code> instead, e.g. <code>"Ubuntu"</code> or <code>"CentOS"</code>). You now have a real value to make a decision with. You can't act on that decision yet — picking one task or another based on a fact's value is exactly what Lesson 10's <strong>conditionals</strong> (<code>when:</code>) are for. Facts are the "what do we know about this host" half of the picture; conditionals are the "so do this instead of that" half. This lesson gives you the data; the next lesson gives you the branching.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A play targets ten hosts, a mix of Ubuntu and CentOS. One task hardcodes <code>ansible.builtin.apt</code>. What happens on the CentOS hosts?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The task fails on every CentOS host — <code>apt</code> doesn't exist there, CentOS uses <code>dnf</code>/<code>yum</code>. This is exactly the problem facts plus conditionals solve: check <code>ansible_facts['os_family']</code> and branch to the right module per host, instead of assuming every host matches the one you tested on.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You disable <code>gather_facts</code> on a play to save time, but one of its tasks references <code>ansible_facts['distribution']</code>. What happens?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The fact was never collected for that play, so the task can't get a real value from it — expect an undefined-variable error (or, depending on how it's used, silently missing data). Facts are only available if something gathered them first: either <code>gather_facts: true</code> on the play, or an explicit <code>ansible.builtin.setup</code> task earlier in it.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<p>Using the localhost inventory from Lesson 4, create <code>facts.yml</code>:</p>
+
+<pre><code>- name: Explore facts on localhost
+  hosts: localhost
+  gather_facts: true
+  tasks:
+    - name: Show OS family
+      ansible.builtin.debug:
+        var: ansible_facts['os_family']
+
+    - name: Show distribution and version
+      ansible.builtin.debug:
+        msg: "{{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+
+    - name: Show total memory in MB
+      ansible.builtin.debug:
+        var: ansible_facts['memtotal_mb']</code></pre>
+
+<p>Then:</p>
+<ul>
+<li>run <code>ansible-playbook -i inventory facts.yml</code></li>
+<li>find the <code>TASK [Gathering Facts]</code> banner and confirm it ran before your own tasks, same as every playbook since Lesson 6</li>
+<li>read the output of each <code>debug</code> task — these are real values Ansible discovered about your own machine, not something you typed anywhere</li>
+<li>compare <code>ansible_facts['os_family']</code> against what you know your machine actually is</li>
+</ul>
+<p>Try it yourself before checking the reference command below.</p>
+
+<div class="quiz">
+<p>Reveal the reference command</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>ansible-playbook -i inventory facts.yml
+# check the three debug tasks in the output — os_family, distribution + version, memtotal_mb</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_vars_facts.html" target="_blank" rel="noopener">docs.ansible.com — Discovering variables: facts and magic variables</a> (fact-gathering behavior, <code>ansible_facts['key']</code> vs legacy <code>ansible_</code>-prefixed style, <code>INJECT_FACTS_AS_VARS</code>, <code>gather_facts</code> default) · <a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_variables.html#variables-discovered-from-systems-facts" target="_blank" rel="noopener">docs.ansible.com — Variables discovered from systems: facts</a> (bracket/dot notation examples for nested facts) · <a href="https://docs.ansible.com/ansible/latest/collections/ansible/builtin/setup_module.html" target="_blank" rel="noopener">ansible.builtin.setup module docs</a> — all docs.ansible.com, verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Facts are information Ansible discovers about each host automatically, via the <code>ansible.builtin.setup</code> module, run at the start of every play unless <code>gather_facts: false</code>.</li>
+    <li>Reference them as <code>ansible_facts['os_family']</code> (current, recommended) — the older bare <code>ansible_os_family</code> style still works but depends on a setting (<code>INJECT_FACTS_AS_VARS</code>) that can be off.</li>
+    <li>Facts let a playbook know what it's actually running against (OS family, distro, memory) instead of assuming — the missing piece is <em>acting</em> on that knowledge, which is Lesson 10's conditionals (<code>when:</code>).</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0008-variables.html">&larr; Lesson 8: Variables</a></span>
+  <span><a href="0010-conditionals.html">Lesson 10: Conditionals (when) &rarr;</a></span>
+</div>
+
+</body>
+</html>

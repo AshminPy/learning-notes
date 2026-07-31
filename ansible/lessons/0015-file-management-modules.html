@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 15 — File & directory management modules</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 15 of 36</p>
+<h1>File & directory management modules</h1>
+
+<p>You've already used <code>ansible.builtin.file</code> once — back in Lesson 6, to create a directory. And in Lesson 14 you used <code>ansible.builtin.template</code> to write a whole config file from scratch. But most of the time, managing files on a server isn't "create a directory" or "replace an entire file" — it's smaller than that: set the right permissions on something that already exists, tweak one line in a config file without touching the rest of it, or check whether a file is there before deciding what to do next. This lesson covers the three modules that do exactly that: <code>file</code> (properties of files/dirs/links), <code>lineinfile</code> (surgical single-line edits), and <code>stat</code> (check-before-you-act).</p>
+
+<p class="callout"><strong>Mental model:</strong> <code>template</code> and <code>copy</code> (Lesson 14) own the <em>whole file</em> — every run, the destination becomes an exact copy of your source. <code>file</code>, <code>lineinfile</code>, and <code>stat</code> don't own the whole file — they make one narrow, targeted change (or just look) and leave everything else alone. Reach for the narrow tool when the change is narrow; reach for <code>template</code>/<code>copy</code> when you own the whole file's content.</p>
+
+<h2><code>file</code> — properties of files, directories, and links</h2>
+<p>In Lesson 6 you only saw <code>state: directory</code>. The <code>file</code> module actually manages four different kinds of filesystem objects, all through the same <code>state</code> parameter:</p>
+<ul>
+<li><code>state: directory</code> — ensure a directory exists (creates it, and any missing parent directories, if it doesn't).</li>
+<li><code>state: file</code> — assert a file exists and manage its attributes; it does <strong>not</strong> create the file's content. If the file isn't already there, this fails — pair it with <code>lineinfile</code>'s <code>create: true</code> or with <code>copy</code>/<code>template</code> to actually create content.</li>
+<li><code>state: absent</code> — remove the file, directory (recursively), or link, if it's there. Nothing happens if it's already gone — idempotent by design.</li>
+<li><code>state: link</code> — create a symbolic link. Needs <code>src</code> (what the link points to) and <code>path</code> (where the link itself lives).</li>
+</ul>
+<p>Whatever the <code>state</code>, you can also set ownership and permissions on the same task with <code>mode</code>, <code>owner</code>, and <code>group</code>:</p>
+<pre><code>- name: Change file ownership, group and permissions
+  ansible.builtin.file:
+    path: /etc/foo.conf
+    owner: foo
+    group: foo
+    mode: '0644'</code></pre>
+<p>Removing a file, and creating a symlink, confirmed against the official examples:</p>
+<pre><code>- name: Remove file (delete file)
+  ansible.builtin.file:
+    path: /etc/foo.txt
+    state: absent
+
+- name: Create a symbolic link
+  ansible.builtin.file:
+    src: /file/to/link/to
+    dest: /path/to/symlink
+    owner: foo
+    group: foo
+    state: link</code></pre>
+<p class="callout"><strong>Best practice — always quote <code>mode</code>.</strong> Write <code>mode: '0644'</code>, not <code>mode: 0644</code>. Without quotes, YAML may parse the number differently than you expect (leading zeros are ambiguous across YAML parsers). A quoted string removes the ambiguity — Ansible's own docs use this style everywhere.</p>
+
+<h2><code>lineinfile</code> — one correct line, nothing else touched</h2>
+<p>Sometimes you don't own a whole config file — it's mostly managed by hand, or by another tool, and you just need to guarantee one specific line is present and correct. Rewriting the whole file with <code>template</code> would be overkill and risky (you'd have to recreate every other line perfectly). <code>lineinfile</code> does one narrow thing: find a line matching a pattern, and make sure it says what you want.</p>
+<pre><code>- name: Ensure SELinux configuration
+  ansible.builtin.lineinfile:
+    path: /etc/selinux/config
+    regexp: '^SELINUX='
+    line: SELINUX=enforcing
+    state: present
+    backup: yes</code></pre>
+<p>Key parameters, confirmed against the official docs:</p>
+<ul>
+<li><code>path</code> — the file to modify (required).</li>
+<li><code>line</code> — the exact line you want present (required when <code>state: present</code>).</li>
+<li><code>regexp</code> — a pattern used to <em>find</em> the line to replace. This is the parameter that makes <code>lineinfile</code> idempotent — without it, Ansible has no way to recognize "this line is already there" versus "add a new one."</li>
+<li><code>state</code> — <code>present</code> (default) or <code>absent</code> to remove a matching line instead.</li>
+<li><code>create</code> — if <code>true</code>, creates the file when it doesn't exist yet (default <code>false</code> — Ansible will otherwise fail rather than silently create a file you didn't expect).</li>
+<li><code>backup</code> — if <code>true</code>, keeps a timestamped copy of the file before changing it.</li>
+<li><code>insertafter</code> / <code>insertbefore</code> — if <code>regexp</code> doesn't match anything, where to add the new line (a pattern to insert after/before, or the literal <code>EOF</code>/<code>BOF</code> for end/beginning of file).</li>
+</ul>
+<p class="callout"><strong>Mental model — why <code>regexp</code> is the whole trick:</strong> <code>lineinfile</code> doesn't compare the line you're adding to what's in the file byte-for-byte. It runs <code>regexp</code> against every line in the file. If a line matches, that line gets replaced with <code>line</code> (and if it already equals <code>line</code>, nothing changes — <code>ok</code>, not <code>changed</code>). If nothing matches, your line gets inserted fresh. The docs are explicit about this: your <code>regexp</code> should match the line both <em>before</em> and <em>after</em> your change, or every run will look like a fresh insert instead of a clean idempotent update. Write the regexp to match the <em>setting</em> (e.g. <code>^SELINUX=</code>), not the exact value — otherwise it can never find and fix a wrong value.</p>
+
+<h2><code>stat</code> — look before you act</h2>
+<p>Sometimes a task should only run if something already exists — or doesn't. <code>stat</code> gathers information about a path (does it exist, is it a file or directory, what are its permissions) without changing anything. On its own it's not very useful; paired with <code>register</code> and the <code>when</code> conditional from Lesson 10, it becomes the standard "check first, act second" pattern:</p>
+<pre><code>- name: Get file statistics
+  ansible.builtin.stat:
+    path: /etc/myconfig.conf
+  register: config_stat
+
+- name: Process if file exists
+  ansible.builtin.debug:
+    msg: "File found and readable"
+  when: config_stat.stat.exists and config_stat.stat.readable</code></pre>
+<p>Two things to notice in that pattern:</p>
+<ul>
+<li><code>register: config_stat</code> saves the module's result into a variable — same mechanism you'd use to capture output from any module, not specific to <code>stat</code>.</li>
+<li>The useful data lives one level deeper, under <code>.stat</code> — so it's <code>config_stat.stat.exists</code>, not <code>config_stat.exists</code>. This trips people up the first time; the module's top-level result always has a <code>stat</code> key holding the actual dictionary of properties (<code>exists</code>, <code>isdir</code>, <code>mode</code>, <code>size</code>, and more).</li>
+</ul>
+<p class="callout"><strong>Best practice — check for existence, don't assume.</strong> A task that unconditionally tries to read or copy a file that might not be there will fail the whole run for that host. Running <code>stat</code> first and gating the real task with <code>when: some_stat.stat.exists</code> turns a hard failure into a clean, predictable skip — visible as <code>skipped</code> in the recap, exactly like you saw in Lesson 6's PLAY RECAP walkthrough.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You run <code>lineinfile</code> with <code>line: "PORT=8080"</code> but no <code>regexp</code>. The file already has a line <code>PORT=8080</code>. You run the playbook twice. What happens on the second run?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Without a <code>regexp</code>, <code>lineinfile</code> falls back to matching the exact <code>line</code> text itself to decide whether it's already present. If the file already contains a line that's byte-for-byte identical to <code>line</code>, the second run reports <code>ok</code> (no change) — it won't duplicate the line. But this only works cleanly when the value never needs to change; if you later need to update <code>PORT=8080</code> to <code>PORT=9090</code>, matching on the exact old line would fail to find anything to replace, and you'd end up with two lines. That's why a <code>regexp</code> like <code>'^PORT='</code> that matches the <em>setting name</em>, independent of its value, is the safer habit.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A task uses <code>ansible.builtin.file</code> with <code>state: file</code> on a path that doesn't exist yet. What happens?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The task fails. <code>state: file</code> asserts the file already exists and lets you manage its attributes (mode, owner, group) — it does not create content for you, unlike <code>state: directory</code>, which will create the directory. If the file needs to be created from scratch, use <code>copy</code>, <code>template</code>, or <code>lineinfile</code> with <code>create: true</code> instead.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Reuse the localhost inventory from Lesson 4. In the same folder, create a starting file to work with:</p>
+<pre><code>$ echo "APP_ENV=dev" > /tmp/app.conf</code></pre>
+<p>Then write <code>file-management.yml</code>:</p>
+<pre><code>- name: Practice file, lineinfile, and stat
+  hosts: localhost
+  tasks:
+    - name: Lock down permissions on the config file
+      ansible.builtin.file:
+        path: /tmp/app.conf
+        mode: '0640'
+
+    - name: Ensure APP_ENV is set to prod
+      ansible.builtin.lineinfile:
+        path: /tmp/app.conf
+        regexp: '^APP_ENV='
+        line: APP_ENV=prod
+        state: present
+
+    - name: Check if a marker file already exists
+      ansible.builtin.stat:
+        path: /tmp/app-configured.marker
+      register: marker
+
+    - name: Create the marker (only if it wasn't already there)
+      ansible.builtin.file:
+        path: /tmp/app-configured.marker
+        state: touch
+      when: not marker.stat.exists</code></pre>
+<p>Then:</p>
+<ul>
+<li>run <code>ansible-playbook -i inventory file-management.yml</code></li>
+<li>check the permissions: <code>ls -l /tmp/app.conf</code> — confirm it shows <code>-rw-r-----</code> (0640)</li>
+<li>check the content: <code>cat /tmp/app.conf</code> — confirm it now reads <code>APP_ENV=prod</code>, not <code>APP_ENV=dev</code></li>
+<li>find the <code>TASK [Create the marker...]</code> section — it should show <code>changed</code>, since the marker didn't exist yet</li>
+<li>run the exact same command a second time. Watch the last task: it should now show <code>skipped</code>, because <code>marker.stat.exists</code> is <code>true</code> the second time round</li>
+</ul>
+<p>Try it yourself before checking the reference command below.</p>
+
+<div class="quiz">
+<p>Reveal the reference command</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>echo "APP_ENV=dev" > /tmp/app.conf
+ansible-playbook -i inventory file-management.yml
+ls -l /tmp/app.conf
+cat /tmp/app.conf
+ansible-playbook -i inventory file-management.yml
+# run it again — the marker task should switch from "changed" to "skipped"</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html" target="_blank" rel="noopener">ansible.builtin.file module docs</a> (<code>state: absent/directory/file/hard/link/touch</code>, <code>mode</code>, <code>owner</code>, <code>group</code>, <code>src</code> parameters and examples) · <a href="https://docs.ansible.com/ansible/latest/collections/ansible/builtin/lineinfile_module.html" target="_blank" rel="noopener">ansible.builtin.lineinfile module docs</a> (<code>path</code>, <code>line</code>, <code>regexp</code>, <code>state</code>, <code>create</code>, <code>backup</code>, <code>insertafter</code>/<code>insertbefore</code> parameters, idempotent-matching behavior) · <a href="https://docs.ansible.com/ansible/latest/collections/ansible/builtin/stat_module.html" target="_blank" rel="noopener">ansible.builtin.stat module docs</a> (<code>path</code> parameter, <code>stat.exists</code> and other returned fields, register + <code>when</code> pattern) — all verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>file</code> manages properties of an existing filesystem object via <code>state</code>: <code>directory</code> (create it), <code>file</code> (assert it exists, manage attributes), <code>absent</code> (remove it), <code>link</code> (symlink) — plus <code>mode</code>/<code>owner</code>/<code>group</code> on any of them. Always quote <code>mode</code>, e.g. <code>'0644'</code>.</li>
+    <li><code>lineinfile</code> surgically ensures one line is present/correct in a file that already exists, without touching the rest of it. Its idempotency depends on <code>regexp</code> matching the setting, not the exact value — match the key, not the value, so future changes stay idempotent.</li>
+    <li><code>stat</code> inspects a path (existence, type, permissions) without changing anything. Pair it with <code>register</code> and Lesson 10's <code>when</code> to skip tasks based on a file's presence — the result lives under <code>&lt;var&gt;.stat.&lt;field&gt;</code>, e.g. <code>marker.stat.exists</code>.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0014-copy-vs-template.html">&larr; Lesson 14: copy vs template modules</a></span>
+  <span><a href="0016-roles-anatomy.html">Lesson 16: Roles: anatomy &rarr;</a></span>
+</div>
+
+</body>
+</html>

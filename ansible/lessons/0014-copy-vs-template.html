@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 14 — copy vs template modules</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 14 of 36</p>
+<h1>copy vs template modules</h1>
+
+<p>Lesson 13 taught you Jinja2 — <code>{{ }}</code> for values, <code>{% %}</code> for logic, and how to render a <code>.j2</code> file into something concrete. But rendering it in your head isn't the same as getting Ansible to render it onto a real host. You've actually already met both modules that do this: Lesson 6's example playbook used <code>ansible.builtin.template</code> to write an Apache config, and Lesson 12's handler demo used <code>ansible.builtin.copy</code> to write a plain file. This lesson makes the difference between them explicit, and gives you a rule for picking the right one every time.</p>
+
+<p class="callout"><strong>Mental model:</strong> <code>copy</code> is a photocopier — whatever is on the page on the control node is exactly what lands on the managed host, byte for byte. <code>template</code> is a mail-merge — it takes a <code>.j2</code> file, fills in the <code>{{ }}</code> blanks with real values for <em>this specific host</em>, and only then produces the page that gets copied over. Same delivery mechanism underneath, completely different question about whether the content changes per host.</p>
+
+<h2>copy: exact, no substitution</h2>
+<p><code>ansible.builtin.copy</code> takes a file from the control node and places it on the managed host unchanged. If the source file contains the literal text <code>{{ ansible_hostname }}</code>, that literal text — braces and all — is what ends up on the remote host. Nothing in <code>copy</code> looks at Jinja2 syntax; it just moves bytes.</p>
+
+<pre><code>- name: Copy a static config file
+  ansible.builtin.copy:
+    src: files/motd.txt
+    dest: /etc/motd
+    owner: root
+    group: root
+    mode: '0644'</code></pre>
+
+<p>Confirmed against Ansible's own docs: <code>copy</code>'s required parameter is <code>dest</code> (where the file goes), and <code>src</code> is the local path on the control node to copy from. You can also skip a source file entirely and hand it a string directly with <code>content:</code>, which is what Lesson 12's handler demo did to write a file inline without needing a separate file on disk.</p>
+
+<h2>template: render first, then copy</h2>
+<p><code>ansible.builtin.template</code> takes a <code>.j2</code> file, processes it through the Jinja2 engine — resolving every <code>{{ }}</code> variable and <code>{% %}</code> block from Lesson 13 using real values for the host it's running against — and only then writes the rendered result to the destination. The module name is honest about the order: template first, copy second.</p>
+
+<pre><code>- name: Template a config file per host
+  ansible.builtin.template:
+    src: templates/app.conf.j2
+    dest: /etc/app.conf
+    owner: root
+    group: root
+    mode: '0644'</code></pre>
+
+<p>Confirmed against Ansible's own docs: <code>src</code> is "path of a Jinja2 formatted template on the Ansible controller," and <code>dest</code> is "location to render the template to on the remote machine" — the word <em>render</em> there is doing real work, it's not just a copy. By convention, template source files end in <code>.j2</code> so it's obvious at a glance that a file has substitutions in it, though Ansible itself doesn't require the extension.</p>
+
+<h2>The decision rule</h2>
+<p>One question settles it every time: <strong>does this file need to differ per host or per environment?</strong></p>
+<ul>
+<li><strong>No — the content is identical everywhere.</strong> A license file, a static binary config, a README dropped onto every server. Use <code>copy</code>. There's nothing to render, so don't reach for a templating engine you don't need.</li>
+<li><strong>Yes — something in the file depends on the host, environment, or a variable.</strong> A config file where the port, hostname, environment name, or a list of upstream servers changes between dev/staging/prod, or between individual hosts. Use <code>template</code>, and pull in variables the way Lesson 8 (variables) and Lesson 9 (facts) taught you.</li>
+</ul>
+<p class="callout"><strong>Best practice:</strong> if you ever catch yourself writing a separate near-identical static file per host or per environment just to work around <code>copy</code> not substituting values, that's a sign the file should be one <code>.j2</code> template with <code>template</code> instead. One template plus variables beats five almost-identical copies you have to keep in sync by hand.</p>
+
+<h2>Both are idempotent — this ties back to Lesson 7</h2>
+<p>Neither module blindly overwrites the destination every run. Both check the destination's actual content first and only report <code>changed</code> — and only write — when it differs from what should be there. Ansible's own docs confirm this for both: <code>copy</code> "will only set the changed state if the destination content is being modified," and <code>template</code> works the same way, comparing the freshly rendered content against what's already on disk. Run either task twice with nothing else different, and the second run reports <code>ok</code>, not <code>changed</code> — exactly the idempotency rule from Lesson 7, applied to file content instead of a directory's existence.</p>
+
+<h2>Both notify a handler the same way — this ties back to Lesson 12</h2>
+<p>This is the classic pattern Lesson 12 already named: template (or copy) a config file, then <code>notify</code> a handler that restarts the service that reads it. The restart only fires when the config genuinely changed, because <code>notify</code> only queues a handler when the notifying task reports <code>changed</code> — and you now know exactly what makes these two modules report <code>changed</code> in the first place.</p>
+
+<pre><code>- name: Write nginx config from a template
+  ansible.builtin.template:
+    src: templates/nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    mode: '0644'
+  notify:
+    - Restart nginx
+
+handlers:
+  - name: Restart nginx
+    ansible.builtin.service:
+      name: nginx
+      state: restarted</code></pre>
+
+<p>Swap <code>template</code> for <code>copy</code> in that task and the pattern is identical — the only thing that changed is whether the source file has <code>{{ }}</code> in it that needs resolving before it lands on the host.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A source file on the control node contains the line <code>Welcome to {{ ansible_hostname }}</code>. You copy it to a host using <code>ansible.builtin.copy</code>. What does the destination file contain?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The literal text <code>Welcome to {{ ansible_hostname }}</code>, braces included. <code>copy</code> does not process Jinja2 at all — it moves the file exactly as it is. To get the hostname actually substituted in, the file needs to be a <code>.j2</code> template rendered with <code>ansible.builtin.template</code> instead.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You run a playbook with a <code>template</code> task that has <code>notify: Restart service</code>. The rendered content turns out to be byte-for-byte identical to what's already on the host. Does the handler run?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No. <code>template</code> is idempotent — if the rendered content matches the destination exactly, the task reports <code>ok</code>, not <code>changed</code>. Since <code>notify</code> only queues a handler when its task reports <code>changed</code>, the handler never fires. Same rule as Lesson 12, now driven by content comparison instead of a simpler check.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Reuse the localhost inventory from earlier lessons. In the same folder, create a template source file called <code>message.txt.j2</code>:</p>
+
+<pre><code>Hello from {{ ansible_hostname }}!
+This file was rendered by the template module.</code></pre>
+
+<p>Now create <code>copy-vs-template.yml</code>:</p>
+
+<pre><code>- name: copy vs template demo
+  hosts: localhost
+
+  tasks:
+    - name: Render the message with template (substitutes the variable)
+      ansible.builtin.template:
+        src: message.txt.j2
+        dest: /tmp/rendered-with-template.txt
+
+    - name: Copy the same file with copy (does NOT substitute)
+      ansible.builtin.copy:
+        src: message.txt.j2
+        dest: /tmp/copied-with-copy.txt</code></pre>
+
+<p>Then:</p>
+<ul>
+<li>run <code>ansible-playbook -i inventory copy-vs-template.yml</code></li>
+<li>check both task statuses in the output — expect <code>changed</code> on both, since neither destination file exists yet</li>
+<li>read the rendered file: <code>cat /tmp/rendered-with-template.txt</code> — it should show your real hostname, no braces</li>
+<li>read the copied file: <code>cat /tmp/copied-with-copy.txt</code> — it should still show the literal <code>{{ ansible_hostname }}</code>, unresolved, because <code>copy</code> never touches Jinja2 syntax</li>
+<li>run the exact same command a second time — both tasks should now report <code>ok</code>, confirming both modules are idempotent</li>
+<li>clean up: <code>rm -f /tmp/rendered-with-template.txt /tmp/copied-with-copy.txt</code></li>
+</ul>
+<p>Try it yourself before checking the reference command below.</p>
+
+<div class="quiz">
+<p>Reveal the reference command</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>ansible-playbook -i inventory copy-vs-template.yml
+cat /tmp/rendered-with-template.txt
+# Hello from &lt;your-hostname&gt;!  -- variable substituted
+
+cat /tmp/copied-with-copy.txt
+# Hello from {{ ansible_hostname }}!  -- literal text, unresolved
+
+ansible-playbook -i inventory copy-vs-template.yml
+# run again: both tasks report "ok", not "changed"
+
+rm -f /tmp/rendered-with-template.txt /tmp/copied-with-copy.txt</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html" target="_blank" rel="noopener">ansible.builtin.template module docs</a> (<code>src</code> = "path of a Jinja2 formatted template on the Ansible controller," <code>dest</code> = "location to render the template to on the remote machine," idempotent — only marks changed when rendered content differs from destination) · <a href="https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html" target="_blank" rel="noopener">ansible.builtin.copy module docs</a> (<code>src</code>/<code>dest</code>/<code>content</code> parameters, "will only set the changed state if the destination content is being modified") — both verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>copy</code> moves a file exactly as-is — no Jinja2 processing, even if the file happens to contain <code>{{ }}</code>. <code>template</code> renders a <code>.j2</code> file's Jinja2 first, then writes the rendered result.</li>
+    <li>Decision rule: content identical everywhere → <code>copy</code>. Content needs to differ per host/environment → <code>template</code>.</li>
+    <li>Both are idempotent (Lesson 7) — they compare content before writing, so a second run with nothing changed reports <code>ok</code>. Both can <code>notify</code> a handler (Lesson 12) — the classic pattern is template/copy a config, notify a "restart service" handler.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0013-jinja2-templating.html">&larr; Lesson 13 — Jinja2 templating basics</a></span>
+  <span><a href="0015-file-management-modules.html">Lesson 15 — File &amp; directory management modules &rarr;</a></span>
+</div>
+
+</body>
+</html>

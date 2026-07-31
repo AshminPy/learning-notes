@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2 — Tools setup: install Ansible, practice hosts</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 2 of 36</p>
+<h1>Tools setup: install Ansible, practice hosts</h1>
+
+<p>Two things before any playbook: Ansible itself installed on your own machine, and something for it to manage. Ansible has no agent to install on the machines it manages — it connects over plain SSH and runs Python there temporarily. That means setup is short: one install on your side, and a target to point at.</p>
+
+<p class="callout"><strong>Simple example:</strong> Ansible is a command-line program, <code>ansible</code> (plus friends like <code>ansible-playbook</code>). You run it from your own machine — called the <strong>control node</strong> — and it reaches out over SSH to <strong>managed nodes</strong> to do work. No software needs to be pre-installed on the managed node beyond Python and SSH access. That agentless design is one of Ansible's defining traits — keep it in mind, it explains a lot of what's coming later in this course.</p>
+
+<h2>1. Install Ansible on your control node</h2>
+<p>Ansible's own docs are explicit: the officially supported way to install the Python packages is with <code>pip</code> (or <code>pipx</code> if your OS restricts installing packages into the system Python). This works the same way on macOS, Linux, and Windows-via-WSL, since the control node just needs "nearly any UNIX-like machine with Python installed."</p>
+
+<table>
+<tr><th>OS</th><th>Method</th><th>Command</th></tr>
+<tr><td>macOS / any UNIX-like machine</td><td>pip (officially documented, cross-platform)</td><td><code>python3 -m pip install --user ansible</code></td></tr>
+<tr><td>macOS / any UNIX-like machine</td><td>pipx (alternative when pip can't install into system Python)</td><td><code>pipx install --include-deps ansible</code></td></tr>
+<tr><td>Ubuntu / Debian</td><td>apt (official PPA)</td><td><code>sudo apt update</code><br><code>sudo apt install software-properties-common</code><br><code>sudo add-apt-repository --yes --update ppa:ansible/ansible</code><br><code>sudo apt install ansible</code></td></tr>
+<tr><td>Fedora / RHEL</td><td>dnf</td><td><code>sudo dnf install ansible</code></td></tr>
+<tr><td>Windows</td><td>Not supported as a control node directly</td><td>Use WSL (Windows Subsystem for Linux) and follow the Ubuntu/Debian or pip steps inside it</td></tr>
+</table>
+
+<p class="callout">Ansible's docs don't publish a Homebrew method for macOS — the officially documented cross-platform path is <code>pip</code> or <code>pipx</code>, so that's what this course uses on macOS. If you already have a package-manager install working (e.g. an unofficial brew formula), it's fine to keep using it — just confirm the version with the check below.</p>
+
+<h2>2. Confirm the install</h2>
+<p>Open a terminal and run:</p>
+<pre><code>ansible --version</code></pre>
+<p>You should see a line like <code>ansible [core 2.x.x]</code> along with the Python interpreter path it's using. The exact version will be whatever is current — that's fine. If the command isn't found, the install went into a location that isn't on your <code>PATH</code> — close and reopen the terminal, or re-check the install step above.</p>
+
+<h2>3. Your practice environment: control node + managed node</h2>
+<p>Ansible's whole job is to manage <em>other</em> machines over SSH. So strictly, you need two things: the control node (your own machine, where you just installed Ansible) and at least one managed node to point it at. For the first stretch of this course, we'll use the simplest zero-cost option: your own machine acting as <strong>both</strong>.</p>
+
+<p>Ansible supports this officially through a special connection setting, <code>ansible_connection=local</code>, which tells it to run tasks directly on the control node instead of going out over SSH. In an inventory file it looks like this — this is Ansible's own documented example:</p>
+<pre><code>[targets]
+
+localhost              ansible_connection=local
+other1.example.com     ansible_connection=ssh        ansible_user=myuser
+other2.example.com     ansible_connection=ssh        ansible_user=myotheruser</code></pre>
+<p>Notice <code>localhost</code> sits in the same inventory as real SSH-managed hosts — <code>ansible_connection=local</code> is just a per-host setting, not a different mode of Ansible. That's exactly why it's a good teaching tool: everything you learn against <code>localhost</code> now uses the same commands and files you'll later point at real servers.</p>
+
+<p class="callout">A note on where this stops working: <code>localhost</code> with <code>ansible_connection=local</code> is enough for playbooks, variables, facts, conditionals, loops, and handlers — most of this course. It is <strong>not</strong> enough once we reach inventory-at-scale and delegation lessons, which are specifically about coordinating <em>multiple</em> real hosts. At that point you'll need a genuine second machine — a free-tier cloud VM (e.g. AWS/GCP/Azure free tier), a local VM via Vagrant + VirtualBox, or a Docker container with an SSH server running inside it. This course will tell you exactly when that becomes necessary — you don't need to set it up today.</p>
+
+<h2>4. First connectivity check</h2>
+<p>Create a small inventory file to hold your practice target. In your working folder, make a file named <code>inventory.ini</code>:</p>
+<pre><code>[local]
+localhost ansible_connection=local</code></pre>
+<p>Then run an <strong>ad-hoc command</strong> — a one-off Ansible action with no playbook file, using the <code>ping</code> module (which just confirms Ansible can reach the host and run Python there, no network ping involved):</p>
+<pre><code>ansible local -m ping -i inventory.ini</code></pre>
+<p>A working setup replies with something like:</p>
+<pre><code>localhost | SUCCESS => {
+    "ansible_facts": {
+        "discovered_interpreter_python": "/usr/bin/python3"
+    },
+    "changed": false,
+    "ping": "pong"
+}</code></pre>
+<p><code>"pong"</code> is the whole point of this check — Ansible found the host, connected to it (locally, in this case), found a Python interpreter, and ran a module successfully. Every later lesson builds on this exact command shape: <code>ansible &lt;pattern&gt; -m &lt;module&gt; -i &lt;inventory&gt;</code>.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Why does <code>ansible local -m ping -i inventory.ini</code> work with no real second machine, and where will that stop being enough?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The inventory sets <code>ansible_connection=local</code> on the <code>localhost</code> entry, so Ansible runs tasks directly on your own machine instead of over SSH — no second machine needed. It stops being enough once a lesson is specifically about managing multiple real hosts (inventory at scale, delegation) — those need a genuine second host such as a free-tier cloud VM, a Vagrant/VirtualBox VM, or a Docker container running SSH.</div>
+</div>
+
+<h2>Now do it yourself</h2>
+<p>Checklist — do these in order, don't skip ahead:</p>
+<ul>
+<li>[ ] Install Ansible with <code>pip</code>/<code>pipx</code> (or your OS package manager)</li>
+<li>[ ] Run <code>ansible --version</code> and confirm you see a version number printed</li>
+<li>[ ] Create <code>inventory.ini</code> with the <code>[local]</code> group and <code>localhost ansible_connection=local</code> line</li>
+<li>[ ] Run <code>ansible local -m ping -i inventory.ini</code> and confirm you get <code>"ping": "pong"</code></li>
+</ul>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html" target="_blank" rel="noopener">Ansible — Installing Ansible</a> and <a href="https://docs.ansible.com/projects/ansible/latest/getting_started/get_started_inventory.html" target="_blank" rel="noopener">Building an inventory</a>, official documentation, checked against the live pages for this lesson.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Ansible is agentless — install it once on your control node with <code>pip</code>/<code>pipx</code> (or apt/dnf on Linux); managed nodes just need Python and SSH.</li>
+    <li><code>ansible --version</code> confirms the install worked.</li>
+    <li>For most of this course, <code>localhost</code> with <code>ansible_connection=local</code> in your inventory is your zero-cost practice target — same commands you'll later run against real hosts.</li>
+    <li>A real second host (cloud free-tier VM, Vagrant/VirtualBox VM, or Docker+SSH container) becomes necessary later, for inventory-at-scale and delegation lessons.</li>
+    <li><code>ansible local -m ping -i inventory.ini</code> replying <code>"pong"</code> is your proof the whole chain — install, inventory, connection, Python — works end to end.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Stuck installing anything, or an error you don't understand? Paste it and ask — this is exactly what the teacher is for.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0001-roadmap-and-cert-plan.html">&larr; Lesson 1 — Your roadmap</a></span>
+  <span><a href="0003-what-is-ansible.html">Lesson 3 — What is Ansible? &rarr;</a></span>
+</div>
+
+</body>
+</html>

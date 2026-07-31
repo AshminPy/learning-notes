@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 17 — Writing your first role</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 17 of 36</p>
+<h1>Writing your first role</h1>
+
+<p>Lesson 16 walked through the anatomy of a role — the fixed set of folders Ansible expects (<code>tasks/</code>, <code>handlers/</code>, <code>templates/</code>, <code>defaults/</code>, and the rest) and why that shape is what makes a role reusable across playbooks and projects. Anatomy on paper only gets you so far. This lesson builds a real one: a small role that renders a message into a file, using a default variable and a handler, exactly the pieces you already know from Lessons 8, 12, and 13–14 — just organized the role way instead of loose in one playbook file.</p>
+
+<p class="callout"><strong>Mental model:</strong> a role is a playbook's <code>tasks:</code>, <code>handlers:</code>, and default <code>vars:</code> pulled out into their own folder with a fixed shape, so any playbook can pull the whole bundle in with one line instead of copy-pasting the tasks every time. You don't write less YAML the first time — you write it once and stop repeating it.</p>
+
+<h2>Scaffold the role with ansible-galaxy role init</h2>
+<p>Don't hand-create the role folders — <code>ansible-galaxy</code> ships a generator that builds the whole skeleton for you, confirmed against Ansible's own docs: "Use the <code>init</code> command to initialize the base structure of a new role, saving time on creating the various directories and main.yml files a role requires."</p>
+<p>Roles live in a <code>roles/</code> directory next to your playbook by default, so create that first, then run <code>init</code> from inside it:</p>
+<pre><code>$ mkdir roles
+$ cd roles
+$ ansible-galaxy role init greeting_file
+$ cd ..</code></pre>
+<p><code>greeting_file</code> is the role's name — letters, numbers, and underscores only, same rule as a variable name (Lesson 8). Avoid dashes in role names for the same reason you avoid them in variable names.</p>
+
+<h2>What ansible-galaxy just built for you</h2>
+<p>Confirmed against the docs, <code>init</code> creates this exact structure under <code>roles/greeting_file/</code>:</p>
+<pre><code>greeting_file/
+    README.md
+    defaults/
+        main.yml
+    files/
+    handlers/
+        main.yml
+    meta/
+        main.yml
+    tasks/
+        main.yml
+    templates/
+    tests/
+        inventory
+        test.yml
+    vars/
+        main.yml</code></pre>
+<p>You met most of these names already, just not as folders:</p>
+<ul>
+<li><code>defaults/main.yml</code> — default variables, the lowest-priority source in Ansible's variable precedence (Lesson 8 previewed this — full precedence order is Lesson 22). This is where a role's "fallback" values live.</li>
+<li><code>tasks/main.yml</code> — the task list, same shape as a playbook's <code>tasks:</code> section, just without the <code>hosts:</code> and <code>tasks:</code> wrapper — the file itself <em>is</em> the list.</li>
+<li><code>handlers/main.yml</code> — handlers, same <code>notify:</code>-by-name mechanism as Lesson 12, scoped to this role.</li>
+<li><code>templates/</code> — an empty folder for Jinja2 <code>.j2</code> files, the same templating you used in Lesson 13–14, now living next to the role that uses them instead of some arbitrary path.</li>
+<li><code>vars/main.yml</code>, <code>meta/main.yml</code>, <code>files/</code>, <code>tests/</code> — higher-precedence variables, role metadata/dependencies, static files to copy, and a starter test playbook. You won't touch these today; leave them as generated.</li>
+</ul>
+<p>Nothing forces you to fill in every folder. As the docs put it: "You must include at least one of these directories in each role. You can omit any directories the role does not use." For this lesson you'll fill in four: <code>defaults/</code>, <code>templates/</code>, <code>tasks/</code>, and <code>handlers/</code>.</p>
+
+<h2>Fill in defaults/main.yml — the variable with a fallback</h2>
+<p>Open <code>roles/greeting_file/defaults/main.yml</code> and replace its contents:</p>
+<pre><code>---
+greeting_message: "Hello from your first Ansible role!"
+greeting_dest: /tmp/ansible-greeting.txt</code></pre>
+<p>Two ordinary variables, defined exactly like Lesson 8's <code>vars:</code> — the only difference is <em>where</em> they live. Because they're in a role's <code>defaults/</code>, anyone calling this role gets a sensible message and destination for free, and can override either one without touching the role's files at all.</p>
+
+<h2>Fill in templates/greeting.txt.j2 — the Jinja2 template</h2>
+<p>Create <code>roles/greeting_file/templates/greeting.txt.j2</code>:</p>
+<pre><code>{{ greeting_message }}
+
+Rendered by the greeting_file role.</code></pre>
+<p>Same <code>{{ }}</code> Jinja2 syntax from Lesson 8 and Lesson 13–14 — <code>greeting_message</code> resolves to whatever value wins for this run: the role's default, or an override, following the precedence rules you already know the shape of.</p>
+
+<h2>Fill in tasks/main.yml — render the template</h2>
+<p>Open <code>roles/greeting_file/tasks/main.yml</code>:</p>
+<pre><code>---
+- name: Render the greeting file from the template
+  ansible.builtin.template:
+    src: greeting.txt.j2
+    dest: "{{ greeting_dest }}"
+  notify:
+    - Report the greeting file changed</code></pre>
+<p>Notice <code>src: greeting.txt.j2</code> has no path in front of it — inside a role, <code>ansible.builtin.template</code> automatically looks in that role's own <code>templates/</code> folder. That's the payoff of the fixed folder shape: no path-juggling, the module already knows where to look.</p>
+
+<h2>Fill in handlers/main.yml — confirm on change</h2>
+<p>Open <code>roles/greeting_file/handlers/main.yml</code>:</p>
+<pre><code>---
+- name: Report the greeting file changed
+  ansible.builtin.debug:
+    msg: "Greeting file at {{ greeting_dest }} was created or updated."</code></pre>
+<p>Same <code>notify:</code> / handler-name matching rule as Lesson 12: this only fires when the template task actually reports <code>changed</code> — first run, or a run where the message was overridden to something new. A run where nothing changed stays silent, same as always.</p>
+
+<h2>Call the role from a playbook</h2>
+<p>Everything above lives inside the role. To actually run it, write a normal playbook next to the <code>roles/</code> folder — <code>site.yml</code>:</p>
+<pre><code>---
+- name: Use the greeting_file role
+  hosts: localhost
+  roles:
+    - greeting_file</code></pre>
+<p>That's the whole playbook. <code>roles:</code> is a play-level keyword, a sibling of <code>hosts:</code> and <code>tasks:</code> — confirmed against the docs' own example (<code>hosts: webservers</code> / <code>roles: [common, webservers]</code>). Listing <code>greeting_file</code> there pulls in its <code>tasks/main.yml</code>, makes its <code>defaults/</code> available, and wires up its <code>handlers/</code> — all in one line, and Ansible finds the role automatically because it's sitting in <code>roles/</code> next to the playbook.</p>
+
+<div class="callout"><p><strong>The task-level alternative — import_role and include_role:</strong> <code>roles:</code> runs the role's tasks before anything in that play's own <code>tasks:</code> section. If you need a role's tasks to run in the middle of, or after, other tasks in the same play, call it as a task instead:</p>
+<pre><code>tasks:
+  - name: Import the greeting_file role
+    ansible.builtin.import_role:
+      name: greeting_file</code></pre>
+<p>Confirmed against the docs: "the behavior is the same as using the <code>roles</code> keyword" for <code>import_role</code> — it's a static, pre-processed alternative. <code>ansible.builtin.include_role</code> looks identical but is dynamic: "included roles run in the order they are defined" at the point Ansible reaches them during the run, rather than being resolved upfront. For a straightforward role at the top of a play — like this lesson's example — plain <code>roles:</code> is still the standard, most-used form; reach for <code>import_role</code> / <code>include_role</code> once you need that finer control over ordering.</p></div>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You call <code>greeting_file</code> with plain <code>roles:</code> and never set <code>greeting_message</code> anywhere else. What message ends up in the rendered file?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The default from <code>roles/greeting_file/defaults/main.yml</code> — "Hello from your first Ansible role!" Role defaults are the fallback that's always there if nothing overrides them.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You run the playbook a second time with no changes at all. Does the "Report the greeting file changed" handler run?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No. The template task reports <code>ok</code> because the file's content already matches — same idempotency rule as every earlier lesson — so it never notifies the handler, and the handler doesn't fire.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Build this exact role and playbook, in a fresh practice folder:</p>
+<ul>
+<li>Create the folder, then <code>roles/</code> inside it, then scaffold: <code>cd roles &amp;&amp; ansible-galaxy role init greeting_file &amp;&amp; cd ..</code></li>
+<li>Fill in <code>defaults/main.yml</code>, <code>templates/greeting.txt.j2</code>, <code>tasks/main.yml</code>, and <code>handlers/main.yml</code> exactly as shown above.</li>
+<li>Reuse the localhost inventory file from earlier lessons in this project's root folder (next to <code>roles/</code>).</li>
+<li>Write <code>site.yml</code> in that same root folder, calling the role with <code>roles:</code>.</li>
+<li>Run <code>ansible-playbook -i inventory site.yml</code> — find the <code>TASK [Render the greeting file from the template]</code> section, expect <code>changed</code> on this first run.</li>
+<li>Find the <code>RUNNING HANDLER [greeting_file : Report the greeting file changed]</code> section and confirm the debug message printed. (Notice the handler name in the banner is prefixed with the role name — that's Ansible telling you which role it came from.)</li>
+<li>Confirm the file's contents: <code>cat /tmp/ansible-greeting.txt</code></li>
+<li>Run the exact same command again. Confirm the template task now shows <code>ok</code>, and the <code>RUNNING HANDLER</code> section is gone entirely.</li>
+<li>Now override the default without editing any role file: <code>ansible-playbook -i inventory site.yml -e "greeting_message='Overridden from the command line'"</code></li>
+<li>Check the file again — confirm the new message is there, and confirm the handler fired this time, since the template's content genuinely changed.</li>
+</ul>
+<p>Try it yourself before checking the reference commands below.</p>
+
+<div class="quiz">
+<p>Reveal the reference commands</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>mkdir -p ansible-roles-practice/roles
+cd ansible-roles-practice/roles
+ansible-galaxy role init greeting_file
+cd ..
+# fill in roles/greeting_file/defaults/main.yml, templates/greeting.txt.j2,
+# tasks/main.yml, handlers/main.yml — then write inventory and site.yml here
+
+ansible-playbook -i inventory site.yml
+cat /tmp/ansible-greeting.txt
+
+ansible-playbook -i inventory site.yml
+# second run: template task = ok, no RUNNING HANDLER section
+
+ansible-playbook -i inventory site.yml -e "greeting_message='Overridden from the command line'"
+cat /tmp/ansible-greeting.txt
+# handler fires again — the content genuinely changed</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/galaxy/dev_guide.html" target="_blank" rel="noopener">docs.ansible.com — Galaxy developer guide</a> (<code>ansible-galaxy role init role_name</code> command and exact generated directory structure: README.md, defaults/main.yml, files/, handlers/main.yml, meta/main.yml, tasks/main.yml, templates/, tests/, vars/main.yml) · <a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html" target="_blank" rel="noopener">docs.ansible.com — Roles</a> (play-level <code>roles:</code> keyword syntax, "you must include at least one of these directories in each role, you can omit any directories the role does not use", <code>ansible.builtin.import_role</code>/<code>ansible.builtin.include_role</code> task syntax, "the behavior is the same as using the roles keyword" for import_role, "included roles run in the order they are defined" for include_role) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Scaffold a role with <code>ansible-galaxy role init role_name</code>, run from inside a <code>roles/</code> folder next to your playbook — it builds the full folder structure for you.</li>
+    <li>Fill in only the folders you need: <code>defaults/main.yml</code> for fallback variables, <code>templates/</code> for Jinja2 files, <code>tasks/main.yml</code> for the task list, <code>handlers/main.yml</code> for notify targets — everything you already knew from Lessons 8, 12, and 13–14, just organized the role way.</li>
+    <li>Call a role with the play-level <code>roles:</code> keyword for the standard case; use <code>ansible.builtin.import_role</code> (static, same behavior as <code>roles:</code>) or <code>ansible.builtin.include_role</code> (dynamic, runs where it's placed) at the task level when you need a role's tasks to run somewhere other than "before everything else in the play."</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0016-roles-anatomy.html">&larr; Lesson 16: Roles: anatomy</a></span>
+  <span><a href="0018-ansible-galaxy.html">Lesson 18: Ansible Galaxy &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 24 — Tags</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 24 of 36</p>
+<h1>Tags</h1>
+
+<p>Real playbooks grow. What starts as ten tasks in one file becomes a <code>site.yml</code> that includes a dozen roles — web servers, databases, monitoring, firewall rules, cron jobs — each with its own tasks. Running the whole thing every time you're iterating on one small piece is slow, and slow feedback loops kill momentum. <strong>Tags</strong> solve this: labels you attach to tasks, blocks, roles, or plays so you can run — or skip — just the part you care about.</p>
+
+<p class="callout"><strong>Mental model:</strong> a tag is a label on a box, not a switch that changes what's inside the box. Tagging a task <code>config</code> doesn't alter what the task does — it just lets you tell <code>ansible-playbook</code> "only open the boxes labeled <code>config</code> this time" instead of opening every box in the playbook.</p>
+
+<h2>Adding tags</h2>
+<p>You can put <code>tags:</code> on a single task, a block of tasks, a role, or a whole play. Confirmed against Ansible's own docs — here's each level:</p>
+
+<p><strong>On a task:</strong></p>
+<pre><code>tasks:
+  - name: Install the servers
+    ansible.builtin.yum:
+      name: [httpd, memcached]
+      state: present
+    tags:
+      - packages
+      - webservers</code></pre>
+
+<p><strong>On a block</strong> (every task inside inherits the tag):</p>
+<pre><code>- name: ntp tasks
+  tags: ntp
+  block:
+    - name: Install ntp
+      ansible.builtin.yum:
+        name: ntp
+        state: present</code></pre>
+
+<p><strong>On a role:</strong></p>
+<pre><code>roles:
+  - role: webserver
+    vars:
+      port: 5000
+    tags: [ web, foo ]</code></pre>
+
+<p><strong>On a play</strong> (every task in the play inherits the tag):</p>
+<pre><code>- hosts: all
+  tags: ntp
+  tasks:
+    - name: Install ntp
+      ansible.builtin.yum:
+        name: ntp
+        state: present</code></pre>
+
+<p>A task can carry more than one tag — write them as a YAML list (<code>tags:</code> followed by dashed items) or inline (<code>tags: [ web, foo ]</code>), both are the same thing, just two ways to write a YAML list. Tag names are your choice — <code>packages</code>, <code>config</code>, <code>slow</code>, whatever groups make sense for how you'll want to run this playbook later.</p>
+
+<h2>Running a subset with --tags</h2>
+<p>Pass <code>--tags</code> to <code>ansible-playbook</code> and only tasks carrying one of the listed tags run (plus a couple of special cases covered below):</p>
+<pre><code>$ ansible-playbook example.yml --tags "configuration,packages"</code></pre>
+<p>That runs every task tagged <code>configuration</code> <em>or</em> <code>packages</code> — untagged tasks and tasks with other tags are skipped for this run. Two other useful values: <code>--tags all</code> runs everything (the default, minus anything tagged <code>never</code>), <code>--tags tagged</code> runs only tasks that have at least one tag, and <code>--tags untagged</code> runs only tasks with no tags at all.</p>
+
+<h2>Skipping a subset with --skip-tags</h2>
+<p>The opposite: run everything <em>except</em> the tagged tasks you name.</p>
+<pre><code>$ ansible-playbook example.yml --skip-tags "packages"</code></pre>
+<p>Useful when most of the playbook is what you want, and only one slow or risky part needs to sit out this run — say, a task tagged <code>slow</code> that rebuilds a large cache, and you're iterating on something else entirely.</p>
+<p>You can combine both flags in one run:</p>
+<pre><code>$ ansible-playbook example.yml --tags "tag1,tag3" --skip-tags "tag4"</code></pre>
+
+<p class="callout"><strong>Why this matters at scale:</strong> without tags, "test my one change" means running the entire playbook — including the parts that already work and take five minutes to converge. With tags, it means running the three tasks you're actually touching, in three seconds. That's the difference between a tight feedback loop and dreading every test run.</p>
+
+<h2>The two reserved tag names</h2>
+<p>Two tag names have special meaning built into Ansible — don't use them as ordinary labels, and know what they do because you'll meet them in other people's playbooks.</p>
+
+<p><strong><code>always</code></strong> — a task or play tagged <code>always</code> runs on every invocation, regardless of what <code>--tags</code> you passed, unless you explicitly skip it with <code>--skip-tags always</code> (or skip it via another tag defined on that same task). Verified against current Ansible docs, quoting exactly: "If you assign the <code>always</code> tag to a task or play, Ansible will always run that task or play, unless you specifically skip it (<code>--skip-tags always</code>) or another tag defined on that task." Good fit for something like a fact-gathering or sanity-check task that every run needs, no matter which subset you asked for.</p>
+
+<p><strong><code>never</code></strong> — the opposite: a task or play tagged <code>never</code> is skipped by default, even by a plain <code>ansible-playbook</code> run with no <code>--tags</code> at all, and only runs if you specifically ask for it with <code>--tags never</code> (or another tag defined on that task). Quoting the docs exactly: "If you assign the <code>never</code> tag to a task or play, Ansible skips that task or play unless you specifically request it (<code>--tags never</code>) or another tag defined for that task." Good fit for a destructive or rarely-needed task — like a full data wipe — that you never want to fire by accident.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A task has no <code>tags:</code> at all. You run <code>ansible-playbook site.yml --tags "config"</code>. Does that task run?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. When you pass <code>--tags</code>, only tasks matching one of the named tags run (plus anything tagged <code>always</code>). An untagged task doesn't match <code>config</code>, so it's skipped for this run — nothing about the task itself changed, only which tasks this particular invocation chose to touch.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A task is tagged <code>never</code>. You run <code>ansible-playbook site.yml</code> with no tag flags at all. Does it run?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No. <code>never</code>-tagged tasks are skipped by default, even on a plain run with no <code>--tags</code> flag. They only run if you explicitly ask with <code>--tags never</code> (or another tag on that same task). It's the safety switch for tasks you never want to fire unless someone deliberately opts in.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Reuse the <code>playbook.yml</code> from earlier lessons, or start a fresh one. Give it three tasks, tag two of them differently, and leave the third untagged:</p>
+
+<pre><code>- name: Tags practice
+  hosts: localhost
+  tasks:
+    - name: Setup step
+      ansible.builtin.debug:
+        msg: "Running setup"
+      tags:
+        - setup
+
+    - name: Config step
+      ansible.builtin.debug:
+        msg: "Running config"
+      tags:
+        - config
+
+    - name: Untagged step
+      ansible.builtin.debug:
+        msg: "Running with no tag"</code></pre>
+
+<p>Then:</p>
+<ul>
+<li>run the full playbook with no tag flags — confirm all three <code>TASK</code> banners appear in the output</li>
+<li>run it again with <code>--tags config</code> — confirm only <code>TASK [Config step]</code> appears, and the other two are missing entirely from the output (not shown as <code>skipped</code> — they're not evaluated at all)</li>
+<li>run it with <code>--skip-tags config</code> — confirm <code>Setup step</code> and <code>Untagged step</code> run, but <code>Config step</code> doesn't</li>
+<li>run it with <code>--tags untagged</code> — confirm only <code>Untagged step</code> runs</li>
+</ul>
+<p>Try it yourself before checking the reference commands below.</p>
+
+<div class="quiz">
+<p>Reveal the reference commands</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>ansible-playbook -i inventory playbook.yml
+ansible-playbook -i inventory playbook.yml --tags "config"
+ansible-playbook -i inventory playbook.yml --skip-tags "config"
+ansible-playbook -i inventory playbook.yml --tags "untagged"</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_tags.html" target="_blank" rel="noopener">docs.ansible.com — Tags</a> (tag syntax on tasks/blocks/roles/plays, <code>--tags</code>/<code>--skip-tags</code> CLI flags, the exact reserved behavior of <code>always</code> and <code>never</code>) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>tags:</code> labels a task, block, role, or play. Run only tagged subsets with <code>--tags</code>, or run everything except them with <code>--skip-tags</code> — instead of running the whole playbook every time you're iterating on one piece.</li>
+    <li>This matters most at scale: a large playbook with dozens of roles is slow to run in full on every small change. Tags turn "test my change" from a five-minute full run into a three-second targeted one.</li>
+    <li><code>always</code> runs every invocation unless explicitly skipped. <code>never</code> is skipped every invocation unless explicitly requested. Both are reserved names, not ordinary labels.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0023-error-handling.html">&larr; Lesson 23: Error handling: block/rescue</a></span>
+  <span><a href="0025-delegation.html">Lesson 25: Delegation &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 25 — Delegation</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 25 of 36</p>
+<h1>Delegation</h1>
+
+<p>Every task you've written so far runs on every host in the play's target group — that's the default, and it's usually what you want. But sometimes one specific task needs to run somewhere else entirely. Think about updating a web server that sits behind a load balancer: before you touch the server, you need to pull it out of the load balancer's pool — and that step has to happen <em>on the load balancer</em>, not on the server being updated. <strong>Delegation</strong> is how you tell one task "run on a different host than the rest of this play."</p>
+
+<p class="callout"><strong>Mental model:</strong> a play's <code>hosts:</code> line sets the default audience for every task in it — like addressing an email to a whole team. <code>delegate_to</code> is a sticky note on one specific task that says "actually, send just this one to someone else instead." The rest of the play still goes to the team; only that one task's destination changed.</p>
+
+<h2>delegate_to: sending one task to a different host</h2>
+<p>Confirmed against Ansible's own docs — here's the load balancer example, the canonical case for delegation:</p>
+
+<pre><code>- hosts: webservers
+  serial: 5
+
+  tasks:
+    - name: Take out of load balancer pool
+      ansible.builtin.command: /usr/bin/take_out_of_pool {{ inventory_hostname }}
+      delegate_to: 127.0.0.1
+
+    - name: Actual steps would go here
+      ansible.builtin.yum:
+        name: acme-web-stack
+        state: latest
+
+    - name: Add back to load balancer pool
+      ansible.builtin.command: /usr/bin/add_back_to_pool {{ inventory_hostname }}
+      delegate_to: 127.0.0.1</code></pre>
+
+<p>The play targets <code>webservers</code>, so without <code>delegate_to</code>, all three tasks would run on each web server in turn. But the first and third tasks have <code>delegate_to: 127.0.0.1</code> — so instead of running on the web server currently being processed, they run on the control node (in this real-world version, <code>127.0.0.1</code> would usually be the load balancer's address, or you'd delegate to a host named in your inventory, like <code>delegate_to: loadbalancer</code>). <code>{{ inventory_hostname }}</code> still refers to the web server the play is currently working on — delegation changes <em>where the task executes</em>, not which host's name and variables it's reasoning about. That's the whole trick: "run this command, about this host, but execute it over there."</p>
+
+<h2>delegate_to: localhost — the everyday pattern</h2>
+<p>The most common delegation you'll actually write day to day isn't the load balancer dance — it's delegating a task to the control node itself, so a remote-targeted play can still do one local thing, like write a log entry, send a notification, or drop a file on the machine running Ansible.</p>
+
+<pre><code>- hosts: webservers
+  tasks:
+    - name: Update the application
+      ansible.builtin.yum:
+        name: acme-web-stack
+        state: latest
+
+    - name: Record that this host was updated
+      ansible.builtin.lineinfile:
+        path: /tmp/update-log.txt
+        line: "{{ inventory_hostname }} updated at {{ ansible_date_time.iso8601 }}"
+        create: true
+      delegate_to: localhost</code></pre>
+
+<p><code>localhost</code> here means the control node — the machine running <code>ansible-playbook</code> — regardless of which remote host the play is currently targeting. Without <code>delegate_to: localhost</code>, that <code>lineinfile</code> task would try to write <code>/tmp/update-log.txt</code> on each remote web server instead of on your own machine. The docs also show a shorthand for this specific case, <code>local_action</code>, which delegates to <code>127.0.0.1</code> automatically:</p>
+
+<pre><code>tasks:
+  - name: Take out of load balancer pool
+    local_action: ansible.builtin.command
+    args:
+      cmd: /usr/bin/take_out_of_pool {{ inventory_hostname }}</code></pre>
+
+<p><code>local_action</code> and <code>delegate_to: localhost</code> do the same thing for this case — <code>delegate_to</code> is the more general form (it works for any host, not just the control node), so it's the one you'll see and reach for most often.</p>
+
+<h2>run_once: true — once for the play, not once per host</h2>
+<p>Delegation answers "which host runs this task." A related but different question is "how many times should this task run at all." By default, a task runs once <em>per host</em> in the target group — five hosts means the task runs five times. Sometimes that's wrong: a task like "send one Slack notification that the deploy started" should fire exactly once for the whole play, not once per host (which would spam five identical messages). <code>run_once: true</code> fixes that — the task runs a single time, on the first host in the play, and is skipped everywhere else.</p>
+
+<pre><code>- name: "handle concurrency with a loop on the hosts with `run_once: true`"
+  lineinfile: "<options here>"
+  run_once: true
+  loop: '{{ ansible_play_hosts_all }}'</code></pre>
+
+<p>That example from the docs shows the two options combined for a task that needs to touch every host's data but only execute once — <code>run_once: true</code> stops it from repeating per host, and the <code>loop</code> lets that single execution still iterate over all the hosts' data if needed. For a simpler case — one Slack message, no loop — you'd just write:</p>
+
+<pre><code>- name: Notify Slack that the deploy finished
+  community.general.slack:
+    token: "{{ slack_token }}"
+    msg: "Deploy finished on {{ ansible_play_hosts_all | length }} hosts"
+  run_once: true</code></pre>
+
+<p class="callout"><strong>Don't mix these two up:</strong> <code>delegate_to</code> changes <em>where</em> a task runs (which host executes it) — it still runs once per host in the play unless you also add <code>run_once</code>. <code>run_once</code> changes <em>how many times</em> a task runs (once for the whole play instead of once per host) — it still runs on a host from the play's group unless you also add <code>delegate_to</code>. They solve different problems and combine cleanly when you need both — like sending exactly one Slack message from the control node, not from whichever web server happened to be first.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A play targets <code>hosts: webservers</code> (3 hosts). One task has no <code>delegate_to</code> and no <code>run_once</code>. How many times does it run, and where?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Three times — once on each of the three web servers. That's the default behavior every task has had in every earlier lesson: one execution per host in the target group. Delegation and <code>run_once</code> are both opt-in changes to that default, not the default itself.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Same play, 3 hosts. A task has <code>delegate_to: localhost</code> but no <code>run_once</code>. How many times does it run, and where?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Three times — but every one of those three executions happens on the control node (localhost), not on the web servers. <code>delegate_to</code> only changes <em>where</em> the task runs, it doesn't reduce <em>how many times</em> it runs. If you wanted it to happen just once on the control node, you'd need <code>run_once: true</code> as well.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Reuse the inventory from earlier lessons with a group of hosts (or a group containing a couple of <code>localhost</code>-style entries if you don't have real remote hosts handy — the point is a group with more than one host, so <code>run_once</code> has something to prove). Create <code>delegation.yml</code>:</p>
+
+<pre><code>- name: Delegation practice
+  hosts: webservers
+  tasks:
+    - name: Log that this play ran, from the control node
+      ansible.builtin.lineinfile:
+        path: /tmp/delegation-log.txt
+        line: "Play ran for {{ inventory_hostname }} at {{ ansible_date_time.iso8601 }}"
+        create: true
+      delegate_to: localhost
+
+    - name: Print one message for the whole play
+      ansible.builtin.debug:
+        msg: "This runs exactly once, no matter how many hosts are in the group"
+      run_once: true</code></pre>
+
+<p>Then:</p>
+<ul>
+<li>run <code>ansible-playbook -i inventory delegation.yml</code></li>
+<li>find <code>TASK [Log that this play ran, from the control node]</code> — notice it still shows one line per host in the recap-style output (it ran once per host, just <em>on</em> the control node each time)</li>
+<li>check <code>/tmp/delegation-log.txt</code> on your control node (not on the remote hosts) — confirm it has one line per host in the group</li>
+<li>find <code>TASK [Print one message for the whole play]</code> — confirm the message printed only once, even though the group has multiple hosts</li>
+</ul>
+<p>Try it yourself before checking the reference command below.</p>
+
+<div class="quiz">
+<p>Reveal the reference command</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>ansible-playbook -i inventory delegation.yml
+cat /tmp/delegation-log.txt
+# confirm one line per host in the "webservers" group, and the debug message printed exactly once</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_delegation.html" target="_blank" rel="noopener">docs.ansible.com — Delegation, rolling updates, and local actions</a> (<code>delegate_to</code> load-balancer example, <code>local_action</code> shorthand, <code>run_once: true</code> with the concurrency loop example) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>delegate_to: &lt;host&gt;</code> runs one task on a different host than the rest of the play, while <code>{{ inventory_hostname }}</code> still refers to the host the play is currently working through — the load-balancer take-out/add-back pattern is the classic case.</li>
+    <li><code>delegate_to: localhost</code> is the everyday version: run one task on the control node itself (a local log write, a local notification) while the rest of the play targets remote hosts.</li>
+    <li><code>run_once: true</code> runs a task exactly once for the whole play, on the first host, instead of once per host — the fix for "send one Slack message," not "send N."</li>
+    <li>The two are independent: <code>delegate_to</code> changes <em>where</em> a task runs, <code>run_once</code> changes <em>how many times</em> it runs. Combine them when you need both, like one Slack message sent from the control node.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0024-tags.html">&larr; Lesson 24: Tags</a></span>
+  <span><a href="0026-ansible-vault.html">Lesson 26: Ansible Vault &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 10 — Conditionals (when)</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 10 of 36</p>
+<h1>Conditionals (when)</h1>
+
+<p>Lesson 9 gathered facts about a host — things like <code>ansible_facts['os_family']</code>. Facts are only useful if a task can act on them. Right now, every task in your playbooks runs unconditionally on every targeted host, whether it makes sense there or not. A task that installs a package with <code>apt</code> will fail outright on a RedHat host, because <code>apt</code> doesn't exist there. Conditionals fix that: a task can say "only run me if this is true."</p>
+
+<p class="callout"><strong>Mental model:</strong> <code>when</code> is an <code>if</code> statement for a task. The task is still written in the playbook and still shown in the output, but Ansible evaluates the condition first — if it's false, the task is marked <code>skipped</code> and nothing runs. Nothing changed on the host, nothing failed, it simply didn't apply.</p>
+
+<h2>The <code>when</code> clause</h2>
+<p>Add <code>when:</code> to any task, at the same indentation level as <code>name:</code> and the module call. If the expression evaluates to true, the task runs as normal. If it's false, Ansible skips it and reports <code>skipped</code> in the output — you saw that status waiting in the PLAY RECAP counts back in Lesson 6.</p>
+
+<pre><code>- name: Print a message only on Debian-based hosts
+  ansible.builtin.debug:
+    msg: "This host is Debian-based"
+  when: ansible_facts['os_family'] == "Debian"</code></pre>
+
+<p class="callout"><strong>Common beginner mistake — do NOT use <code>{{ }}</code> inside <code>when</code>.</strong> Everywhere else in a playbook (a <code>msg:</code>, a <code>path:</code>) you write <code>{{ my_var }}</code> to reference a variable. Inside <code>when</code>, don't — it's already a raw Jinja2 expression, so the variable name is used directly. Confirmed straight from Ansible's own docs: "The <code>when</code> clause is a raw Jinja2 expression without double curly braces," and "you do not need to use <code>{{ }}</code> to use variables inside conditionals, as these are already implied." Writing <code>when: {{ ansible_facts['os_family'] }} == "Debian"</code> is a syntax error, not just bad style — leave the braces off.</p>
+
+<h2>Combining conditions with <code>and</code> / <code>or</code></h2>
+<p>Write a <code>when</code> condition exactly like a normal Jinja2/Python boolean expression — <code>and</code>, <code>or</code>, and parentheses all work:</p>
+
+<pre><code>when: (ansible_facts['distribution'] == "CentOS" and
+       ansible_facts['distribution_major_version'] == "6") or
+      (ansible_facts['distribution'] == "Debian" and
+       ansible_facts['distribution_major_version'] == "7")</code></pre>
+
+<p>There's also a shorthand: give <code>when</code> a YAML list instead of one long expression, and Ansible ANDs every item together automatically. This is often easier to read than chaining several conditions with <code>and</code>:</p>
+
+<pre><code>when:
+  - ansible_facts['distribution'] == "CentOS"
+  - ansible_facts['distribution_major_version'] == "6"</code></pre>
+
+<p>Both forms above check the same thing. Reach for the list form when all conditions must hold (implicit AND); reach for explicit <code>and</code> / <code>or</code> when you need to mix the two or need real OR logic.</p>
+
+<h2>The practical case: one playbook, two OS families</h2>
+<p>This is exactly the problem Lesson 9's facts were building toward. <code>ansible_facts['os_family']</code> tells you whether a host is Debian-based (Ubuntu, Debian) or RedHat-based (RHEL, Rocky, Fedora). Those two families use different package managers — <code>apt</code> and <code>dnf</code> — so a single "install a package" task can't cover both. With <code>when</code>, you don't need two playbooks; you write both tasks in the same play and let the condition pick the right one per host:</p>
+
+<pre><code>- name: Install web server on any OS family
+  hosts: all
+  become: true
+  tasks:
+    - name: Install on Debian-based hosts
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install on RedHat-based hosts
+      ansible.builtin.dnf:
+        name: nginx
+        state: present
+      when: ansible_facts['os_family'] == "RedHat"</code></pre>
+
+<p>Run this against a mixed inventory and each host runs exactly one of the two tasks — the other shows <code>skipped</code> for that host. That's the whole point: one playbook, checked into git once, that correctly adapts itself to whatever it's pointed at. This pattern — a pair of OS-specific tasks guarded by <code>ansible_facts['os_family']</code> — is one of the most common things you'll write in real Ansible code.</p>
+
+<h2>Checking a variable is defined</h2>
+<p>Not every variable is guaranteed to exist — an optional variable from <code>-e</code>, group_vars, or a role default might simply not be set for a given run. Referencing an undefined variable directly is an error, so guard it first with the <code>is defined</code> test:</p>
+
+<pre><code>when: my_var is defined</code></pre>
+
+<p>The opposite test also exists, for the times you specifically want to act only when something is <em>missing</em>:</p>
+
+<pre><code>when: my_var is undefined</code></pre>
+
+<p><code>is defined</code> and <code>is undefined</code> are Jinja2 tests, not comparisons — no <code>==</code> needed. You'll combine this constantly with the AND-list form above: check a variable is defined first, then check its value, so the second condition never even gets evaluated against a missing variable.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A play has one task with <code>when: ansible_facts['os_family'] == "Debian"</code>, run against a RedHat host. What status does that task show in the output, and does the PLAY RECAP count it as failed?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">It shows <code>skipped</code>, not <code>failed</code>. The condition being false is not an error — the task simply didn't apply to that host. The PLAY RECAP's <code>skipped</code> count goes up by one; <code>failed</code> stays at 0.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What's wrong with <code>when: {{ my_var }} == "yes"</code>?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The <code>{{ }}</code> shouldn't be there. <code>when</code> is already a raw Jinja2 expression, so variables are referenced by name directly: <code>when: my_var == "yes"</code>. Adding <code>{{ }}</code> is a syntax error, not just a style slip.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Reuse the localhost inventory from Lesson 4. Create <code>conditional.yml</code>:</p>
+
+<pre><code>- name: Practice conditionals
+  hosts: localhost
+  tasks:
+    - name: Show message only when enabled
+      ansible.builtin.debug:
+        msg: "The feature flag is on"
+      when: enable_feature is defined and enable_feature == "yes"</code></pre>
+
+<p>Now run it twice — once where the condition is true, once where it isn't — using <code>-e</code> to pass the variable on the command line, the same flag you used to pass extra variables earlier in this course:</p>
+
+<pre><code>$ ansible-playbook -i inventory conditional.yml -e "enable_feature=yes"
+$ ansible-playbook -i inventory conditional.yml</code></pre>
+
+<ul>
+<li>First run: check the <code>TASK [Show message only when enabled]</code> section — it should print the message and show <code>ok</code>.</li>
+<li>Second run (no <code>-e</code> at all, so <code>enable_feature</code> is undefined): the same task should show <code>skipped</code> instead — that's exactly why the task checks <code>is defined</code> first, so it doesn't error on a missing variable.</li>
+<li>Compare the <code>skipped</code> count in the PLAY RECAP between the two runs.</li>
+</ul>
+<p>Try it yourself before checking the reference command below.</p>
+
+<div class="quiz">
+<p>Reveal the reference commands</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>ansible-playbook -i inventory conditional.yml -e "enable_feature=yes"
+# TASK shows "ok" and prints the message, skipped=0
+
+ansible-playbook -i inventory conditional.yml
+# TASK shows "skipped" — enable_feature was never set, so "is defined" is false, skipped=1</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_conditionals.html" target="_blank" rel="noopener">docs.ansible.com — Conditionals</a> (raw Jinja2 <code>when</code> syntax with no <code>{{ }}</code>, combining conditions with <code>and</code>/<code>or</code> and as a YAML list, <code>ansible_facts['os_family']</code> example, <code>is defined</code> / <code>is undefined</code> tests) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>when:</code> on a task runs it only if the condition is true — false means <code>skipped</code>, not <code>failed</code>.</li>
+    <li>No <code>{{ }}</code> inside <code>when</code> — it's already a raw Jinja2 expression, variables are referenced directly.</li>
+    <li>Combine conditions with <code>and</code>/<code>or</code>, or list several conditions to AND them implicitly.</li>
+    <li>The real-world pattern: pair an <code>apt</code> task (<code>when: ansible_facts['os_family'] == "Debian"</code>) with a <code>dnf</code> task (<code>when: ansible_facts['os_family'] == "RedHat"</code>) so one playbook adapts to whatever host it's run against.</li>
+    <li>Guard optional variables with <code>when: my_var is defined</code> before checking their value.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0009-facts.html">&larr; Lesson 9: Facts</a></span>
+  <span><a href="0011-loops.html">Lesson 11: Loops &rarr;</a></span>
+</div>
+
+</body>
+</html>

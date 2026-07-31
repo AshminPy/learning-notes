@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 22 — Variable precedence deep dive</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 22 of 36</p>
+<h1>Variable precedence deep dive</h1>
+
+<p>You now know five different places a variable can come from: a role's <code>defaults/main.yml</code> (Lesson 16), inventory <code>group_vars</code>/<code>host_vars</code> (Lesson 21), a play's <code>vars:</code> (Lesson 8), a role's <code>vars/main.yml</code> (Lesson 16), and <code>-e</code>/<code>--extra-vars</code> on the command line (Lesson 8). Each one made sense in isolation. The question this lesson answers: what happens when the <strong>same variable name</strong> is set in more than one of those places, to different values? Ansible doesn't error out or merge them — it picks exactly one, by a fixed, documented order. This lesson is that order, in full, verified against Ansible's own precedence table.</p>
+
+<p class="callout"><strong>Mental model:</strong> think of it as a stack of sticky notes on a variable's name, one from each source that set it. Ansible doesn't look at every note — it looks at the note on <em>top</em> of the stack and uses that value, full stop. "Top of the stack" is decided by how specific and how "in-the-moment" the source is: a role's generic fallback goes to the bottom, a value you typed on the command line for this one run goes to the top.</p>
+
+<h2>The full precedence order — lowest to highest</h2>
+<p>This is Ansible's complete, official list, confirmed against the current docs. When the same variable is set in two or more of these, the one further down this list wins:</p>
+<ol>
+<li>Command-line values (for example <code>-u my_user</code> — these aren't playbook variables, just here for completeness)</li>
+<li><strong>Role defaults</strong> (<code>roles/x/defaults/main.yml</code>) — Lesson 16</li>
+<li>Inventory file or script group vars</li>
+<li>Inventory <code>group_vars/all</code></li>
+<li>Playbook <code>group_vars/all</code></li>
+<li>Inventory <code>group_vars/*</code></li>
+<li>Playbook <code>group_vars/*</code></li>
+<li>Inventory file or script host vars</li>
+<li>Inventory <code>host_vars/*</code></li>
+<li>Playbook <code>host_vars/*</code></li>
+<li>Host facts and cached <code>set_facts</code></li>
+<li><strong>Play <code>vars:</code></strong> — Lesson 8</li>
+<li>Play <code>vars_prompt</code></li>
+<li>Play <code>vars_files</code></li>
+<li><strong>Role vars</strong> (<code>roles/x/vars/main.yml</code>) — Lesson 16</li>
+<li>Block vars (for tasks in that block only)</li>
+<li>Task vars (for that task only)</li>
+<li><code>include_vars</code></li>
+<li>Registered vars and <code>set_facts</code></li>
+<li>Role (and <code>include_role</code>) params</li>
+<li><code>include</code> params</li>
+<li><strong>Extra vars</strong> (<code>-e "user=my_user"</code>) — always wins, no exceptions</li>
+</ol>
+
+<p>Twenty-two entries is a lot to hold in your head, and most Ansible work doesn't need all of it — some of these (block vars, <code>include_vars</code>, registered vars) belong to topics later in this course. What you need today is the shape of the list and where your five known sources land in it.</p>
+
+<h2>Your five sources, in order</h2>
+<p>Pulling just the sources you've actually used out of the full list above, lowest to highest:</p>
+<ol>
+<li><strong>Role defaults</strong> (<code>defaults/main.yml</code>) — position 2, the floor</li>
+<li><strong>Inventory <code>group_vars</code> / <code>host_vars</code></strong> — positions 3–10, several tiers above role defaults</li>
+<li><strong>Play <code>vars:</code></strong> — position 12</li>
+<li><strong>Role vars</strong> (<code>vars/main.yml</code>) — position 15</li>
+<li><strong>Extra vars (<code>-e</code>)</strong> — position 22, the ceiling</li>
+</ol>
+<p>So for these five, the win order is: <code>-e</code> beats role vars, role vars beats play <code>vars:</code>, play <code>vars:</code> beats inventory <code>group_vars</code>/<code>host_vars</code>, and inventory <code>group_vars</code>/<code>host_vars</code> beats role defaults. Role defaults lose to all four of the others, every time.</p>
+
+<p class="callout"><strong>The trap hiding in plain sight:</strong> a role has both a <code>defaults/</code> folder and a <code>vars/</code> folder, and the names look almost interchangeable — "defaults" and "vars," both just variables for the role. They are not the same tier. <code>defaults/main.yml</code> sits at position 2 (rock bottom, meant to be overridden). <code>vars/main.yml</code> sits at position 15 — higher than a play's own <code>vars:</code> block. If you move a value from a role's <code>defaults/</code> to its <code>vars/</code> thinking it's a harmless rename, you've just made it much harder for anyone — including you — to override.</p>
+
+<h2>Practical takeaway: design for predictable overrides</h2>
+<p>You don't memorize this table to recite it — you use it to decide, on purpose, where a new variable should live. Two rules do most of the work:</p>
+<ul>
+<li><strong><code>-e</code> on the command line always wins.</strong> That's exactly why it's the right tool for a one-off override — a single test run, a one-time hotfix value — without touching any file. It cannot be silently out-ranked by anything else in the list.</li>
+<li><strong>Role <code>defaults/</code> always loses.</strong> That's not a limitation, it's the design. A role default is a sane fallback the role ships with so it works out of the box — and because it sits at the bottom, literally any other source (inventory vars, play vars, even another role) can override it without a fight.</li>
+</ul>
+<p>The general design guidance that falls out of this: <strong>put a variable in the lowest-precedence place that still gets the job done.</strong> If a value genuinely never changes per-host or per-environment, a role default is enough. If it needs to differ per group of hosts, inventory <code>group_vars</code> is the right altitude — not a role's <code>vars/</code> folder, which sits above play vars and is much harder to override later. Reaching for a higher tier than you need doesn't make the value "more official" — it just makes every future override an uphill fight against precedence, instead of the easy, expected kind.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A variable <code>greeting</code> is set to three different values: <code>"from role defaults"</code> in <code>roles/demo/defaults/main.yml</code>, <code>"from group_vars"</code> in your inventory's <code>group_vars/all.yml</code>, and <code>"from extra vars"</code> passed with <code>-e "greeting=from extra vars"</code> on the command line. Which value does the task actually see?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">"from extra vars." Extra-vars (<code>-e</code>) sit at the top of the precedence order and always win — no other source, including inventory <code>group_vars</code>, can outrank them. If you then removed the <code>-e</code> flag, <code>group_vars/all.yml</code> would win next: inventory group vars (position 4) outrank role defaults (position 2). Role defaults only win if nothing else sets the variable at all.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A role has <code>greeting: "role default"</code> in <code>defaults/main.yml</code> and <em>also</em> <code>greeting: "role var"</code> in <code>vars/main.yml</code>. No play <code>vars:</code>, no inventory vars, no <code>-e</code>. Which one wins, and why does it matter that they're in different folders?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">"role var" wins. <code>vars/main.yml</code> (position 15) outranks <code>defaults/main.yml</code> (position 2) within the very same role. It matters because the two folders look similar but serve opposite purposes: <code>defaults/</code> is meant to be easily overridden by the person using the role, while <code>vars/</code> is meant to hold values the role author does <em>not</em> want casually overridden. Putting a value in the wrong one flips who's actually in control of it.</div>
+</div>
+
+<h2>Now prove it yourself</h2>
+<p>Build the exact three-way scenario from Q1 and watch the precedence order play out for real.</p>
+
+<p>Create a role with a default value:</p>
+<pre><code>$ mkdir -p roles/demo/defaults roles/demo/tasks
+$ cat > roles/demo/defaults/main.yml <<'EOF'
+greeting: "from role defaults"
+EOF
+
+$ cat > roles/demo/tasks/main.yml <<'EOF'
+- name: Show the greeting
+  ansible.builtin.debug:
+    msg: "{{ greeting }}"
+EOF</code></pre>
+
+<p>Create a minimal playbook that uses the role, and an inventory with a <code>group_vars/all.yml</code> override:</p>
+<pre><code>$ cat > site.yml <<'EOF'
+- hosts: localhost
+  roles:
+    - demo
+EOF
+
+$ mkdir -p group_vars
+$ cat > group_vars/all.yml <<'EOF'
+greeting: "from group_vars"
+EOF</code></pre>
+
+<p>Now run it three ways and watch <code>greeting</code> change:</p>
+<pre><code># 1. no overrides: role default is the only source that set it... or is it?
+$ ansible-playbook -i localhost, site.yml
+# msg should show "from group_vars" — group_vars outranks role defaults
+
+# 2. same run, now add -e
+$ ansible-playbook -i localhost, site.yml -e "greeting=from extra vars"
+# msg should show "from extra vars" — -e outranks everything</code></pre>
+
+<p>That first run is the one worth pausing on: even with zero flags, the role default already lost — to <code>group_vars/all.yml</code>, which was sitting there quietly. That's precedence working exactly as documented, not a bug. If you'd expected the role default to show up, this exercise is exactly why Lesson 22 exists.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_variables.html#understanding-variable-precedence" target="_blank" rel="noopener">docs.ansible.com — Understanding variable precedence</a> (the full 22-item ordered list, lowest to highest, from command-line values through extra vars) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Ansible resolves a variable set in multiple places using one fixed, documented precedence order — the higher source wins completely, nothing merges.</li>
+    <li>Of the five sources you know: role defaults (lowest) &lt; inventory <code>group_vars</code>/<code>host_vars</code> &lt; play <code>vars:</code> &lt; role <code>vars/main.yml</code> &lt; <code>-e</code>/extra-vars (highest).</li>
+    <li><code>-e</code> always wins — use it for one-off overrides. Role <code>defaults/</code> always loses — that's what makes it a safe, easy-to-override fallback.</li>
+    <li>Design rule: put a variable in the lowest-precedence place that still gets the job done, so future overrides stay predictable instead of fighting the precedence order.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0021-group-and-host-vars.html">&larr; Lesson 21: group_vars &amp; host_vars</a></span>
+  <span><a href="0023-error-handling.html">Lesson 23: Error handling: block/rescue &rarr;</a></span>
+</div>
+
+</body>
+</html>
