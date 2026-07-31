@@ -1,0 +1,221 @@
+/* Canonical shared stylesheet for every Learning Notes course — Tufte-ish: quiet, serif, print-friendly.
+   Each course's own assets/style.css imports this file and only sets its :root theme
+   tokens (--accent, --code-bg) plus, where a course intentionally departs from the
+   shared defaults below, tag-level overrides. See ../STYLE-GUIDE.md. */
+
+* { box-sizing: border-box; }
+
+body {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 6rem;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  font-size: 1.08rem;
+  line-height: 1.65;
+}
+
+h1, h2, h3 {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.25;
+  color: var(--fg);
+}
+
+h1 { font-size: 1.9rem; margin-bottom: 0.25rem; }
+
+.eyebrow {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin: 0 0 0.5rem;
+}
+
+h2 {
+  font-size: 1.25rem;
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--rule);
+  padding-top: 1.25rem;
+}
+
+a { color: var(--accent); }
+
+code, pre {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.92rem;
+  background: var(--code-bg);
+  border-radius: 4px;
+}
+code { padding: 0.1rem 0.35rem; }
+pre {
+  padding: 1rem 1.1rem;
+  overflow-x: auto;
+  border-left: 3px solid var(--accent);
+}
+pre code { background: none; padding: 0; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 28rem;
+  margin: 1.25rem 0;
+  font-size: 0.95rem;
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+th, td {
+  border: 1px solid var(--rule);
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: var(--code-bg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.85rem;
+}
+
+/* Callouts — see STYLE-GUIDE.md's callout taxonomy. .callout is the base (Mental
+   model / Simple example); the modifiers below are the other four categories.
+   .trap is kept as a permanent alias for .callout.exam-tip — older lessons using
+   class="trap" render identically, no HTML changes required. */
+.callout {
+  border-left: 3px solid var(--accent);
+  padding: 0.1rem 1.1rem;
+  margin: 1.5rem 0;
+  background: var(--code-bg);
+  border-radius: 0 4px 4px 0;
+}
+
+.trap, .callout.exam-tip {
+  border-left: 3px solid #b0281a;
+  padding: 0.1rem 1.1rem;
+  margin: 1.5rem 0;
+  background: #fbecea;
+  border-radius: 0 4px 4px 0;
+}
+@media (prefers-color-scheme: dark) {
+  .trap, .callout.exam-tip { background: #2a1a18; }
+}
+
+.callout.mistake {
+  border-left: 3px solid #b5750a;
+  padding: 0.1rem 1.1rem;
+  margin: 1.5rem 0;
+  background: #fbf3e6;
+  border-radius: 0 4px 4px 0;
+}
+@media (prefers-color-scheme: dark) {
+  .callout.mistake { background: #2a2318; }
+}
+
+.callout.security {
+  border-left: 3px solid #3949ab;
+  padding: 0.1rem 1.1rem;
+  margin: 1.5rem 0;
+  background: #eef0fa;
+  border-radius: 0 4px 4px 0;
+}
+@media (prefers-color-scheme: dark) {
+  .callout.security { background: #1c2030; }
+}
+
+.callout.production {
+  border-left: 3px solid #2e7d32;
+  padding: 0.1rem 1.1rem;
+  margin: 1.5rem 0;
+  background: #eaf3ea;
+  border-radius: 0 4px 4px 0;
+}
+@media (prefers-color-scheme: dark) {
+  .callout.production { background: #1c2a1c; }
+}
+
+/* Hands-on prompt box (currently keyboard-workflow only; promoted to shared so any
+   course can use it for a "stop and go do this" moment distinct from a quiz). */
+.tryit {
+  border: 2px dashed var(--accent);
+  padding: 1rem 1.25rem;
+  margin: 1.5rem 0;
+  border-radius: 6px;
+}
+.tryit .eyebrow { margin-bottom: 0.4rem; }
+
+/* Quizzes — supports both the free-text-recall and multiple-choice markups from
+   STYLE-GUIDE.md. The .quiz button rule covers the MCQ layout (button sits below
+   a block-level .opts div); the adjacent-sibling rule below it covers the
+   free-text layout (button sits inline right after the input) via higher
+   selector specificity, so no per-course override is needed for either. */
+.quiz {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  margin: 1.25rem 0;
+}
+.quiz p:first-child { margin-top: 0; font-weight: bold; }
+.quiz input[type="text"] {
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 0.4rem 0.6rem;
+  width: 100%;
+  max-width: 20rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+}
+.quiz .opts label {
+  display: block;
+  margin: 0.35rem 0;
+  cursor: pointer;
+}
+.quiz button {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  margin-top: 0.6rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+.quiz input[type="text"] + button {
+  margin-top: 0;
+  margin-left: 0.5rem;
+}
+.quiz .answer {
+  display: none;
+  margin-top: 0.75rem;
+  color: var(--muted);
+}
+.quiz .answer.shown { display: block; }
+
+.recap {
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 1.25rem 1.5rem;
+  margin-top: 2.5rem;
+}
+
+.lesson-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.9rem;
+}
+
+footer.teacher-reminder {
+  margin-top: 2.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+@media print {
+  body { max-width: none; }
+  .quiz button { display: none; }
+}

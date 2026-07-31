@@ -27,12 +27,8 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; }
   h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
   p.sub { color: var(--muted); margin-top: 0; }
-  h2 { font-size: 1.15rem; margin-top: 2.5rem; border-top: 1px solid var(--rule); padding-top: 1.25rem; }
-  ul { padding-left: 1.1rem; }
-  li { margin: 0.4rem 0; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  .status { color: var(--muted); font-size: 0.85rem; }
   .positioning { margin-top: 0.75rem; }
   .disclaimer {
     border-left: 3px solid var(--rule);
@@ -48,136 +44,61 @@
   }
   .meta-line { font-size: 0.78rem; color: var(--muted); margin-top: 0.4rem; }
   .feedback-link { font-size: 0.85rem; margin-top: 0.4rem; }
+  .cards { margin-top: 2rem; display: flex; flex-direction: column; gap: 1.1rem; }
+  .card {
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 1.1rem 1.3rem;
+  }
+  .card h2 { font-size: 1.05rem; margin: 0 0 0.3rem; border: none; padding: 0; }
+  .card .status { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.5rem; }
+  .card p.desc { margin: 0 0 0.6rem; }
+  .card .card-links { font-size: 0.9rem; display: flex; gap: 1rem; flex-wrap: wrap; }
 </style>
 </head>
 <body>
 
 <h1>Learning Notes</h1>
 <p class="sub">Short, simple lessons — one idea, one example, per page.</p>
-<p class="positioning">A free rapid-revision and active-recall companion for CKA and Google Cloud Professional Cloud Architect candidates. It helps identify knowledge gaps but does not replace hands-on labs, official documentation, case-study practice, or full exam preparation. The CKA is performance-based — practise commands and troubleshooting in a real Kubernetes environment. The PCA exam requires architecture judgement and scenario-based decision-making — memorizing service definitions alone is not sufficient.</p>
+<p class="positioning">Free, self-paced courses built the same way every time: one lesson skeleton, one style, one quality bar — see <a href="STYLE-GUIDE.md">STYLE-GUIDE.md</a> if you're curious how. Certification-anchored courses help identify knowledge gaps but do not replace hands-on labs, official documentation, or full exam preparation.</p>
 
 <div class="disclaimer">
-  This is an independent study resource and is not affiliated with, endorsed by, or sponsored by Google, Google Cloud, CNCF, or the Linux Foundation. Exam objectives, products, and services may change. Always verify details using the official exam guides and documentation.
-  <div class="meta-line" id="last-reviewed">Exam outline last reviewed: July 26, 2026</div>
+  This is an independent study resource and is not affiliated with, endorsed by, or sponsored by any vendor, exam body, or certifying organization named below. Exam objectives, products, and services may change. Always verify details using the official exam guides and documentation.
+  <div class="meta-line" id="last-reviewed">Last reviewed: July 31, 2026</div>
 </div>
 <p class="feedback-link"><a href="https://github.com/AshminPy/learning-notes/issues/new?title=Learning%20notes%20correction%3A%20Homepage" target="_blank" rel="noopener">Report an issue / suggest a correction &rarr;</a></p>
 
-<h2>AI/ML Engineer — Zero to Job-Ready</h2>
-<p class="status">Complete — 34 of 34 lessons</p>
-<p><a href="ai-ml-engineer/objectives.html">Course roadmap tracker &rarr;</a> — full curriculum grouped by phase (Python foundations &rarr; core ML &rarr; deep learning &rarr; CV/NLP &rarr; cloud/GenAI &rarr; job readiness), with progress checkboxes. A zero-to-hero, hands-on path aimed at landing an entry-level AI/ML Engineer role, built around the AWS AI Practitioner and IBM AI Engineering certifications, with 3 portfolio projects along the way.</p>
-<ul>
-  <li><a href="ai-ml-engineer/lessons/0001-roadmap-and-cert-plan.html">Lesson 1 — Your roadmap: zero to AI/ML engineer job</a></li>
-  <li><a href="ai-ml-engineer/lessons/0002-tools-setup-python-git.html">Lesson 2 — Tools setup: Python, notebooks, Git &amp; GitHub</a></li>
-  <li><a href="ai-ml-engineer/lessons/0003-python-basics-variables-types.html">Lesson 3 — Python basics: variables, types, print/input</a></li>
-  <li><a href="ai-ml-engineer/lessons/0004-control-flow.html">Lesson 4 — Control flow: if/else and loops</a></li>
-  <li><a href="ai-ml-engineer/lessons/0005-functions.html">Lesson 5 — Functions & reusable code</a></li>
-  <li><a href="ai-ml-engineer/lessons/0006-data-structures.html">Lesson 6 — Data structures: lists, dicts, tuples, sets</a></li>
-  <li><a href="ai-ml-engineer/lessons/0007-numpy-basics.html">Lesson 7 — NumPy: arrays & vectorized math</a></li>
-  <li><a href="ai-ml-engineer/lessons/0008-pandas-basics.html">Lesson 8 — Pandas: loading &amp; exploring data</a></li>
-  <li><a href="ai-ml-engineer/lessons/0009-data-cleaning-visualization.html">Lesson 9 — Data cleaning &amp; visualization</a></li>
-  <li><a href="ai-ml-engineer/lessons/0010-vectors-matrices.html">Lesson 10 — Vectors, matrices, dot product</a></li>
-  <li><a href="ai-ml-engineer/lessons/0011-probability-statistics.html">Lesson 11 — Probability & statistics essentials</a></li>
-  <li><a href="ai-ml-engineer/lessons/0012-what-is-ml.html">Lesson 12 — What is machine learning?</a></li>
-  <li><a href="ai-ml-engineer/lessons/0013-linear-regression.html">Lesson 13 — Linear regression from scratch</a></li>
-  <li><a href="ai-ml-engineer/lessons/0014-cost-function-gradient-descent.html">Lesson 14 — Cost function & gradient descent</a></li>
-  <li><a href="ai-ml-engineer/lessons/0015-logistic-regression.html">Lesson 15 — Logistic regression & classification</a></li>
-  <li><a href="ai-ml-engineer/lessons/0016-overfitting-regularization.html">Lesson 16 — Train/test split, overfitting & regularization</a></li>
-  <li><a href="ai-ml-engineer/lessons/0017-evaluation-metrics.html">Lesson 17 — Evaluation metrics</a></li>
-  <li><a href="ai-ml-engineer/lessons/0018-project-1-classifier.html">Lesson 18 — Project 1: your first end-to-end classifier</a></li>
-  <li><a href="ai-ml-engineer/lessons/0019-neural-networks-basics.html">Lesson 19 — Neural networks: neurons, layers, activations</a></li>
-  <li><a href="ai-ml-engineer/lessons/0020-backpropagation.html">Lesson 20 — Forward pass & backpropagation intuition</a></li>
-  <li><a href="ai-ml-engineer/lessons/0021-first-neural-net-keras.html">Lesson 21 — Building your first neural net with Keras</a></li>
-  <li><a href="ai-ml-engineer/lessons/0022-decision-trees-ensembles.html">Lesson 22 — Decision trees & ensembles</a></li>
-  <li><a href="ai-ml-engineer/lessons/0023-project-2-image-classifier.html">Lesson 23 — Project 2: a neural net image classifier</a></li>
-  <li><a href="ai-ml-engineer/lessons/0024-clustering-kmeans.html">Lesson 24 — Clustering (k-means) & dimensionality basics</a></li>
-  <li><a href="ai-ml-engineer/lessons/0025-recommenders-reinforcement-learning.html">Lesson 25 — Recommenders & intro to reinforcement learning</a></li>
-  <li><a href="ai-ml-engineer/lessons/0026-computer-vision-cnns.html">Lesson 26 — Computer vision: CNNs & image classification</a></li>
-  <li><a href="ai-ml-engineer/lessons/0027-nlp-basics.html">Lesson 27 — NLP: text processing, embeddings, sentiment</a></li>
-  <li><a href="ai-ml-engineer/lessons/0028-transformers-llms.html">Lesson 28 — Transformers & how LLMs work</a></li>
-  <li><a href="ai-ml-engineer/lessons/0029-project-3-portfolio.html">Lesson 29 — Project 3: your strongest portfolio piece</a></li>
-  <li><a href="ai-ml-engineer/lessons/0030-ml-cloud-sagemaker.html">Lesson 30 — ML in the cloud: AWS SageMaker basics</a></li>
-  <li><a href="ai-ml-engineer/lessons/0031-genai-aws-ai-practitioner-prep.html">Lesson 31 — Generative AI & AWS AI Practitioner exam prep</a></li>
-  <li><a href="ai-ml-engineer/lessons/0032-portfolio-resume.html">Lesson 32 — Portfolio & resume for AI/ML roles</a></li>
-  <li><a href="ai-ml-engineer/lessons/0033-interview-prep.html">Lesson 33 — Interview prep</a></li>
-  <li><a href="ai-ml-engineer/lessons/0034-final-review.html"><strong>Lesson 34 — Final review & cheat sheet</strong></a></li>
-</ul>
+<div class="cards">
 
-<h2>Keyboard Workflow (AeroSpace / Raycast / Warp / CLI toolkit)</h2>
-<p class="status">Complete — 8 of 8 lessons</p>
-<ul>
-  <li><a href="keyboard-workflow/lessons/0001-aerospace-mental-model.html">Lesson 1 — AeroSpace: the tree behind your config</a></li>
-  <li><a href="keyboard-workflow/lessons/0002-raycast-fundamentals.html">Lesson 2 — Raycast fundamentals</a></li>
-  <li><a href="keyboard-workflow/lessons/0003-warp-fundamentals.html">Lesson 3 — Warp fundamentals</a></li>
-  <li><a href="keyboard-workflow/lessons/0004-atuin-and-zoxide.html">Lesson 4 — Atuin &amp; zoxide</a></li>
-  <li><a href="keyboard-workflow/lessons/0005-eza-bat-fd.html">Lesson 5 — eza, bat &amp; fd</a></li>
-  <li><a href="keyboard-workflow/lessons/0006-delta-and-lazygit.html">Lesson 6 — delta &amp; lazygit</a></li>
-  <li><a href="keyboard-workflow/lessons/0007-tldr-and-btop.html">Lesson 7 — tldr &amp; btop</a></li>
-  <li><a href="keyboard-workflow/lessons/0008-tying-it-together.html">Lesson 8 — Tying it together</a></li>
-</ul>
+  <div class="card">
+    <h2>AI/ML Engineer — Zero to Job-Ready</h2>
+    <p class="status">Complete — 34 of 34 lessons</p>
+    <p class="desc">Zero prior coding or AI/ML background to job-ready: Python foundations, core ML, deep learning, CV/NLP, cloud/GenAI, and a portfolio + interview-prep track. Built around the AWS AI Practitioner and IBM AI Engineering certifications.</p>
+    <p class="card-links"><a href="ai-ml-engineer/index.html">Start course &rarr;</a> <a href="ai-ml-engineer/objectives.html">Roadmap tracker &rarr;</a></p>
+  </div>
 
-<h2>GCP Professional Cloud Architect</h2>
-<p class="status">28 lessons published</p>
-<p><a href="gcp-pca/objectives.html">Exam objectives tracker &rarr;</a> — lessons grouped by official PCA section, with progress checkboxes. "Lessons published" is not the same as "every official objective covered" — check the tracker for actual domain coverage.</p>
-<ul>
-  <li><a href="gcp-pca/lessons/0001-exam-structure.html">Lesson 1 — Exam structure</a></li>
-  <li><a href="gcp-pca/lessons/0002-well-architected-framework.html">Lesson 2 — Well-Architected Framework</a></li>
-  <li><a href="gcp-pca/lessons/0003-compute-engine-vs-gke.html">Lesson 3 — Compute Engine vs GKE</a></li>
-  <li><a href="gcp-pca/lessons/0004-serverless-compute.html">Lesson 4 — Serverless compute</a></li>
-  <li><a href="gcp-pca/lessons/0005-storage-basics.html">Lesson 5 — Storage basics</a></li>
-  <li><a href="gcp-pca/lessons/0006-cloud-sql-vs-spanner.html">Lesson 6 — Cloud SQL vs Spanner</a></li>
-  <li><a href="gcp-pca/lessons/0007-nosql-and-analytics.html">Lesson 7 — NoSQL & analytics</a></li>
-  <li><a href="gcp-pca/lessons/0008-vpc-and-hybrid-connectivity.html">Lesson 8 — VPC & hybrid connectivity</a></li>
-  <li><a href="gcp-pca/lessons/0009-load-balancing-cdn-armor.html">Lesson 9 — Load balancing, CDN & Armor</a></li>
-  <li><a href="gcp-pca/lessons/0010-iam-and-resource-hierarchy.html">Lesson 10 — IAM & resource hierarchy</a></li>
-  <li><a href="gcp-pca/lessons/0011-security-tools.html">Lesson 11 — Security tools</a></li>
-  <li><a href="gcp-pca/lessons/0012-observability.html">Lesson 12 — Observability</a></li>
-  <li><a href="gcp-pca/lessons/0013-ha-and-disaster-recovery.html">Lesson 13 — HA & disaster recovery</a></li>
-  <li><a href="gcp-pca/lessons/0014-cost-optimization.html">Lesson 14 — Cost optimization</a></li>
-  <li><a href="gcp-pca/lessons/0015-migration-strategies.html">Lesson 15 — Migration strategies</a></li>
-  <li><a href="gcp-pca/lessons/0016-ai-and-modern-services.html">Lesson 16 — AI & modern services</a></li>
-  <li><a href="gcp-pca/lessons/0017-apigee-deployment-testing.html">Lesson 17 — Apigee, deployment & testing tooling</a></li>
-  <li><a href="gcp-pca/lessons/0018-gcp-programmatic-access.html">Lesson 18 — Interacting with GCP programmatically</a></li>
-  <li><a href="gcp-pca/lessons/0019-technical-processes.html">Lesson 19 — Technical processes</a></li>
-  <li><a href="gcp-pca/lessons/0020-business-processes.html">Lesson 20 — Business processes</a></li>
-  <li><a href="gcp-pca/lessons/0021-secure-access-compliance.html">Lesson 21 — Secure remote access & compliance</a></li>
-  <li><a href="gcp-pca/lessons/0022-storage-lifecycle.html">Lesson 22 — Storage lifecycle & data protection</a></li>
-  <li><a href="gcp-pca/lessons/0023-agent-platform-pipelines.html">Lesson 23 — Agent Platform Pipelines & AI Hypercomputer</a></li>
-  <li><a href="gcp-pca/lessons/0024-production-reliability.html">Lesson 24 — Reliability in production</a></li>
-  <li><a href="gcp-pca/lessons/0025-business-requirements.html">Lesson 25 — Business requirements, integration & workload disposition</a></li>
-  <li><a href="gcp-pca/lessons/0026-future-proofing.html">Lesson 26 — Future-proofing the architecture</a></li>
-  <li><a href="gcp-pca/lessons/0027-vmware-patch-ids.html">Lesson 27 — VMware Engine, patch management & intrusion protection</a></li>
-  <li><a href="gcp-pca/lessons/0028-final-review.html"><strong>Lesson 28 — Final review & cheat sheet</strong></a></li>
-</ul>
+  <div class="card">
+    <h2>Google Professional Cloud Architect</h2>
+    <p class="status">28 lessons published</p>
+    <p class="desc">Rapid-revision and active-recall companion covering compute, storage, networking, IAM/security, reliability, cost, and the business/technical process domains of the official PCA exam.</p>
+    <p class="card-links"><a href="gcp-pca/index.html">Start course &rarr;</a> <a href="gcp-pca/objectives.html">Objectives tracker &rarr;</a></p>
+  </div>
 
-<h2>Kubernetes (CKA)</h2>
-<p class="status">24 lessons published</p>
-<p><a href="kubernetes-cka/objectives.html">Exam objectives tracker &rarr;</a> — lessons grouped by official CKA domain, with progress checkboxes. "Lessons published" is not the same as "every official objective covered" — check the tracker for actual domain coverage.</p>
-<ul>
-  <li><a href="kubernetes-cka/lessons/0001-pod-basics.html">Lesson 1 — The Pod</a></li>
-  <li><a href="kubernetes-cka/lessons/0002-pod-labels.html">Lesson 2 — Pod + labels</a></li>
-  <li><a href="kubernetes-cka/lessons/0003-service-to-pod.html">Lesson 3 — Service → Pod</a></li>
-  <li><a href="kubernetes-cka/lessons/0004-deployment.html">Lesson 4 — Deployment</a></li>
-  <li><a href="kubernetes-cka/lessons/0005-service-to-deployment.html">Lesson 5 — Service → Deployment</a></li>
-  <li><a href="kubernetes-cka/lessons/0006-configmap-secret.html">Lesson 6 — ConfigMap & Secret</a></li>
-  <li><a href="kubernetes-cka/lessons/0007-pvc.html">Lesson 7 — PVC → Pod</a></li>
-  <li><a href="kubernetes-cka/lessons/0008-ingress.html">Lesson 8 — Ingress → Service</a></li>
-  <li><a href="kubernetes-cka/lessons/0009-rbac.html">Lesson 9 — RBAC</a></li>
-  <li><a href="kubernetes-cka/lessons/0010-networkpolicy.html">Lesson 10 — NetworkPolicy</a></li>
-  <li><a href="kubernetes-cka/lessons/0011-resource-limits-probes.html">Lesson 11 — Resource limits & probes</a></li>
-  <li><a href="kubernetes-cka/lessons/0012-statefulset-daemonset-job-cronjob.html">Lesson 12 — StatefulSet, DaemonSet, Job, CronJob</a></li>
-  <li><a href="kubernetes-cka/lessons/0013-cluster-architecture-kubeadm.html">Lesson 13 — Cluster architecture: kubeadm & static pods</a></li>
-  <li><a href="kubernetes-cka/lessons/0014-cluster-architecture-etcd-upgrades-tls.html">Lesson 14 — etcd backup, upgrades & TLS</a></li>
-  <li><a href="kubernetes-cka/lessons/0015-troubleshooting-cluster-node.html">Lesson 15 — Troubleshooting: cluster & node</a></li>
-  <li><a href="kubernetes-cka/lessons/0016-troubleshooting-application-workload.html">Lesson 16 — Troubleshooting: application & workload</a></li>
-  <li><a href="kubernetes-cka/lessons/0017-helm-kustomize.html">Lesson 17 — Helm & Kustomize</a></li>
-  <li><a href="kubernetes-cka/lessons/0018-extension-interfaces.html">Lesson 18 — Extension interfaces: CNI, CSI, CRI</a></li>
-  <li><a href="kubernetes-cka/lessons/0019-crds-operators.html">Lesson 19 — CRDs & Operators</a></li>
-  <li><a href="kubernetes-cka/lessons/0020-ha-control-plane.html">Lesson 20 — Highly-available control plane</a></li>
-  <li><a href="kubernetes-cka/lessons/0021-coredns-gateway-api.html">Lesson 21 — CoreDNS & Gateway API</a></li>
-  <li><a href="kubernetes-cka/lessons/0022-workload-autoscaling.html">Lesson 22 — Workload autoscaling</a></li>
-  <li><a href="kubernetes-cka/lessons/0023-resource-monitoring.html">Lesson 23 — Resource monitoring</a></li>
-  <li><a href="kubernetes-cka/lessons/0024-final-review.html"><strong>Lesson 24 — Final review & cheat sheet</strong></a></li>
-</ul>
+  <div class="card">
+    <h2>Kubernetes CKA</h2>
+    <p class="status">24 lessons published</p>
+    <p class="desc">Hands-on, type-it-yourself revision covering Pods through cluster architecture, troubleshooting, and the full official CKA curriculum.</p>
+    <p class="card-links"><a href="kubernetes-cka/index.html">Start course &rarr;</a> <a href="kubernetes-cka/objectives.html">Objectives tracker &rarr;</a></p>
+  </div>
+
+  <div class="card">
+    <h2>Keyboard Workflow</h2>
+    <p class="status">Complete — 8 of 8 lessons</p>
+    <p class="desc">Keyboard-first productivity: tiling window management with AeroSpace, quick actions with Raycast, a modern terminal with Warp, and a faster CLI toolkit.</p>
+    <p class="card-links"><a href="keyboard-workflow/index.html">Start course &rarr;</a></p>
+  </div>
+
+</div>
 
 </body>
 </html>
