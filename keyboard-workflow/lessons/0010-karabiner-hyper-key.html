@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 10 — Karabiner-Elements and the Hyper key</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 10 of 24</p>
+<h1>Karabiner-Elements and the Hyper key</h1>
+
+<p>Lesson 1 gave AeroSpace a set of bindings. Lesson 2 gave Raycast its own. Every app on your Mac already ships with its own native shortcuts too — and the more bindings you add, the sooner two of them collide. This lesson installs one small tool that ends that problem for good: a single key, held down, that sends a modifier combination nothing else on your Mac already claims.</p>
+
+<p class="callout"><strong>Mental model:</strong> Karabiner-Elements sits between your physical keyboard and macOS itself, rewriting key events before any app — including macOS — ever sees them. It's not a Settings panel tweak; it's a translator intercepting the signal at the hardware level.</p>
+
+<h2>What Karabiner actually does</h2>
+<p>macOS's own Keyboard settings let you remap a handful of keys, one-to-one. Karabiner-Elements goes further with two layers:</p>
+<ul>
+<li><strong>Simple Modifications</strong> — one key becomes a different single key. Built into the app's UI, no config file needed.</li>
+<li><strong>Complex Modifications</strong> — a key (or key + modifiers) becomes <em>any</em> output: a different key, a modifier combination, even a shell command — optionally conditioned on which app is frontmost. These are JSON rules, either written by hand or imported from a rule.</li>
+</ul>
+<p>A complex modification rule is a <code>from</code> (what you press) mapped to a <code>to</code> (what gets sent instead). Per Karabiner's own JSON reference, a <code>to</code> entry can pair a <code>key_code</code> with a <code>modifiers</code> array:</p>
+<pre><code>{
+  "key_code": "a",
+  "modifiers": ["command", "control", "option", "shift"]
+}</code></pre>
+<p>That's the building block the Hyper key is made from.</p>
+
+<h2>The Hyper key: one key, four modifiers</h2>
+<p>Caps Lock sits in one of the best spots on the keyboard — home row, easy pinky reach — and almost nobody uses it for its actual job. The community-standard fix: remap it to send <strong>Command+Control+Option+Shift together</strong>, all at once. No macOS shortcut, and no app's native shortcut, uses that exact four-key combination — which means every binding you build on top of it is guaranteed collision-free.</p>
+<pre><code>{
+  "title": "Caps Lock -> Hyper Key",
+  "rules": [
+    {
+      "description": "Caps Lock alone sends Escape; held with another key, sends Hyper",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "caps_lock",
+            "modifiers": { "optional": ["any"] }
+          },
+          "to": [
+            {
+              "key_code": "left_shift",
+              "modifiers": ["left_command", "left_control", "left_option"]
+            }
+          ],
+          "to_if_alone": [
+            { "key_code": "escape" }
+          ]
+        }
+      ]
+    }
+  ]
+}</code></pre>
+<p><code>to_if_alone</code> is what makes this practical: tap Caps Lock by itself and you get Escape (handy in its own right); hold it with another key and that key gets sent with all four Hyper modifiers attached.</p>
+
+<h2>Why this closes the loop with Lessons 1 and 2</h2>
+<p>Once Caps Lock is your Hyper key, you have a whole new binding layer to hand to AeroSpace and Raycast — separate from AeroSpace's own <code>ctrl-alt</code> bindings and Raycast's own hotkeys, and guaranteed not to fight either of them. A generic example: bind <code>Hyper+1</code> in AeroSpace to jump to workspace 1, and <code>Hyper+Space</code> as an alternate Raycast trigger. Nothing else on the system will ever intercept either combination first.</p>
+
+<p class="callout"><strong>Security note:</strong> the first time you launch Karabiner-Elements, macOS will prompt you to grant <strong>Input Monitoring</strong> and <strong>Accessibility</strong> permissions in System Settings → Privacy &amp; Security, and to approve its driver/system extension under Login Items &amp; Extensions. That's expected — Karabiner needs Accessibility to capture keyboard events and detect the frontmost app, which is also what lets it switch rules per app. Without it granted, your rules will simply do nothing; it isn't a sign anything is wrong.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Install Karabiner-Elements (tying back to Lesson 9): <code>brew install --cask karabiner-elements</code>. Open it, grant the permissions it asks for, then go to the <strong>Complex Modifications</strong> tab and add a Caps Lock → Hyper rule — either paste the JSON above via "Add rule," or use "Add predefined rule" → "Import more rules from the internet" and search for one. Test it: hold Caps Lock and press a letter inside a normal text field. Nothing should happen — which is exactly the point, since no app claims that combination yet.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. Why remap Caps Lock specifically to be the Hyper key?</p>
+<div class="opts">
+<label>A. It sits in a strong keyboard spot and is rarely used</label>
+<label>B. It is the only key macOS allows you to remap at all</label>
+<label>C. It automatically toggles between four different keyboard layouts for you</label>
+<label>D. It disables itself after ten minutes so battery life improves</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> It's an easy-reach key that almost nobody uses for its real job — a wasted key turned into a whole new layer.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What makes Cmd+Ctrl+Opt+Shift together a good modifier choice?</p>
+<div class="opts">
+<label>A. No macOS app or shortcut already uses that exact combination</label>
+<label>B. It is the fastest modifier combination for your fingers to press</label>
+<label>C. It disables Spotlight so Raycast becomes the only launcher active</label>
+<label>D. It is required before Karabiner will accept any complex rule</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> All four modifiers held at once is a combination nothing else claims — that's the entire point, not speed or requirement.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. What two macOS permissions does Karabiner-Elements need to function?</p>
+<div class="opts">
+<label>A. Input Monitoring and Accessibility, granted in System Settings</label>
+<label>B. Screen Recording and Full Disk Access, granted in Finder</label>
+<label>C. Location Services and Camera, granted inside Safari settings</label>
+<label>D. Notifications and Focus Mode, granted inside Control Center</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Accessibility lets it detect the frontmost app and capture events; Input Monitoring is largely superseded by Accessibility in current versions.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. In the JSON rule above, what does <code>to_if_alone</code> control?</p>
+<div class="opts">
+<label>A. What gets sent if the key is pressed and released alone</label>
+<label>B. What gets sent only while three other keys stay held down</label>
+<label>C. What gets sent the very first time the app is opened</label>
+<label>D. What gets sent when the Mac reconnects to a known network</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> It's the tap-vs-hold split: alone gets Escape, held-with-another-key gets the Hyper combination via <code>to</code>.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. Why does the Hyper key connect back to Lessons 1 and 2?</p>
+<div class="opts">
+<label>A. It gives AeroSpace and Raycast a shortcut layer nothing else claims</label>
+<label>B. It replaces AeroSpace entirely so window tiling is no longer needed</label>
+<label>C. It disables Raycast's own hotkey so Hyper becomes the only option</label>
+<label>D. It syncs AeroSpace's workspace layout directly into Raycast's settings</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> It adds a collision-free layer on top of both tools' existing bindings — it doesn't replace or reconfigure either one.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://karabiner-elements.pqrs.org/docs/manual/misc/required-macos-settings/" target="_blank" rel="noopener">Karabiner-Elements — Required macOS settings</a> · <a href="https://karabiner-elements.pqrs.org/docs/json/complex-modifications-manipulator-definition/to/" target="_blank" rel="noopener">Complex Modifications — the "to" event definition</a> · <a href="https://karabiner-elements.pqrs.org/docs/json/complex-modifications-manipulator-definition/from/modifiers/" target="_blank" rel="noopener">Complex Modifications — "from.modifiers"</a> — verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Karabiner-Elements intercepts keyboard events below the app layer — Simple Modifications for 1-to-1 swaps, Complex Modifications (JSON) for anything richer.</li>
+    <li>The Hyper key: remap Caps Lock to send Cmd+Ctrl+Opt+Shift together, with <code>to_if_alone</code> keeping a plain tap as Escape.</li>
+    <li>Requires Input Monitoring + Accessibility permissions and an approved driver extension — a real, expected prompt, not a red flag.</li>
+    <li>This gives AeroSpace (Lesson 1) and Raycast (Lesson 2) a brand-new binding layer that can never collide with any app's native shortcuts.</li>
+  </ul>
+  <p><strong>Try solo:</strong> pick one AeroSpace binding and one Raycast hotkey you use often, and add a <code>Hyper+</code> alternate for each — confirm neither triggers anything else first.</p>
+</div>
+
+<footer class="teacher-reminder">Rule not firing, or permissions dialog not appearing? Tell your teacher exactly what you see in Karabiner's Complex Modifications tab and the EventViewer — macOS permission dialogs are easy to dismiss by accident.</footer>
+
+<div class="lesson-nav">
+  <a href="0009-homebrew-and-brewfile.html">&larr; Homebrew &amp; Brewfile</a>
+  <a href="0011-dotfiles-as-code.html">Next: Dotfiles as code &rarr;</a>
+</div>
+
+</body>
+</html>

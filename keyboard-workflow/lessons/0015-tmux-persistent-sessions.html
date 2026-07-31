@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 15 — tmux</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 15 of 24</p>
+<h1>tmux: persistent sessions</h1>
+
+<p>Here's the problem this lesson solves: you SSH into a remote host, start a long-running command, and then your laptop sleeps — or wifi drops, or you close the terminal by accident. Normally, that connection dying kills everything running inside it. The fix isn't a more stable network. It's running your work inside <strong>tmux</strong> on the remote host, so the SSH connection becomes disposable and the work isn't.</p>
+
+<p class="callout"><strong>Mental model:</strong> sessions &gt; windows &gt; panes, like a browser. A <strong>session</strong> is the whole browser process — it keeps running even after you close the window. A <strong>window</strong> is a tab. A <strong>pane</strong> is a split view inside a tab. Detaching a session is like minimizing the browser, not quitting it.</p>
+
+<h2>Start a session, kill the connection, come back</h2>
+<pre><code>tmux new -s work</code></pre>
+<p>This opens a new named session called <code>work</code>. Anything you run inside it now survives your SSH connection dying — start a long-running command, then detach on purpose to prove it:</p>
+<pre><code>Ctrl-b d</code></pre>
+<p><code>Ctrl-b</code> is tmux's default prefix — press it, release it, then press the next key. <code>d</code> detaches: you're back at your normal shell, and the session keeps running in the background on the remote host, untouched. Close the SSH connection entirely if you want to prove the point. Then reconnect and:</p>
+<pre><code>tmux attach -t work</code></pre>
+<p>You're back exactly where you left off — same scrollback, same running commands. <code>tmux ls</code> lists every session currently alive on that host, in case you forget a name.</p>
+
+<h2>Windows and panes</h2>
+<table>
+<tr><th>Keys</th><th>What it does</th></tr>
+<tr><td><code>Ctrl-b c</code></td><td>Create a new window</td></tr>
+<tr><td><code>Ctrl-b n</code> / <code>Ctrl-b p</code></td><td>Move to the next / previous window</td></tr>
+<tr><td><code>Ctrl-b %</code></td><td>Split the current pane vertically (side by side)</td></tr>
+<tr><td><code>Ctrl-b "</code></td><td>Split the current pane horizontally (stacked)</td></tr>
+<tr><td><code>Ctrl-b</code> + arrow key</td><td>Move focus between panes</td></tr>
+</table>
+<p>Windows are for separate tasks in the same session (logs in one, a shell in another). Panes are for watching more than one thing at once inside the same window — a log tail next to the shell you're actually typing in.</p>
+
+<p class="callout"><strong>Security note:</strong> a detached session on a shared or multi-user host doesn't expire on its own. A forgotten, still-running <code>root</code> session left detached is a standing exposure — anyone who reaches that account inherits it, no login required. Kill sessions you're done with (<code>tmux kill-session -t name</code>) instead of just detaching and walking away. And never attach to a session someone else is actively also attached to right before typing a secret — you'd both be watching the same live screen.</p>
+
+<h2>A newer alternative: zellij</h2>
+<p>zellij is a newer terminal multiplexer solving the same core problem, with one real advantage for a beginner: it shows an on-screen bar of available keybindings as you use it, so you don't need a cheat sheet from day one. tmux's advantage is availability — it's been the standard for over a decade, and it's far more likely to already be installed on a remote production host you don't control. Learn tmux first, since it's what you'll actually find when you SSH somewhere; try zellij for your own local, interactive use if its discoverability appeals to you. Neither is definitively "better" — they solve the same problem differently.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>On your own Mac: <code>tmux new -s test</code>, then run something long-lived like <code>top</code>. Detach with <code>Ctrl-b d</code>. Run <code>tmux ls</code> and confirm <code>test</code> is still listed as running. Reattach with <code>tmux attach -t test</code>, then split the window into two panes with <code>Ctrl-b %</code> and move between them with <code>Ctrl-b</code> + arrow keys.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. What actual problem does tmux solve?</p>
+<div class="opts">
+<label>A. A remote process keeps running after your SSH drops</label>
+<label>B. Your terminal's font size adjusts automatically for you</label>
+<label>C. Commands you type get spell-checked before running</label>
+<label>D. Every SSH connection becomes permanently encrypted</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Work inside tmux keeps running on the remote host even after the SSH connection carrying it dies.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What's the default keybinding to detach from a tmux session?</p>
+<div class="opts">
+<label>A. Ctrl-b then d</label>
+<label>B. Ctrl-b then q</label>
+<label>C. Ctrl-c then x</label>
+<label>D. Ctrl-d then b</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> Prefix (<code>Ctrl-b</code>) then <code>d</code> — the session keeps running detached in the background.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. In tmux's mental model, what sits directly inside a window?</p>
+<div class="opts">
+<label>A. One or more panes, splitting that window's space</label>
+<label>B. One or more entirely separate detached sessions</label>
+<label>C. The SSH connection details for the remote host</label>
+<label>D. A single fixed pane that can never be split again</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Panes live inside windows, and windows live inside sessions — that's the full hierarchy.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. Which command reattaches to a session named "work"?</p>
+<div class="opts">
+<label>A. tmux attach -t work</label>
+<label>B. tmux new -t work</label>
+<label>C. tmux ls work</label>
+<label>D. tmux kill work</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> <code>tmux attach -t work</code> reattaches to the existing session by name — <code>new</code> would create a fresh one instead.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. How should zellij and tmux be weighed against each other, per current evidence?</p>
+<div class="opts">
+<label>A. Zellij is more discoverable; tmux is more universally installed</label>
+<label>B. Zellij is strictly worse and has no real advantage at all</label>
+<label>C. Tmux is being deprecated in favor of zellij industry-wide</label>
+<label>D. They are functionally identical with no differences at all</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> Each has a genuine, different edge — zellij's on-screen keybinding hints vs. tmux's near-universal presence on remote hosts. Neither claim in B, C, or D holds up.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://github.com/tmux/tmux/wiki" target="_blank" rel="noopener">tmux wiki</a> · <a href="https://zellij.dev/documentation/" target="_blank" rel="noopener">zellij documentation</a> — official project sources, verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>tmux keeps remote work alive across a dropped SSH connection — that's the entire reason to use it.</li>
+    <li>Sessions &gt; windows &gt; panes. <code>tmux new -s name</code>, <code>Ctrl-b d</code> to detach, <code>tmux attach -t name</code> to come back.</li>
+    <li>zellij is a real alternative with better discoverability; tmux wins on being already installed wherever you SSH.</li>
+  </ul>
+  <p><strong>Try solo:</strong> next real SSH session you start for a long-running task — a build, a sync, a deploy watch — start it inside tmux first, on principle, before you need it to save you.</p>
+</div>
+
+<footer class="teacher-reminder">Session not showing up when you reattach, or a keybinding not doing what this lesson describes? Paste what <code>tmux -V</code> reports — prefix and defaults occasionally differ between versions and distro configs.</footer>
+
+<div class="lesson-nav">
+  <a href="0014-yubikey-ssh-gpg.html">&larr; YubiKey for SSH &amp; GPG</a>
+  <a href="0016-git-multiple-github-accounts.html">Next: Git with multiple GitHub accounts &rarr;</a>
+</div>
+
+</body>
+</html>

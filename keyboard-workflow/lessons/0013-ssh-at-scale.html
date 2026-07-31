@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 13 — SSH at scale</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 13 of 24</p>
+<h1>SSH at scale: jump hosts, multiplexing, troubleshooting</h1>
+
+<p>One host, one key, one command — that's Lesson 12. Real SRE work is dozens of hosts, some reachable only through a bastion, connections you make over and over in the same session, and failures where "permission denied" tells you nothing on its own. This lesson covers the config file that replaces the long command, <code>ProxyJump</code> for hosts you can't reach directly, connection reuse for speed, and a repeatable way to actually debug a broken connection.</p>
+
+<p class="callout"><strong>Mental model:</strong> <code>~/.ssh/config</code> is a shell-alias file for connections. Instead of typing the full command with every flag, every time, you name the destination once and reuse the name.</p>
+
+<h2>Host blocks: aliases with real settings</h2>
+<pre><code>Host myserver
+    HostName 203.0.113.10
+    User deploy
+    Port 2222
+    IdentityFile ~/.ssh/id_ed25519</code></pre>
+<p>Now <code>ssh myserver</code> does everything that long command used to. <code>HostName</code> is the real address; <code>Host</code> is just the name you type. You can also match a whole group at once, <code>Host *.internal-example.net</code>, to set something for every host in that pattern. Put the more specific blocks first — for any given setting, SSH uses the first value it finds, not the last, so specific overrides need to come before general ones.</p>
+
+<h2>ProxyJump: reaching a host you can't reach directly</h2>
+<p>The mental model: hop through one host that <em>is</em> reachable to get to another host that <em>isn't</em> directly reachable — a private-subnet target behind a public bastion, for example.</p>
+<pre><code>Host bastion
+    HostName 203.0.113.1
+    User jump-user
+    IdentityFile ~/.ssh/id_ed25519
+
+Host internal-app
+    HostName 198.51.100.25
+    User deploy
+    IdentityFile ~/.ssh/id_ed25519
+    ProxyJump bastion</code></pre>
+<p><code>ssh internal-app</code> now hops through <code>bastion</code> automatically — one command, two hops. The inline equivalent, no config needed, is <code>ssh -J jump-user@203.0.113.1 deploy@198.51.100.25</code>. <code>ProxyJump</code> replaced the older <code>ProxyCommand</code> + <code>nc</code> trick — same result, no separate netcat binary required.</p>
+
+<h2>Multiplexing: reuse the connection</h2>
+<p>Your first connection to a host pays the full cost — TCP handshake plus the cryptographic negotiation. Every connection after that, to the same host, can ride the same already-open pipe instead of paying that cost again.</p>
+<pre><code>Host *
+    ControlMaster auto
+    ControlPath ~/.ssh/sockets/%r@%h-%p
+    ControlPersist 600</code></pre>
+<p>Create the socket directory first: <code>mkdir -p ~/.ssh/sockets</code>. The first connection becomes the "master" and opens the control socket; every later connection to that same host — a second terminal tab, a quick <code>scp</code> — reuses it and connects almost instantly. <code>ControlPersist 600</code> keeps that master connection alive for 10 minutes after the last client disconnects, so a burst of connections stays fast without holding the socket open forever.</p>
+
+<p class="callout"><strong>Security note:</strong> a live control socket lets anyone who can read it ride your already-authenticated connection with no further login required. Keep the sockets directory private — <code>chmod 700 ~/.ssh/sockets</code> — and never point <code>ControlPath</code> at a location shared with other users, like a world-readable <code>/tmp</code>.</p>
+
+<h2>Troubleshooting: -v, and the #1 real cause of "permission denied"</h2>
+<p><code>ssh -v user@host</code> (or <code>-vvv</code> for maximum detail) prints exactly what the client is doing — which keys it's offering, and why each one gets rejected. Read it in a real failure and the answer is usually right there.</p>
+<p>The single most common real-world cause of <code>Permission denied (publickey)</code> isn't a wrong key — it's file permissions. SSH refuses to use a private key that's readable by anyone but you, and refuses to trust an <code>~/.ssh</code> directory that's writable by anyone but you.</p>
+<pre><code>chmod 600 ~/.ssh/id_ed25519
+chmod 700 ~/.ssh</code></pre>
+<p>Second check: is the right key even loaded? <code>ssh-add -l</code> lists what the agent currently holds — compare its fingerprint against the one <code>ssh -v</code> reports it tried to offer. If they don't match, that's the whole bug.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Write a <code>~/.ssh/config</code> with the two-host chain above, using the example addresses as-is (they're reserved documentation ranges, not real hosts — swap in real ones when you have them). Then run <code>ssh -v</code> against any host you can already reach and read the "Offering public key" and "Authentications that can continue" lines it prints — that's the exact information you'd use to debug a real failure.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. What does a Host block in ~/.ssh/config let you do?</p>
+<div class="opts">
+<label>A. Alias a long ssh command to one short name</label>
+<label>B. Encrypt traffic using a completely new protocol</label>
+<label>C. Replace ssh-agent as the place keys are held</label>
+<label>D. Skip host-key verification for that one host</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> A Host block bundles HostName, User, Port, and IdentityFile under one short name you type instead.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What problem does ProxyJump solve?</p>
+<div class="opts">
+<label>A. Reaching a host only reachable through another host</label>
+<label>B. Storing multiple private keys inside one key file</label>
+<label>C. Verifying a server's identity without any prompt</label>
+<label>D. Compressing traffic to speed up slow connections</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> ProxyJump hops through one reachable host to reach a second host that isn't directly reachable — a bastion pattern.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. What does ControlPersist 600 do?</p>
+<div class="opts">
+<label>A. Keeps the master connection open 10 minutes idle</label>
+<label>B. Forces every connection to always ask for a password</label>
+<label>C. Deletes the known_hosts entry after 600 seconds</label>
+<label>D. Limits each SSH session to 600 total commands run</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> 600 is seconds — the master connection stays up for 10 minutes after the last client detaches, ready to be reused.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. What is the most common real cause of "Permission denied (publickey)"?</p>
+<div class="opts">
+<label>A. The private key file has permissions that are too open</label>
+<label>B. The remote server has run out of available disk space</label>
+<label>C. The username typed does not exist on any known host</label>
+<label>D. The internet connection dropped mid handshake attempt</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> SSH silently refuses a group- or world-readable private key — <code>chmod 600</code> on the key and <code>700</code> on ~/.ssh is the usual fix.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. You want to check the agent has the right key loaded before troubleshooting further. Which command shows that?</p>
+<div class="opts">
+<label>A. <code>ssh-add -l</code>, listing fingerprints held by the agent</label>
+<label>B. <code>ssh-keygen -l</code>, reading a fingerprint from a file</label>
+<label>C. <code>ssh -v</code>, raising the connection's log verbosity</label>
+<label>D. <code>ssh -L</code>, forwarding a local port through a tunnel</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> <code>ssh-add -l</code> is the one that reports what the agent is currently holding. B, C, and D are real, useful commands — just for different jobs.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://man.openbsd.org/ssh_config" target="_blank" rel="noopener">ssh_config(5)</a> · <a href="https://man.openbsd.org/ssh" target="_blank" rel="noopener">ssh(1)</a> · <a href="https://man.openbsd.org/ssh-add" target="_blank" rel="noopener">ssh-add(1)</a> — official OpenSSH manual pages, verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>~/.ssh/config</code> Host blocks turn a long command into a short alias — specific blocks should come before general wildcard ones.</li>
+    <li><code>ProxyJump</code> hops through a bastion in one command; <code>ControlMaster</code>/<code>ControlPath</code>/<code>ControlPersist</code> reuse that connection so later hops are instant.</li>
+    <li><code>ssh -v</code>/<code>-vvv</code> plus <code>ssh-add -l</code> is the real debugging loop — and file permissions (<code>600</code>/<code>700</code>) are the fix behind most "permission denied" surprises.</li>
+  </ul>
+  <p><strong>Try solo:</strong> take a real command you type often with several flags and turn it into a named Host block — measure how much shorter the daily version gets.</p>
+</div>
+
+<footer class="teacher-reminder">Stuck on a connection that still fails after checking permissions and the loaded key? Paste the full <code>ssh -vvv</code> output — the real cause is almost always visible in there.</footer>
+
+<div class="lesson-nav">
+  <a href="0012-ssh-first-principles.html">&larr; SSH from first principles</a>
+  <a href="0014-yubikey-ssh-gpg.html">Next: YubiKey for SSH &amp; GPG &rarr;</a>
+</div>
+
+</body>
+</html>

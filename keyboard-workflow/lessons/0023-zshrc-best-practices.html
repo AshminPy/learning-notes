@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 23 — .zshrc best practices</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 23 of 24</p>
+<h1>.zshrc best practices: load order, speed, and plugins</h1>
+
+<p>Every lesson so far has told you to add a line to a dotfile — an alias here, an <code>eval</code> there, an environment variable somewhere else. By now your shell config is a pile of copy-pasted lines with no structure, and every new terminal tab takes a beat longer to open than it used to. This lesson gives you the mental model for where each line actually belongs, how to measure whether your shell is slow, and what to do about it if it is.</p>
+
+<p class="callout"><strong>Mental model:</strong> zsh doesn't read one config file — it reads a sequence of them, and which ones run depends on two independent questions: is this shell a <em>login</em> shell, and is it <em>interactive</em>? Get the sequence wrong and you'll either duplicate work on every new tab, or set something up in a place a script running over SSH never sees.</p>
+
+<h2>The four files, and when each one runs</h2>
+<p>zsh's own manual defines the load order precisely. Four files matter for daily use (a fifth, <code>.zlogout</code>, runs on exit and is rarely used):</p>
+<table>
+<tr><th>File</th><th>Runs for</th><th>Put here</th></tr>
+<tr><td><code>~/.zshenv</code></td><td>Every zsh process — interactive or not, login or not</td><td>Only <code>PATH</code> and environment variables a script or cron job might need</td></tr>
+<tr><td><code>~/.zprofile</code></td><td>Login shells only (roughly: a fresh Terminal window, or a new SSH session)</td><td>One-time login setup — rare, most people leave this empty</td></tr>
+<tr><td><code>~/.zshrc</code></td><td>Interactive shells only (any shell showing you a prompt)</td><td>Aliases, prompt, plugins, functions, completions, keybindings — almost everything</td></tr>
+<tr><td><code>~/.zlogin</code></td><td>Login shells, after <code>.zshrc</code></td><td>Rare — commands you want to run once per login, after the interactive setup is ready</td></tr>
+</table>
+<p>The zsh manual is explicit about the first one: <code>.zshenv</code> "is sourced on all invocations of the shell," and because of that it warns "it is important that it be kept as small as possible." Every script, every cron job, every non-interactive SSH command that touches zsh pays the cost of whatever you put in <code>.zshenv</code> — so it should hold nothing but <code>PATH</code> exports and environment variables that genuinely need to exist everywhere.</p>
+<p class="callout"><strong>Common mistake:</strong> putting aliases or a prompt theme in <code>.zshenv</code> "to be safe." Aliases are meaningless to a non-interactive script, and a slow prompt-theme init will now run on every single zsh invocation on your machine, not just the ones where you'd see the prompt. Aliases, functions, plugins, and prompt setup belong in <code>.zshrc</code> — the file that only loads for shells with a human watching.</p>
+<p>Almost everything from Lessons 9-22 — aliases for <code>eza</code>/<code>bat</code>, the <code>starship</code> or <code>direnv</code> hook, completion setup, your <code>kubectx</code> shortcuts — belongs in <code>.zshrc</code>. Reserve <code>.zshenv</code> for the handful of variables that must survive into non-interactive contexts, most commonly a <code>PATH</code> addition for a tool you install outside Homebrew.</p>
+
+<h2>Measure before you optimize</h2>
+<p>Don't guess whether your shell is slow — measure it. Two ways, from simplest to most detailed:</p>
+<pre><code># Rough total: how long does an interactive shell take to start and exit?
+for i in {1..5}; do time zsh -i -c exit; done</code></pre>
+<p>Run it several times — the first run is skewed by disk cache being cold. Anything consistently under roughly 100-200ms is fine; if you're seeing numbers in the seconds, something in <code>.zshrc</code> is the cause.</p>
+<p>To find out <em>which</em> line is slow, zsh ships a built-in profiler as a loadable module. Add this as the very first line of <code>.zshrc</code>:</p>
+<pre><code>zmodload zsh/zprof</code></pre>
+<p>And this as the very last line:</p>
+<pre><code>zprof</code></pre>
+<p>Open a new interactive shell and <code>zprof</code> prints a table of every function call made during startup, sorted by how much time it consumed. Plugin managers and tool initializers (<code>starship init</code>, <code>direnv hook</code>, a Kubernetes completion script) all register as functions here, so the table points straight at the worst offender instead of leaving you to guess. Remove or comment out both <code>zprof</code> lines once you're done — they're a diagnostic tool, not something to leave running permanently.</p>
+
+<h2>The most common real offender: eager tool initializers</h2>
+<p>If you've followed a tutorial for a language version manager — <code>nvm</code>, <code>pyenv</code>, <code>rbenv</code>, and similar tools all work the same way — it likely told you to add a line like this to <code>.zshrc</code>:</p>
+<pre><code># the naive way — runs on every single new shell, whether you need it or not
+eval "$(pyenv init -)"</code></pre>
+<p>That line does real work every time a shell starts: scanning directories, writing shims, checking versions — even in a tab where you'll never run <code>python</code>. Across dozens of tabs a day, that adds up to the slow-shell feeling. The fix is lazy loading: only pay the cost the first time you actually use the tool, by wrapping it in a shell function that replaces itself:</p>
+<pre><code># lazy-load pyenv: a stub function stands in until you actually call pyenv
+pyenv() {
+  unset -f pyenv
+  eval "$(command pyenv init -)"
+  pyenv "$@"
+}</code></pre>
+<p>The first call to <code>pyenv</code> in a shell removes this stub, runs the real initializer once, then re-invokes itself with your original arguments. Every later call in that same shell hits the real <code>pyenv</code> directly. A shell that never touches Python pays nothing at all. This pattern — a thin stub function that removes itself on first use — is worth learning once and reusing for every slow tool initializer, not just <code>pyenv</code>.</p>
+<p class="callout"><strong>Production note:</strong> on a real team, the tools that get lazy-loaded change over time as your toolchain changes. Re-run the <code>zprof</code> measurement after adding any new eval-a-script line to <code>.zshrc</code> — don't assume last month's fast startup is still true after this month's additions.</p>
+
+<h2>Plugin managers: an honest comparison</h2>
+<p>A plugin manager handles installing, updating, and loading community zsh plugins (syntax highlighting, autosuggestions, extra completions). There is no single "best" one — the right choice depends on what you're optimizing for.</p>
+<table>
+<tr><th>Option</th><th>Optimizes for</th><th>Tradeoff</th></tr>
+<tr><td>Oh My Zsh</td><td>Simplicity and ecosystem — hundreds of bundled plugins and themes, huge community, easy to get started</td><td>Loads plugins eagerly by default; a large plugin list measurably slows every shell start unless you actively trim it</td></tr>
+<tr><td>zinit</td><td>Raw startup speed — "turbo mode" defers plugin loading until after the prompt appears, so the prompt shows up fast even with many plugins installed</td><td>More syntax to learn, smaller ecosystem of pre-packaged bundles than Oh My Zsh</td></tr>
+<tr><td>antidote</td><td>Startup speed via a different mechanism — pre-compiles your plugin list into one static file, so nothing is parsed or fetched at shell-start time</td><td>Requires an explicit regeneration step (<code>antidote bundle</code>) whenever your plugin list changes</td></tr>
+</table>
+<p>If you're new to zsh and want the biggest plugin catalog with the least setup thinking, Oh My Zsh is a reasonable default — just watch your <code>zprof</code> numbers as you add plugins. If startup speed matters more than catalog size — which it usually does once you're opening a dozen terminal tabs a day — zinit or antidote are the better fit. Don't switch plugin managers as a reflex the first time your shell feels slow; measure with <code>zprof</code> first, since a single slow <code>eval</code> line is a far more common cause than the plugin manager itself.</p>
+
+<h2>A fast default for the prompt</h2>
+<p>Whichever plugin manager you use, the prompt itself is a separate decision. <a href="https://starship.rs/" target="_blank" rel="noopener">Starship</a> is a good default: a single cross-shell prompt binary, written in a compiled language rather than shell script, that reads your current directory's context (git branch, language runtime versions, cloud CLI profile) and renders it without the eval-heavy overhead older shell-script prompt frameworks carry. Setup is one line at the end of <code>.zshrc</code>, after any plugin manager:</p>
+<pre><code>eval "$(starship init zsh)"</code></pre>
+<p>Because it's a single native binary rather than a tree of sourced shell scripts, it's one of the few <code>eval "$(...)"</code> lines that's genuinely cheap to leave eager rather than lazy-loading — but confirm that with your own <code>zprof</code> output rather than taking this lesson's word for it.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Measure your own shell right now. Run <code>for i in {1..5}; do time zsh -i -c exit; done</code> and note the real time on each run. Then add <code>zmodload zsh/zprof</code> as the first line of <code>~/.zshrc</code> and <code>zprof</code> as the last line, open a new terminal tab, and read the table it prints. Find the single slowest line in your own config — is it a plugin manager, a tool initializer, or something else? Remove the two <code>zprof</code> lines once you've seen the report.</p>
+</div>
+
+<h2>Try it — before looking below</h2>
+
+<div class="quiz">
+<p>Q1. A script runs over cron with no interactive shell involved. Which zsh startup file(s) does it read?</p>
+<div class="opts">
+<label>A. Only <code>.zshenv</code></label>
+<label>B. Only <code>.zshrc</code></label>
+<label>C. Both <code>.zshenv</code> and <code>.zshrc</code></label>
+<label>D. None — cron jobs skip all zsh startup files</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> <code>.zshenv</code> runs for every zsh invocation, interactive or not. <code>.zshrc</code> only runs for interactive shells, which a cron job is not.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Where should a Kubernetes-related alias like <code>alias k=kubectl</code> be defined?</p>
+<div class="opts">
+<label>A. In <code>.zshrc</code>, since aliases only matter for interactive use</label>
+<label>B. In <code>.zshenv</code>, so every shell has it</label>
+<label>C. In <code>.zprofile</code>, so it loads once at login</label>
+<label>D. In <code>.zlogin</code>, so it loads after everything else</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> An alias is meaningless to a non-interactive script, and it belongs in the file scoped to interactive shells.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. What does the zsh manual say is the reason to keep <code>.zshenv</code> minimal?</p>
+<div class="opts">
+<label>A. It is sourced on every single zsh invocation, interactive or not</label>
+<label>B. It is deprecated and may be removed in a future zsh release</label>
+<label>C. It only allows a limited number of lines by design</label>
+<label>D. It is re-parsed on every keystroke inside the shell</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Because it runs for every invocation, anything slow in it is a tax paid by every script and every shell, not just interactive ones.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. What problem does lazy-loading a tool initializer (like <code>pyenv init</code>) actually solve?</p>
+<div class="opts">
+<label>A. It avoids paying that tool's startup cost in shells that never use it</label>
+<label>B. It permanently disables the tool until manually re-enabled</label>
+<label>C. It moves the tool's config into a separate file on disk</label>
+<label>D. It replaces the tool with a faster, unrelated alternative</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> A stub function defers the real <code>eval "$(... init -)"</code> until the tool's first actual use in that shell, so idle shells never pay for it.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. What is the correct way to decide between Oh My Zsh, zinit, and antidote?</p>
+<div class="opts">
+<label>A. Weigh ecosystem size against startup speed for your own use</label>
+<label>B. Always pick whichever one was released most recently</label>
+<label>C. Always pick Oh My Zsh, since it has the most plugins</label>
+<label>D. Always pick zinit, since turbo mode is always faster</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> There's a genuine tradeoff — catalog size and ease of use versus raw startup speed — not a single universally correct pick.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://zsh.sourceforge.io/Doc/Release/Files.html" target="_blank" rel="noopener">Zsh manual — Files (startup file load order)</a> · <a href="https://zsh.sourceforge.io/Doc/Release/Zsh-Modules.html" target="_blank" rel="noopener">Zsh manual — Modules (zsh/zprof)</a> · <a href="https://starship.rs/" target="_blank" rel="noopener">Starship</a> · <a href="https://github.com/zdharma-continuum/zinit" target="_blank" rel="noopener">zinit</a> · <a href="https://antidote.sh/" target="_blank" rel="noopener">antidote</a> · <a href="https://ohmyz.sh/" target="_blank" rel="noopener">Oh My Zsh</a> — verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>.zshenv</code> loads for every zsh process, always — keep it to just <code>PATH</code>/env vars. <code>.zshrc</code> loads only for interactive shells — that's where aliases, prompt, and plugins belong.</li>
+    <li>Measure before optimizing: <code>time zsh -i -c exit</code> for a rough total, <code>zmodload zsh/zprof</code> + trailing <code>zprof</code> for a per-line breakdown.</li>
+    <li>The most common slow-shell cause is an eagerly-evaluated tool initializer (nvm/pyenv/rbenv) — wrap it in a self-removing stub function so it only runs on first real use.</li>
+    <li>Plugin managers trade off differently: Oh My Zsh for ecosystem/simplicity, zinit/antidote for raw speed — no universal "best," measure your own startup.</li>
+    <li>Starship is a solid fast-by-default prompt: one binary, one <code>eval "$(starship init zsh)"</code> line.</li>
+  </ul>
+  <p><strong>Try solo:</strong> profile a coworker's or a public dotfiles repo's <code>.zshrc</code> (mentally or by reading it) and guess which line <code>zprof</code> would flag before you'd need to run it yourself.</p>
+</div>
+
+<footer class="teacher-reminder">Your own <code>zprof</code> output looks different from the examples here? Paste the table back to your teacher — the real bottleneck is almost always specific to what you've personally installed.</footer>
+
+<div class="lesson-nav">
+  <a href="0022-k9s-and-stern.html">&larr; k9s and stern</a>
+  <a href="0024-final-review.html">Next: Final review &amp; cheat sheet &rarr;</a>
+</div>
+
+</body>
+</html>

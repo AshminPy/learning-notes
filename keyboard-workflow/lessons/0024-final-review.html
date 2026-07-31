@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 24 — Final Review &amp; Cheat Sheet</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 24 of 24 (Final Review)</p>
+<h1>Final review: the cheat sheet</h1>
+
+<p>This is a reference page, not a new lesson — no new material, no quiz. Every line below compresses something already taught in Lessons 1-23. Bookmark this page for the day you set up a new Mac, or the day something in your keyboard workflow breaks and you need the one command that fixes it.</p>
+
+<h2>1. Mac workflow foundation (Lessons 1-8)</h2>
+<table>
+<tr><th>Lesson</th><th>Key command / config</th><th>What it does</th></tr>
+<tr><td>1 — AeroSpace</td><td><code>[[on-window-detected]]</code></td><td>Auto-routes an app to a workspace on launch — the reproducible alternative to dragging windows by hand</td></tr>
+<tr><td>2 — Raycast</td><td>Clipboard History</td><td>The single biggest zero-mouse win; disable Raycast's own window management since AeroSpace already owns tiling</td></tr>
+<tr><td>3 — Warp</td><td>Workflows with <code>{{argument}}</code></td><td>Saves a command as a reusable template that pastes for review — never runs silently</td></tr>
+<tr><td>4 — Atuin &amp; zoxide</td><td><code>z &lt;dir&gt;</code> / <code>Ctrl-R</code></td><td>zoxide replaces <code>cd</code> by frecency; Atuin replaces shell history search with a full-screen SQLite-backed one</td></tr>
+<tr><td>5 — eza/bat/fd</td><td><code>eza -lh --git</code></td><td>Sharper default for <code>ls</code> — human sizes plus git status; bat/fd swap in the same way for cat/find</td></tr>
+<tr><td>6 — delta &amp; lazygit</td><td><code>git config --global core.pager delta</code></td><td>Wires delta in as git's diff pager; run <code>lazygit</code> for a full-screen stage/commit/push dashboard</td></tr>
+<tr><td>7 — tldr &amp; btop</td><td><code>brew install tlrc</code></td><td>Installs the current tldr client (example-first man page replacement); btop replaces top with a keyboard-driven UI</td></tr>
+<tr><td>8 — Tying it together</td><td>"Typed twice? Automate it."</td><td>Any command you type more than once is a Workflow or an Atuin search you haven't built yet</td></tr>
+</table>
+
+<h2>2. Foundations for a reproducible setup (Lessons 9-11)</h2>
+<table>
+<tr><th>Lesson</th><th>Key command / config</th><th>What it does</th></tr>
+<tr><td>9 — Homebrew &amp; Brewfile</td><td><code>brew bundle dump --file=~/Brewfile</code></td><td>Snapshots every installed formula/cask/tap; <code>brew bundle install</code> restores it on any machine</td></tr>
+<tr><td>10 — Karabiner &amp; Hyper key</td><td>Caps Lock → Hyper, <code>to_if_alone: escape</code></td><td>Remaps Caps Lock to Cmd+Ctrl+Opt+Shift together, a binding layer no app default can ever collide with; a lone tap still sends Escape</td></tr>
+<tr><td>11 — Dotfiles as code</td><td><code>git init --bare $HOME/.dotfiles</code></td><td>Bare-repo pattern (or chezmoi) tracks real dotfiles directly — a wiped Mac becomes a restore, not a rebuild</td></tr>
+</table>
+
+<h2>3. Secure remote access (Lessons 12-15)</h2>
+<table>
+<tr><th>Lesson</th><th>Key command / config</th><th>What it does</th></tr>
+<tr><td>12 — SSH first principles</td><td><code>ssh-keygen -t ed25519 -C "..."</code></td><td>Generates a modern SSH key pair; <code>ssh-agent</code> + <code>ssh-add</code> mean the passphrase is typed once per session</td></tr>
+<tr><td>13 — SSH at scale</td><td><code>ProxyJump</code> in <code>~/.ssh/config</code></td><td>Hops through a bastion host in one command; <code>ControlMaster</code>/<code>ControlPersist</code> reuse the connection so later hops are instant</td></tr>
+<tr><td>14 — YubiKey for SSH/GPG</td><td><code>ssh-keygen -t ed25519-sk</code></td><td>FIDO2 resident key — the private key never leaves the hardware; touch/PIN proves physical presence</td></tr>
+<tr><td>15 — tmux</td><td><code>tmux new -s name</code> / <code>Ctrl-b d</code></td><td>Keeps a remote session alive across a dropped SSH connection — the entire reason to use it</td></tr>
+</table>
+
+<h2>4. Multi-account identity &amp; cloud CLIs (Lessons 16-20)</h2>
+<table>
+<tr><th>Lesson</th><th>Key command / config</th><th>What it does</th></tr>
+<tr><td>16 — Git, multiple GitHub accounts</td><td><code>includeIf "gitdir:..."</code></td><td>Points a whole directory tree at a different <code>[user]</code> block in <code>~/.gitconfig</code> — right identity, automatically</td></tr>
+<tr><td>17 — 1Password CLI/SSH agent</td><td><code>IdentityAgent</code> in <code>~/.ssh/config</code></td><td>Points SSH at 1Password's agent instead of a plaintext key on disk; verify with <code>ssh-add -l</code></td></tr>
+<tr><td>18 — AWS CLI profiles &amp; SSO</td><td><code>aws sts get-caller-identity</code></td><td>Confirms which account/role you actually are before anything that changes real infrastructure</td></tr>
+<tr><td>19 — gcloud CLI configurations</td><td><code>gcloud auth application-default login</code></td><td>Authenticates Application Default Credentials (Terraform, client libraries) — a separate step from <code>gcloud auth login</code></td></tr>
+<tr><td>20 — direnv</td><td><code>eval "$(direnv hook zsh)"</code></td><td>Hooks direnv into the shell so a directory's <code>.envrc</code> auto-loads/unloads its env vars on <code>cd</code></td></tr>
+</table>
+
+<h2>5. Kubernetes from the terminal (Lessons 21-22)</h2>
+<table>
+<tr><th>Lesson</th><th>Key command / config</th><th>What it does</th></tr>
+<tr><td>21 — kubeconfig &amp; context switching</td><td><code>KUBECONFIG=file1:file2</code></td><td>Merges kubeconfigs into one view — on a name collision, the first file listed wins; kubectx/kubens switch context/namespace in fewer keystrokes</td></tr>
+<tr><td>22 — k9s &amp; stern</td><td><code>stern &lt;pattern&gt;</code></td><td>Tails logs from every pod matching a name pattern or label at once, color-coded, in one stream</td></tr>
+</table>
+
+<h2>6. Shell mastery (Lesson 23)</h2>
+<table>
+<tr><th>Lesson</th><th>Key command / config</th><th>What it does</th></tr>
+<tr><td>23 — .zshrc best practices</td><td><code>zmodload zsh/zprof</code> (+ trailing <code>zprof</code>)</td><td>Profiles which line of <code>.zshrc</code> actually costs the time — measure before lazy-loading or switching plugin managers</td></tr>
+</table>
+
+<h2>Top facts to remember</h2>
+<ul>
+<li><strong>The Hyper key frees a whole shortcut layer.</strong> Once Caps Lock sends Cmd+Ctrl+Opt+Shift (Lesson 10), every AeroSpace and Raycast binding built on it can never collide with an app's native shortcuts.</li>
+<li><strong>Dotfiles-as-code is what makes the rest of this course reproducible.</strong> A Brewfile (Lesson 9) plus a tracked dotfiles repo (Lesson 11) turn "I set this up once, a year ago, I don't remember how" into a single restore command.</li>
+<li><strong>direnv is what actually prevents "wrong account" mistakes</strong> (Lesson 20) — not a habit you have to remember, but an automatic load/unload tied to the directory itself.</li>
+<li><strong>A YubiKey-backed SSH key never leaves the hardware</strong> (Lesson 14). The touch (and PIN) proves physical presence — the one thing remote malware can't forge.</li>
+<li><strong>Verify identity before you act, every time, on every platform:</strong> <code>aws sts get-caller-identity</code> (18), <code>gcloud auth list</code> (19), <code>git config user.email</code> (16), <code>kubectl config current-context</code> (21). Different clouds, same discipline.</li>
+<li><strong>Measure before you optimize.</strong> Lesson 23's <code>zprof</code> habit generalizes: don't guess what's slow or wrong, get a number or a real check first — the same instinct behind <code>ssh -v</code> (13) and <code>aws sts get-caller-identity</code> (18).</li>
+<li><strong>Automate the second repetition, not the first.</strong> A Warp Workflow (3), an Atuin search (4), or a stern command (22) all replace "type the long version again" with "search or alias it once."</li>
+</ul>
+
+<div class="recap">
+  <strong>You've completed Mac Power User &amp; SRE Toolkit.</strong>
+  <ul>
+    <li>24 lessons: keyboard-driven window/app control, a reproducible setup, secure remote access, safe multi-account cloud CLIs, terminal-first Kubernetes, and a <code>.zshrc</code> you understand line by line.</li>
+    <li>Every fact on this page traces back to a specific earlier lesson — nothing here is new.</li>
+  </ul>
+  <p><strong>Try solo:</strong> the next time you're handed a brand-new Mac, time yourself rebuilding your workflow from this cheat sheet alone — Brewfile, dotfiles, SSH/YubiKey, cloud CLI profiles, kubeconfig — and see how close you get to zero manual steps.</p>
+</div>
+
+<footer class="teacher-reminder">Something on this page not matching what you see on your own machine? Go back to that lesson's own Source links — versions and defaults do shift, and this page is a summary, not the authority.</footer>
+
+<div class="lesson-nav">
+  <a href="0023-zshrc-best-practices.html">&larr; .zshrc best practices</a>
+  <span>End of course</span>
+</div>
+
+</body>
+</html>

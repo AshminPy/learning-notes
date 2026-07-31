@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 16 — Git with Multiple GitHub Accounts</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 16 of 24</p>
+<h1>Git with multiple GitHub accounts, without the accidents</h1>
+
+<p>SSH access, secured. Sessions, persistent. Now the identity problem: most SRE and platform engineers carry at least two GitHub accounts — work and personal — on the same laptop. Sooner or later, one gets used for the other: a personal side project pushed under a work email, or worse, a work repo cloned and committed to under a personal identity. Today you make that mistake structurally impossible instead of something you just try to remember.</p>
+
+<p class="callout"><strong>Mental model:</strong> think of each GitHub account as a different ID badge. With only one badge on your keychain, you swipe into whichever door you're facing — sometimes the wrong one. Give each identity its own badge (SSH key) and its own door (a <code>Host</code> alias), and the mixup stops being a matter of memory. The wrong badge simply doesn't open the wrong door.</p>
+
+<h2>The problem: Git identity is directory-blind by default</h2>
+<p>Fresh install, one global <code>~/.gitconfig</code>, one <code>user.name</code>/<code>user.email</code>, usually one SSH key. Clone a work repo, clone a personal repo — both get authored with the same identity, because nothing on your machine distinguishes them. Nothing stops <code>git push</code> from working with the wrong key either, as long as that key happens to be the one your SSH agent offers first.</p>
+<p>The fix is two independent layers: SSH decides <em>which key</em> authenticates you to GitHub, and Git config decides <em>which name and email</em> get attached to a commit. Both need to be set up per account, not left as one shared default.</p>
+
+<h2>Step 1: one SSH key per account</h2>
+<pre><code>ssh-keygen -t ed25519 -C "work@example.com" -f ~/.ssh/id_ed25519_work
+ssh-keygen -t ed25519 -C "personal@example.com" -f ~/.ssh/id_ed25519_personal</code></pre>
+<p>Add each public key (the <code>.pub</code> file) to the matching GitHub account under Settings &rarr; SSH and GPG keys. Two accounts, two keys — never share one key across both.</p>
+
+<h2>Step 2: Host aliases in ~/.ssh/config</h2>
+<p>GitHub only recognizes <code>github.com</code> as a hostname, so you can't just add a second <code>Host github.com</code> block. Instead, invent an alias per account and point each one at the real host:</p>
+<pre><code>Host github.com-work
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_work
+  IdentitiesOnly yes
+
+Host github.com-personal
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_personal
+  IdentitiesOnly yes</code></pre>
+<p><code>IdentitiesOnly yes</code> stops SSH from trying other loaded keys first — without it, a busy agent holding several keys can authenticate with the wrong one before it ever reaches the <code>IdentityFile</code> you specified. Test each alias:</p>
+<pre><code>ssh -T git@github.com-work
+ssh -T git@github.com-personal</code></pre>
+<p>Then clone using the alias host, not <code>github.com</code> directly:</p>
+<pre><code>git clone git@github.com-work:example-org/example-project.git
+git clone git@github.com-personal:example-user/side-project.git</code></pre>
+
+<h2>Step 3: point each directory tree at the right identity</h2>
+<p>SSH now picks the right key per clone. Git config needs the same split, keyed off <em>where the repo lives on disk</em>, using <code>includeIf</code>:</p>
+<pre><code># ~/.gitconfig
+[user]
+  name = Personal Name
+  email = personal@example.com
+
+[includeIf "gitdir:~/work/"]
+  path = ~/.gitconfig-work</code></pre>
+<pre><code># ~/.gitconfig-work
+[user]
+  name = Work Name
+  email = work@example.com
+[core]
+  sshCommand = ssh -i ~/.ssh/id_ed25519_work</code></pre>
+<p>Any repo cloned under <code>~/work/</code> now picks up the work identity automatically — no per-repo <code>git config user.email</code> to remember. Everything else falls back to the personal identity in the top-level <code>[user]</code> block.</p>
+
+<h2>Verify before your first commit</h2>
+<p>Don't trust the setup — check it, every time you start work in a new clone:</p>
+<pre><code>cd ~/work/example-project
+git config user.email
+# expect: work@example.com</code></pre>
+<p>If it prints the wrong address, the <code>gitdir</code> pattern in <code>includeIf</code> doesn't match this directory — fix the path before you commit, not after.</p>
+
+<p class="callout"><strong>Common mistake:</strong> cloning with a plain <code>git clone git@github.com:org/repo.git</code> inside your work folder still uses whatever key a bare <code>Host github.com</code> entry (or the agent's first offered key) resolves to — not necessarily the work key. Always clone through the account-specific alias, or set up a URL rewrite with <code>git config --global url."git@github.com-work:example-org/".insteadOf "git@github.com:example-org/"</code> so plain URLs get rewritten automatically for that org.</p>
+
+<p class="callout"><strong>Security note:</strong> never reuse one SSH key across a work and a personal account — if the work account is ever offboarded or audited, a shared key makes revocation messy and can lock you out of the personal account too. Never commit a private key file, and never paste key material into a chat, ticket, or repo, even a private one.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Set this up end to end with two example accounts. Generate <code>id_ed25519_work</code> and <code>id_ed25519_personal</code>, add the two <code>Host</code> aliases to <code>~/.ssh/config</code>, create <code>~/work/</code> and <code>~/.gitconfig-work</code> with the <code>includeIf</code> block, then clone one test repo into each directory tree and run <code>git config user.email</code> in both before touching a single commit.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. What does <code>IdentitiesOnly yes</code> prevent?</p>
+<div class="opts">
+<label>A. SSH trying other loaded keys before the one you specified</label>
+<label>B. Git rewriting the remote URL to a different hostname</label>
+<label>C. GitHub accepting more than one public key per account</label>
+<label>D. The includeIf block matching the wrong directory tree</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Without it, a loaded agent key can authenticate before SSH ever reaches your named <code>IdentityFile</code>.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What does <code>includeIf "gitdir:~/work/"</code> do in <code>~/.gitconfig</code>?</p>
+<div class="opts">
+<label>A. Loads a separate config file only for repos under that path</label>
+<label>B. Blocks every commit made outside that directory path</label>
+<label>C. Generates a fresh SSH key for repos under that path</label>
+<label>D. Renames the remote origin for repos under that path</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> It's a conditional include — the settings in the referenced file only apply to matching directory trees.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Before your first commit, which command confirms the identity Git will use?</p>
+<div class="opts">
+<label>A. git config user.email</label>
+<label>B. git remote -v</label>
+<label>C. ssh -T git@github.com</label>
+<label>D. git log --author</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> Run this inside the actual repo directory — it shows the value Git will attach to your next commit.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. Why clone through <code>github.com-work</code> instead of plain <code>github.com</code>?</p>
+<div class="opts">
+<label>A. It lets SSH pick the matching IdentityFile for that account</label>
+<label>B. It changes the repository's default branch automatically</label>
+<label>C. It is required before GitHub allows private repo access</label>
+<label>D. It compresses git objects for a noticeably faster clone</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> The alias is what routes the connection to the right key — plain <code>github.com</code> has no way to know which account you mean.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. What real risk does this whole setup exist to prevent?</p>
+<div class="opts">
+<label>A. A commit or push landing under the wrong identity or key</label>
+<label>B. A repository accidentally becoming public without warning</label>
+<label>C. Losing local commits after a teammate's force-push</label>
+<label>D. GitHub rate-limiting API requests from your IP address</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> Everything here — keys, aliases, includeIf, the verify step — targets one failure mode: the wrong "you" making the commit.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.github.com/en/account-and-profile/how-tos/account-management/managing-multiple-accounts" target="_blank" rel="noopener">GitHub Docs — Managing multiple accounts</a> · <a href="https://git-scm.com/docs/git-config#_conditional_includes" target="_blank" rel="noopener">git-config — Conditional includes</a> · verified 2026-07-31</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>One SSH key per account, added to a <code>Host</code> alias in <code>~/.ssh/config</code> (never a bare <code>github.com</code> entry per account).</li>
+    <li>Clone through the alias host so SSH picks the right key automatically — <code>git@github.com-work:...</code>, not <code>git@github.com:...</code>.</li>
+    <li><code>includeIf "gitdir:..."</code> in <code>~/.gitconfig</code> points a whole directory tree at a different <code>[user]</code> block.</li>
+    <li>Always run <code>git config user.email</code> before your first commit in a new clone — verify, don't assume.</li>
+  </ul>
+  <p><strong>Try solo:</strong> add a third identity (a client's account, say) using the same pattern — new key, new alias, new includeIf block — without looking back at this lesson.</p>
+</div>
+
+<footer class="teacher-reminder">If <code>git config user.email</code> ever prints the wrong address, paste your <code>~/.ssh/config</code> and <code>~/.gitconfig</code> back to your teacher — a mismatched <code>gitdir</code> pattern is the almost-always cause, and it's easy to spot with a second pair of eyes.</footer>
+
+<div class="lesson-nav">
+  <a href="0015-tmux-persistent-sessions.html">&larr; tmux: persistent sessions</a>
+  <a href="0017-1password-cli-ssh-agent.html">Next: 1Password CLI / SSH agent &rarr;</a>
+</div>
+
+</body>
+</html>

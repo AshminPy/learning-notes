@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 14 — YubiKey for SSH & GPG</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Keyboard Workflow — Lesson 14 of 24</p>
+<h1>YubiKey for SSH &amp; GPG on macOS</h1>
+
+<p>A well-made Ed25519 key from Lesson 12 is strong cryptography — but the private key file still sits on disk, decrypted in your agent's memory while you're working. A fully compromised laptop can, in principle, get at it. A YubiKey changes that math: the private key is generated <em>on</em> the hardware and never leaves it, not even to the machine it's plugged into.</p>
+
+<p class="callout"><strong>Mental model:</strong> a YubiKey is a padlock that can only be opened by physically pressing it. The key that unlocks your servers is generated inside a small, tamper-resistant chip and stays there. Malware on your laptop can steal a file. It cannot steal a physical touch.</p>
+
+<h2>What actually changes with hardware-backed keys</h2>
+<p>With a normal file-based key, the private key bytes live in <code>~/.ssh/id_ed25519</code> — encrypted at rest by your passphrase, but decrypted in your agent's memory while you're using it. With a FIDO2 hardware-backed key, the signing operation itself happens on the YubiKey's chip. What sits on your disk is a "key handle" — a reference telling OpenSSH which credential on the device to use, not the key itself. There's nothing on disk to steal.</p>
+
+<h2>FIDO2 resident keys: the current recommended path</h2>
+<p>Yubico's own guidance is direct on this: FIDO2 is the simplest option for most people — one hardware key covers SSH and your other FIDO2 logins, and it's built into current OpenSSH with no extra software required. The older alternative — routing SSH authentication through <code>gpg-agent</code>, using an OpenPGP-format key — still exists and still works for people already invested in a GPG signing workflow, but it's more moving parts for the same result. This lesson teaches the FIDO2 path.</p>
+
+<p class="callout"><strong>Common mistake:</strong> running the FIDO2 command below against the OpenSSH that ships with macOS. Apple's bundled OpenSSH is not built with FIDO2 support, so it can't create or use <code>-sk</code> key types — you'll get a confusing error that looks like a typo, not a missing feature. Install OpenSSH from Homebrew and make sure it's ahead of the system one on your <code>PATH</code> before you start.</p>
+
+<pre><code>brew install openssh
+export PATH="$(brew --prefix openssh)/bin:$PATH"   # add this line to your shell profile</code></pre>
+
+<h2>Generate a FIDO2-backed key</h2>
+<pre><code>ssh-keygen -t ed25519-sk -O resident -O verify-required -C "generic-example@example.com"</code></pre>
+<p><code>-t ed25519-sk</code> is the FIDO2-backed key type. <code>-O resident</code> stores the credential on the YubiKey itself, so it's recoverable on a different machine later with <code>ssh-keygen -K</code> — you're not stuck if this laptop is gone. <code>-O verify-required</code> means every use needs your FIDO2 PIN (or a fingerprint, on a Bio-series key) in addition to a touch, not touch alone. This creates <code>id_ed25519_sk</code> (a handle file, not the private key) and <code>id_ed25519_sk.pub</code> (the public key, same as any other).</p>
+
+<h2>Day to day: why the touch is a feature</h2>
+<p>Every time this key is used, the YubiKey blinks and waits for a physical touch. That's not friction for its own sake — it's proof of physical presence. Malware that has fully compromised your unlocked laptop and its running agent still cannot fake a finger on a piece of hardware. The touch (and PIN, with <code>verify-required</code>) is the one thing a remote attacker categorically cannot forge.</p>
+
+<h2>Troubleshooting: key not detected</h2>
+<pre><code>brew install ykman
+ykman list</code></pre>
+<p>If nothing shows up: try a different USB-C port, cable, or hub first — a surprising number of "driver" problems are a bad physical connection. If <code>ykman</code> commands fail with a permissions error around the OTP interface, macOS may be blocking it — grant your terminal app Input Monitoring access under System Settings → Privacy &amp; Security.</p>
+
+<p class="callout"><strong>Security note:</strong> a lost or destroyed YubiKey with no backup means locked-out access, not just an inconvenience. Register a second YubiKey as a backup authenticator before you rely on this for anything production-facing, and treat a lost key the same way you'd treat a lost physical office key — revoke it, don't just hope no one finds it.</p>
+
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Plug in a YubiKey and run <code>ykman list</code> to confirm it's detected. Then generate a real FIDO2 resident key with the command above, using a throwaway comment. Touch the device when it blinks, enter a PIN if prompted, and confirm the two output files exist: <code>ls ~/.ssh/id_ed25519_sk*</code>.</p>
+</div>
+
+<h2>Quiz</h2>
+
+<div class="quiz">
+<p>Q1. What's different about a FIDO2 hardware-backed key vs. a normal file-based key?</p>
+<div class="opts">
+<label>A. The private key material never leaves the hardware</label>
+<label>B. The public key is no longer needed on any server</label>
+<label>C. Host-key verification stops being necessary at all</label>
+<label>D. Passphrases become mandatory on every single use</label>
+</div>
+<button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q1"><strong>A.</strong> Only a key handle sits on disk — the actual private key is generated on, and never leaves, the YubiKey's chip.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Per Yubico's own docs, what must you do before generating an -sk key on macOS?</p>
+<div class="opts">
+<label>A. Install OpenSSH via Homebrew ahead of the system one</label>
+<label>B. Disable System Integrity Protection on the whole Mac</label>
+<label>C. Reformat the YubiKey using the Apple Configurator app</label>
+<label>D. Enable Remote Login under general sharing preferences</label>
+</div>
+<button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q2"><strong>A.</strong> macOS's bundled OpenSSH has no FIDO2 support — Homebrew's OpenSSH, ahead on PATH, is required for -sk key types.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Why does authentication require a physical touch on the device?</p>
+<div class="opts">
+<label>A. It proves a real person is physically present right now</label>
+<label>B. It recharges the small battery built into the YubiKey</label>
+<label>C. It confirms the USB cable is making a solid connection</label>
+<label>D. It syncs the stored key with Yubico's backup servers</label>
+</div>
+<button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q3"><strong>A.</strong> The touch is proof-of-presence — the one thing malware on a fully compromised machine still can't fake.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. What does the -O resident flag do when generating an -sk key?</p>
+<div class="opts">
+<label>A. Stores the credential on the YubiKey, recoverable later</label>
+<label>B. Forces the key to only work over a wired connection</label>
+<label>C. Requires a fingerprint scan instead of any PIN entry</label>
+<label>D. Skips the physical touch requirement on future logins</label>
+</div>
+<button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q4"><strong>A.</strong> A resident key lives on the device itself, so <code>ssh-keygen -K</code> can recover it on a new machine later.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. Is pcscd required to run ykman list and see your YubiKey on macOS?</p>
+<div class="opts">
+<label>A. No — pcscd is a Linux-only requirement, per Yubico's docs</label>
+<label>B. Yes — install it first via Homebrew before anything else</label>
+<label>C. Yes — but only for YubiKey 5 NFC, not other models</label>
+<label>D. No — but only after disabling the built-in smart card</label>
+</div>
+<button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="q5"><strong>A.</strong> Yubico's own YubiKey Manager docs scope pcscd to Linux specifically — macOS handles smart-card communication natively, so chasing a pcscd install on a Mac is chasing the wrong problem.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://developers.yubico.com/SSH/" target="_blank" rel="noopener">Securing SSH with the YubiKey</a> · <a href="https://developers.yubico.com/SSH/Securing_SSH_with_FIDO2.html" target="_blank" rel="noopener">Securing SSH with FIDO2</a> · <a href="https://developers.yubico.com/yubikey-manager/" target="_blank" rel="noopener">YubiKey Manager (ykman)</a> — official Yubico developer docs, verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>FIDO2 resident SSH keys (<code>ssh-keygen -t ed25519-sk</code>) are Yubico's own recommended default — the private key never leaves the hardware.</li>
+    <li>macOS needs Homebrew's OpenSSH ahead of the system one on PATH — the bundled version has no FIDO2 support at all.</li>
+    <li>The touch (and PIN, with <code>-O verify-required</code>) proves physical presence — it's the one thing remote malware can't forge.</li>
+  </ul>
+  <p><strong>Try solo:</strong> register a second YubiKey as a backup authenticator on one real account, so a lost or broken key isn't a lockout.</p>
+</div>
+
+<footer class="teacher-reminder">Key not showing up in ykman list, or a -sk command failing in a way this lesson didn't cover? Paste the exact error and which OpenSSH binary you're running (<code>which ssh-keygen</code>) — that combination usually explains it.</footer>
+
+<div class="lesson-nav">
+  <a href="0013-ssh-at-scale.html">&larr; SSH at scale</a>
+  <a href="0015-tmux-persistent-sessions.html">Next: tmux: persistent sessions &rarr;</a>
+</div>
+
+</body>
+</html>
