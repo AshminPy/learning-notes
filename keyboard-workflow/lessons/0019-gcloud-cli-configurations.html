@@ -47,7 +47,7 @@ gcloud auth list</code></pre>
 
 <p class="callout"><strong>Common mistake:</strong> assuming <code>gcloud auth login</code> alone is enough for Terraform or a client library to work. Most tooling reads Application Default Credentials, not your interactive gcloud session — without <code>application-default login</code>, that tooling has nothing to authenticate with, even while <code>gcloud</code> itself works fine.</p>
 
-<p class="callout"><strong>Security note:</strong> don't run <code>gcloud auth application-default login</code> casually on a shared or production server — any script or library on that machine picks up those credentials automatically, which widens the blast radius far past your own terminal session. Never commit an <code>application_default_credentials.json</code> file or a downloaded service account key to a repo, and never point <code>GOOGLE_APPLICATION_CREDENTIALS</code> at a key file sitting somewhere shared.</p>
+<p class="callout security"><strong>Security note:</strong> don't run <code>gcloud auth application-default login</code> casually on a shared or production server — any script or library on that machine picks up those credentials automatically, which widens the blast radius far past your own terminal session. Never commit an <code>application_default_credentials.json</code> file or a downloaded service account key to a repo, and never point <code>GOOGLE_APPLICATION_CREDENTIALS</code> at a key file sitting somewhere shared.</p>
 
 <div class="tryit">
 <p class="eyebrow">Try it</p>

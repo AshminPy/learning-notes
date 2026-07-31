@@ -33,7 +33,7 @@ export KUBECONFIG=~/.kube/work-config</code></pre>
 
 <p class="callout"><strong>Common mistake:</strong> editing an already-allowed <code>.envrc</code>, adding a new line, and being confused when it doesn't take effect. direnv detects the file changed and re-blocks it until you run <code>direnv allow</code> again — that's the same protection working correctly, not a bug.</p>
 
-<p class="callout"><strong>Security note:</strong> never disable or bypass the allow check to save a step — treat every unfamiliar <code>.envrc</code> the same way you'd treat an unfamiliar shell script: read it before you approve it, especially in a repo you didn't write yourself.</p>
+<p class="callout security"><strong>Security note:</strong> never disable or bypass the allow check to save a step — treat every unfamiliar <code>.envrc</code> the same way you'd treat an unfamiliar shell script: read it before you approve it, especially in a repo you didn't write yourself.</p>
 
 <div class="tryit">
 <p class="eyebrow">Try it</p>

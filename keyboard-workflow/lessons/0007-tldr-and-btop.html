@@ -59,61 +59,61 @@
 <div class="quiz">
 <p>Q1. What problem does tldr solve that man pages don't?</p>
 <div class="opts">
-<label>A. It shows a few common examples instead of the full reference</label>
-<label>B. It compiles command source code faster on your machine</label>
-<label>C. It automatically fixes typos in your shell commands</label>
-<label>D. It replaces your shell's built-in help system entirely</label>
+<label>A. Compiles the command's source code faster locally</label>
+<label>B. Fixes common typos in your shell commands automatically</label>
+<label>C. Shows a few working examples instead of the full manual</label>
+<label>D. Replaces your shell's entire built-in help system</label>
 </div>
 <button onclick="document.getElementById('q1').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q1"><strong>A.</strong> Man pages aim for completeness; tldr pages are short, example-first, and community-maintained.</div>
+<div class="answer" id="q1"><strong>C.</strong> Man pages aim for completeness; tldr pages are short, example-first, and community-maintained.</div>
 </div>
 
 <div class="quiz">
 <p>Q2. What happens the first time you run tldr on a fresh install?</p>
 <div class="opts">
-<label>A. It fetches its page cache automatically, then shows the page</label>
-<label>B. It refuses to run until you install a browser extension</label>
-<label>C. It falls back permanently to printing the full man page</label>
-<label>D. It requires a paid account before showing any examples</label>
+<label>A. Refuses to run until a browser extension is installed</label>
+<label>B. Fetches its page cache automatically, then shows the page</label>
+<label>C. Falls back permanently to printing the full man page</label>
+<label>D. Requires a paid account before showing any examples</label>
 </div>
 <button onclick="document.getElementById('q2').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q2"><strong>A.</strong> No manual setup step is required — the client checks and updates the cache on its own, and keeps doing so as it goes stale.</div>
+<div class="answer" id="q2"><strong>B.</strong> No manual setup step is required — the client checks and updates the cache on its own, and keeps doing so as it goes stale.</div>
 </div>
 
 <div class="quiz">
 <p>Q3. Which of these is something btop does that plain top does not?</p>
 <div class="opts">
-<label>A. Lets you send a signal to a selected process from inside the UI</label>
-<label>B. Shows the current CPU usage percentage at all</label>
-<label>C. Lists every running process by name and PID</label>
-<label>D. Refreshes its stats automatically at an interval</label>
+<label>A. Shows the current CPU usage percentage at all</label>
+<label>B. Lists every running process by name and process ID</label>
+<label>C. Refreshes its stats automatically at a set interval</label>
+<label>D. Lets you send a signal to a process from inside the UI</label>
 </div>
 <button onclick="document.getElementById('q3').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q3"><strong>A.</strong> B, C, D are things <code>top</code> already does. Acting on a process — terminate or kill — without leaving the UI is btop's addition.</div>
+<div class="answer" id="q3"><strong>D.</strong> A, B, C are things <code>top</code> already does. Acting on a process — terminate or kill — without leaving the UI is btop's addition.</div>
 </div>
 
 <div class="quiz">
 <p>Q4. In btop, which key toggles the process tree view?</p>
 <div class="opts">
-<label>A. <code>e</code> switches between flat list and tree view</label>
-<label>B. <code>t</code> sends SIGTERM to the selected process</label>
-<label>C. <code>k</code> sends SIGKILL to the selected process</label>
-<label>D. <code>s</code> opens the choose-a-signal prompt</label>
+<label>A. <code>t</code> sends SIGTERM to the currently selected process</label>
+<label>B. <code>e</code> switches between the flat list and the tree view</label>
+<label>C. <code>k</code> sends SIGKILL to the currently selected process</label>
+<label>D. <code>s</code> opens the choose-a-signal prompt for a process</label>
 </div>
 <button onclick="document.getElementById('q4').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q4"><strong>A.</strong> B, C, D are real btop keys, just for sending signals, not for the tree view.</div>
+<div class="answer" id="q4"><strong>B.</strong> A, C, D are real btop keys, just for sending signals, not for the tree view.</div>
 </div>
 
 <div class="quiz">
 <p>Q5. In btop, which key sends SIGKILL to the selected process?</p>
 <div class="opts">
-<label>A. <code>k</code> kills the process immediately with SIGKILL</label>
-<label>B. <code>t</code> terminates the process gently with SIGTERM</label>
-<label>C. <code>e</code> only toggles the process tree view</label>
-<label>D. <code>Space</code> only expands or collapses a tree node</label>
+<label>A. <code>t</code> terminates the process gently, with SIGTERM first</label>
+<label>B. <code>e</code> only toggles the process tree view on or off</label>
+<label>C. <code>Space</code> only expands or collapses a selected tree node</label>
+<label>D. <code>k</code> kills the selected process immediately, with SIGKILL</label>
 </div>
 <button onclick="document.getElementById('q5').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="q5"><strong>A.</strong> <code>k</code> is SIGKILL (force), <code>t</code> is SIGTERM (ask nicely first) — worth knowing which one you're pressing.</div>
+<div class="answer" id="q5"><strong>D.</strong> <code>k</code> is SIGKILL (force), <code>t</code> is SIGTERM (ask nicely first) — worth knowing which one you're pressing.</div>
 </div>
 
 <h2>Source</h2>

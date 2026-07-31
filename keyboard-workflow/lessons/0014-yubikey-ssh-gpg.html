@@ -38,7 +38,7 @@ export PATH="$(brew --prefix openssh)/bin:$PATH"   # add this line to your shell
 ykman list</code></pre>
 <p>If nothing shows up: try a different USB-C port, cable, or hub first — a surprising number of "driver" problems are a bad physical connection. If <code>ykman</code> commands fail with a permissions error around the OTP interface, macOS may be blocking it — grant your terminal app Input Monitoring access under System Settings → Privacy &amp; Security.</p>
 
-<p class="callout"><strong>Security note:</strong> a lost or destroyed YubiKey with no backup means locked-out access, not just an inconvenience. Register a second YubiKey as a backup authenticator before you rely on this for anything production-facing, and treat a lost key the same way you'd treat a lost physical office key — revoke it, don't just hope no one finds it.</p>
+<p class="callout security"><strong>Security note:</strong> a lost or destroyed YubiKey with no backup means locked-out access, not just an inconvenience. Register a second YubiKey as a backup authenticator before you rely on this for anything production-facing, and treat a lost key the same way you'd treat a lost physical office key — revoke it, don't just hope no one finds it.</p>
 
 <div class="tryit">
 <p class="eyebrow">Try it</p>

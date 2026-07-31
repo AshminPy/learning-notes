@@ -70,7 +70,7 @@ git config user.email
 
 <p class="callout"><strong>Common mistake:</strong> cloning with a plain <code>git clone git@github.com:org/repo.git</code> inside your work folder still uses whatever key a bare <code>Host github.com</code> entry (or the agent's first offered key) resolves to — not necessarily the work key. Always clone through the account-specific alias, or set up a URL rewrite with <code>git config --global url."git@github.com-work:example-org/".insteadOf "git@github.com:example-org/"</code> so plain URLs get rewritten automatically for that org.</p>
 
-<p class="callout"><strong>Security note:</strong> never reuse one SSH key across a work and a personal account — if the work account is ever offboarded or audited, a shared key makes revocation messy and can lock you out of the personal account too. Never commit a private key file, and never paste key material into a chat, ticket, or repo, even a private one.</p>
+<p class="callout security"><strong>Security note:</strong> never reuse one SSH key across a work and a personal account — if the work account is ever offboarded or audited, a shared key makes revocation messy and can lock you out of the personal account too. Never commit a private key file, and never paste key material into a chat, ticket, or repo, even a private one.</p>
 
 <div class="tryit">
 <p class="eyebrow">Try it</p>

@@ -71,7 +71,7 @@ aws sso logout</code></pre>
 
 <p class="callout"><strong>Common mistake:</strong> running a command with neither <code>--profile</code> nor <code>AWS_PROFILE</code> set silently falls back to <code>[default]</code> — which may not be the account you think it is. Get in the habit of checking with <code>aws sts get-caller-identity</code> whenever the cost of being wrong is real.</p>
 
-<p class="callout"><strong>Security note:</strong> never commit <code>~/.aws/credentials</code>, and never paste an <code>aws_secret_access_key</code> into a script, ticket, or chat message — treat a static key exactly like a password. Prefer SSO wherever your organization supports it. If a static key does leak, deactivate it immediately in the IAM console — don't wait for a scheduled rotation.</p>
+<p class="callout security"><strong>Security note:</strong> never commit <code>~/.aws/credentials</code>, and never paste an <code>aws_secret_access_key</code> into a script, ticket, or chat message — treat a static key exactly like a password. Prefer SSO wherever your organization supports it. If a static key does leak, deactivate it immediately in the IAM console — don't wait for a scheduled rotation.</p>
 
 <div class="tryit">
 <p class="eyebrow">Try it</p>

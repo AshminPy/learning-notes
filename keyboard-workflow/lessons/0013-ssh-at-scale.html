@@ -45,7 +45,7 @@ Host internal-app
     ControlPersist 600</code></pre>
 <p>Create the socket directory first: <code>mkdir -p ~/.ssh/sockets</code>. The first connection becomes the "master" and opens the control socket; every later connection to that same host — a second terminal tab, a quick <code>scp</code> — reuses it and connects almost instantly. <code>ControlPersist 600</code> keeps that master connection alive for 10 minutes after the last client disconnects, so a burst of connections stays fast without holding the socket open forever.</p>
 
-<p class="callout"><strong>Security note:</strong> a live control socket lets anyone who can read it ride your already-authenticated connection with no further login required. Keep the sockets directory private — <code>chmod 700 ~/.ssh/sockets</code> — and never point <code>ControlPath</code> at a location shared with other users, like a world-readable <code>/tmp</code>.</p>
+<p class="callout security"><strong>Security note:</strong> a live control socket lets anyone who can read it ride your already-authenticated connection with no further login required. Keep the sockets directory private — <code>chmod 700 ~/.ssh/sockets</code> — and never point <code>ControlPath</code> at a location shared with other users, like a world-readable <code>/tmp</code>.</p>
 
 <h2>Troubleshooting: -v, and the #1 real cause of "permission denied"</h2>
 <p><code>ssh -v user@host</code> (or <code>-vvv</code> for maximum detail) prints exactly what the client is doing — which keys it's offering, and why each one gets rejected. Read it in a real failure and the answer is usually right there.</p>
