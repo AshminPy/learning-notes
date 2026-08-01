@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 22 — Automation with Cron & systemd Timers</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 22 of 26</p>
+<h1>Automation with Cron & systemd Timers</h1>
+
+<p>Two ways exist to run something on a schedule: the classic <code>cron</code>, and the newer systemd timers. Both are still widely used — cron for its simplicity and near-universal familiarity, systemd timers for tighter integration with the logging and service management you already learned in Lessons 7 and 19.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>0 3 * * * /opt/scripts/backup.sh</code> in a crontab runs that script at 3:00 AM every day. Read left to right: minute, hour, day-of-month, month, day-of-week.</p>
+
+<h2>Cron</h2>
+<pre><code>crontab -e          # edit your own user's crontab
+crontab -l          # list your current cron jobs</code></pre>
+<table>
+<tr><th>Field</th><th>Range</th></tr>
+<tr><td>Minute</td><td>0-59</td></tr>
+<tr><td>Hour</td><td>0-23</td></tr>
+<tr><td>Day of month</td><td>1-31</td></tr>
+<tr><td>Month</td><td>1-12</td></tr>
+<tr><td>Day of week</td><td>0-6 (0 = Sunday)</td></tr>
+</table>
+<p><code>*</code> means "every value." <code>*/15 * * * *</code> means every 15 minutes. <code>0 9 * * 1-5</code> means 9:00 AM on weekdays only.</p>
+<p class="callout mistake">Cron jobs run with a minimal environment — no <code>$PATH</code> from your interactive shell, none of your shell aliases or profile. A script that runs fine when you test it manually can fail silently under cron because it can't find a command that's normally on your <code>$PATH</code>. Always use full paths to commands inside cron scripts.</p>
+
+<h2>systemd timers</h2>
+<p>A systemd timer pairs with a systemd service unit: the service defines what to run, the timer defines when. The advantage over cron: the job's output goes straight into <code>journalctl</code> (Lesson 19), and you get the same <code>systemctl status</code> visibility as any other service.</p>
+<pre><code>systemctl list-timers                # see every active timer and its next run
+systemctl status backup.timer        # is this specific timer active
+journalctl -u backup.service         # see the actual job's output/logs</code></pre>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A script works perfectly when you run it by hand, but fails when cron runs it. What's the most common reason?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Cron runs with a minimal environment — the script's <code>$PATH</code> doesn't include everything your interactive shell has, so a command the script calls by name (instead of full path) can't be found.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>crontab -l                      # see your own scheduled jobs, if any
+systemctl list-timers            # see every systemd timer on this system</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man7.org/linux/man-pages/man5/crontab.5.html" target="_blank" rel="noopener">crontab(5) man page</a> — the official reference for cron syntax.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Cron: five time fields (minute, hour, day-of-month, month, day-of-week), simple and universal.</li>
+    <li>Cron scripts should use full paths — the cron environment doesn't have your normal <code>$PATH</code>.</li>
+    <li>systemd timers pair with a service unit and integrate directly with <code>journalctl</code> and <code>systemctl status</code>.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">A cron job that "just stopped running" with no error anywhere is almost always a <code>$PATH</code> or permissions issue in the cron environment, not a bug in the script itself.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0021-containers-linux-level.html">&larr; Back: Containers at the Linux level</a></span>
+  <span><a href="0023-debugging-tools.html">Next: Debugging tools &rarr;</a></span>
+</div>
+
+</body>
+</html>

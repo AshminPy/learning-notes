@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 21 — Containers at the Linux Level</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 21 of 26</p>
+<h1>Containers at the Linux Level</h1>
+
+<p>A container isn't a lightweight VM — there's no separate kernel, no hypervisor. It's a set of normal Linux processes made to look isolated using two kernel features: namespaces (what a process can see) and cgroups (what resources a process can use). Docker and Kubernetes are built on top of these, not instead of them.</p>
+
+<p class="callout"><strong>Simple example:</strong> Run a container and then run <code>ps aux</code> on the host machine — the container's processes show up as ordinary processes in the host's normal process list. They're not running in a separate kernel; they're regular processes with a restricted view.</p>
+
+<h2>Namespaces — what a process can see</h2>
+<table>
+<tr><th>Namespace</th><th>Isolates</th></tr>
+<tr><td>PID</td><td>Process IDs — a container's "PID 1" isn't the host's PID 1</td></tr>
+<tr><td>Network</td><td>Its own network interfaces, IP address, routing table</td></tr>
+<tr><td>Mount</td><td>Its own view of the filesystem tree</td></tr>
+<tr><td>UTS</td><td>Its own hostname</td></tr>
+<tr><td>User</td><td>Its own user/group ID mapping — "root" inside can map to an unprivileged user outside</td></tr>
+</table>
+<p>Each namespace type gives a process a private view of one specific kind of system resource, while the underlying kernel resource is still shared and managed by one single kernel.</p>
+
+<h2>cgroups — what a process can use</h2>
+<p>Control groups limit and account for resource usage — CPU, memory, disk I/O — per group of processes. This is what stops one container from starving every other container on the same host of memory or CPU, and it's the exact mechanism Kubernetes resource limits (<code>requests</code>/<code>limits</code>) configure under the hood.</p>
+
+<h2>Seeing it directly</h2>
+<pre><code>lsns                          # list namespaces currently active on this system
+cat /proc/self/cgroup         # which cgroups the current shell process belongs to
+docker inspect &lt;container&gt; --format '{{.State.Pid}}'   # find a container's real host PID</code></pre>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Inside a container, <code>ps aux</code> shows your application as PID 1. On the host, what does that same process actually look like?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">A completely ordinary process with a normal, much higher host PID — the "PID 1" inside the container is just what the PID namespace shows that process from the inside. It's the same kernel, the same process, viewed through two different lenses.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>lsns | head            # see the namespace types active right now
+cat /proc/self/cgroup   # see the cgroups your current shell belongs to</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man7.org/linux/man-pages/man7/namespaces.7.html" target="_blank" rel="noopener">namespaces(7) man page</a> — the official kernel reference for namespace isolation.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A container is ordinary Linux processes with restricted visibility (namespaces) and bounded resources (cgroups) — no separate kernel.</li>
+    <li>Namespaces control what a process can see; cgroups control what it can use.</li>
+    <li>Kubernetes resource <code>requests</code>/<code>limits</code> are a friendlier interface over the same cgroups mechanism.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When a container "sees" a resource limit that seems wrong, checking <code>cat /sys/fs/cgroup/...</code> for that container's actual cgroup values is the ground truth — above any dashboard reporting on it.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0020-security-fundamentals.html">&larr; Back: Security fundamentals</a></span>
+  <span><a href="0022-cron-systemd-timers.html">Next: Automation with cron & systemd timers &rarr;</a></span>
+</div>
+
+</body>
+</html>

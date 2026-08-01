@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 23 — Debugging Tools</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 23 of 26</p>
+<h1>Debugging Tools</h1>
+
+<p>When a process behaves strangely and its own logs don't explain why, four tools let you observe what it's actually doing at the system call, file, and network level — without needing to modify or restart it.</p>
+
+<p class="callout"><strong>Simple example:</strong> A process is failing to read a config file it should have access to. <code>strace -e trace=open,openat -p &lt;pid&gt;</code> shows every file-open attempt that process makes in real time — including the exact path and the exact error it got back.</p>
+
+<h2>The four essential tools</h2>
+<table>
+<tr><th>Tool</th><th>Shows</th></tr>
+<tr><td><code>strace</code></td><td>Every system call a process makes — file opens, reads, network calls, everything it asks the kernel to do</td></tr>
+<tr><td><code>lsof</code></td><td>Every file (including sockets and pipes) a process currently has open</td></tr>
+<tr><td><code>tcpdump</code></td><td>Raw network packets — what's actually being sent and received on the wire</td></tr>
+<tr><td><code>dmesg</code></td><td>Kernel ring buffer — hardware errors, OOM kills, driver messages (also viewable via <code>journalctl -k</code>, Lesson 19)</td></tr>
+</table>
+
+<h2>strace — what is this process actually doing</h2>
+<pre><code>strace -p 1234                          # attach to a running process, watch its syscalls live
+strace -e trace=network -p 1234         # narrow to just network-related syscalls
+strace -c ./myprogram                   # run a program, get a summary count of syscalls used</code></pre>
+
+<h2>lsof — what files does this process have open</h2>
+<pre><code>lsof -p 1234              # every file this specific process has open
+lsof -i :8080              # which process is using port 8080
+lsof /var/log/app.log      # which process(es) have this specific file open</code></pre>
+<p class="callout production"><code>lsof -i :&lt;port&gt;</code> is the fastest way to answer "what's already using this port" before starting a service that fails with "address already in use."</p>
+
+<h2>tcpdump — what's actually on the wire</h2>
+<pre><code>tcpdump -i eth0 port 443 -c 20     # capture 20 packets on port 443
+tcpdump -i eth0 host 10.0.0.5      # capture traffic to/from one specific host</code></pre>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A service fails to start with "address already in use." Which single command tells you exactly which process is holding that port?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>lsof -i :&lt;port&gt;</code> — it lists exactly which process (and PID) currently has that port open.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>lsof -i :22                 # see what's using the SSH port
+strace -c ls / 2>&1 | tail   # run a harmless command, see a syscall summary
+dmesg | tail -20             # recent kernel messages</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man7.org/linux/man-pages/man1/strace.1.html" target="_blank" rel="noopener">strace(1) man page</a> — the official reference.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>strace</code> shows what system calls a process makes; <code>lsof</code> shows what files/sockets it has open — both without touching application logs.</li>
+    <li><code>tcpdump</code> shows the actual network traffic, not what an application claims it sent.</li>
+    <li><code>lsof -i :&lt;port&gt;</code> is the fast answer to "what's already using this port."</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When application logs are silent about a failure, these four tools observe the process from the outside — often the fastest way to find a cause the application itself never reported.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0022-cron-systemd-timers.html">&larr; Back: Automation with cron & systemd timers</a></span>
+  <span><a href="0024-production-incidents.html">Next: Common production incidents &rarr;</a></span>
+</div>
+
+</body>
+</html>
