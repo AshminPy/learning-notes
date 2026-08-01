@@ -1,6 +1,6 @@
 # Roadmap — Future Improvements (Post-v1)
 
-The site (24 CKA lessons, 28 PCA lessons, both with exam-objectives trackers) is published and considered production-ready as of 2026-07-27. The items below are planned enhancements, not bug fixes or blockers — they're tracked here so they aren't lost between sessions.
+The site now spans 6 topics (`gcp-pca` 28 lessons, `kubernetes-cka` 24, `ansible` 36, `terraform` 37, `ai-ml-engineer` 34, `keyboard-workflow` 8) and is published/production-ready. The items below are planned enhancements, not bug fixes or blockers — they're tracked here so they aren't lost between sessions. Apply these principles to every topic, not just CKA/PCA.
 
 **Goal:** keep evolving this into one of the highest-quality free revision resources for CKA and PCA, while staying simple, accurate, and easy to maintain.
 
