@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Linux Course Roadmap & Progress Tracker</title>
+<meta name="description" content="Linux for Cloud & SRE course roadmap — 26 planned lessons grouped by LFCS exam domain, with progress checkboxes for published lessons.">
+<link rel="canonical" href="https://ashminpy.github.io/learning-notes/linux/objectives.html">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .domain { margin: 2rem 0; }
+  .domain-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .domain-head h2 { margin: 0; padding: 0; border: none; font-size: 1.1rem; }
+  .weight { font-size: 0.85rem; color: var(--muted); }
+  .item-list { list-style: none; padding-left: 0; }
+  .item-list li { margin: 0.4rem 0; }
+  .planned { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE</p>
+<h1>Roadmap & Progress Tracker</h1>
+<p>All 26 planned lessons, grouped by the official <a href="https://training.linuxfoundation.org/certification/linux-foundation-certified-sysadmin-lfcs/" target="_blank" rel="noopener">LFCS exam domains</a> and weights (verified 2026-08-01). Lessons publish incrementally — published lessons are linked and checkable; unpublished ones are listed as planned so the full outline is visible from day one. Checking a box does not guarantee exam readiness — use this to track review, not to predict a result. Progress is saved in this browser only.</p>
+
+<p><button id="reset-progress" style="font-family:inherit;padding:0.4rem 0.8rem;border-radius:4px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;">Reset progress</button></p>
+
+<div id="domains"></div>
+
+<h2>Foundations (not separately weighted)</h2>
+<ul class="item-list" id="foundations"></ul>
+
+<div class="lesson-nav">
+  <a href="index.html">&larr; Back to course</a>
+  <span></span>
+</div>
+
+<script>
+const STORE_KEY = "linux-objectives-progress";
+const state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+const DOMAINS = [
+  {
+    name: "Operations Deployment",
+    weight: 25,
+    lessons: [
+      { id: "0007", title: "systemd & services", href: "lessons/0007-systemd-services.html" },
+      { id: "0008", title: "Package management", href: "lessons/0008-package-management.html" },
+      { id: "0015", title: "Kernel basics", href: "lessons/0015-kernel-basics.html" },
+      { id: "0020", title: "Security fundamentals (SELinux/AppArmor, firewalld/nftables)", href: "lessons/0020-security-fundamentals.html" },
+      { id: "0021", title: "Containers at the Linux level (namespaces, cgroups)", href: "lessons/0021-containers-linux-level.html" },
+      { id: "0022", title: "Automation with cron & systemd timers", href: "lessons/0022-cron-systemd-timers.html" },
+      { id: "0025", title: "Boot process & troubleshooting", href: "lessons/0025-boot-process.html" }
+    ]
+  },
+  {
+    name: "Networking",
+    weight: 25,
+    lessons: [
+      { id: "0010", title: "Networking fundamentals", href: "lessons/0010-networking-fundamentals.html" },
+      { id: "0011", title: "SSH (keys, config, tunneling, hardening)", href: "lessons/0011-ssh.html" }
+    ]
+  },
+  {
+    name: "Storage",
+    weight: 20,
+    lessons: [
+      { id: "0002", title: "Filesystem hierarchy & navigation", href: "lessons/0002-filesystem-navigation.html" },
+      { id: "0009", title: "Storage & disks (partitions, LVM, filesystems, mounting)", href: "lessons/0009-storage-disks.html" }
+    ]
+  },
+  {
+    name: "Essential Commands",
+    weight: 20,
+    lessons: [
+      { id: "0003", title: "Permissions & ownership", href: "lessons/0003-permissions-ownership.html" },
+      { id: "0005", title: "Processes fundamentals", href: "lessons/0005-processes-fundamentals.html" },
+      { id: "0006", title: "Job control & process management", href: "lessons/0006-job-control.html" },
+      { id: "0012", title: "Bash scripting fundamentals", href: "lessons/0012-bash-fundamentals.html" },
+      { id: "0013", title: "Bash scripting advanced", href: "lessons/0013-bash-advanced.html" },
+      { id: "0014", title: "Text processing (grep/sed/awk)", href: "lessons/0014-text-processing.html" },
+      { id: "0016", title: "Memory management", href: "lessons/0016-memory-management.html" },
+      { id: "0017", title: "CPU & scheduling", href: "lessons/0017-cpu-scheduling.html" },
+      { id: "0018", title: "Performance tuning & monitoring", href: "lessons/0018-performance-tuning.html" },
+      { id: "0019", title: "Logging", href: "lessons/0019-logging.html" },
+      { id: "0023", title: "Debugging tools (strace, lsof, tcpdump, dmesg)", href: "lessons/0023-debugging-tools.html" },
+      { id: "0024", title: "Common production incidents", href: "lessons/0024-production-incidents.html" }
+    ]
+  },
+  {
+    name: "Users and Groups",
+    weight: 10,
+    lessons: [
+      { id: "0004", title: "Users, groups & sudo", href: "lessons/0004-users-groups-sudo.html" }
+    ]
+  }
+];
+
+const FOUNDATIONS = [
+  { id: "0001", title: "Why Linux? Kernel, userspace, shell & distros", href: "lessons/0001-why-linux.html" },
+  { id: "0026", title: "Final review & LFCS/RHCSA cheat sheet", href: "lessons/0026-final-review.html" }
+];
+
+function published(l) {
+  return l.id === "0001" || l.id === "0002";
+}
+
+function renderList(container, lessons) {
+  lessons.forEach(l => {
+    const li = document.createElement("li");
+    if (published(l)) {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!state[l.id];
+      cb.setAttribute("aria-label", `Mark ${l.title} as reviewed`);
+      cb.addEventListener("change", () => { state[l.id] = cb.checked; save(); });
+      const a = document.createElement("a");
+      a.href = l.href;
+      a.textContent = l.title;
+      li.appendChild(cb);
+      li.appendChild(document.createTextNode(" "));
+      li.appendChild(a);
+    } else {
+      li.className = "planned";
+      li.textContent = `${l.title} (planned)`;
+    }
+    container.appendChild(li);
+  });
+}
+
+const domainsDiv = document.getElementById("domains");
+DOMAINS.forEach(d => {
+  const wrap = document.createElement("div");
+  wrap.className = "domain";
+  const head = document.createElement("div");
+  head.className = "domain-head";
+  head.innerHTML = `<h2>${d.name}</h2><span class="weight">${d.weight}%</span>`;
+  wrap.appendChild(head);
+  const ul = document.createElement("ul");
+  ul.className = "item-list";
+  renderList(ul, d.lessons);
+  wrap.appendChild(ul);
+  domainsDiv.appendChild(wrap);
+});
+
+renderList(document.getElementById("foundations"), FOUNDATIONS);
+
+document.getElementById("reset-progress").addEventListener("click", () => {
+  if (confirm("Reset all Linux course tracker progress? This cannot be undone.")) {
+    localStorage.removeItem(STORE_KEY);
+    location.reload();
+  }
+});
+</script>
+
+</body>
+</html>

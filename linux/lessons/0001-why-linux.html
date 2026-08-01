@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 — Why Linux? Kernel, Userspace, Shell & Distros</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE / Zero to Hero — Lesson 1 of 26</p>
+<h1>Why Linux? Kernel, Userspace, Shell & Distros</h1>
+
+<h2>Learning objectives</h2>
+<ul>
+<li>Explain what Linux actually is — the kernel — versus what a "distro" adds on top</li>
+<li>Explain why the overwhelming majority of servers and cloud infrastructure run Linux</li>
+<li>Understand the shell as your primary interface to the system, and how it differs from a terminal</li>
+<li>Identify the major distro families (Debian/Ubuntu vs RHEL/Fedora) and why the difference matters operationally</li>
+<li>Run your first diagnostic commands to identify what system you're actually on</li>
+</ul>
+
+<h2>Mental model</h2>
+<p class="callout"><strong>Linux is not one thing.</strong> "Linux" strictly means the kernel — the program that talks directly to hardware and arbitrates access to it for everything else. A "distro" (distribution) is the kernel plus a curated bundle of userspace tools, a package manager, and configuration choices, assembled by an organization (Canonical for Ubuntu, Red Hat for RHEL, the Debian Project for Debian). Same engine, different car built around it.</p>
+
+<h2>Beginner-friendly explanation</h2>
+<p>Every program on your computer needs to do things only hardware can actually do — read a file from disk, send a network packet, allocate memory. Programs don't get to touch hardware directly; that would be chaos if two programs tried to write the same disk sector at once. Instead, every program asks the <strong>kernel</strong> to do it on their behalf, through a well-defined interface called a <strong>system call</strong>.</p>
+<p>The kernel's job: manage CPU time (which program runs when), manage memory (who gets which bytes of RAM), manage devices (disks, network cards), and enforce isolation between programs and users so one misbehaving program can't (easily) crash or read another's data.</p>
+<p>Everything else you interact with — the shell, `ls`, a web browser, Docker — is <strong>userspace</strong>: normal programs that ask the kernel for things instead of doing them directly.</p>
+
+<h2>Real-world analogy</h2>
+<p class="callout">Think of the kernel as a building's engine room and utilities — electricity, water, elevators — that every tenant depends on but never touches directly. A distro is the whole building: the engine room (kernel) plus the lobby, the furnished apartments, the building's own rules and staff (package manager, default configs, support contract). Ubuntu's building and Red Hat's building share the same engine room design, but the lobby, the paperwork, and who you call for support are different.</p>
+
+<h2>Why nearly all servers and cloud infrastructure run Linux</h2>
+<div class="mermaid-diagram">
+<pre class="mermaid">
+flowchart TB
+    HW["Hardware — CPU, RAM, disk, NIC"]
+    K["Linux Kernel — scheduling, memory, drivers, syscalls"]
+    SYS["System layer — systemd, glibc, core utilities"]
+    SH["Shell — bash / zsh / sh"]
+    APP["Applications — nginx, Docker, your scripts, kubectl"]
+    HW --> K --> SYS --> SH --> APP
+</pre>
+</div>
+<p>Cloud providers standardized on Linux for concrete reasons, not just tradition:</p>
+<table>
+<tr><th>Reason</th><th>Why it matters at scale</th></tr>
+<tr><td>No licensing cost for the kernel/base OS</td><td>Running 10,000 VMs on a per-seat-licensed OS is a real, large line item; Linux itself is free (see the Cost callout below)</td></tr>
+<tr><td>Open source, POSIX-compliant</td><td>Predictable, portable behavior across vendors; no vendor lock-in on the OS layer itself</td></tr>
+<tr><td>Battle-tested at massive scale</td><td>Powers the majority of top web infrastructure and nearly all public cloud compute — failure modes are extremely well understood</td></tr>
+<tr><td>First-class container support</td><td>Containers (Docker, Kubernetes) are built directly on Linux kernel features (namespaces, cgroups — Lesson 21) — there is no equivalent-maturity container ecosystem on other kernels</td></tr>
+</table>
+
+<h2>The shell: your primary interface</h2>
+<p>A <strong>terminal</strong> is just a window/interface that displays text in and out. A <strong>shell</strong> (bash, zsh, sh) is the actual program running inside that terminal, reading the commands you type, interpreting them, and asking the kernel to execute them. You can have many different shells; nearly every Linux system has `bash` and `sh` available, and `bash` is the overwhelming default for interactive use and scripting on servers.</p>
+<p class="callout">Distinguish these three, because "my terminal is broken" and "my shell is broken" are different problems with different fixes: <strong>terminal</strong> (the window/emulator) → <strong>shell</strong> (the program interpreting your commands, e.g. bash) → <strong>shell session</strong> (one running instance of that shell, with its own environment variables, current directory, and history).</p>
+
+<h2>Hands-on lab — identify your system</h2>
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<p>Open a terminal on any Linux machine you have access to (a cloud VM, WSL, or a local VM — see the Practical Challenge below if you don't have one yet) and run each command:</p>
+<pre><code>uname -a</code></pre>
+<p>Shows kernel name, hostname, kernel version, and architecture. Example output:</p>
+<pre><code>Linux web01 6.8.0-generic #1 SMP x86_64 GNU/Linux</code></pre>
+<pre><code>cat /etc/os-release</code></pre>
+<p>Shows the distro identity — this is the standard, distro-neutral way to detect what you're on (works the same on Ubuntu, Debian, RHEL, Alpine). Look for the `ID` and `VERSION_ID` fields.</p>
+<pre><code>echo $SHELL
+echo $0</code></pre>
+<p><code>$SHELL</code> shows your default login shell; <code>$0</code> shows the shell actually running this exact session — they can differ if you've launched a different shell manually.</p>
+<pre><code>which bash
+bash --version</code></pre>
+<p>Confirms bash's exact location and version — useful when a script behaves differently across two machines.</p>
+</div>
+
+<h2>Troubleshooting walkthrough</h2>
+<table>
+<tr><th>Step</th><th>Detail</th></tr>
+<tr><td><strong>Symptoms</strong></td><td>You SSH into a fresh minimal server or a container's shell and a command you use every day — e.g. <code>ls</code> or <code>ip</code> — returns <code>command not found</code>.</td></tr>
+<tr><td><strong>Investigation</strong></td><td>Run <code>echo $PATH</code>. The shell only searches the directories listed there (colon-separated) for a command's binary. Compare against a working machine's <code>$PATH</code>.</td></tr>
+<tr><td><strong>Root cause</strong></td><td>Minimal images (many container base images, some cloud "minimal" VM images) ship a deliberately small <code>$PATH</code> and a stripped-down set of installed utilities to keep image size small — the binary may not even be installed, or it's installed but not on the search path.</td></tr>
+<tr><td><strong>Resolution</strong></td><td>Confirm with <code>which &lt;command&gt;</code> (empty output = not on PATH or not installed). If installed but off-PATH: use the full path, or fix <code>$PATH</code>. If not installed: install it via the distro's package manager (Lesson 8) — or, in a container, this is often a signal to add it to the image instead of installing ad hoc.</td></tr>
+<tr><td><strong>Prevention</strong></td><td>Don't assume every Linux environment has the "usual" toolset — minimal/container images are increasingly the default in production, not the exception.</td></tr>
+</table>
+
+<h2>Common mistakes</h2>
+<p class="callout mistake">Saying "I'm running Linux" as if that fully describes the system. In production you need to know the specific distro and version — a `systemctl` command that works on Ubuntu may not exist the same way on an ancient CentOS 7 box (which used a different init system, SysV/Upstart, before systemd became universal). Always confirm distro + version before assuming behavior.</p>
+
+<h2>Best practices</h2>
+<p class="callout production">When writing scripts meant to run across multiple servers or distros: check <code>/etc/os-release</code> programmatically rather than hardcoding assumptions, prefer POSIX-portable syntax (`#!/bin/sh`-safe) for maximum portability when you don't specifically need bash features, and pin/document exactly which distro family a script targets when you DO use distro-specific tools (e.g. `apt` vs `dnf`).</p>
+
+<h2>Security considerations</h2>
+<p class="callout security">The kernel enforcing strict separation between userspace programs — and between users — is the foundational security boundary everything else on Linux is built on. This is also why container security (Lesson 21) is fundamentally a Linux kernel topic: a container is not a lightweight VM, it's regular Linux processes with the kernel's isolation features (namespaces, cgroups) applied more aggressively than a normal login session.</p>
+
+<h2>Performance considerations</h2>
+<p class="callout performance">The kernel's scheduler and memory manager (Lessons 16-17) directly determine how efficiently your workloads use hardware. A well-tuned Linux kernel has very low overhead compared to the actual work being done — which is a major reason cloud providers can pack many customer workloads densely onto shared hardware.</p>
+
+<h2>Cost optimization</h2>
+<p class="callout cost">The kernel and most mainstream distros (Debian, Ubuntu, Rocky/AlmaLinux) have zero licensing cost — you pay only for the infrastructure running it, or optionally for a support subscription (e.g. RHEL's paid support model). This is a real, material cost difference versus per-seat-licensed operating systems at any meaningful server fleet size, and it's one of the concrete reasons Linux dominates cloud infrastructure.</p>
+
+<h2>Production checklist — before you SSH into an unfamiliar server</h2>
+<ul class="checklist">
+<li><input type="checkbox" disabled> Confirm the distro and version (<code>cat /etc/os-release</code>)</li>
+<li><input type="checkbox" disabled> Confirm the kernel version (<code>uname -a</code>)</li>
+<li><input type="checkbox" disabled> Confirm which package manager is available (<code>apt</code>/<code>dnf</code>/<code>yum</code>/<code>apk</code>)</li>
+<li><input type="checkbox" disabled> Confirm your login shell (<code>echo $SHELL</code>)</li>
+<li><input type="checkbox" disabled> Don't assume a tool you rely on daily is installed — check with <code>which</code> first</li>
+</ul>
+
+<h2>Interview questions</h2>
+<div class="quiz">
+<p>Q. What's the difference between Linux and a Linux distribution?</p>
+<input type="text" id="iq1" placeholder="type your answer">
+<button onclick="document.getElementById('ia1').classList.add('shown')">Reveal model answer</button>
+<div class="answer" id="ia1">Linux strictly refers to the kernel — the core program managing hardware, memory, processes, and syscalls. A distribution (Ubuntu, RHEL, Debian, Alpine) bundles that kernel with userspace tools, a package manager, and default configuration, assembled by a specific organization or project.</div>
+</div>
+<div class="quiz">
+<p>Q. Why do most cloud providers and production servers run Linux instead of a proprietary OS?</p>
+<input type="text" id="iq2" placeholder="type your answer">
+<button onclick="document.getElementById('ia2').classList.add('shown')">Reveal model answer</button>
+<div class="answer" id="ia2">No per-seat licensing cost at scale, open-source/POSIX portability with no vendor lock-in, decades of battle-testing at massive scale, and it's the foundation container technology (Docker/Kubernetes) is built directly on top of via kernel features like namespaces and cgroups.</div>
+</div>
+<div class="quiz">
+<p>Q. What is a system call, in plain terms?</p>
+<input type="text" id="iq3" placeholder="type your answer">
+<button onclick="document.getElementById('ia3').classList.add('shown')">Reveal model answer</button>
+<div class="answer" id="ia3">The defined interface a userspace program uses to ask the kernel to do something it can't do itself directly — read a file, allocate memory, send a network packet. Programs never touch hardware directly; they always go through the kernel via a syscall.</div>
+</div>
+</div>
+
+<h2>Certification notes</h2>
+<p>This lesson is foundational — the LFCS exam doesn't test "what is a kernel" directly, but every one of its 5 domains (Operations Deployment, Networking, Storage, Essential Commands, Users and Groups) assumes this mental model as a prerequisite. Getting comfortable identifying your distro/kernel/shell quickly, as practiced above, is a habit the exam's real command-line tasks reward directly — you'll frequently need to know exactly what environment you're troubleshooting in before choosing a command.</p>
+
+<h2>Official references</h2>
+<ul>
+<li><a href="https://www.kernel.org/" target="_blank" rel="noopener">kernel.org</a> — the official home of the Linux kernel project</li>
+<li><a href="https://training.linuxfoundation.org/certification/linux-foundation-certified-sysadmin-lfcs/" target="_blank" rel="noopener">Linux Foundation — LFCS certification page</a> — official exam domains, format, and pricing (verified 2026-08-01)</li>
+<li><a href="https://www.freedesktop.org/software/systemd/man/latest/os-release.html" target="_blank" rel="noopener">os-release(5) man page</a> — the standard, distro-neutral file used above to identify any distro</li>
+</ul>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Linux = the kernel (hardware/resource arbiter via syscalls). A distro = kernel + userspace tools + package manager + defaults, assembled by an organization.</li>
+    <li>Terminal (window) ≠ shell (the program interpreting commands, e.g. bash) ≠ shell session (one running instance with its own environment).</li>
+    <li>Linux dominates servers/cloud because of zero licensing cost, open-source portability, decades of battle-testing, and being the literal foundation containers are built on.</li>
+    <li><code>uname -a</code>, <code>cat /etc/os-release</code>, and <code>echo $SHELL</code> are your fastest "what am I actually on" commands — use them before assuming anything about an unfamiliar server.</li>
+  </ul>
+</div>
+
+<h2>Practical challenge</h2>
+<p class="callout">Get access to two different Linux distro families — e.g. a free-tier Ubuntu cloud VM (AWS/GCP/Azure free tier, or a local VirtualBox/UTM VM) and a RHEL-family one (Rocky Linux or AlmaLinux, both free RHEL-compatible rebuilds). On each, run every command from the hands-on lab above and write down at least 3 real differences you observe — not just "the ID field says something different," but actual behavioral or tooling differences (e.g. package manager, default shell version, what's installed by default). This is the single best exercise for building real distro-neutral intuition before Lesson 8 (package management) makes the difference explicit.</p>
+
+<footer class="teacher-reminder">If kernel vs userspace still feels abstract, that's fine for now — it becomes concrete the moment you watch a process get killed for using too much memory (Lesson 16) or trace a syscall with strace (Lesson 23). Come back and reread this lesson after those if the mental model hasn't fully clicked yet.</footer>
+
+<div class="lesson-nav">
+  <span></span>
+  <span><a href="0002-filesystem-navigation.html">Next: Lesson 2 — Filesystem Hierarchy & Navigation &rarr;</a></span>
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+</script>
+
+</body>
+</html>

@@ -1,6 +1,8 @@
 # Roadmap — Future Improvements (Post-v1)
 
-The site now spans 6 topics (`gcp-pca` 28 lessons, `kubernetes-cka` 24, `ansible` 36, `terraform` 37, `ai-ml-engineer` 34, `keyboard-workflow` 8) and is published/production-ready. The items below are planned enhancements, not bug fixes or blockers — they're tracked here so they aren't lost between sessions. Apply these principles to every topic, not just CKA/PCA.
+The site spans 7 topics (`gcp-pca` 28 lessons, `kubernetes-cka` 24, `ansible` 36, `terraform` 37, `ai-ml-engineer` 34, `keyboard-workflow` 8, `linux` 2/26 in progress) and is published/production-ready. The items below are planned enhancements, not bug fixes or blockers — they're tracked here so they aren't lost between sessions. Apply these principles to every topic, not just CKA/PCA.
+
+**2026-08-01 — Engineering academy expansion started.** Goal: build the best free zero-to-hero learning paths for Cloud/Platform/DevOps/SRE/AI engineers — Linux, Networking, Git/GitHub, Terraform (exists), GitOps, Observability, Kubernetes Production, Vault, AWS Architecture, SRE, Incident Response, AI Platform Engineering, Elasticsearch, Production Troubleshooting. Every lesson in these courses follows a richer template than earlier courses (mental model, diagrams, labs, troubleshooting walkthrough, mistakes, best practices, security/performance/cost callouts, checklist, interview questions, cert notes, official refs, quiz, practical challenge) — see `docs/lesson-template.md`. Full course order/status tracked in `~/projects/ai-projects/claude-toolkit/deploy-states/learning-notes-academy.md` (not in this repo, since it's Claude session state, not site content).
 
 **Goal:** keep evolving this into one of the highest-quality free revision resources for CKA and PCA, while staying simple, accurate, and easy to maintain.
 
