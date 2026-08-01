@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 20 — Security Fundamentals</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 20 of 26</p>
+<h1>Security Fundamentals</h1>
+
+<p>Two layers of Linux security work independently of the permissions from Lesson 3: mandatory access control (a stricter rule system that even root can't casually override) and the firewall (which controls what network traffic is allowed in and out at all).</p>
+
+<p class="callout"><strong>Simple example:</strong> A misconfigured web server directory can have perfect Unix permissions and still fail to serve files — because SELinux (RHEL family) or AppArmor (Debian/Ubuntu family) enforces its own separate policy on top of standard permissions, and that policy is what's actually blocking access.</p>
+
+<h2>Mandatory access control</h2>
+<table>
+<tr><th>System</th><th>Distro family</th><th>Check status</th></tr>
+<tr><td>SELinux</td><td>RHEL/Fedora/Rocky/Alma</td><td><code>getenforce</code> (Enforcing / Permissive / Disabled)</td></tr>
+<tr><td>AppArmor</td><td>Debian/Ubuntu</td><td><code>aa-status</code></td></tr>
+</table>
+<p>The mental model is the same for both: standard Unix permissions (Lesson 3) say who can read/write/execute a file. Mandatory access control adds a second, independent layer of rules — even the file's owner and root are bound by it. This is exactly why "permissions look fine but access still fails" is one of the most common confusing symptoms in production.</p>
+<p class="callout mistake">Never permanently disable SELinux/AppArmor to "fix" an access problem — that removes the second security layer entirely instead of finding the actual policy rule that's blocking you. <code>setenforce 0</code> (temporary, SELinux) or checking the relevant policy/audit log is the correct first step to confirm SELinux is the cause before deciding what to actually change.</p>
+
+<h2>Firewalls — controlling network access</h2>
+<table>
+<tr><th>Tool</th><th>Common on</th><th>Basic check</th></tr>
+<tr><td><code>firewalld</code></td><td>RHEL/Fedora family (front-end over nftables)</td><td><code>firewall-cmd --list-all</code></td></tr>
+<tr><td><code>ufw</code></td><td>Ubuntu (front-end over iptables/nftables)</td><td><code>ufw status</code></td></tr>
+<tr><td><code>nftables</code></td><td>The modern underlying framework on most current distros</td><td><code>nft list ruleset</code></td></tr>
+</table>
+<p><code>firewalld</code> and <code>ufw</code> are friendlier front-ends most people use day to day; <code>nftables</code> (successor to the older <code>iptables</code>) is the actual kernel packet-filtering framework underneath both.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A process has correct Unix file permissions (rwx for its user) but still gets "permission denied." What's the second layer to check before assuming the permissions are wrong?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Mandatory access control — SELinux (<code>getenforce</code>, check with <code>ausearch</code>/audit log) or AppArmor (<code>aa-status</code>). It enforces a separate policy on top of standard permissions and is a very common cause of this exact symptom.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code># On a RHEL-family system:
+getenforce
+firewall-cmd --list-all
+
+# On a Debian/Ubuntu system:
+aa-status
+ufw status</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man7.org/linux/man-pages/man8/selinux.8.html" target="_blank" rel="noopener">selinux(8) man page</a> — the official reference for SELinux.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>SELinux (RHEL family) and AppArmor (Debian family) enforce a second, independent access-control layer on top of standard Unix permissions.</li>
+    <li>"Permissions look correct but access still fails" is the classic symptom of a mandatory-access-control block, not a permissions bug.</li>
+    <li><code>firewalld</code>/<code>ufw</code> are friendly front-ends; <code>nftables</code> is the modern underlying kernel packet-filtering framework on most current distros.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Never leave SELinux/AppArmor permanently disabled as a "fix" — find the specific policy denial in the audit log and address that instead.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0019-logging.html">&larr; Back: Logging</a></span>
+  <span><a href="0021-containers-linux-level.html">Next: Containers at the Linux level &rarr;</a></span>
+</div>
+
+</body>
+</html>
