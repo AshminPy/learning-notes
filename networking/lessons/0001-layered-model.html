@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 — How Data Actually Moves: The Layered Model</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 1 of 20</p>
+<h1>How Data Actually Moves: The Layered Model</h1>
+
+<p>Every network conversation — loading a webpage, an API call, an SSH session — is built from layers, each one only responsible for one job and trusting the layer below it to have done its own job correctly. You don't need to memorize all seven OSI layers to work effectively; you need four practical ones, because that's what real tools and error messages actually reference.</p>
+
+<p class="callout"><strong>Simple example:</strong> When curl fails with "connection refused," that's a Transport-layer problem (nothing was listening on the port). When it fails with "could not resolve host," that's Application-layer, specifically DNS. Same tool, same command, but the fix is completely different depending on which layer failed.</p>
+
+<h2>The four layers that matter day to day</h2>
+<table>
+<tr><th>Layer</th><th>Job</th><th>Examples</th></tr>
+<tr><td>Application</td><td>What the software actually wants to say</td><td>HTTP, DNS, SSH</td></tr>
+<tr><td>Transport</td><td>Reliable delivery (or not) between two endpoints, addressed by port</td><td>TCP, UDP</td></tr>
+<tr><td>Network</td><td>Getting a packet from one network to another, addressed by IP</td><td>IP, routing</td></tr>
+<tr><td>Link</td><td>Getting a frame across one physical/local segment</td><td>Ethernet, Wi-Fi</td></tr>
+</table>
+<p>This four-layer model (closer to the practical "TCP/IP model" than the academic 7-layer OSI model) is what you'll actually reason with when troubleshooting — each failure symptom points to roughly one layer, which is why "what layer is this" is often the fastest first diagnostic question.</p>
+
+<h2>Why the split matters</h2>
+<p>Each layer only cares about its own job and expects the layer below to already be solved. TCP (Transport) doesn't know or care whether it's running over Wi-Fi or Ethernet (Link) — that's exactly the point. This separation is what lets the same HTTP request (Application) work identically whether it travels over a home Wi-Fi network or a data center's fiber backbone.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A colleague says "the network is down" because a website won't load in their browser. What's the first question that narrows down which layer actually failed?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">"Does the exact same failure happen if you use the IP address directly instead of the domain name?" If using the raw IP works, the problem is DNS (Application layer). If it still fails, the problem is lower — Transport or Network.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>curl -v https://example.com
+# Watch the output stages: DNS resolution, then TCP connect, then TLS handshake,
+# then the actual HTTP request — each stage is a different layer succeeding in order.</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc1122" target="_blank" rel="noopener">RFC 1122 — Requirements for Internet Hosts</a> — the official IETF reference defining the practical Internet (TCP/IP) layering model.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Four practical layers: Application (HTTP/DNS/SSH), Transport (TCP/UDP), Network (IP/routing), Link (Ethernet/Wi-Fi).</li>
+    <li>Each layer trusts the one below it to already work — that separation is a feature, not an abstraction for its own sake.</li>
+    <li>"What layer is this" is often the fastest first question when troubleshooting any network failure.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Every lesson in this course maps back to one of these four layers — refer back here whenever you're unsure where a new concept fits.</footer>
+
+<div class="lesson-nav">
+  <span></span>
+  <span><a href="0002-ip-addressing-subnetting.html">Next: IP addressing & subnetting &rarr;</a></span>
+</div>
+
+</body>
+</html>

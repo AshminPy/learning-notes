@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2 — IP Addressing & Subnetting</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 2 of 20</p>
+<h1>IP Addressing & Subnetting</h1>
+
+<p>An IP address alone doesn't tell you which part identifies the network and which part identifies the specific device on it — you need a second number, the subnet mask (or its shorthand, CIDR notation), to know that split. This is the single most load-bearing piece of networking math you'll use in cloud work, because every VPC, subnet, and security group references it directly.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>10.0.1.5/24</code> means: the first 24 bits (<code>10.0.1</code>) identify the network, the remaining 8 bits identify this specific host within it. That <code>/24</code> network can hold 256 addresses (10.0.1.0 through 10.0.1.255), two of which are reserved (network and broadcast addresses), leaving 254 usable.</p>
+
+<h2>Reading CIDR notation</h2>
+<table>
+<tr><th>CIDR</th><th>Subnet mask</th><th>Total addresses</th><th>Usable hosts</th></tr>
+<tr><td>/24</td><td>255.255.255.0</td><td>256</td><td>254</td></tr>
+<tr><td>/25</td><td>255.255.255.128</td><td>128</td><td>126</td></tr>
+<tr><td>/28</td><td>255.255.255.240</td><td>16</td><td>14</td></tr>
+<tr><td>/16</td><td>255.255.0.0</td><td>65,536</td><td>65,534</td></tr>
+</table>
+<p>Every extra bit in the prefix (moving from /24 to /25) cuts the address space in half. The relationship is simple: usable hosts = 2^(32 − prefix length) − 2 (subtracting the network and broadcast addresses).</p>
+
+<h2>Private address ranges</h2>
+<p>Three IPv4 ranges are reserved for private networks (never routed on the public internet) — this is exactly what you're using inside a VPC:</p>
+<table>
+<tr><th>Range</th><th>CIDR</th></tr>
+<tr><td>10.0.0.0 – 10.255.255.255</td><td>10.0.0.0/8</td></tr>
+<tr><td>172.16.0.0 – 172.31.255.255</td><td>172.16.0.0/12</td></tr>
+<tr><td>192.168.0.0 – 192.168.255.255</td><td>192.168.0.0/16</td></tr>
+</table>
+<p class="callout mistake">Picking an overlapping CIDR range for two networks you'll eventually need to connect (via VPN or peering) is a common, painful mistake — the overlap makes routing between them ambiguous or impossible without renumbering later. Plan non-overlapping ranges up front if any future connection is plausible.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You're given <code>192.168.1.0/26</code>. How many usable host addresses does that subnet have?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">62. A /26 leaves 6 bits for hosts (32-26=6), so 2^6 = 64 total addresses, minus 2 reserved (network + broadcast) = 62 usable.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>ipcalc 10.0.1.5/24        # if installed — shows network, broadcast, usable range
+# or do the math by hand: 32 - prefix = host bits, 2^host_bits - 2 = usable hosts</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc4632" target="_blank" rel="noopener">RFC 4632 — Classless Inter-domain Routing (CIDR)</a> — the official IETF specification.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>CIDR notation (<code>/24</code>) states how many bits identify the network — the rest identify hosts within it.</li>
+    <li>Usable hosts = 2^(32 − prefix) − 2, reserving one address for the network and one for broadcast.</li>
+    <li>10.0.0.0/8, 172.16.0.0/12, and 192.168.0.0/16 are the reserved private ranges — plan non-overlapping ranges if networks might ever connect.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Every cloud VPC you create asks for a CIDR block on day one — getting this math right up front avoids a painful re-architecture later.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0001-layered-model.html">&larr; Back: How data actually moves</a></span>
+  <span><a href="0003-ipv4-vs-ipv6.html">Next: IPv4 vs IPv6 basics &rarr;</a></span>
+</div>
+
+</body>
+</html>
