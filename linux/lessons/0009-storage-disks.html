@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 9 — Storage & Disks</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 9 of 26</p>
+<h1>Storage & Disks</h1>
+
+<p>A raw disk (<code>/dev/sda</code>) is useless until it's partitioned, formatted with a filesystem, and mounted somewhere in the directory tree. Those are three separate, ordered steps — and understanding them is what turns "disk full" or "where did my drive go" into a two-minute fix instead of a mystery.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>/dev/sda</code> is the whole disk. <code>/dev/sda1</code> is its first partition. Format that partition with a filesystem (<code>mkfs.ext4 /dev/sda1</code>), then mount it (<code>mount /dev/sda1 /data</code>) to make its contents appear at <code>/data</code>.</p>
+
+<h2>The three layers</h2>
+<table>
+<tr><th>Layer</th><th>What it is</th><th>Common tool</th></tr>
+<tr><td>Partition</td><td>A logical slice of a physical disk</td><td><code>fdisk</code>, <code>parted</code>, <code>lsblk</code> to view</td></tr>
+<tr><td>Filesystem</td><td>The structure written onto a partition so files can actually be stored (ext4, xfs)</td><td><code>mkfs.ext4</code>, <code>mkfs.xfs</code></td></tr>
+<tr><td>Mount</td><td>Attaching that filesystem to a directory so you can use it</td><td><code>mount</code>, <code>umount</code>, <code>/etc/fstab</code> for persistence</td></tr>
+</table>
+
+<h2>Checking what you have</h2>
+<pre><code>lsblk              # tree view of every disk and partition
+df -h              # disk usage per mounted filesystem, human-readable
+mount | grep sda1  # is this partition currently mounted, and where</code></pre>
+<p class="callout mistake">A <code>mount</code> command done by hand disappears on reboot. To make a mount permanent, add a line to <code>/etc/fstab</code> — otherwise you'll find the mount point empty again after the next restart, with no error to explain why.</p>
+
+<h2>LVM — one more layer of flexibility</h2>
+<p>Logical Volume Manager (LVM) sits between partitions and filesystems. Instead of formatting a partition directly, you group one or more partitions into a Volume Group, then carve out Logical Volumes from that group. The payoff: you can grow a logical volume later (add more disk to the group, extend the volume, resize the filesystem) without unmounting or reformatting anything — something a plain partition can't do without much more disruption.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You manually run <code>mount /dev/sdb1 /data</code> and it works. After the next reboot, <code>/data</code> is empty. Why?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">A manual <code>mount</code> only lasts for the current boot — it was never written to <code>/etc/fstab</code>, the file that tells the system which filesystems to mount automatically at every startup.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>lsblk                    # see every disk and partition on this machine
+df -h                    # see usage per mounted filesystem
+cat /etc/fstab           # see what's configured to mount at boot</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man7.org/linux/man-pages/man5/fstab.5.html" target="_blank" rel="noopener">fstab(5) man page</a> — the official reference for the filesystem table.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Disk setup is three ordered layers: partition, then filesystem, then mount.</li>
+    <li>A manual <code>mount</code> doesn't survive reboot — <code>/etc/fstab</code> is what makes a mount permanent.</li>
+    <li>LVM adds a flexible layer between partitions and filesystems, letting you resize storage without reformatting.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">"Disk full" is often really "one filesystem full" — <code>df -h</code> shows usage per mount point, not per physical disk, so check the right line.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0008-package-management.html">&larr; Back: Package management</a></span>
+  <span><a href="0010-networking-fundamentals.html">Next: Networking fundamentals &rarr;</a></span>
+</div>
+
+</body>
+</html>

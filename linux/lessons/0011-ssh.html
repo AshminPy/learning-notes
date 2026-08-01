@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 11 — SSH</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 11 of 26</p>
+<h1>SSH</h1>
+
+<p>SSH (Secure Shell) is how you get an encrypted remote terminal on another machine. In production, key-based authentication is the standard — not because passwords are inconvenient, but because they're the weakest, most guessable credential a server can expose to the internet.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>ssh-keygen -t ed25519</code> creates a key pair: a private key that never leaves your machine, and a public key you copy to any server you want to access. The server checks a signature made with the private key against the public key it already trusts — no password ever crosses the network.</p>
+
+<h2>Key-based auth, step by step</h2>
+<table>
+<tr><th>Step</th><th>Command</th></tr>
+<tr><td>1. Generate a key pair (once, on your own machine)</td><td><code>ssh-keygen -t ed25519</code></td></tr>
+<tr><td>2. Copy the public key to a server</td><td><code>ssh-copy-id user@server</code></td></tr>
+<tr><td>3. Connect — no password needed</td><td><code>ssh user@server</code></td></tr>
+</table>
+<p>The public key ends up in <code>~/.ssh/authorized_keys</code> on the server. Anyone whose private key matches an entry in that file can log in — which is why the private key file itself must stay readable only by its owner (<code>chmod 600</code>) and never be copied or emailed anywhere.</p>
+
+<h2>~/.ssh/config — stop retyping connection details</h2>
+<pre><code>Host prod-web
+    HostName 203.0.113.10
+    User deploy
+    IdentityFile ~/.ssh/id_ed25519_prod
+    Port 2222</code></pre>
+<p>With this saved, <code>ssh prod-web</code> connects with the right user, key, and port automatically — no need to remember or retype any of it.</p>
+
+<h2>Hardening basics</h2>
+<p class="callout security">Two settings in <code>/etc/ssh/sshd_config</code> matter most for a server exposed to the internet: <code>PasswordAuthentication no</code> (forces key-only login, eliminating password brute-force) and <code>PermitRootLogin no</code> (forces attackers — and admins — to log in as a normal user and use <code>sudo</code>, never root directly). Change either one, then <code>systemctl restart sshd</code> to apply it.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You generate a new SSH key pair. Which file do you copy to the remote server?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The public key (the <code>.pub</code> file). The private key never leaves your own machine — that's the entire security model.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>ls -la ~/.ssh/                  # see your existing keys, if any
+cat ~/.ssh/config 2>/dev/null   # see any saved host shortcuts
+ssh -v user@host                # -v shows exactly which key/method was tried</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man.openbsd.org/sshd_config" target="_blank" rel="noopener">sshd_config(5) man page</a> — the official OpenSSH server configuration reference.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>SSH key auth: private key stays on your machine, public key goes on the server's <code>authorized_keys</code>.</li>
+    <li><code>~/.ssh/config</code> saves per-host connection details so you don't retype them.</li>
+    <li>Production hardening: disable password auth and disable direct root login in <code>sshd_config</code>.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder"><code>ssh -v</code> (or <code>-vvv</code> for more detail) is the fastest way to see exactly why a connection is being rejected — which key was offered, and why the server refused it.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0010-networking-fundamentals.html">&larr; Back: Networking fundamentals</a></span>
+  <span><a href="0012-bash-fundamentals.html">Next: Bash scripting fundamentals &rarr;</a></span>
+</div>
+
+</body>
+</html>
