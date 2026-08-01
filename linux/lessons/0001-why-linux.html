@@ -3,198 +3,56 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lesson 1 — The Server That Doesn't Behave Like Any Other</title>
+<title>Lesson 1 — The Kernel and the Distro</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 
-<p class="eyebrow">Linux for Cloud & SRE / Zero to Hero — Lesson 1 of 26</p>
-<h1>The Server That Doesn't Behave Like Any Other</h1>
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 1 of 26</p>
+<h1>The Kernel and the Distro</h1>
 
-<h2>Learning objectives</h2>
-<ul>
-<li>Identify an unfamiliar Linux system fast — kernel, distro, and shell — before touching anything else</li>
-<li>Reason from evidence instead of assuming "it's Linux, it'll behave the way I expect"</li>
-<li>Explain why the kernel/distro/shell split exists, and why it just bit you</li>
-<li>Explain why cloud infrastructure runs on Linux almost universally — and why that still didn't save you tonight</li>
-</ul>
+<p>"Linux" strictly means the kernel — the program that talks to hardware and manages CPU, memory, and devices for every other program. A "distro" (Ubuntu, Debian, Alpine, RHEL) is the kernel plus a curated set of userspace tools, a package manager, and defaults, assembled by a specific organization.</p>
 
-<h2>The scenario</h2>
-<p class="callout">It's 3:47 AM. PagerDuty woke you up: an API node stopped responding to health checks and got cycled out of the load balancer. Your team just finished migrating to a cheaper base image last week — a cost initiative finance pushed for. This is the first real incident on the new image.</p>
-<p>You SSH in. You run the first command from your incident runbook, the one that's worked for two years on every box you've ever touched:</p>
-<pre><code>$ ls -la /var/log
-ls: command not found</code></pre>
-<p><strong>Where do you begin?</strong> Your runbook assumes tools that apparently aren't there. You don't even know yet whether this is a broken shell, a broken PATH, a stripped-down image, or something worse. The incident is still live. Every minute spent confused is a minute the API stays degraded.</p>
+<p class="callout"><strong>Simple example:</strong> think of the kernel as a car's engine, and the distro as the whole car built around it — dashboard, seats, trim. Ubuntu and Alpine can share the exact same engine (kernel) and still feel completely different to drive, because everything above the engine is a separate set of choices.</p>
 
-<h2>Stop and think</h2>
+<h2>Why this split matters</h2>
+<p>Two boxes can both honestly be "Linux" and have almost nothing in common above the kernel — different tools installed, different defaults, a different <code>$PATH</code>. Alpine, for example, doesn't ship the GNU tools (<code>ls</code>, <code>cat</code>, etc.) you'd expect on Ubuntu by default — it uses BusyBox instead, to stay small. Knowing which layer you're looking at — kernel (nearly identical everywhere) vs. distro (the layer that actually varies) — is the first habit of working confidently on an unfamiliar server.</p>
+
+<h2>Try it — before looking below</h2>
 <div class="quiz">
-<p>Q. Before running anything else — what's your very first move, and why?</p>
+<p>Q1. You SSH into a server and a command you use every day isn't there. Is that more likely a kernel problem or a distro problem?</p>
 <input type="text" id="q1" placeholder="type your answer">
-<button onclick="document.getElementById('a1').classList.add('shown')">Reveal reasoning</button>
-<div class="answer" id="a1">Confirm what you're actually standing on before diagnosing anything else. <code>ls</code> failing could mean a dozen different things — you need to narrow the search space fast, not start guessing fixes. The senior-engineer instinct here is: identify the environment first, diagnose second.</div>
-</div>
-<div class="quiz">
-<p>Q. What's a dangerous assumption to make right now?</p>
-<input type="text" id="q2" placeholder="type your answer">
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal reasoning</button>
-<div class="answer" id="a2">Assuming "Linux is Linux" — that every Linux box behaves identically. It's also dangerous to assume the shell itself is broken/corrupted and start trying to "fix bash" — that's jumping to a fix before you have evidence of a cause.</div>
-</div>
-<div class="quiz">
-<p>Q. What could this NOT be? (Ruling things out is as useful as ruling things in.)</p>
-<input type="text" id="q3" placeholder="type your answer">
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal reasoning</button>
-<div class="answer" id="a3">Almost certainly not a kernel panic or a hardware fault — the box is up, SSH worked, and you got a real shell prompt with a real error message, not a crash or a hang. Whatever's wrong is at the userspace/tooling layer, not underneath it. That single observation already massively narrows the investigation.</div>
-</div>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">A distro problem — the kernel doesn't decide which userspace tools are installed. Different distros ship different toolsets by design.</div>
 </div>
 
-<h2>Build the mental model</h2>
-<p class="callout"><strong>Linux is not one thing.</strong> "Linux" strictly means the kernel — the program that talks to hardware and arbitrates access to it for every other program, through system calls. A "distro" (Ubuntu, Debian, Alpine, RHEL) is the kernel plus a curated bundle of userspace tools, a package manager, and configuration choices, assembled by a specific organization. Two boxes can both honestly be "Linux" and still have almost nothing in common above the kernel — different tools installed, different defaults, different <code>$PATH</code>.</p>
-<p>The kernel's job: manage CPU time, manage memory, manage devices, and enforce isolation between programs and users. Everything else — <code>ls</code>, your shell, Docker, a web server — is <strong>userspace</strong>: ordinary programs asking the kernel for things instead of doing them directly.</p>
-<div class="mermaid-diagram">
-<pre class="mermaid">
-flowchart TB
-    HW["Hardware — CPU, RAM, disk, NIC"]
-    K["Linux Kernel — scheduling, memory, drivers, syscalls (same on every distro)"]
-    SYS["System layer — glibc, systemd, core utilities (varies by distro)"]
-    SH["Shell — bash / sh (may or may not be installed on a minimal image)"]
-    APP["Your tools — ls, curl, ss... (may be missing entirely)"]
-    HW --> K --> SYS --> SH --> APP
-    style SYS fill:#fff3cd
-    style APP fill:#f8d7da
-</pre>
-</div>
-<p>That diagram is the whole incident in one picture: the kernel layer is nearly guaranteed identical to every other box you've used. Everything above it — the layer that just failed you — is exactly where a "cheaper base image" migration would make changes.</p>
-
-<h2>Generate hypotheses</h2>
-<table>
-<tr><th>Hypothesis</th><th>Plausible?</th></tr>
-<tr><td>The shell itself is corrupted/broken</td><td>Tempting, but you got a clean, correctly-formatted error message back — a broken shell usually fails messier than that.</td></tr>
-<tr><td><code>ls</code> isn't installed on this image at all</td><td>Plausible — minimal/cost-optimized images strip things aggressively.</td></tr>
-<tr><td><code>ls</code> is installed, but not on this shell's search path (<code>$PATH</code>)</td><td>Plausible — equally likely, different fix.</td></tr>
-<tr><td>You're not actually on the server you think you are (wrong host)</td><td>Worth ruling out fast — cheap to check, expensive to miss.</td></tr>
-</table>
-
-<h2>Investigate</h2>
-<div class="tryit">
-<p class="eyebrow">Try it</p>
-<p>Rule out the wrong-host hypothesis and identify the system, in order:</p>
-<pre><code>hostname
-uname -a</code></pre>
-<pre><code>Linux api-node-07 6.8.0-generic #1 SMP x86_64 GNU/Linux</code></pre>
-<p>Confirmed: right host, real kernel, no crash. Next, identify the distro — this is the standard, distro-neutral way, works identically on Ubuntu, Debian, Alpine, RHEL:</p>
+<h2>Now identify your own system</h2>
+<p>Open a terminal on any Linux machine you have access to and run each command:</p>
+<pre><code>uname -a</code></pre>
+<p>Shows the kernel version and architecture.</p>
 <pre><code>cat /etc/os-release</code></pre>
-<pre><code>ID=alpine
-VERSION_ID=3.19
-PRETTY_NAME="Alpine Linux v3.19"</code></pre>
-<p><strong>There's the first real signal.</strong> Your old boxes were Ubuntu. This one is Alpine — a distro specifically built to be extremely minimal (it's a common choice for exactly the "cut cloud costs" reason your team migrated for). Now test the two remaining hypotheses directly:</p>
-<pre><code>echo $PATH
-which ls</code></pre>
-<pre><code>/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-(no output from which — empty)</code></pre>
-</div>
+<p>The standard, distro-neutral way to identify exactly which distro you're on — works identically on Ubuntu, Debian, Alpine, RHEL. Look at the <code>ID</code> and <code>VERSION_ID</code> fields.</p>
+<pre><code>echo $SHELL</code></pre>
+<p>Your default shell.</p>
 
-<h2>Gather evidence</h2>
-<p><code>$PATH</code> looks completely normal and standard — every directory you'd expect. But <code>which ls</code> returned nothing at all, not "not on PATH," but genuinely nothing found anywhere the shell looked.</p>
-
-<h2>Eliminate wrong assumptions</h2>
-<p class="callout mistake">The "$PATH is misconfigured" hypothesis is now eliminated by evidence, not assumption — the PATH is fine, standard, nothing missing from it. If you'd jumped straight to "let me fix PATH" without checking <code>which</code> first, you'd have wasted real incident time editing a file that was never broken. This is exactly the discipline that separates fast incident response from panic-driven guessing: test the cheap hypothesis before acting on it.</p>
-
-<h2>Root cause</h2>
-<p>Alpine Linux doesn't ship GNU coreutils (the package that provides the full-featured <code>ls</code>, <code>cat</code>, etc. you're used to on Ubuntu/Debian) by default. It uses BusyBox — a single tiny binary that provides minimal, combined implementations of dozens of common commands, specifically to keep image size small. Your runbook's exact command genuinely does not exist as a separate binary on this box.</p>
-
-<h2>Fix</h2>
-<div class="tryit">
-<p class="eyebrow">Try it</p>
-<pre><code># Confirm BusyBox is what's actually providing your shell commands
-ls --help 2>&1 | head -1
-# On Alpine, many commands are symlinks into one busybox binary
-which busybox
-
-# Immediate fix for the live incident: BusyBox's ls works fine, just invoke it directly
-busybox ls -la /var/log
-
-# Real fix if your team needs GNU coreutils behavior specifically:
-apk add coreutils</code></pre>
-</div>
-
-<h2>Explain WHY the fix worked</h2>
-<p>Nothing was actually broken. The kernel layer (identical to every box you've used) was never the problem — the userspace layer (which a distro assembles, and which changed entirely with the base-image migration) was providing a different toolset than your runbook assumed. Once you correctly identified <em>which</em> distro-provided toolset you were standing on, the fix was one command, not a mystery.</p>
-
-<h2>Prevent recurrence</h2>
-<p class="callout production">Standardize what "the server" means across your fleet, or explicitly document when it doesn't. Before rolling out a base-image change to production, run your actual runbooks against it in staging — this incident should have been caught before 3:47 AM, not during it. Add a "confirm the environment" step to the top of every runbook, not just this one.</p>
-<ul class="checklist">
-<li><input type="checkbox" disabled> Confirm hostname before doing anything else on an unfamiliar/paged-in box</li>
-<li><input type="checkbox" disabled> Confirm distro + version (<code>cat /etc/os-release</code>) before assuming any tool exists</li>
-<li><input type="checkbox" disabled> <code>which &lt;tool&gt;</code> before blaming <code>$PATH</code> — check the cheap hypothesis before the more work-intensive one</li>
-<li><input type="checkbox" disabled> Base-image changes get runbook-tested in staging before reaching production</li>
-</ul>
-
-<h2>Widen the lens</h2>
-<p><strong>Why does the kernel/distro split exist at all?</strong> Because "Linux" the kernel is deliberately policy-free about what runs on top of it — that's exactly what let Alpine optimize aggressively for size (BusyBox, musl libc) while Ubuntu optimizes for broad compatibility (GNU coreutils, glibc), from the identical kernel underneath. One kernel, radically different trade-offs above it.</p>
-<p><strong>Why does nearly all cloud infrastructure run Linux at all, given tonight's pain?</strong> No per-seat licensing cost at fleet scale, open-source portability with no vendor lock-in at the OS layer, decades of battle-testing, and it's the literal foundation containers are built on (kernel namespaces/cgroups — Lesson 21). Tonight's incident wasn't a Linux problem; it was a "we changed distros without testing" problem — a risk that exists in any ecosystem, not evidence against Linux itself.</p>
-<p><strong>When should you actively avoid a minimal distro like Alpine?</strong> When your team depends on GNU-specific tool behavior it hasn't audited, when you need broad third-party software compatibility (musl libc breaks some pre-built binaries glibc doesn't), or when the operational cost of retraining runbooks/tooling outweighs the image-size savings. Minimal images are a real trade-off, not a strictly-better upgrade.</p>
-<table>
-<tr><th>Scale</th><th>Does the distro choice matter more or less?</th></tr>
-<tr><td>10 servers, one team</td><td>Less — you can retrain everyone by lunch.</td></tr>
-<tr><td>10,000 servers, many teams, years of accumulated runbooks/tooling</td><td>Much more — a distro-wide migration is a genuine project with real incident risk, exactly like tonight.</td></tr>
-</table>
-
-<h2>Interview questions</h2>
-<div class="quiz">
-<p>Q. A teammate says "the server is acting weird, it's like half the normal commands are missing." Walk through how you'd investigate — not the answer, the process.</p>
-<input type="text" id="iq1" placeholder="type your answer">
-<button onclick="document.getElementById('ia1').classList.add('shown')">Reveal model answer</button>
-<div class="answer" id="ia1">Confirm you're on the right host, confirm the kernel is healthy (uname), identify the distro (os-release) rather than assuming, then test specific hypotheses with cheap checks (which/echo $PATH) before acting on any fix — evidence before action, cheapest test first.</div>
-</div>
-<div class="quiz">
-<p>Q. What's the practical difference between "Linux" and "a Linux distribution," and why does an SRE need to care?</p>
-<input type="text" id="iq2" placeholder="type your answer">
-<button onclick="document.getElementById('ia2').classList.add('shown')">Reveal model answer</button>
-<div class="answer" id="ia2">Linux is the kernel — near-identical behavior across every distro. A distribution is everything assembled on top, which varies enormously (toolset, package manager, defaults). An SRE needs to care because incident runbooks, scripts, and muscle memory are built against a specific distro's userspace, not "Linux" in the abstract — assuming portability without verifying it is a real production risk.</div>
-</div>
-</div>
-
-<h2>Certification notes</h2>
-<p>This diagnostic habit — confirm the environment before diagnosing further — underlies every LFCS domain. The exam is distribution-neutral and performance-based, meaning real tasks on a real box you may not have used before; the "identify what you're standing on first" instinct practiced here is directly rewarded.</p>
-
-<h2>Official references</h2>
-<ul>
-<li><a href="https://www.kernel.org/" target="_blank" rel="noopener">kernel.org</a> — the official home of the Linux kernel project</li>
-<li><a href="https://www.freedesktop.org/software/systemd/man/latest/os-release.html" target="_blank" rel="noopener">os-release(5) man page</a></li>
-<li><a href="https://www.alpinelinux.org/about/" target="_blank" rel="noopener">Alpine Linux — About</a> — official description of Alpine's minimal, musl/BusyBox-based design</li>
-<li><a href="https://training.linuxfoundation.org/certification/linux-foundation-certified-sysadmin-lfcs/" target="_blank" rel="noopener">Linux Foundation — LFCS certification page</a> (verified 2026-08-01)</li>
-</ul>
+<h2>Source</h2>
+<p><a href="https://www.kernel.org/" target="_blank" rel="noopener">kernel.org</a> — the official home of the Linux kernel project.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>The diagnostic method: confirm environment → test cheap hypotheses before acting → eliminate with evidence, not assumption → only then fix.</li>
-    <li>Kernel = near-identical across distros. Distro = the layer that actually changes and actually bit you tonight.</li>
-    <li>"Command not found" has multiple real causes (not installed vs. not on PATH vs. wrong host) — evidence tells you which, guessing wastes incident time.</li>
-    <li>Minimal distros (Alpine/BusyBox/musl) are a genuine trade-off — smaller and cheaper, but with real compatibility costs your runbooks need to account for.</li>
+    <li>Linux = the kernel. A distro = kernel + userspace tools + package manager + defaults.</li>
+    <li>The kernel is nearly identical across distros; the userspace layer is where real differences live.</li>
+    <li><code>uname -a</code> and <code>cat /etc/os-release</code> are your fastest way to identify an unfamiliar system.</li>
   </ul>
 </div>
 
-<h2>Progressive challenge</h2>
-<ol>
-<li><strong>Level 1 — Fix:</strong> On a real Alpine box (or container: <code>docker run -it alpine sh</code>), get <code>ls -la</code>, <code>curl</code>, and <code>ping</code> all working using the smallest number of <code>apk add</code> commands possible.</li>
-<li><strong>Level 2 — Diagnose:</strong> You're handed SSH access to an unfamiliar box mid-incident with zero context. In under 2 minutes, produce a 5-line report: hostname, kernel, distro, shell, and one thing that looks unusual. No hints beyond what this lesson taught.</li>
-<li><strong>Level 3 — Design:</strong> Your team wants to standardize base images across 200 production servers spanning 3 different original distros. Propose an approach that avoids a repeat of tonight's incident. What do you migrate to, and how do you validate it before rollout?</li>
-<li><strong>Level 4 — Explain:</strong> Explain to a teammate (out loud or in writing, no notes) why "it's Linux, it should just work the same" is a dangerous assumption — using tonight's incident as your example.</li>
-<li><strong>Level 5 — Optimize:</strong> Your CFO wants smaller/cheaper images (Alpine-style). Your on-call team wants maximum compatibility (Ubuntu-style). Design a base-image strategy that gets real cost savings without repeating tonight's pain — what do you actually recommend, and what do you give up?</li>
-</ol>
-
-<footer class="teacher-reminder">The kernel/userspace split feels abstract until it's 3am and it's the only thing standing between you and a resolved incident — that's the point of starting here instead of with a definition.</footer>
+<footer class="teacher-reminder">Stuck on why this matters day to day? Ask — this is exactly the habit that saves time the first time a server surprises you.</footer>
 
 <div class="lesson-nav">
-  <span></span>
-  <span><a href="0002-filesystem-navigation.html">Next: Lesson 2 — The Disk That Isn't Full &rarr;</a></span>
+  <span>&larr; Start</span>
+  <span><a href="0002-filesystem-navigation.html">Next: Filesystem hierarchy & navigation &rarr;</a></span>
 </div>
-
-<script type="module">
-  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-  mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
-</script>
 
 </body>
 </html>

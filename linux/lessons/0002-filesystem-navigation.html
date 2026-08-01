@@ -3,195 +3,65 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lesson 2 — The Disk That Isn't Full</title>
+<title>Lesson 2 — The Filesystem Tree</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 
-<p class="eyebrow">Linux for Cloud & SRE / Zero to Hero — Lesson 2 of 26</p>
-<h1>The Disk That Isn't Full</h1>
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 2 of 26</p>
+<h1>The Filesystem Tree</h1>
 
-<h2>Learning objectives</h2>
-<ul>
-<li>Diagnose "no space left on device" when the obvious check says there's plenty of space</li>
-<li>Navigate the filesystem with absolute and relative paths, and know why the difference matters in automation</li>
-<li>Explain what lives where under the Filesystem Hierarchy Standard, and use that to find a problem fast</li>
-<li>Explain hard links vs symbolic links well enough to predict what happens when you delete one</li>
-</ul>
+<p>Linux has exactly one filesystem tree, rooted at <code>/</code>. Unlike Windows' separate drive letters (C:\, D:\), a second disk gets <strong>mounted</strong> onto an existing directory — from then on, everything under that directory lives on the separate disk, but looks like any other part of the tree.</p>
 
-<h2>The scenario</h2>
-<p class="callout">A deploy pipeline fails at 11 AM on a Tuesday — nothing dramatic, just a build step writing its output artifact: <code>write failed: No space left on device</code>. You check the obvious thing first:</p>
-<pre><code>$ df -h /
-Filesystem      Size  Used Avail Use% Mounted on
-/dev/sda1        50G   30G   18G  64% /</code></pre>
-<p>64% used, 18GB free. The disk is not full. The error message says it is. <strong>Where do you begin?</strong></p>
+<p class="callout"><strong>Simple example:</strong> think of it like one company org chart, not separate charts per office. A new office (a new disk) doesn't get its own chart — it's grafted onto the existing one at a specific reporting line (a mount point).</p>
 
-<h2>Stop and think</h2>
+<h2>What lives where — the Filesystem Hierarchy Standard (FHS)</h2>
+<table>
+<tr><th>Path</th><th>What's there</th></tr>
+<tr><td><code>/etc</code></td><td>System-wide configuration</td></tr>
+<tr><td><code>/var/log</code></td><td>Log files</td></tr>
+<tr><td><code>/tmp</code></td><td>Temporary files — often cleared on reboot</td></tr>
+<tr><td><code>/home/&lt;user&gt;</code></td><td>Personal files per user</td></tr>
+<tr><td><code>/opt</code></td><td>Third-party software not managed by the package manager</td></tr>
+</table>
+<p>Knowing this means you can guess where a problem lives instead of searching the whole disk — a misbehaving service's config is almost always under <code>/etc</code>, its logs almost always under <code>/var/log</code>.</p>
+
+<h2>Absolute vs relative paths</h2>
+<p>An absolute path starts with <code>/</code> and means the same thing from anywhere: <code>/etc/nginx/nginx.conf</code>. A relative path depends on your current directory: <code>../config/app.conf</code>. Scripts and automation should use absolute paths — a relative path in a cron job, run from a different working directory than you tested in, can point at the wrong thing entirely.</p>
+
+<h2>Try it — before looking below</h2>
 <div class="quiz">
-<p>Q. The error and the evidence directly contradict each other. What's your first move?</p>
+<p>Q1. A cron job using a relative path works when you run it by hand, but fails at 3am when cron runs it. Why?</p>
 <input type="text" id="q1" placeholder="type your answer">
-<button onclick="document.getElementById('a1').classList.add('shown')">Reveal reasoning</button>
-<div class="answer" id="a1">Question whether <code>df -h</code> is actually measuring the thing that's exhausted. It measures free bytes. "No space left" doesn't have to mean bytes — a filesystem can run out of something else entirely while bytes remain plentiful.</div>
-</div>
-<div class="quiz">
-<p>Q. What's a dangerous assumption here?</p>
-<input type="text" id="q2" placeholder="type your answer">
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal reasoning</button>
-<div class="answer" id="a2">Assuming the error message is simply wrong or stale, and just retrying the build. If the real resource is exhausted, retrying wastes time and the next run fails identically — or somewhere else entirely.</div>
-</div>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Cron doesn't start in the same working directory as your interactive shell — the relative path resolves against a different starting point, so it points somewhere else (or nowhere).</div>
 </div>
 
-<h2>Build the mental model</h2>
-<p class="callout">A filesystem tracks two separate, independently-exhaustible resources: <strong>data blocks</strong> (the actual bytes of file content — what <code>df -h</code> shows) and <strong>inodes</strong> (fixed-size metadata slots, one consumed per file or directory, allocated when the filesystem was created — what <code>df -i</code> shows). You can run out of either one completely independently of the other. A million 0-byte files can exhaust every inode on a disk that's otherwise almost empty.</p>
+<h2>Now navigate your own system</h2>
+<pre><code>pwd                  # print current directory (absolute path)
+cd /var/log           # absolute path — works from anywhere
+ls -la                # list all, including hidden files
+cd -                  # jump back to your previous directory
+find /etc -name "*.conf" -type f 2>/dev/null | head -5</code></pre>
 
-<h2>Generate hypotheses</h2>
-<table>
-<tr><th>Hypothesis</th><th>Plausible?</th></tr>
-<tr><td>Bytes are actually exhausted somewhere <code>df -h /</code> doesn't show (a different mount)</td><td>Worth ruling out — the pipeline might write somewhere other than <code>/</code>.</td></tr>
-<tr><td>Inode exhaustion — plenty of bytes free, no metadata slots left</td><td>Fits the contradiction exactly.</td></tr>
-<tr><td>A permissions problem masquerading as a space error</td><td>Less likely — Linux's real permission-denied errors read differently, but worth a fast check since it's cheap.</td></tr>
-</table>
-
-<h2>Investigate</h2>
-<div class="tryit">
-<p class="eyebrow">Try it</p>
-<p>Check every mounted filesystem for bytes, not just <code>/</code>:</p>
-<pre><code>df -h</code></pre>
-<pre><code>Filesystem      Size  Used Avail Use% Mounted on
-/dev/sda1        50G   30G   18G  64% /
-/dev/sdb1        20G  1.2G   17G   7% /var/app-data</code></pre>
-<p>Bytes are fine everywhere. Now test the inode hypothesis directly — same flag family, different letter:</p>
-<pre><code>df -i</code></pre>
-<pre><code>Filesystem      Inodes  IUsed   IFree IUse% Mounted on
-/dev/sda1      3276800 3276800     0  100%  /
-/dev/sdb1      1310720   50221 1260499    4%  /var/app-data</code></pre>
-</div>
-
-<h2>Gather evidence</h2>
-<p><code>/</code> is at <strong>100% inode usage</strong> — zero free — while sitting at only 64% byte usage. That's your contradiction, fully explained by evidence, not a guess. Now find what's actually consuming the inodes:</p>
-<div class="tryit">
-<p class="eyebrow">Try it</p>
-<pre><code># Count files per top-level directory to find the culprit fast
-for d in /var /tmp /home /opt; do
-  echo "$d: $(find "$d" -xdev | wc -l)"
-done</code></pre>
-<pre><code>/var: 2984112
-/tmp: 812
-/home: 4021
-/opt: 340</code></pre>
-</div>
-<p><code>/var</code> is wildly out of proportion. One more level in:</p>
-<pre><code>find /var -maxdepth 3 -type d | xargs -I{} sh -c 'echo "$(find "{}" -maxdepth 1 | wc -l) {}"' | sort -rn | head -3</code></pre>
-<pre><code>2981004 /var/app-data/sessions
- 812 /tmp
- 340 /opt</code></pre>
-
-<h2>Eliminate wrong assumptions</h2>
-<p class="callout mistake">Notice <code>/var/app-data/sessions</code> is under <code>/var</code> — but it wasn't originally on a separate mount, meaning someone (correctly, per FHS conventions covered below) intended session data to live under <code>/var</code>'s variable-data purpose, but never mounted it separately. If you'd assumed "the app writes to <code>/var/app-data</code>, and <code>/var/app-data</code> is a separate healthy mount at 7%" without checking, you'd have missed the real problem entirely — that path only became a real separate mount recently, and the OLD session files from before that change are still sitting on the root filesystem, silently eating every inode.</p>
-
-<h2>Root cause</h2>
-<p>An application writing one tiny file per user session, never cleaning old ones up, accumulated millions of near-empty files over months — entirely on the root filesystem, before a separate data mount was added and only new sessions started landing there. Root's fixed inode count (set when the filesystem was formatted) was exhausted, even though almost no actual disk space was used.</p>
-
-<h2>Fix</h2>
-<div class="tryit">
-<p class="eyebrow">Try it</p>
-<pre><code># Confirm before deleting anything at this scale
-find /var/app-data/sessions -type f | wc -l
-
-# Delete in batches — 3 million unlinks at once can itself cause problems
-find /var/app-data/sessions -type f -mtime +30 -delete
-
-# Re-check
-df -i /</code></pre>
-</div>
-
-<h2>Explain WHY the fix worked</h2>
-<p>Deleting a file releases its inode back to the free pool — that's the actual resource that was exhausted, so that's the actual fix. Freeing bytes wouldn't have helped at all; the disk was never short on bytes.</p>
-
-<h2>Prevent recurrence</h2>
-<p class="callout production">Monitor <code>df -i</code> in every dashboard alongside <code>df -h</code> — most default monitoring only watches bytes. Fix the application to clean up its own session files, or move high-churn small-file data onto its own dedicated, properly-monitored mount from day one rather than discovering the gap during an incident.</p>
-<ul class="checklist">
-<li><input type="checkbox" disabled> Monitoring covers <code>df -i</code>, not just <code>df -h</code>, on every filesystem</li>
-<li><input type="checkbox" disabled> High-churn small-file workloads get their own mount, sized and monitored deliberately</li>
-<li><input type="checkbox" disabled> Cleanup/retention jobs exist for anything that writes files per-request/per-session</li>
-</ul>
-
-<h2>Widen the lens</h2>
-<p><strong>Why does the Filesystem Hierarchy Standard (FHS) matter here?</strong> It exists precisely so an engineer can predict where variable, high-churn data lives (<code>/var</code>) versus stable installed software (<code>/opt</code>, <code>/usr</code>) versus truly temporary data cleared on reboot (<code>/tmp</code>) — without that convention, "where did 3 million session files end up" would have no faster answer than searching the entire disk blind.</p>
-<div class="mermaid-diagram">
-<pre class="mermaid">
-flowchart TD
-    ROOT["/"]
-    ROOT --> ETC["/etc — config"]
-    ROOT --> VARD["/var — variable data (this incident)"]
-    ROOT --> TMP["/tmp — cleared on reboot, never for data you need to keep"]
-    ROOT --> OPT["/opt — installed software"]
-    style VARD fill:#f8d7da
-</pre>
-</div>
-<p><strong>Absolute vs relative paths — why it mattered in every command above:</strong> every investigation command used an absolute path (<code>/var/app-data/sessions</code>), unambiguous regardless of where your shell session happened to start. A relative path in the cleanup command above, run from the wrong working directory, could have deleted the wrong thing entirely — a classic cause of "it worked when I tested it, then deleted production data when cron ran it from a different directory."</p>
-<p><strong>Hard links vs symbolic links — the trap this incident could have hidden:</strong> if any of those session files had been <em>hard-linked</em> elsewhere (a second name for the same inode), deleting the original wouldn't free that inode at all — the data, and the inode, survive until the <em>last</em> hard link is removed. A symbolic link, by contrast, is its own separate file with its own separate inode, pointing at a path; deleting the target leaves it dangling but doesn't block reclaiming the target's inode. Always check with <code>ls -la</code> (link count in the second column) before assuming a delete actually reclaimed anything.</p>
-<table>
-<tr><th>Scale</th><th>Does inode planning matter more or less?</th></tr>
-<tr><td>A personal dev VM</td><td>Rarely matters — default inode counts are generous relative to typical usage.</td></tr>
-<tr><td>A production fleet handling millions of small per-request writes</td><td>Matters enormously — this exact incident, at scale, is one of the most common "impossible" disk-full reports SREs see.</td></tr>
-</table>
-
-<h2>Interview questions</h2>
-<div class="quiz">
-<p>Q. A server reports "no space left on device" but <code>df -h</code> shows 40% free. Walk through your investigation.</p>
-<input type="text" id="iq1" placeholder="type your answer">
-<button onclick="document.getElementById('ia1').classList.add('shown')">Reveal model answer</button>
-<div class="answer" id="ia1">Check df -i for inode exhaustion — a filesystem can run out of inodes (metadata slots) independent of byte usage, typically from too many small files. Locate the offending directory with a targeted find/count sweep, confirm before deleting, then fix the root cause (retention/cleanup), not just the symptom.</div>
-</div>
-<div class="quiz">
-<p>Q. You delete a large file but <code>df -h</code> shows no space freed. What's a likely explanation?</p>
-<input type="text" id="iq2" placeholder="type your answer">
-<button onclick="document.getElementById('ia2').classList.add('shown')">Reveal model answer</button>
-<div class="answer" id="ia2">Either a process still has the file open (Linux won't reclaim space until the last file handle closes — even after the directory entry is removed), or the file has other hard links still pointing at the same inode, so the underlying data isn't actually released yet.</div>
-</div>
-</div>
-
-<h2>Certification notes</h2>
-<p>LFCS's "Storage" (20%) and "Essential Commands" (20%) domains both draw directly on this exact scenario — expect real diskspace-troubleshooting tasks, not multiple-choice questions about FHS trivia.</p>
-
-<h2>Official references</h2>
-<ul>
-<li><a href="https://refspecs.linuxfoundation.org/FHS_3.0/fhs-3.0.html" target="_blank" rel="noopener">Filesystem Hierarchy Standard 3.0</a></li>
-<li><a href="https://man7.org/linux/man-pages/man1/find.1.html" target="_blank" rel="noopener">find(1) man page</a></li>
-<li><a href="https://man7.org/linux/man-pages/man2/link.2.html" target="_blank" rel="noopener">link(2) man page</a> — hard link semantics at the syscall level</li>
-</ul>
+<h2>Source</h2>
+<p><a href="https://refspecs.linuxfoundation.org/FHS_3.0/fhs-3.0.html" target="_blank" rel="noopener">Filesystem Hierarchy Standard 3.0</a> — the official Linux Foundation specification.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>"No space" isn't always about bytes — inodes are a separate, independently-exhaustible resource; check <code>df -i</code> alongside <code>df -h</code>.</li>
-    <li>FHS conventions (<code>/var</code> for variable data, <code>/tmp</code> for ephemeral, <code>/opt</code> for installed software) exist so you can predict where a problem lives instead of searching blind.</li>
-    <li>Absolute paths are unambiguous everywhere; relative paths depend on the working directory — a real risk in automation.</li>
-    <li>Hard links share the same inode/data; deleting one doesn't free anything until the last link is gone. Symlinks are separate files that can dangle.</li>
+    <li>One filesystem tree rooted at <code>/</code> — separate disks are mounted into it, not given separate drive letters.</li>
+    <li>FHS gives major directories a purpose: <code>/etc</code> config, <code>/var/log</code> logs, <code>/tmp</code> ephemeral, <code>/home</code> personal files.</li>
+    <li>Absolute paths are unambiguous everywhere; relative paths depend on the working directory — use absolute paths in scripts.</li>
   </ul>
 </div>
 
-<h2>Progressive challenge</h2>
-<ol>
-<li><strong>Level 1 — Fix:</strong> On a real or container Linux system, create 100,000 tiny files in a throwaway directory, confirm inode usage climbing via <code>df -i</code>, then clean them up and confirm it drops back down.</li>
-<li><strong>Level 2 — Diagnose:</strong> You're told "disk full" on a box with <code>df -h</code> showing 55% free. Reproduce this lesson's investigation from scratch, unaided, and produce a one-paragraph incident summary.</li>
-<li><strong>Level 3 — Design:</strong> Design a monitoring + alerting setup that would have caught this incident hours before the deploy pipeline failed, not after.</li>
-<li><strong>Level 4 — Explain:</strong> Explain to a teammate why "df -h shows free space" does not mean "this filesystem has room for more files" — using this incident as the example, no notes.</li>
-<li><strong>Level 5 — Optimize:</strong> The team wants to keep per-session files (product requirement, not up for debate) but never repeat this incident, while keeping infrastructure cost low. Propose a design — what changes, what does it cost, what does it trade off?</li>
-</ol>
-
-<footer class="teacher-reminder">"No space left on device" feeling solvable by pure logic instead of a memorized fix — that instinct is the actual goal of this lesson, more than the specific inode command.</footer>
+<footer class="teacher-reminder">FHS conventions feel like trivia until you're debugging something and instinctively know where to look first — that instinct is what this lesson builds.</footer>
 
 <div class="lesson-nav">
-  <span><a href="0001-why-linux.html">&larr; Back: Lesson 1 — The Server That Doesn't Behave Like Any Other</a></span>
-  <span><a href="0003-permissions-ownership.html">Next: Lesson 3 — Permissions & Ownership &rarr;</a></span>
+  <span><a href="0001-why-linux.html">&larr; Back: The Kernel and the Distro</a></span>
+  <span><a href="0003-permissions-ownership.html">Next: Permissions & ownership &rarr;</a></span>
 </div>
-
-<script type="module">
-  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-  mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
-</script>
 
 </body>
 </html>
