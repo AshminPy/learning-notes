@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3 — IPv4 vs IPv6 Basics</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 3 of 20</p>
+<h1>IPv4 vs IPv6 Basics</h1>
+
+<p>IPv4 addresses are 32 bits — about 4.3 billion possible addresses, a number the internet has already exhausted at the registry level. IPv6 was built specifically to solve that: 128 bits, an address space so large that exhaustion isn't a realistic concern. Both protocols run today, often side by side, which is exactly why understanding both matters.</p>
+
+<p class="callout"><strong>Simple example:</strong> An IPv4 address looks like <code>10.0.1.5</code> — four decimal numbers. An IPv6 address looks like <code>2001:0db8:85a3:0000:0000:8a2e:0370:7334</code> — eight groups of hexadecimal digits, usually shortened by dropping leading zeros and collapsing one run of zero groups with <code>::</code>.</p>
+
+<h2>Side by side</h2>
+<table>
+<tr><th></th><th>IPv4</th><th>IPv6</th></tr>
+<tr><td>Address length</td><td>32 bits</td><td>128 bits</td></tr>
+<tr><td>Total address space</td><td>~4.3 billion</td><td>~340 undecillion</td></tr>
+<tr><td>Notation</td><td>Dotted decimal (<code>10.0.1.5</code>)</td><td>Hex groups (<code>2001:db8::1</code>)</td></tr>
+<tr><td>Private ranges</td><td>Yes (10.x, 172.16-31.x, 192.168.x)</td><td>Every address can be globally unique — NAT isn't required for address conservation</td></tr>
+<tr><td>Loopback</td><td><code>127.0.0.1</code></td><td><code>::1</code></td></tr>
+</table>
+
+<h2>Shortening IPv6 addresses</h2>
+<p>Two rules make IPv6 addresses shorter to write: drop leading zeros within each group (<code>0db8</code> becomes <code>db8</code>), and replace exactly one consecutive run of all-zero groups with <code>::</code>. <code>2001:0db8:0000:0000:0000:0000:0000:0001</code> becomes <code>2001:db8::1</code>.</p>
+<p class="callout mistake"><code>::</code> can only be used once in an address — using it twice makes the address ambiguous (the parser can't tell how many zero groups belong to each gap), so it's invalid and will be rejected by any correct tool.</p>
+
+<h2>Why this matters in cloud work</h2>
+<p>Most cloud VPCs default to IPv4, but IPv6 support is increasingly standard for public-facing resources — and because IPv6 has enough address space for every device to have a real, routable address, NAT (Lesson 12) becomes optional rather than mandatory the way it effectively is for IPv4 private networks.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Why doesn't IPv6 strictly need private address ranges and NAT the way IPv4 does?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Because the address space is so large that every device can be assigned a globally unique address directly — NAT in IPv4 exists largely to conserve a scarce 32-bit address space, a constraint IPv6's 128 bits don't have.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>ip -6 addr show          # see any IPv6 addresses this machine already has
+ping6 ::1                 # or: ping -6 ::1 — test the IPv6 loopback</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc8200" target="_blank" rel="noopener">RFC 8200 — Internet Protocol, Version 6 (IPv6) Specification</a> — the official IETF specification.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>IPv4 is 32 bits (~4.3 billion addresses, exhausted); IPv6 is 128 bits (effectively unlimited for practical purposes).</li>
+    <li>IPv6 addresses shorten by dropping leading zeros per group and collapsing one run of zero groups with <code>::</code> — usable only once per address.</li>
+    <li>IPv6's address abundance makes NAT optional rather than structurally necessary.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Both protocols will keep running side by side for the foreseeable future — knowing both, not just IPv4, is what "networking fluent" actually means today.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0002-ip-addressing-subnetting.html">&larr; Back: IP addressing & subnetting</a></span>
+  <span><a href="0004-routing-fundamentals.html">Next: Routing fundamentals &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Networking for Cloud Engineers — Course roadmap tracker</title>
+<meta name="description" content="Zero-to-hero networking course roadmap for cloud engineers: IP addressing, routing, TCP/UDP, DNS, HTTP/TLS, load balancing, firewalls, VPNs, cloud VPCs, CDNs, and troubleshooting. Free, independent study resource.">
+<link rel="canonical" href="https://ashminpy.github.io/learning-notes/networking/objectives.html">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .domain {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 1.25rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .domain-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .domain-head h2 { margin: 0; padding: 0; border: none; font-size: 1.1rem; }
+  .domain-head p { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--muted); }
+  .count { color: var(--accent); font-weight: bold; font-size: 0.9rem; white-space: nowrap; }
+  .bar-track {
+    height: 6px;
+    background: var(--code-bg);
+    border-radius: 3px;
+    margin: 0.7rem 0 1rem;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.2s ease;
+  }
+  .item-list { list-style: none; padding: 0; margin: 0; }
+  .item-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.35rem 0;
+  }
+  .item-list input[type="checkbox"] { margin-top: 0.2rem; }
+  .item-list a { color: var(--fg); }
+  .item-list a:hover { color: var(--accent); }
+  .planned { color: var(--muted); font-size: 0.95rem; }
+  .planned-tag {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.05rem 0.35rem;
+  }
+  .overall {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .reset-btn {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .reset-btn:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Zero to Hero</p>
+<h1>Course roadmap tracker</h1>
+<p>The complete planned curriculum — 20 lessons across 6 phases, published incrementally. No single certification anchors this course; it's built for confident day-to-day cloud networking work. Check off a lesson once you can rebuild/explain it from memory — progress is saved in this browser only.</p>
+<p class="overall" id="overall"></p>
+<button class="reset-btn" id="reset-progress" type="button" aria-label="Reset Networking tracker progress">Reset progress</button>
+
+<div id="domains"></div>
+
+<div class="lesson-nav">
+  <a href="index.html">&larr; Back to course</a>
+  <span></span>
+</div>
+
+<script>
+const PHASES = [
+  {
+    key: "foundations",
+    name: "A. Foundations",
+    lessons: [
+      { id: "0001", title: "How data actually moves: the layered model", href: "lessons/0001-layered-model.html" },
+      { id: "0002", title: "IP addressing & subnetting (CIDR)", href: "lessons/0002-ip-addressing-subnetting.html" },
+      { id: "0003", title: "IPv4 vs IPv6 basics", href: "lessons/0003-ipv4-vs-ipv6.html" },
+      { id: "0004", title: "Routing fundamentals", href: null }
+    ]
+  },
+  {
+    key: "transport",
+    name: "B. Transport & Connections",
+    lessons: [
+      { id: "0005", title: "TCP vs UDP: connection vs connectionless", href: null },
+      { id: "0006", title: "The TCP handshake & connection lifecycle", href: null }
+    ]
+  },
+  {
+    key: "naming-web",
+    name: "C. Naming & Web Protocols",
+    lessons: [
+      { id: "0007", title: "DNS fundamentals", href: null },
+      { id: "0008", title: "DNS troubleshooting", href: null },
+      { id: "0009", title: "HTTP/HTTPS fundamentals", href: null },
+      { id: "0010", title: "TLS/SSL & certificates", href: null }
+    ]
+  },
+  {
+    key: "traffic",
+    name: "D. Traffic Management",
+    lessons: [
+      { id: "0011", title: "Load balancing fundamentals (L4 vs L7)", href: null },
+      { id: "0012", title: "NAT & outbound internet access", href: null },
+      { id: "0013", title: "Firewalls & security groups", href: null },
+      { id: "0014", title: "VPNs & private connectivity", href: null }
+    ]
+  },
+  {
+    key: "cloud-networking",
+    name: "E. Cloud Networking",
+    lessons: [
+      { id: "0015", title: "VPC fundamentals (cloud virtual networks)", href: null },
+      { id: "0016", title: "Subnets, route tables & internet/NAT gateways", href: null },
+      { id: "0017", title: "CDN fundamentals", href: null },
+      { id: "0018", title: "API gateways & reverse proxies", href: null }
+    ]
+  },
+  {
+    key: "troubleshooting",
+    name: "F. Troubleshooting & Review",
+    lessons: [
+      { id: "0019", title: "Network troubleshooting toolkit", href: null },
+      { id: "0020", title: "Final review & cheat sheet", href: null }
+    ]
+  }
+];
+
+const STORE_KEY = "networking-objectives-progress";
+const state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+function renderPhase(d) {
+  const built = d.lessons.filter(l => l.href);
+  const wrap = document.createElement("div");
+  wrap.className = "domain";
+
+  const head = document.createElement("div");
+  head.className = "domain-head";
+  head.innerHTML = `<div><h2>${d.name}</h2><p>${built.length} of ${d.lessons.length} lessons published</p></div><span class="count">${d.lessons.length} planned</span>`;
+  wrap.appendChild(head);
+
+  const track = document.createElement("div");
+  track.className = "bar-track";
+  const fill = document.createElement("div");
+  fill.className = "bar-fill";
+  track.appendChild(fill);
+  wrap.appendChild(track);
+
+  const list = document.createElement("ul");
+  list.className = "item-list";
+  d.lessons.forEach(l => {
+    const li = document.createElement("li");
+    if (l.href) {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!state[l.id];
+      cb.setAttribute("aria-label", `Mark Lesson ${Number(l.id)} — ${l.title} as reviewed`);
+      cb.addEventListener("change", () => {
+        state[l.id] = cb.checked;
+        save();
+        updateBar();
+        updateOverall();
+      });
+      const a = document.createElement("a");
+      a.href = l.href;
+      a.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      li.appendChild(cb);
+      li.appendChild(a);
+    } else {
+      const span = document.createElement("span");
+      span.className = "planned";
+      span.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      const tag = document.createElement("span");
+      tag.className = "planned-tag";
+      tag.textContent = "planned";
+      li.appendChild(span);
+      li.appendChild(tag);
+    }
+    list.appendChild(li);
+  });
+  wrap.appendChild(list);
+
+  function updateBar() {
+    const done = built.filter(l => state[l.id]).length;
+    const pct = built.length ? Math.round((done / built.length) * 100) : 0;
+    fill.style.width = pct + "%";
+  }
+  updateBar();
+
+  return wrap;
+}
+
+function updateOverall() {
+  const all = PHASES.flatMap(d => d.lessons);
+  const built = all.filter(l => l.href);
+  const done = built.filter(l => state[l.id]).length;
+  document.getElementById("overall").textContent =
+    `${built.length} of ${all.length} lessons published — ${done} of ${built.length} published lessons checked off.`;
+}
+
+const container = document.getElementById("domains");
+PHASES.forEach(d => container.appendChild(renderPhase(d)));
+updateOverall();
+
+document.getElementById("reset-progress").addEventListener("click", () => {
+  if (confirm("Reset all Networking tracker progress? This only clears this tracker's checkboxes in this browser — it does not affect any other course on this site.")) {
+    localStorage.removeItem(STORE_KEY);
+    location.reload();
+  }
+});
+</script>
+
+</body>
+</html>
