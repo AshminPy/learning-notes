@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 12 — NAT & Outbound Internet Access</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 12 of 20</p>
+<h1>NAT & Outbound Internet Access</h1>
+
+<p>Private IP addresses from Lesson 2 (10.x, 172.16-31.x, 192.168.x) aren't routable on the public internet — no internet router knows how to send a reply back to <code>10.0.1.5</code>. NAT (Network Address Translation) is what makes outbound internet access work anyway: it rewrites a private source address to a public one on the way out, and rewrites the reply back on the way in.</p>
+
+<p class="callout"><strong>Simple example:</strong> Your laptop on a home network has address <code>192.168.1.42</code>. When you browse the web, your home router rewrites that to its own public IP before sending the request out — the website only ever sees the router's public address, never your laptop's private one.</p>
+
+<h2>How NAT keeps track of who gets which reply</h2>
+<p>A NAT device maintains a translation table mapping (private IP, private port) to (public IP, public port) for every active connection. When a reply comes back addressed to that public IP and port, the NAT device looks up the table and forwards it to the correct internal device — this is exactly why NAT works fine for outbound connections you initiate, but can't handle unsolicited inbound connections (there's no table entry yet to route them by).</p>
+
+<h2>NAT in the cloud — NAT Gateways</h2>
+<p>A private subnet's instances have no public IP at all — by design, for security. A NAT Gateway sits in a public subnet and does exactly the router job above: instances in the private subnet route their outbound internet traffic through it, get a shared public IP for that traffic, and can reach the internet for things like package updates — while remaining completely unreachable from the internet for inbound connections.</p>
+<table>
+<tr><th>Component</th><th>Job</th></tr>
+<tr><td>Internet Gateway</td><td>Attaches a VPC to the public internet — allows both directions if a resource has a public IP</td></tr>
+<tr><td>NAT Gateway</td><td>Allows outbound-only internet access for private-subnet resources with no public IP</td></tr>
+</table>
+<p class="callout mistake">A NAT Gateway is not a substitute for a firewall or security group — it controls address translation, not whether traffic is allowed. Resources behind a NAT Gateway can still reach anywhere outbound unless something else (security groups, network policies) restricts that traffic.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. An instance sits in a private subnet with no public IP, routed through a NAT Gateway. Can someone on the internet initiate a connection directly to that instance?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — NAT only has a translation table entry for connections the private instance itself initiated outbound. There's no existing entry for an unsolicited inbound connection, so the NAT Gateway has nowhere to route it, and it's dropped.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>curl -s https://api.ipify.org
+# Shows the public IP your traffic is actually leaving as — this is your NAT's
+# translated address, not necessarily your machine's own private IP</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc3022" target="_blank" rel="noopener">RFC 3022 — Traditional IP Network Address Translator</a> — the official IETF specification for NAT behavior.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>NAT rewrites a private source address to a public one on the way out, tracked in a translation table so replies route back correctly.</li>
+    <li>NAT naturally allows outbound connections but blocks unsolicited inbound ones — there's no table entry to route them by.</li>
+    <li>In the cloud, an Internet Gateway allows both directions for public resources; a NAT Gateway allows outbound-only for private ones. Neither replaces a firewall — that's a separate control (Lesson 13).</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">"My private-subnet server can reach the internet but nothing can reach it" is NAT working exactly as designed, not a misconfiguration to fix.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0011-load-balancing.html">&larr; Back: Load balancing fundamentals</a></span>
+  <span><a href="0013-firewalls-security-groups.html">Next: Firewalls & security groups &rarr;</a></span>
+</div>
+
+</body>
+</html>

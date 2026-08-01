@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 11 — Load Balancing Fundamentals</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 11 of 20</p>
+<h1>Load Balancing Fundamentals</h1>
+
+<p>A load balancer sits in front of multiple backend servers and spreads incoming traffic across them — for capacity, and just as importantly, so a single failed server doesn't take the whole service down. The key distinction to understand first is which layer it operates at, because that decides what it can actually see and act on.</p>
+
+<p class="callout"><strong>Simple example:</strong> An L4 (Transport-layer) load balancer sees only IP addresses and ports — it can't read the HTTP request inside. An L7 (Application-layer) load balancer terminates the connection and reads the actual HTTP request, so it can route <code>/api/*</code> to one backend and <code>/static/*</code> to another.</p>
+
+<h2>L4 vs L7</h2>
+<table>
+<tr><th></th><th>L4 (Transport)</th><th>L7 (Application)</th></tr>
+<tr><td>Sees</td><td>IP + port only</td><td>Full HTTP request — path, headers, cookies</td></tr>
+<tr><td>Routing decisions</td><td>By connection only</td><td>By path, header, hostname, cookie — much more flexible</td></tr>
+<tr><td>Performance overhead</td><td>Lower — doesn't parse the request</td><td>Higher — has to actually read and understand HTTP</td></tr>
+<tr><td>Typical use</td><td>Raw TCP/UDP services, very high throughput needs</td><td>Web applications, APIs, anything needing path-based routing</td></tr>
+</table>
+
+<h2>Health checks — the part that actually prevents outages</h2>
+<p>A load balancer periodically checks each backend (an HTTP request to a health endpoint, or a simple TCP connect) and stops sending traffic to any backend that fails. This is the real value beyond just "spreading load" — a single crashed server gets automatically routed around within seconds, without anyone paging anyone.</p>
+<p class="callout mistake">A health check that only confirms the server process is running (not that it can actually serve real requests) gives false confidence — a backend can pass a trivial health check while its database connection is broken and every real request fails. Health checks should exercise the actual critical dependency, not just "is the port open."</p>
+
+<h2>Common algorithms</h2>
+<ul>
+<li><strong>Round robin</strong> — each backend gets a turn in order, simplest option</li>
+<li><strong>Least connections</strong> — send to whichever backend currently has the fewest active connections, better when requests take variable time</li>
+<li><strong>IP hash / session affinity</strong> — the same client consistently reaches the same backend, useful when a backend holds session state locally</li>
+</ul>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You need to route <code>/api/*</code> requests to one set of servers and everything else to another set, based on the URL path. Does an L4 or L7 load balancer support this?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">L7 — path-based routing requires reading the actual HTTP request, which an L4 load balancer never sees. L4 only knows IP and port, not the path inside the request.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>curl -v https://example.com/ 2>&1 | grep -i "server\|via\|x-"
+# Response headers often reveal a load balancer or CDN in front of a site</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc9110" target="_blank" rel="noopener">RFC 9110 — HTTP Semantics</a> — relevant for how L7 routing inspects real HTTP requests; load balancer implementation details are vendor-specific (see your cloud provider's current docs for exact behavior).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>L4 load balancers see only IP/port; L7 load balancers read the actual HTTP request, enabling path/header/cookie-based routing.</li>
+    <li>Health checks are the real value beyond load spreading — they automatically route around a failed backend.</li>
+    <li>A health check must exercise the actual critical dependency, not just confirm the process is alive, or it gives false confidence.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When one backend in a pool behaves strangely while others are fine, checking whether it's failing its own health check (and why) is usually faster than debugging application code first.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0010-tls-ssl-certificates.html">&larr; Back: TLS/SSL & certificates</a></span>
+  <span><a href="0012-nat.html">Next: NAT & outbound internet access &rarr;</a></span>
+</div>
+
+</body>
+</html>
