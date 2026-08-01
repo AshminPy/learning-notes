@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 16 — Memory Management</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 16 of 26</p>
+<h1>Memory Management</h1>
+
+<p>The single most misread piece of Linux output is <code>free -h</code> — specifically the "used" column. Linux deliberately uses spare RAM to cache disk data, because free memory that isn't caching anything is memory being wasted, not memory being saved.</p>
+
+<p class="callout"><strong>Simple example:</strong> A fresh server shows 200MB free. After running for a week, it might show 20MB free and gigabytes in the "cache" column — that's not a memory leak, it's the kernel using otherwise-idle RAM to cache files it expects to read again, and it releases that cache instantly if an application actually needs the RAM.</p>
+
+<h2>Reading free -h correctly</h2>
+<pre><code>free -h
+              total        used        free      shared  buff/cache   available
+Mem:           15Gi       2.1Gi       1.2Gi       200Mi        12Gi        13Gi</code></pre>
+<table>
+<tr><th>Column</th><th>What it really means</th></tr>
+<tr><td><code>used</code></td><td>Actually held by running programs — the number that matters for "am I about to run out"</td></tr>
+<tr><td><code>buff/cache</code></td><td>Disk cache — reclaimable instantly if something else needs it, not a problem</td></tr>
+<tr><td><code>available</code></td><td>What could actually be given to a new process right now, cache included — the real number to watch</td></tr>
+</table>
+<p class="callout mistake">Don't judge memory pressure from the "free" column alone — a small "free" number with a large "buff/cache" number is completely normal and healthy. Watch "available" instead; that's the number that accounts for reclaimable cache.</p>
+
+<h2>Swap — the overflow valve</h2>
+<p>Swap is disk space used as overflow when RAM is genuinely exhausted. Some swap use is normal; heavy, sustained swap use is a real problem, because disk is orders of magnitude slower than RAM — a system that's swapping heavily will feel sluggish across everything, not just the process using the memory.</p>
+<pre><code>swapon --show      # what swap is configured and how much is in use
+vmstat 1 5         # 5 samples, 1 second apart — watch the si/so (swap in/out) columns</code></pre>
+
+<h2>The OOM killer</h2>
+<p>When the system genuinely runs out of both RAM and swap, the kernel's Out-Of-Memory killer picks a process and kills it to free memory rather than let the whole system lock up. <code>dmesg | grep -i "out of memory"</code> or <code>journalctl -k</code> after an unexplained process death is the first place to look for OOM kill evidence.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. <code>free -h</code> shows almost no "free" memory and a huge "buff/cache" number. Is this server in trouble?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — that's expected and healthy. The "available" column, not "free," is what tells you real memory pressure, because it accounts for cache the kernel can instantly reclaim.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>free -h              # look at available, not free
+swapon --show        # check swap configuration and usage
+dmesg | grep -i "out of memory" || echo "no recent OOM kills found"</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.kernel.org/doc/Documentation/filesystems/proc.txt" target="_blank" rel="noopener">kernel.org — proc.txt (meminfo documentation)</a> — the official reference for how the kernel reports memory.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A low "free" number is normal — Linux uses spare RAM as disk cache; watch "available," not "free."</li>
+    <li>Some swap use is normal; sustained heavy swapping means genuine memory pressure and will slow the whole system down.</li>
+    <li>The OOM killer kills a process rather than letting the system lock up when RAM and swap both run out — check <code>dmesg</code>/<code>journalctl -k</code> after an unexplained process death.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">A process that "randomly" dies with no application-level error in its own logs is worth an OOM check before anything else — the kernel doesn't ask the application's permission.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0015-kernel-basics.html">&larr; Back: Kernel basics</a></span>
+  <span><a href="0017-cpu-scheduling.html">Next: CPU & scheduling &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 17 — CPU & Scheduling</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 17 of 26</p>
+<h1>CPU & Scheduling</h1>
+
+<p>With more processes than CPU cores — which is always — the kernel's scheduler decides which process runs on which core at any given instant, switching between them many times per second. Load average is the standard number for seeing whether that scheduler is keeping up or falling behind.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>uptime</code> shows load average as three numbers: 1, 5, and 15-minute averages. On a 4-core machine, a load average of 4.0 means the CPUs are fully busy with no queue; 8.0 means processes are waiting roughly as long as they're running.</p>
+
+<h2>Reading load average correctly</h2>
+<pre><code>uptime
+ 14:32:01 up 3 days,  2:14,  1 user,  load average: 2.15, 1.98, 1.75</code></pre>
+<p class="callout mistake">Load average means nothing on its own — it must be read against core count. A load of 4.0 is fine on 8 cores and a real problem on 2. Always check <code>nproc</code> first before judging a load number.</p>
+<pre><code>nproc     # how many cores this machine actually has</code></pre>
+
+<h2>top / htop — live per-process view</h2>
+<p>Where load average gives you the whole-system trend, <code>top</code> (or the friendlier <code>htop</code>) shows which specific process is consuming CPU right now — sorted by <code>%CPU</code> by default, which is usually the first column worth checking during a spike.</p>
+
+<h2>Nice values — CPU priority</h2>
+<p>Every process has a "nice" value from -20 (highest priority) to 19 (lowest) that hints the scheduler how much CPU time to favor it with. A higher nice value means the process is being "nicer" to everyone else, yielding CPU time when there's contention.</p>
+<pre><code>nice -n 10 ./backup-job.sh    # start a job at lower priority
+renice -n 5 -p 1234            # change priority of an already-running process</code></pre>
+<p>Background batch jobs — backups, log rotation, big data crunching — are good candidates for a higher (lower-priority) nice value, so they don't compete with user-facing services for CPU time during a busy moment.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A server reports a load average of 6.0. Is that a problem?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">It depends entirely on core count — run <code>nproc</code> first. 6.0 on a 16-core box is comfortably idle; 6.0 on a 4-core box means processes are queuing and waiting for CPU time.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>nproc              # how many cores you have
+uptime              # current load average, all three windows
+top -o %CPU         # live view sorted by CPU usage — press q to quit</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man7.org/linux/man-pages/man1/uptime.1.html" target="_blank" rel="noopener">uptime(1) man page</a> — the official reference for load average reporting.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Load average only means something relative to core count — always check <code>nproc</code> first.</li>
+    <li><code>top</code>/<code>htop</code> show which process is actually driving a CPU spike, load average only shows the trend.</li>
+    <li>Nice values (-20 to 19) let you deprioritize background batch work so it doesn't compete with user-facing services.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">A rising load average with a healthy per-core CPU% in <code>top</code> often points to processes waiting on I/O, not CPU — Lesson 18 covers reading that distinction properly.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0016-memory-management.html">&larr; Back: Memory management</a></span>
+  <span><a href="0018-performance-tuning.html">Next: Performance tuning & monitoring &rarr;</a></span>
+</div>
+
+</body>
+</html>
