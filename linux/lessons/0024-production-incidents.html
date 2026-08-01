@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 24 — Common Production Incidents</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 24 of 26</p>
+<h1>Common Production Incidents</h1>
+
+<p>This lesson doesn't introduce new tools — it connects Lessons 1-23 into the handful of incidents that repeat across almost every Linux server in production. Recognizing the pattern fast is what separates a two-minute fix from a two-hour one.</p>
+
+<p class="callout"><strong>Simple example:</strong> "Disk full" and "no space left on device" almost always mean one specific filesystem is full, found with <code>df -h</code> from Lesson 9 — not that the whole physical disk is out of capacity.</p>
+
+<h2>Five patterns, and which lesson's tools solve them</h2>
+<table>
+<tr><th>Symptom</th><th>Likely cause</th><th>Tools (lesson)</th></tr>
+<tr><td>"No space left on device"</td><td>One filesystem full — often <code>/var/log</code> from unrotated logs, or a runaway process writing data</td><td><code>df -h</code>, <code>du -sh /var/log/*</code> (Lesson 9)</td></tr>
+<tr><td>Service won't start / keeps restarting</td><td>Config error, missing dependency, or a crash loop</td><td><code>systemctl status</code>, <code>journalctl -u &lt;service&gt;</code> (Lesson 7, 19)</td></tr>
+<tr><td>Server "randomly" becomes unresponsive</td><td>OOM killer terminated a critical process, or heavy swapping</td><td><code>dmesg</code>, <code>free -h</code>, <code>journalctl -k</code> (Lesson 16)</td></tr>
+<tr><td>"Permission denied" despite correct file permissions</td><td>SELinux/AppArmor policy blocking access</td><td><code>getenforce</code>/<code>aa-status</code> (Lesson 20)</td></tr>
+<tr><td>Service reachable locally, not from outside</td><td>Firewall rule blocking the port, or service only bound to localhost</td><td><code>ss -tulnp</code>, <code>firewall-cmd</code>/<code>ufw</code> (Lesson 10, 20)</td></tr>
+</table>
+
+<h2>A repeatable investigation order</h2>
+<p>Across nearly all of these, the same sequence gets to a root cause fastest: check the service's own status and logs first (cheapest, most specific), then check system-wide resource state (disk/memory/CPU), then check security layers (SELinux/firewall) only once the first two are ruled out — they're less common causes and more time-consuming to verify.</p>
+<p class="callout mistake">Restarting the service before checking why it failed destroys the evidence you need to find the real cause — <code>journalctl -u &lt;service&gt; -n 100</code> before any restart, every time.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A web server suddenly returns connection refused, but was working an hour ago. What are the first two things to check, in order?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">First: <code>systemctl status &lt;service&gt;</code> and <code>journalctl -u &lt;service&gt; -n 50</code> — is it even running, and what does it say happened. Second, if it's running: <code>ss -tulnp</code> to confirm it's actually listening on the expected port.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>df -h                          # check for any filesystem near capacity
+free -h                        # check memory pressure
+journalctl -p err --since "1 hour ago"   # any recent errors, system-wide</code></pre>
+
+<h2>Source</h2>
+<p>This lesson synthesizes Lessons 7, 9, 10, 16, 19, and 20 — see each for its official primary source.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Most production incidents repeat across five patterns: disk full, service crash-looping, OOM/swap, permission-vs-policy confusion, and network/firewall blocks.</li>
+    <li>Investigate cheapest and most specific first: service status/logs, then system resources, then security layers.</li>
+    <li>Never restart a failed service before capturing its logs — that's the evidence you need.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">If a symptom doesn't match any of these five patterns, that's exactly when <code>strace</code>/<code>lsof</code>/<code>tcpdump</code> from Lesson 23 earn their keep — go one level deeper.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0023-debugging-tools.html">&larr; Back: Debugging tools</a></span>
+  <span><a href="0025-boot-process.html">Next: Boot process & troubleshooting &rarr;</a></span>
+</div>
+
+</body>
+</html>
