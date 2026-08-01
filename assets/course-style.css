@@ -134,6 +134,47 @@ th {
   .callout.production { background: #1c2a1c; }
 }
 
+.callout.performance {
+  border-left: 3px solid #00838f;
+  padding: 0.1rem 1.1rem;
+  margin: 1.5rem 0;
+  background: #e5f4f5;
+  border-radius: 0 4px 4px 0;
+}
+@media (prefers-color-scheme: dark) {
+  .callout.performance { background: #132a2c; }
+}
+
+.callout.cost {
+  border-left: 3px solid #6a1b9a;
+  padding: 0.1rem 1.1rem;
+  margin: 1.5rem 0;
+  background: #f3e9f7;
+  border-radius: 0 4px 4px 0;
+}
+@media (prefers-color-scheme: dark) {
+  .callout.cost { background: #241a2a; }
+}
+
+/* Mermaid diagram container — the mermaid.js CDN script + init call are added
+   per-lesson (see any lesson with a diagram for the exact <head>/pre-</body>
+   boilerplate); this just keeps the rendered SVG visually consistent with the
+   rest of the page (bordered, centered, scrollable on narrow screens). */
+.mermaid-diagram {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 1rem;
+  margin: 1.5rem 0;
+  overflow-x: auto;
+  background: var(--bg);
+}
+
+/* Production checklist — plain checkboxes, unchecked by default, no JS/
+   persistence (unlike the exam-objectives trackers). Purely a reading aid. */
+.checklist { list-style: none; padding-left: 0; }
+.checklist li { margin: 0.5rem 0; }
+.checklist input[type="checkbox"] { margin-right: 0.6rem; }
+
 /* Hands-on prompt box (currently keyboard-workflow only; promoted to shared so any
    course can use it for a "stop and go do this" moment distinct from a quiz). */
 .tryit {

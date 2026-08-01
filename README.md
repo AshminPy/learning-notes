@@ -11,8 +11,9 @@ An independent, free rapid-revision and active-recall companion for CKA and Goog
 - `gcp-pca/` — Google Professional Cloud Architect exam prep — 28 lessons + [exam objectives tracker](https://ashminpy.github.io/learning-notes/gcp-pca/objectives.html)
 - `kubernetes-cka/` — Kubernetes CKA prep — 24 lessons + [exam objectives tracker](https://ashminpy.github.io/learning-notes/kubernetes-cka/objectives.html)
 - `ansible/` — Ansible / EX374 prep, zero to expert — 36 lessons + [exam domain tracker](https://ashminpy.github.io/learning-notes/ansible/objectives.html)
-- `terraform/` — Terraform, zero to expert, Terraform Associate anchor — 37 lessons
-- `keyboard-workflow/` — AeroSpace / Raycast / Warp keyboard-first productivity — 8 lessons
+- `terraform/` — Terraform, zero to expert, Terraform Associate anchor — 37 lessons + [roadmap tracker](https://ashminpy.github.io/learning-notes/terraform/objectives.html)
+- `keyboard-workflow/` — AeroSpace / Raycast / Warp keyboard-first productivity — 8 lessons + [roadmap tracker](https://ashminpy.github.io/learning-notes/keyboard-workflow/objectives.html)
+- `linux/` — Linux for Cloud & SRE, zero to hero, LFCS-aligned — 2 of 26 lessons published + [progress tracker](https://ashminpy.github.io/learning-notes/linux/objectives.html)
 
 Found something inaccurate or outdated? [Open an issue](https://github.com/AshminPy/learning-notes/issues/new) — corrections are welcome.
 

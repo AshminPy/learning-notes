@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2 — Filesystem Hierarchy & Navigation</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE / Zero to Hero — Lesson 2 of 26</p>
+<h1>Filesystem Hierarchy & Navigation</h1>
+
+<h2>Learning objectives</h2>
+<ul>
+<li>Explain the Filesystem Hierarchy Standard (FHS) and what lives where, and why</li>
+<li>Navigate confidently with absolute and relative paths</li>
+<li>Use <code>find</code> and basic globbing to locate files without guessing</li>
+<li>Understand hard links vs symbolic links and when each is appropriate</li>
+<li>Diagnose "no space left on device" even when <code>df</code> shows free space</li>
+</ul>
+
+<h2>Mental model</h2>
+<p class="callout"><strong>Everything is a file, and there is exactly one filesystem tree, rooted at <code>/</code>.</strong> Unlike Windows' separate drive letters (C:\, D:\), Linux mounts every disk, partition, and even some non-disk things (like <code>/proc</code>, which represents running processes) as a directory somewhere under one single tree starting at <code>/</code>. "Everything is a file" means devices, sockets, and process info are all accessed through the same filesystem interface as a text document.</p>
+
+<h2>Beginner-friendly explanation</h2>
+<p>When you plug in a second disk on Windows, it becomes <code>D:\</code> — a separate tree. On Linux, that disk gets <strong>mounted</strong> onto an existing directory (say, <code>/mnt/data</code>), and from then on, everything under <code>/mnt/data</code> lives on that separate disk, but it looks and behaves like any other directory in the one unified tree. You (usually) can't tell just by looking at a path whether it's on the root disk or a separate mounted one — you have to ask (Lesson 9 covers <code>mount</code>/<code>df</code> in depth).</p>
+
+<h2>Real-world analogy</h2>
+<p class="callout">Think of the filesystem like a company's single org chart, not separate org charts per office location. A new office (a new disk) doesn't get its own separate chart — it gets grafted onto the existing one at a specific reporting line (a mount point). Someone reading the chart sees one continuous structure, even though "IT support" and "the new office" might physically be in different buildings (different physical disks).</p>
+
+<h2>The Filesystem Hierarchy Standard (FHS)</h2>
+<div class="mermaid-diagram">
+<pre class="mermaid">
+flowchart TD
+    ROOT["/"]
+    ROOT --> BIN["/bin, /usr/bin — executables"]
+    ROOT --> ETC["/etc — system-wide config"]
+    ROOT --> HOME["/home/&lt;user&gt; — personal files"]
+    ROOT --> VAR["/var — logs, variable data"]
+    ROOT --> TMP["/tmp — temporary files, cleared on reboot"]
+    ROOT --> PROC["/proc — live kernel/process info (virtual)"]
+    ROOT --> OPT["/opt — optional/third-party software"]
+    ROOT --> MNT["/mnt, /media — mounted disks"]
+</pre>
+</div>
+<table>
+<tr><th>Path</th><th>What lives here</th><th>Why it matters operationally</th></tr>
+<tr><td><code>/etc</code></td><td>System-wide configuration files</td><td>First place to look when a service misbehaves — its config is almost always under <code>/etc/&lt;service&gt;</code></td></tr>
+<tr><td><code>/var/log</code></td><td>Log files</td><td>First place to look when debugging any failure — see Lesson 19</td></tr>
+<tr><td><code>/tmp</code></td><td>Temporary files</td><td>Often cleared on reboot or by a scheduled job — never store anything you need to keep here</td></tr>
+<tr><td><code>/home/&lt;user&gt;</code></td><td>Personal files for each user</td><td>On shared servers, quota/disk-full issues often trace back here</td></tr>
+<tr><td><code>/proc</code></td><td>A virtual filesystem — not real files on disk, a live window into kernel/process state</td><td>Real-time process/kernel inspection without a special tool — e.g. <code>/proc/&lt;pid&gt;/status</code></td></tr>
+<tr><td><code>/opt</code></td><td>Third-party/optional software not managed by the distro's package manager</td><td>Common install location for vendor-supplied production software</td></tr>
+</table>
+<p class="callout security"><code>/proc</code> being a live view — not stored data — means reading it never goes stale, but it also means some files there can leak sensitive process info (command-line arguments, environment variables) to any user who can read them. Production hardening often restricts <code>/proc</code> visibility between users (<code>hidepid</code> mount option).</p>
+
+<h2>Absolute vs relative paths</h2>
+<p>An <strong>absolute path</strong> starts with <code>/</code> and is unambiguous from anywhere: <code>/etc/nginx/nginx.conf</code> always means the same file, no matter your current directory. A <strong>relative path</strong> is interpreted from wherever you currently are (<code>pwd</code>): <code>../config/app.conf</code> means "go up one directory, then into config."</p>
+<p class="callout mistake">Scripts using relative paths without first confirming the working directory are a classic source of "works on my machine, fails in cron/CI" bugs — a cron job or CI runner often starts in a different working directory than your interactive shell. Always use absolute paths (or explicitly <code>cd</code> first) in anything automated.</p>
+
+<h2>Hands-on lab — navigate and locate</h2>
+<div class="tryit">
+<p class="eyebrow">Try it</p>
+<pre><code>pwd                          # print current directory (absolute path)
+cd /var/log                  # absolute path — works from anywhere
+ls -la                       # list all, including hidden (dot) files, long format
+cd -                         # jump back to your previous directory
+cd ~                         # go to your home directory
+cd ..                        # go up one level (relative)</code></pre>
+<p>Now practice finding things without guessing:</p>
+<pre><code>find /etc -name "*.conf" -type f 2>/dev/null | head -5
+find / -maxdepth 3 -type d -name "log*" 2>/dev/null</code></pre>
+<p><code>find</code> searches recursively by real criteria (name, type, size, modified time) — much more reliable than trying to remember exactly where something lives.</p>
+</div>
+
+<h2>Hard links vs symbolic links</h2>
+<table>
+<tr><th></th><th>Hard link</th><th>Symbolic (soft) link</th></tr>
+<tr><td>What it is</td><td>A second name pointing to the exact same data on disk (same inode)</td><td>A separate small file that just stores a path to another file</td></tr>
+<tr><td>Crosses filesystems/disks?</td><td>No — must be on the same filesystem</td><td>Yes — can point anywhere, even a different mounted disk</td></tr>
+<tr><td>If the original is deleted</td><td>Data survives — it's only truly gone when the last hard link is removed</td><td>Breaks — becomes a "dangling" link pointing at nothing</td></tr>
+<tr><td>Can link to a directory?</td><td>No (with rare exceptions)</td><td>Yes</td></tr>
+<tr><td>Command</td><td><code>ln target linkname</code></td><td><code>ln -s target linkname</code></td></tr>
+</table>
+<p>In production, symlinks are everywhere for versioned releases: <code>/opt/app/current</code> symlinked to <code>/opt/app/releases/v2.3.1</code>, atomically re-pointed to the new version on deploy, and instantly rolled back by re-pointing to the old target.</p>
+
+<h2>Troubleshooting walkthrough — "No space left on device" but <code>df</code> shows free space</h2>
+<table>
+<tr><th>Step</th><th>Detail</th></tr>
+<tr><td><strong>Symptoms</strong></td><td>A process fails to write a file with <code>ENOSPC</code> ("No space left on device"), but <code>df -h</code> shows plenty of free space on the relevant filesystem.</td></tr>
+<tr><td><strong>Investigation</strong></td><td>Run <code>df -i</code> instead of <code>df -h</code> — this shows <strong>inode</strong> usage, not byte usage. A filesystem has a fixed number of inodes (metadata slots, one per file/directory) set at creation time, independent of disk space.</td></tr>
+<tr><td><strong>Root cause</strong></td><td>A huge number of tiny files (a classic case: an application writing millions of small cache/session files) exhausted the inode table even though plenty of disk bytes remained free.</td></tr>
+<tr><td><strong>Resolution</strong></td><td>Delete or archive the excess small files to free inodes. There is no "add more inodes" fix without reformatting the filesystem with different parameters — this must be prevented, not just fixed after the fact.</td></tr>
+<tr><td><strong>Prevention</strong></td><td>Monitor <code>df -i</code> alongside <code>df -h</code> in production dashboards; design apps that generate many small files to clean them up or use a proper database/object store instead of the filesystem for high-volume ephemeral data.</td></tr>
+</table>
+
+<h2>Common mistakes</h2>
+<p class="callout mistake">Deleting a symlink with <code>rm -rf linkname/</code> (trailing slash) when you meant to remove only the link — depending on the shell and exact command, a trailing slash can cause tools to follow the link and act on its target instead of the link itself. When in doubt, use <code>rm linkname</code> (no trailing slash) to remove just the link.</p>
+
+<h2>Best practices</h2>
+<p class="callout production">Never hardcode paths like <code>/home/ashmin/app</code> in scripts meant to run elsewhere — use environment variables, config files, or at minimum <code>$HOME</code>. Keep application data out of <code>/tmp</code> if it must survive a reboot. Follow FHS conventions when deploying your own software (config in <code>/etc</code>, logs in <code>/var/log</code>, binaries in <code>/opt</code> or <code>/usr/local/bin</code>) so the next engineer can find things using the same instincts this lesson teaches.</p>
+
+<h2>Performance considerations</h2>
+<p class="callout performance"><code>find /</code> without narrowing scope (no <code>-maxdepth</code>, searching from the true root) walks the entire filesystem tree, including large mounted network filesystems if any are attached — this can be slow and I/O-heavy on a large or busy system. Scope your searches (<code>-maxdepth</code>, a more specific starting path) whenever you know roughly where to look.</p>
+
+<h2>Production checklist</h2>
+<ul class="checklist">
+<li><input type="checkbox" disabled> Scripts use absolute paths or explicitly <code>cd</code> first — never assume a working directory</li>
+<li><input type="checkbox" disabled> Monitoring covers both <code>df -h</code> (space) and <code>df -i</code> (inodes)</li>
+<li><input type="checkbox" disabled> New services follow FHS conventions (config in <code>/etc</code>, logs in <code>/var/log</code>)</li>
+<li><input type="checkbox" disabled> Deploy tooling uses an atomically-repointed symlink for instant rollback capability</li>
+</ul>
+
+<h2>Interview questions</h2>
+<div class="quiz">
+<p>Q. What's the difference between a hard link and a symbolic link?</p>
+<input type="text" id="iq1" placeholder="type your answer">
+<button onclick="document.getElementById('ia1').classList.add('shown')">Reveal model answer</button>
+<div class="answer" id="ia1">A hard link is a second name pointing to the exact same data (inode) on the same filesystem — the data survives as long as any hard link to it exists. A symbolic link is a separate small file storing a path to another file; it can cross filesystems and point to directories, but breaks (dangles) if the target is removed.</div>
+</div>
+<div class="quiz">
+<p>Q. A server reports "no space left on device" but <code>df -h</code> shows 40% free. What do you check next, and why?</p>
+<input type="text" id="iq2" placeholder="type your answer">
+<button onclick="document.getElementById('ia2').classList.add('shown')">Reveal model answer</button>
+<div class="answer" id="ia2"><code>df -i</code> — inode exhaustion. A filesystem can run out of inodes (metadata slots, one per file) from having too many small files, entirely independent of how many actual bytes are used.</div>
+</div>
+</div>
+
+<h2>Certification notes</h2>
+<p>LFCS "Essential Commands" (20%) and "Storage" (20%) domains both draw directly on this lesson — expect real command-line tasks involving navigation, <code>find</code>, and diskspace troubleshooting exactly like the walkthrough above.</p>
+
+<h2>Official references</h2>
+<ul>
+<li><a href="https://refspecs.linuxfoundation.org/FHS_3.0/fhs-3.0.html" target="_blank" rel="noopener">Filesystem Hierarchy Standard 3.0</a> — the official Linux Foundation FHS specification</li>
+<li><a href="https://man7.org/linux/man-pages/man1/find.1.html" target="_blank" rel="noopener">find(1) man page</a></li>
+<li><a href="https://man7.org/linux/man-pages/man2/link.2.html" target="_blank" rel="noopener">link(2) man page</a> — hard link semantics at the syscall level</li>
+</ul>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>One unified filesystem tree rooted at <code>/</code> — separate disks are mounted onto directories in that same tree, not given separate drive letters.</li>
+    <li>FHS gives every major directory a purpose: <code>/etc</code> config, <code>/var/log</code> logs, <code>/tmp</code> ephemeral, <code>/proc</code> live kernel/process state.</li>
+    <li>Absolute paths are unambiguous everywhere; relative paths depend on your current directory — use absolute paths in scripts/automation.</li>
+    <li>Hard links share the same underlying data; symlinks are separate pointer files that can dangle.</li>
+    <li>"No space" isn't always about bytes — check <code>df -i</code> for inode exhaustion too.</li>
+  </ul>
+</div>
+
+<h2>Practical challenge</h2>
+<p class="callout">On a real Linux system, create a directory with 50,000 tiny empty files (<code>for i in $(seq 1 50000); do touch /tmp/test/file$i; done</code> in a dedicated throwaway directory — clean it up after). Run <code>df -i</code> before and after to watch inode usage climb, even though <code>df -h</code> barely moves. Then create both a hard link and a symlink to one real file, delete the original, and observe which link survives and which dangles.</p>
+
+<footer class="teacher-reminder">FHS conventions feel like arbitrary trivia until you're debugging a production incident at 2am and instinctively know to check <code>/var/log</code> first — that instinct is exactly what this lesson is building.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0001-why-linux.html">&larr; Back: Lesson 1 — Why Linux?</a></span>
+  <span><a href="0003-permissions-ownership.html">Next: Lesson 3 — Permissions & Ownership &rarr;</a></span>
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+</script>
+
+</body>
+</html>
