@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ansible — Course roadmap tracker</title>
-<meta name="description" content="Zero-to-expert Ansible course roadmap: playbooks, roles, collections, vault, testing, execution environments, Red Hat EX374 exam prep. Free, independent study resource.">
+<meta name="description" content="Zero-to-expert Ansible course roadmap mapped to Red Hat's real EX374 exam domains: playbooks, roles, collections, vault, testing, execution environments, automation controller. Free, independent study resource.">
 <link rel="canonical" href="https://ashminpy.github.io/learning-notes/ansible/objectives.html">
 <link rel="stylesheet" href="assets/style.css">
 <style>
@@ -20,6 +20,11 @@
   .item-list input[type="checkbox"] { margin-top: 0.2rem; }
   .item-list a { color: var(--fg); }
   .item-list a:hover { color: var(--accent); }
+  .gap-tag {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--muted); border: 1px solid var(--rule); border-radius: 3px; padding: 0.05rem 0.35rem;
+  }
   .overall { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 0.9rem; color: var(--muted); }
   .disclaimer { border-left: 3px solid var(--rule); background: var(--code-bg); padding: 0.6rem 1rem; margin: 1.25rem 0; font-size: 0.82rem; color: var(--muted); border-radius: 0 4px 4px 0; }
   .meta-line { font-size: 0.78rem; color: var(--muted); margin-top: 0.4rem; }
@@ -32,13 +37,13 @@
 
 <p class="eyebrow">Ansible — Zero to Expert</p>
 <h1>Course roadmap tracker</h1>
-<p>The complete curriculum — <strong>36 lessons across 10 phases</strong>, playbook fundamentals through production automation and the Red Hat Certified Specialist EX374 exam. Check off a lesson once you can rebuild/explain it from memory — progress is saved in this browser only.</p>
+<p>The complete curriculum — <strong>36 of 36 lessons published</strong>. The first 9 groups below are Red Hat's own official EX374 exam domains (reconfirmed against the official page 2026-07-31 — no percentage weighting is published, so treat all 9 as equally exam-relevant); a final "Additional course content" group covers everything else this course teaches that isn't a separately-scored domain. Check off a lesson once you can rebuild/explain it from memory — progress is saved in this browser only.</p>
 <p class="overall" id="overall"></p>
 <button class="reset-btn" id="reset-progress" type="button" aria-label="Reset Ansible tracker progress">Reset progress</button>
 
 <div class="disclaimer">
-  This is an independent study resource, not affiliated with, endorsed by, or sponsored by Red Hat. Certification names and formats may change — always verify against the official page linked in RESOURCES.md. EX374 is a hands-on, performance-based exam — this course builds toward it, but real lab practice is required beyond reading lessons.
-  <div class="meta-line">Certification details last reviewed: July 30, 2026</div>
+  This is an independent study resource, not affiliated with, endorsed by, or sponsored by Red Hat. Certification names and formats may change — always verify against the official page linked in Lesson 1/35. EX374 is a hands-on, performance-based exam — this course builds toward it, but real lab practice is required beyond reading lessons. Three real coverage gaps exist and are flagged below rather than hidden: Git itself (assumed prerequisite), lookup plugins, and publishing a collection — see Lesson 35 for the full honest breakdown.
+  <div class="meta-line">Certification details last reviewed: July 31, 2026</div>
 </div>
 <p class="feedback-link"><a href="https://github.com/AshminPy/learning-notes/issues/new?title=Learning%20notes%20correction%3A%20Ansible%20roadmap" target="_blank" rel="noopener">Report an issue / suggest a correction &rarr;</a></p>
 
@@ -50,59 +55,59 @@
 </div>
 
 <script>
-const PHASES = [
-  { key: "orientation", name: "A. Orientation & Setup", lessons: [
-    { id: "0001", title: "Your roadmap: zero to Ansible expert", href: "lessons/0001-roadmap-and-cert-plan.html" },
-    { id: "0002", title: "Tools setup: install Ansible, practice hosts", href: "lessons/0002-tools-setup.html" }
-  ]},
-  { key: "fundamentals", name: "B. Ansible Fundamentals", lessons: [
-    { id: "0003", title: "What is Ansible? Agentless, push, idempotent", href: "lessons/0003-what-is-ansible.html" },
+const DOMAINS = [
+  { key: "git", name: "1. Understand and use Git", gap: "Not covered by a dedicated lesson — assumed prerequisite (clone, add, commit, push, branch), matching Red Hat's own recommended AU374/RH294 path.", lessons: [] },
+  { key: "inventory-vars", name: "2. Manage inventory variables", lessons: [
     { id: "0004", title: "Inventory basics", href: "lessons/0004-inventory-basics.html" },
-    { id: "0005", title: "Ad-hoc commands", href: "lessons/0005-ad-hoc-commands.html" },
-    { id: "0006", title: "Your first playbook", href: "lessons/0006-first-playbook.html" },
-    { id: "0007", title: "Idempotency", href: "lessons/0007-idempotency.html" }
-  ]},
-  { key: "core-language", name: "C. Core Playbook Language", lessons: [
     { id: "0008", title: "Variables", href: "lessons/0008-variables.html" },
-    { id: "0009", title: "Facts", href: "lessons/0009-facts.html" },
-    { id: "0010", title: "Conditionals (when)", href: "lessons/0010-conditionals.html" },
-    { id: "0011", title: "Loops", href: "lessons/0011-loops.html" },
-    { id: "0012", title: "Handlers & notify", href: "lessons/0012-handlers-and-notify.html" }
-  ]},
-  { key: "templates", name: "D. Templates & Files", lessons: [
-    { id: "0013", title: "Jinja2 templating basics", href: "lessons/0013-jinja2-templating.html" },
-    { id: "0014", title: "copy vs template modules", href: "lessons/0014-copy-vs-template.html" },
-    { id: "0015", title: "File & directory management modules", href: "lessons/0015-file-management-modules.html" }
-  ]},
-  { key: "organizing", name: "E. Organizing Automation", lessons: [
-    { id: "0016", title: "Roles: anatomy", href: "lessons/0016-roles-anatomy.html" },
-    { id: "0017", title: "Writing your first role", href: "lessons/0017-writing-your-first-role.html" },
-    { id: "0018", title: "Ansible Galaxy", href: "lessons/0018-ansible-galaxy.html" },
-    { id: "0019", title: "Collections", href: "lessons/0019-collections.html" }
-  ]},
-  { key: "inventory-scale", name: "F. Inventory & Variables at Scale", lessons: [
-    { id: "0020", title: "Dynamic inventory", href: "lessons/0020-dynamic-inventory.html" },
     { id: "0021", title: "group_vars & host_vars", href: "lessons/0021-group-and-host-vars.html" },
     { id: "0022", title: "Variable precedence deep dive", href: "lessons/0022-variable-precedence.html" }
   ]},
-  { key: "advanced", name: "G. Advanced Playbook Techniques", lessons: [
-    { id: "0023", title: "Error handling: block/rescue", href: "lessons/0023-error-handling.html" },
+  { key: "task-execution", name: "3. Manage task execution", lessons: [
+    { id: "0005", title: "Ad-hoc commands", href: "lessons/0005-ad-hoc-commands.html" },
+    { id: "0006", title: "Your first playbook", href: "lessons/0006-first-playbook.html" },
     { id: "0024", title: "Tags", href: "lessons/0024-tags.html" },
-    { id: "0025", title: "Delegation", href: "lessons/0025-delegation.html" },
-    { id: "0026", title: "Ansible Vault", href: "lessons/0026-ansible-vault.html" }
-  ]},
-  { key: "testing", name: "H. Testing & Quality", lessons: [
-    { id: "0027", title: "ansible-lint", href: "lessons/0027-ansible-lint.html" },
-    { id: "0028", title: "Molecule testing", href: "lessons/0028-molecule-testing.html" },
     { id: "0029", title: "Check mode & diff mode", href: "lessons/0029-check-and-diff-mode.html" }
   ]},
-  { key: "production", name: "I. Production & Scale", lessons: [
-    { id: "0030", title: "Execution environments", href: "lessons/0030-execution-environments.html" },
-    { id: "0031", title: "Ansible Automation Platform / AWX", href: "lessons/0031-automation-platform-awx.html" },
-    { id: "0032", title: "CI/CD for Ansible", href: "lessons/0032-cicd-for-ansible.html" },
-    { id: "0033", title: "Performance & best practices", href: "lessons/0033-performance-best-practices.html" }
+  { key: "filters-plugins", name: "4. Transform data with filters and plugins", gap: "Jinja2 filters are covered solidly — lookup()/query() plugins are a real gap, no dedicated lesson.", lessons: [
+    { id: "0013", title: "Jinja2 templating & filters", href: "lessons/0013-jinja2-templating.html" }
   ]},
-  { key: "cert-review", name: "J. Real Project & Certification", lessons: [
+  { key: "delegate", name: "5. Delegate tasks", lessons: [
+    { id: "0025", title: "Delegation", href: "lessons/0025-delegation.html" }
+  ]},
+  { key: "collections", name: "6. Manage content collections", gap: "Installing/using collections is covered — creating and publishing a collection (ansible-galaxy collection init) is a real gap.", lessons: [
+    { id: "0018", title: "Ansible Galaxy", href: "lessons/0018-ansible-galaxy.html" },
+    { id: "0019", title: "Collections", href: "lessons/0019-collections.html" }
+  ]},
+  { key: "execution-environments", name: "7. Manage execution environments", lessons: [
+    { id: "0030", title: "Execution environments", href: "lessons/0030-execution-environments.html" }
+  ]},
+  { key: "inventories-credentials", name: "8. Manage inventories and credentials", lessons: [
+    { id: "0020", title: "Dynamic inventory", href: "lessons/0020-dynamic-inventory.html" },
+    { id: "0026", title: "Ansible Vault", href: "lessons/0026-ansible-vault.html" },
+    { id: "0031", title: "Ansible Automation Platform / AWX", href: "lessons/0031-automation-platform-awx.html" }
+  ]},
+  { key: "automation-controller", name: "9. Manage automation controller", lessons: [
+    { id: "0031b", title: "Ansible Automation Platform / AWX (see Lesson 31 above)", href: "lessons/0031-automation-platform-awx.html" }
+  ]},
+  { key: "additional", name: "Additional course content (not a separately-scored exam domain)", lessons: [
+    { id: "0001", title: "Your roadmap: zero to Ansible expert", href: "lessons/0001-roadmap-and-cert-plan.html" },
+    { id: "0002", title: "Tools setup: install Ansible, practice hosts", href: "lessons/0002-tools-setup.html" },
+    { id: "0003", title: "What is Ansible? Agentless, push, idempotent", href: "lessons/0003-what-is-ansible.html" },
+    { id: "0007", title: "Idempotency", href: "lessons/0007-idempotency.html" },
+    { id: "0009", title: "Facts", href: "lessons/0009-facts.html" },
+    { id: "0010", title: "Conditionals (when)", href: "lessons/0010-conditionals.html" },
+    { id: "0011", title: "Loops", href: "lessons/0011-loops.html" },
+    { id: "0012", title: "Handlers & notify", href: "lessons/0012-handlers-and-notify.html" },
+    { id: "0014", title: "copy vs template modules", href: "lessons/0014-copy-vs-template.html" },
+    { id: "0015", title: "File & directory management modules", href: "lessons/0015-file-management-modules.html" },
+    { id: "0016", title: "Roles: anatomy", href: "lessons/0016-roles-anatomy.html" },
+    { id: "0017", title: "Writing your first role", href: "lessons/0017-writing-your-first-role.html" },
+    { id: "0023", title: "Error handling: block/rescue", href: "lessons/0023-error-handling.html" },
+    { id: "0027", title: "ansible-lint", href: "lessons/0027-ansible-lint.html" },
+    { id: "0028", title: "Molecule testing", href: "lessons/0028-molecule-testing.html" },
+    { id: "0032", title: "CI/CD for Ansible", href: "lessons/0032-cicd-for-ansible.html" },
+    { id: "0033", title: "Performance & best practices", href: "lessons/0033-performance-best-practices.html" },
     { id: "0034", title: "Capstone project", href: "lessons/0034-capstone-project.html" },
     { id: "0035", title: "EX374 exam domain walkthrough", href: "lessons/0035-ex374-exam-walkthrough.html" },
     { id: "0036", title: "Final review & cheat sheet", href: "lessons/0036-final-review.html" }
@@ -113,61 +118,62 @@ const STORE_KEY = "ansible-objectives-progress";
 const state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
 function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
 
-function renderPhase(d) {
-  const built = d.lessons.filter(l => l.href);
+function renderDomain(d) {
   const wrap = document.createElement("div");
   wrap.className = "domain";
   const head = document.createElement("div");
   head.className = "domain-head";
-  head.innerHTML = `<div><h2>${d.name}</h2><p>${built.length} of ${d.lessons.length} lessons published</p></div><span class="count">${d.lessons.length} planned</span>`;
+  const countLabel = d.lessons.length ? `${d.lessons.length} lesson${d.lessons.length > 1 ? "s" : ""}` : "gap";
+  head.innerHTML = `<div><h2>${d.name}</h2>${d.gap ? `<p>${d.gap}</p>` : ""}</div><span class="count">${countLabel}</span>`;
   wrap.appendChild(head);
-  const track = document.createElement("div");
-  track.className = "bar-track";
-  const fill = document.createElement("div");
-  fill.className = "bar-fill";
-  track.appendChild(fill);
-  wrap.appendChild(track);
-  const list = document.createElement("ul");
-  list.className = "item-list";
-  d.lessons.forEach(l => {
-    const li = document.createElement("li");
-    if (l.href) {
+  if (d.lessons.length) {
+    const track = document.createElement("div");
+    track.className = "bar-track";
+    const fill = document.createElement("div");
+    fill.className = "bar-fill";
+    track.appendChild(fill);
+    wrap.appendChild(track);
+    const list = document.createElement("ul");
+    list.className = "item-list";
+    d.lessons.forEach(l => {
+      const li = document.createElement("li");
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = !!state[l.id];
-      cb.setAttribute("aria-label", `Mark Lesson ${Number(l.id)} — ${l.title} as reviewed`);
+      cb.setAttribute("aria-label", `Mark ${l.title} as reviewed`);
       cb.addEventListener("change", () => { state[l.id] = cb.checked; save(); updateBar(); updateOverall(); });
       const a = document.createElement("a");
       a.href = l.href;
-      a.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      a.textContent = l.title;
       li.appendChild(cb); li.appendChild(a);
-    } else {
-      const span = document.createElement("span");
-      span.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
-      li.appendChild(span);
+      list.appendChild(li);
+    });
+    wrap.appendChild(list);
+    function updateBar() {
+      const done = d.lessons.filter(l => state[l.id]).length;
+      const pct = Math.round((done / d.lessons.length) * 100);
+      fill.style.width = pct + "%";
     }
-    list.appendChild(li);
-  });
-  wrap.appendChild(list);
-  function updateBar() {
-    const done = built.filter(l => state[l.id]).length;
-    const pct = built.length ? Math.round((done / built.length) * 100) : 0;
-    fill.style.width = pct + "%";
+    updateBar();
+  } else {
+    const tag = document.createElement("span");
+    tag.className = "gap-tag";
+    tag.textContent = "prerequisite, not taught here";
+    wrap.appendChild(tag);
   }
-  updateBar();
   return wrap;
 }
 
 function updateOverall() {
-  const all = PHASES.flatMap(d => d.lessons);
-  const built = all.filter(l => l.href);
-  const done = built.filter(l => state[l.id]).length;
+  const uniqueLessonIds = new Set();
+  DOMAINS.forEach(d => d.lessons.forEach(l => uniqueLessonIds.add(l.id.replace(/b$/, ""))));
+  const done = [...uniqueLessonIds].filter(id => state[id] || state[id + "b"]).length;
   document.getElementById("overall").textContent =
-    `${built.length} of ${all.length} lessons published — ${done} of ${built.length} published lessons checked off.`;
+    `36 of 36 lessons published — ${done} of ${uniqueLessonIds.size} checked off.`;
 }
 
 const container = document.getElementById("domains");
-PHASES.forEach(d => container.appendChild(renderPhase(d)));
+DOMAINS.forEach(d => container.appendChild(renderDomain(d)));
 updateOverall();
 
 document.getElementById("reset-progress").addEventListener("click", () => {
