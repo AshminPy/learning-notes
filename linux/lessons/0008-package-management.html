@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 8 — Package Management</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 8 of 26</p>
+<h1>Package Management</h1>
+
+<p>Installing software on Linux almost never means downloading an installer — it means asking a package manager to fetch a package from a repository, resolve its dependencies, and install it in the standard system locations. The package manager you use depends on the distro family.</p>
+
+<p class="callout"><strong>Simple example:</strong> On Debian/Ubuntu, <code>apt install nginx</code> fetches nginx and every library it needs, then registers it so <code>apt remove nginx</code> can cleanly undo it later. On RHEL/Fedora/Rocky, the equivalent is <code>dnf install nginx</code>.</p>
+
+<h2>The two families</h2>
+<table>
+<tr><th>Family</th><th>Low-level tool</th><th>High-level tool (resolves dependencies)</th></tr>
+<tr><td>Debian/Ubuntu</td><td><code>dpkg</code> (installs a single .deb file)</td><td><code>apt</code> (fetches from repos, resolves deps)</td></tr>
+<tr><td>RHEL/Fedora/Rocky/Alma</td><td><code>rpm</code> (installs a single .rpm file)</td><td><code>dnf</code> (fetches from repos, resolves deps) — <code>yum</code> on older versions</td></tr>
+</table>
+<p>The low-level tool (<code>dpkg</code>/<code>rpm</code>) installs a package file you already have but does nothing about dependencies — if a library is missing, it just fails. The high-level tool (<code>apt</code>/<code>dnf</code>) talks to a repository, downloads the package plus everything it depends on, and installs all of it together. In daily work you almost always want the high-level tool.</p>
+
+<h2>Everyday commands</h2>
+<table>
+<tr><th>Task</th><th>Debian/Ubuntu</th><th>RHEL/Fedora</th></tr>
+<tr><td>Update the package index</td><td><code>apt update</code></td><td><code>dnf check-update</code></td></tr>
+<tr><td>Install a package</td><td><code>apt install pkg</code></td><td><code>dnf install pkg</code></td></tr>
+<tr><td>Remove a package</td><td><code>apt remove pkg</code></td><td><code>dnf remove pkg</code></td></tr>
+<tr><td>Search for a package</td><td><code>apt search term</code></td><td><code>dnf search term</code></td></tr>
+<tr><td>List installed files from a package</td><td><code>dpkg -L pkg</code></td><td><code>rpm -ql pkg</code></td></tr>
+<tr><td>Which package owns this file?</td><td><code>dpkg -S /path/file</code></td><td><code>rpm -qf /path/file</code></td></tr>
+</table>
+<p class="callout mistake">Forgetting to update the package index (<code>apt update</code>) before installing is a common source of "package not found" or "404" errors — the index is just a local cache of what's available, and it can go stale.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You're handed a lone <code>.deb</code> file with no internet access. Will <code>apt install ./file.deb</code> work if the package has dependencies you don't already have?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — without repository access, nothing can fetch missing dependencies. <code>dpkg -i file.deb</code> (or <code>apt install ./file.deb</code>) will install the package itself but fail or leave it broken if a dependency isn't already on the system.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code># On a Debian/Ubuntu system:
+apt list --installed | head       # see what's already installed
+dpkg -S /bin/ls                   # find which package owns a file
+
+# On a RHEL/Fedora system:
+dnf list installed | head
+rpm -qf /bin/ls</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man7.org/linux/man-pages/man8/apt.8.html" target="_blank" rel="noopener">apt(8) man page</a> — the official reference for the Debian/Ubuntu package manager.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Debian family uses <code>dpkg</code>/<code>apt</code>; RHEL family uses <code>rpm</code>/<code>dnf</code> (or <code>yum</code> on older systems).</li>
+    <li>The low-level tool installs a package file you already have; the high-level tool fetches from a repo and resolves dependencies — use the high-level tool day to day.</li>
+    <li>Keep the package index updated (<code>apt update</code>) before installing, or you'll chase stale "not found" errors.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Not sure which family a box is running? <code>cat /etc/os-release</code> from Lesson 1 tells you immediately.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0007-systemd-services.html">&larr; Back: systemd & services</a></span>
+  <span><a href="0009-storage-disks.html">Next: Storage & disks &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 10 — Networking Fundamentals</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 10 of 26</p>
+<h1>Networking Fundamentals</h1>
+
+<p>Every Linux box needs to answer three questions to be reachable on a network: what's my address, how do I reach other networks, and how do I turn a name into an address. Three tools answer those three questions directly.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>ip addr show</code> tells you the machine's own IP address. <code>ip route show</code> tells you where traffic goes when it isn't local. <code>ss -tulnp</code> tells you which services are actually listening for connections right now.</p>
+
+<h2>The essential toolkit</h2>
+<table>
+<tr><th>Command</th><th>Answers</th></tr>
+<tr><td><code>ip addr show</code></td><td>What IP address(es) does this machine have?</td></tr>
+<tr><td><code>ip route show</code></td><td>Where does non-local traffic go (the default gateway)?</td></tr>
+<tr><td><code>ss -tulnp</code></td><td>Which ports are listening, and which process owns them?</td></tr>
+<tr><td><code>ping host</code></td><td>Can I reach this host at all (ICMP)?</td></tr>
+<tr><td><code>curl -v host:port</code></td><td>Can I actually complete a TCP connection and get an application response?</td></tr>
+<tr><td><code>dig host</code> / <code>nslookup host</code></td><td>What does DNS resolve this name to?</td></tr>
+</table>
+<p class="callout mistake"><code>ip</code> is the modern tool; <code>ifconfig</code>, <code>netstat</code>, and <code>route</code> are older commands still seen in tutorials but deprecated on most current distros — <code>ip</code> and <code>ss</code> are the ones actually maintained today.</p>
+
+<h2>A simple diagnosis order</h2>
+<p>When something "isn't working" over the network, working outward from the machine itself finds the failure point fastest: confirm the local IP exists (<code>ip addr</code>) → confirm a route exists (<code>ip route</code>) → confirm you can reach the host at all (<code>ping</code>) → confirm the specific port responds (<code>curl</code> or <code>ss</code> on the remote end) → confirm DNS resolves correctly if you used a hostname (<code>dig</code>). Each step rules out one whole category of cause.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. <code>ping</code> to a server succeeds, but <code>curl</code> to its web port times out. What does that combination tell you?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Basic network reachability is fine (ping got a response), so the problem is higher up — likely the service isn't listening on that port, or a firewall is blocking that specific port while still allowing ICMP.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>ip addr show               # your own IP addresses
+ip route show               # your default gateway
+ss -tulnp                   # what's listening locally right now
+dig example.com             # DNS resolution for a real hostname</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man7.org/linux/man-pages/man8/ip.8.html" target="_blank" rel="noopener">ip(8) man page</a> — the official reference for the modern Linux networking toolkit.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>ip addr</code>, <code>ip route</code>, and <code>ss -tulnp</code> answer "what's my address," "where does traffic go," and "what's listening."</li>
+    <li>Diagnose outward in order: local address → route → reachability (ping) → port (curl) → DNS (dig) — each step isolates a different cause.</li>
+    <li><code>ip</code>/<code>ss</code> are the current tools; <code>ifconfig</code>/<code>netstat</code> are older and largely deprecated.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">"The network is down" almost always means one specific step in that diagnosis chain failed — find which one before assuming the whole network is the problem.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0009-storage-disks.html">&larr; Back: Storage & disks</a></span>
+  <span><a href="0011-ssh.html">Next: SSH &rarr;</a></span>
+</div>
+
+</body>
+</html>
