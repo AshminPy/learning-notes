@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 19 — Logging</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 19 of 26</p>
+<h1>Logging</h1>
+
+<p>On systemd-based distros, most system and service logs go through <code>journald</code> instead of (or alongside) plain text files in <code>/var/log</code>. You already used <code>journalctl -u &lt;service&gt;</code> in Lesson 7 — this lesson covers the rest of what it can do, plus where the older plain-text logs still live.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>journalctl -k</code> shows only kernel messages — the same content <code>dmesg</code> shows, but with full timestamps and searchable like any other journal query.</p>
+
+<h2>journalctl — the main tool</h2>
+<table>
+<tr><th>Command</th><th>What it shows</th></tr>
+<tr><td><code>journalctl</code></td><td>Every log entry, oldest first</td></tr>
+<tr><td><code>journalctl -f</code></td><td>Follow live, like <code>tail -f</code></td></tr>
+<tr><td><code>journalctl -u nginx</code></td><td>Just one service's logs</td></tr>
+<tr><td><code>journalctl -k</code></td><td>Kernel messages only</td></tr>
+<tr><td><code>journalctl --since "1 hour ago"</code></td><td>Time-bounded — also accepts exact dates/times</td></tr>
+<tr><td><code>journalctl -p err</code></td><td>Only entries at error priority or worse</td></tr>
+<tr><td><code>journalctl -b</code></td><td>Only logs since the current boot</td></tr>
+</table>
+<p>These combine: <code>journalctl -u nginx --since "10 min ago" -p err</code> narrows to exactly what you need instead of scrolling through everything.</p>
+
+<h2>/var/log — still relevant</h2>
+<p>Not everything goes through journald. Application logs that were never integrated with systemd, and some distros' auth/security logs, still write plain text to <code>/var/log/</code>.</p>
+<table>
+<tr><th>File</th><th>Contents</th></tr>
+<tr><td><code>/var/log/auth.log</code> (Debian) / <code>/var/log/secure</code> (RHEL)</td><td>Authentication attempts, sudo usage</td></tr>
+<tr><td><code>/var/log/syslog</code> (Debian)</td><td>General system messages on non-journald-only setups</td></tr>
+<tr><td><code>/var/log/&lt;app&gt;/</code></td><td>Application-specific logs (nginx, postgresql, etc.)</td></tr>
+</table>
+<p class="callout mistake">journald logs aren't permanent by default on every distro — some configurations keep logs only in memory or clear them across reboots (<code>journalctl -b -1</code> shows the previous boot's logs, if kept). Check <code>/etc/systemd/journald.conf</code>'s <code>Storage=</code> setting if you need logs to persist long-term.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You want to see only error-level (or worse) log lines from the nginx service in the last 30 minutes. What single command gets you exactly that?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>journalctl -u nginx --since "30 min ago" -p err</code> — combining the unit filter, time filter, and priority filter in one query.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>journalctl -k -n 20            # last 20 kernel messages
+journalctl --since "1 hour ago" -p err   # recent errors, any service
+ls /var/log/                    # see what plain-text logs exist on this system</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.freedesktop.org/software/systemd/man/latest/journalctl.html" target="_blank" rel="noopener">journalctl(1) man page</a> — the official systemd documentation.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>journalctl</code> is the primary log tool on systemd distros — filter by unit (<code>-u</code>), time (<code>--since</code>), priority (<code>-p</code>), or boot (<code>-b</code>), and combine filters freely.</li>
+    <li><code>/var/log/</code> still holds plain-text logs for auth and many applications not integrated with journald.</li>
+    <li>Journal persistence depends on <code>journald.conf</code>'s <code>Storage=</code> setting — don't assume logs survive a reboot without checking.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When investigating an incident, always narrow with <code>--since</code> and <code>-u</code> first — scrolling through the full unfiltered journal wastes time the incident doesn't have.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0018-performance-tuning.html">&larr; Back: Performance tuning & monitoring</a></span>
+  <span><a href="0020-security-fundamentals.html">Next: Security fundamentals &rarr;</a></span>
+</div>
+
+</body>
+</html>

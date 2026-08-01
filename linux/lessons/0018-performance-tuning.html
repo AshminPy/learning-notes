@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 18 — Performance Tuning & Monitoring</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 18 of 26</p>
+<h1>Performance Tuning & Monitoring</h1>
+
+<p>"The server is slow" has four possible root causes — CPU, memory, disk I/O, network — and guessing wastes time. One command, run once, tells you which of the four to actually investigate: <code>vmstat</code>.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>vmstat 1 5</code> prints 5 samples, one second apart. High numbers in the <code>us</code>/<code>sy</code> columns point to CPU; a high <code>wa</code> column points to disk I/O; consistent <code>si</code>/<code>so</code> activity points to memory pressure (swapping).</p>
+
+<h2>vmstat — the fastest first look</h2>
+<pre><code>vmstat 1 5
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st</code></pre>
+<table>
+<tr><th>Column</th><th>High value points to</th></tr>
+<tr><td><code>r</code> (run queue)</td><td>More processes waiting for CPU than you have cores — CPU pressure</td></tr>
+<tr><td><code>wa</code> (I/O wait)</td><td>CPU sitting idle waiting on disk — disk I/O bottleneck</td></tr>
+<tr><td><code>si</code>/<code>so</code> (swap in/out)</td><td>Active swapping — memory pressure (see Lesson 16)</td></tr>
+<tr><td><code>us</code>/<code>sy</code> (user/system time)</td><td>Genuine CPU-bound work — CPU bottleneck</td></tr>
+</table>
+
+<h2>Following up per bottleneck</h2>
+<ul>
+<li><strong>CPU:</strong> <code>top -o %CPU</code> to find which process, then Lesson 17's nice values if it's a background job stealing priority.</li>
+<li><strong>Memory:</strong> <code>free -h</code> and <code>ps aux --sort=-%mem</code> to find which process holds the most.</li>
+<li><strong>Disk I/O:</strong> <code>iostat -x 1</code> (per-device) or <code>iotop</code> (per-process) to find which disk or process is the bottleneck.</li>
+<li><strong>Network:</strong> <code>ss -s</code> for a connection summary, or Lesson 10's tools for reachability.</li>
+</ul>
+<p class="callout mistake">Don't jump straight to <code>top</code> when someone reports "slow" — <code>top</code> only shows CPU and memory clearly, and if the real bottleneck is disk I/O or network, you'll stare at a mostly-idle CPU and conclude nothing's wrong. Run <code>vmstat</code> first to know which direction to dig.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. <code>vmstat</code> shows <code>us</code>/<code>sy</code> near zero but <code>wa</code> consistently high. Where's the bottleneck, and what would you check next?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Disk I/O — the CPU is mostly idle, just waiting on storage. Next step: <code>iostat -x 1</code> or <code>iotop</code> to identify which disk or process is generating the I/O load.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>vmstat 1 5           # 5-second snapshot — check which column stands out
+free -h               # cross-check memory pressure
+top -o %CPU            # cross-check which process is using CPU, press q to quit</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man7.org/linux/man-pages/man8/vmstat.8.html" target="_blank" rel="noopener">vmstat(8) man page</a> — the official reference.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>"Slow" has four usual causes: CPU, memory, disk I/O, network — <code>vmstat</code> tells you which one in one command.</li>
+    <li>Don't start with <code>top</code> — it only shows two of the four categories clearly, and can mislead you into thinking nothing's wrong.</li>
+    <li>Follow up per bottleneck: <code>top</code> for CPU, <code>free</code>/<code>ps --sort=-%mem</code> for memory, <code>iostat</code>/<code>iotop</code> for disk, <code>ss</code> for network.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">"Slow" is a symptom, not a diagnosis — always narrow to one of the four categories before changing anything.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0017-cpu-scheduling.html">&larr; Back: CPU & scheduling</a></span>
+  <span><a href="0019-logging.html">Next: Logging &rarr;</a></span>
+</div>
+
+</body>
+</html>
