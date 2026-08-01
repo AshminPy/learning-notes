@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 5 — TCP vs UDP</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 5 of 20</p>
+<h1>TCP vs UDP</h1>
+
+<p>Both TCP and UDP sit at the Transport layer and both use ports to address a specific application — but they make opposite trade-offs. TCP guarantees delivery and order at the cost of setup time and overhead. UDP sends immediately with no guarantee, trading reliability for speed. Neither is "better" — they're built for different jobs.</p>
+
+<p class="callout"><strong>Simple example:</strong> Loading a webpage uses TCP — every byte of that HTML must arrive, in order, or the page breaks. A live video call uses UDP — a dropped frame every so often is a minor glitch, but waiting for TCP to retransmit a lost packet would cause a much worse stutter than just moving on.</p>
+
+<h2>Side by side</h2>
+<table>
+<tr><th></th><th>TCP</th><th>UDP</th></tr>
+<tr><td>Connection</td><td>Connection-oriented — handshake required before data flows (Lesson 6)</td><td>Connectionless — just send</td></tr>
+<tr><td>Reliability</td><td>Guaranteed delivery, retransmits lost packets</td><td>No guarantee — a lost packet is just gone</td></tr>
+<tr><td>Order</td><td>Guaranteed in-order delivery</td><td>No ordering guarantee</td></tr>
+<tr><td>Overhead</td><td>Higher — handshake, acknowledgments, retransmission logic</td><td>Minimal — just send the packet</td></tr>
+<tr><td>Typical use</td><td>Web (HTTP), SSH, databases, file transfer</td><td>DNS, video/voice calls, gaming, streaming</td></tr>
+</table>
+
+<h2>Why DNS mostly uses UDP</h2>
+<p>A DNS query and response is small and simple: ask a question, get an answer, done. TCP's handshake overhead would roughly double the time for a lookup that's this quick and low-stakes — if the response doesn't arrive, the resolver just asks again, which is cheaper than the guaranteed-delivery machinery TCP carries. (DNS does fall back to TCP for responses too large for a single UDP packet, but the common case is UDP.)</p>
+
+<h2>Ports — how both protocols find the right application</h2>
+<p>Both TCP and UDP use a 16-bit port number (0-65535) alongside the IP address to identify which specific application on a host should receive the data — this is exactly what <code>ss -tulnp</code> from Lesson 23 in the Linux course shows you. A TCP connection and a UDP "connection" on the same port number are entirely separate — port 53 TCP and port 53 UDP don't interfere with each other.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A video call occasionally has a brief glitch but keeps moving forward in real time rather than pausing to "catch up." Which transport protocol is it almost certainly using, and why does that behavior make sense?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">UDP — it doesn't retransmit lost packets or wait for them, so the call just continues with a small visible glitch instead of pausing to guarantee every frame arrives, which would make a live call feel worse, not better.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>ss -tulnp | head          # -t = TCP, -u = UDP — see both listed side by side
+nc -u -zv 8.8.8.8 53       # test a UDP port (DNS) is reachable</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc9293" target="_blank" rel="noopener">RFC 9293 — Transmission Control Protocol (TCP)</a> and <a href="https://www.rfc-editor.org/rfc/rfc768" target="_blank" rel="noopener">RFC 768 — User Datagram Protocol (UDP)</a> — the official IETF specifications.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>TCP guarantees delivery and order at the cost of setup overhead; UDP sends immediately with no guarantee.</li>
+    <li>DNS defaults to UDP because a quick retry is cheaper than TCP's handshake for a small, low-stakes query.</li>
+    <li>Ports (0-65535) identify the specific application on both protocols — TCP and UDP on the same port number are independent of each other.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">If a service "sometimes works" intermittently over a lossy connection, checking whether it's UDP-based (no automatic retry) is often the fastest explanation.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0004-routing-fundamentals.html">&larr; Back: Routing fundamentals</a></span>
+  <span><a href="0006-tcp-handshake.html">Next: The TCP handshake &rarr;</a></span>
+</div>
+
+</body>
+</html>

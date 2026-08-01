@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 6 — The TCP Handshake & Connection Lifecycle</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 6 of 20</p>
+<h1>The TCP Handshake & Connection Lifecycle</h1>
+
+<p>Before a single byte of real data moves over TCP, both sides exchange three packets to agree the connection is open and synchronize where sequence numbering starts. This is the "three-way handshake," and it's why a fresh TCP connection always has a small delay before the actual request goes out — that delay is the handshake completing.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>curl -v</code> against a slow-to-respond server shows this directly — a visible pause labeled "Connected" happens before "GET request sent," because the handshake had to finish first.</p>
+
+<h2>The three steps</h2>
+<table>
+<tr><th>Step</th><th>Who sends</th><th>What it means</th></tr>
+<tr><td>1. SYN</td><td>Client &rarr; Server</td><td>"I'd like to start a connection"</td></tr>
+<tr><td>2. SYN-ACK</td><td>Server &rarr; Client</td><td>"Acknowledged, and I'd like to too"</td></tr>
+<tr><td>3. ACK</td><td>Client &rarr; Server</td><td>"Acknowledged — connection is now open"</td></tr>
+</table>
+<p>Only after all three packets complete does actual application data (the HTTP request, the SSH banner, whatever the connection is for) start flowing. This is why "connection refused" and "connection timed out" mean different things: refused means step 1 got an immediate rejection (nothing listening on that port); timed out means step 1 never got any reply at all (likely a firewall silently dropping it, or the host is unreachable).</p>
+
+<h2>Closing a connection</h2>
+<p>Closing is a similar four-step exchange (FIN/ACK from each side), because either side can finish sending independently — one direction can close while the other still has data in flight. A connection that's supposed to be closed but keeps showing up in <code>ss</code> output in a <code>TIME_WAIT</code> or <code>CLOSE_WAIT</code> state is normal cleanup behavior, not automatically a bug — though a large pile-up of either can indicate the application isn't closing connections properly.</p>
+<p class="callout mistake">"Connection refused" and "connection timed out" get treated as the same failure in casual conversation, but they point to different causes — refused means you reached the host and it actively said no; timed out means you likely never reached it at all. Diagnosing the wrong one wastes real time.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You try to connect to a port and get an immediate "connection refused" versus a 30-second hang ending in "connection timed out." What's the practical difference in what you should check next?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Refused: the host is reachable but nothing is listening on that port — check if the service is running and bound correctly. Timed out: your packet likely never got a reply at all — check firewalls/security groups and basic network reachability first, the service question comes second.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>ss -tan | grep -E "SYN|ESTAB|TIME_WAIT" | head   # see connections in different lifecycle states
+curl -v https://example.com 2>&1 | grep -i connect  # watch the handshake complete in curl's own output</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc9293" target="_blank" rel="noopener">RFC 9293 — Transmission Control Protocol (TCP)</a> — the official IETF specification, Section 3.5 covers connection establishment.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>TCP requires a three-way handshake (SYN, SYN-ACK, ACK) before any real data flows — this is the delay you see on a fresh connection.</li>
+    <li>"Connection refused" (actively rejected) and "connection timed out" (no reply at all) point to different root causes — treat them differently.</li>
+    <li>Closing is a separate four-step exchange; connections sitting in <code>TIME_WAIT</code>/<code>CLOSE_WAIT</code> briefly is normal, not automatically a bug.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When a network issue is intermittent, capturing the handshake itself with <code>tcpdump</code> (Linux course, Lesson 23) shows you exactly which step is failing — far faster than guessing.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0005-tcp-vs-udp.html">&larr; Back: TCP vs UDP</a></span>
+  <span><a href="0007-dns-fundamentals.html">Next: DNS fundamentals &rarr;</a></span>
+</div>
+
+</body>
+</html>

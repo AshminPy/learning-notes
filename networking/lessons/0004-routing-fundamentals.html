@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 4 — Routing Fundamentals</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 4 of 20</p>
+<h1>Routing Fundamentals</h1>
+
+<p>A router's whole job is answering one question for every packet: "which direction does this go next?" It answers that by checking the packet's destination IP against a routing table — an ordered list of network ranges and the next hop for each — and forwarding accordingly. Every device with a network connection has its own routing table, not just dedicated routers.</p>
+
+<p class="callout"><strong>Simple example:</strong> Your laptop's routing table has one entry for your local network (send directly) and a "default route" — the catch-all for everything else, which sends the packet to your router to figure out the rest of the journey.</p>
+
+<h2>Reading a routing table</h2>
+<pre><code>ip route show
+default via 192.168.1.1 dev eth0
+192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.42</code></pre>
+<table>
+<tr><th>Line</th><th>Meaning</th></tr>
+<tr><td><code>192.168.1.0/24 dev eth0 ...</code></td><td>Anything in this local subnet: send directly out this network interface</td></tr>
+<tr><td><code>default via 192.168.1.1</code></td><td>Everything else: send to this gateway IP, and let it figure out the next hop</td></tr>
+</table>
+<p>Routing tables use "longest prefix match" — if a packet's destination matches multiple entries, the most specific one (the longest prefix, like /32 over /24) wins. The default route (<code>0.0.0.0/0</code>) is the least specific possible match, which is exactly why it's the fallback for everything not covered by a more specific entry.</p>
+
+<h2>Static vs. dynamic routing</h2>
+<p>Static routes are manually configured and don't change unless someone changes them — fine for small, stable networks (most cloud VPC route tables are static). Dynamic routing protocols (like BGP, which decides how traffic flows across the internet itself) let routers automatically discover and adapt to network changes — essential at internet scale, generally not something you configure by hand inside a single cloud VPC.</p>
+<p class="callout mistake">A route existing in the table doesn't guarantee the destination is actually reachable — it just tells the packet where to go next. If that next hop is down, or a firewall blocks it further along, the packet still fails. A route is a direction, not a promise.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your routing table has both <code>10.0.0.0/16</code> and <code>10.0.1.0/24</code> as entries with different next hops. A packet is headed to <code>10.0.1.5</code>. Which entry wins?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The <code>10.0.1.0/24</code> entry — longest prefix match means the more specific route (/24, narrower range) always wins over a broader one (/16) when both match.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>ip route show               # your machine's own routing table
+ip route get 8.8.8.8         # which route would actually be used to reach this address</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc1812" target="_blank" rel="noopener">RFC 1812 — Requirements for IP Version 4 Routers</a> — the official IETF reference for routing behavior.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A routing table maps destination network ranges to a next hop — every network-connected device has one, not just dedicated routers.</li>
+    <li>Longest prefix match wins when multiple routes match — a default route (<code>0.0.0.0/0</code>) is the least-specific fallback.</li>
+    <li>Static routes are manually set (typical for a cloud VPC); dynamic routing protocols like BGP adapt automatically at internet scale.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When traffic mysteriously takes an unexpected path, checking the routing table with longest-prefix-match in mind is usually faster than assuming a firewall issue.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0003-ipv4-vs-ipv6.html">&larr; Back: IPv4 vs IPv6 basics</a></span>
+  <span><a href="0005-tcp-vs-udp.html">Next: TCP vs UDP &rarr;</a></span>
+</div>
+
+</body>
+</html>
