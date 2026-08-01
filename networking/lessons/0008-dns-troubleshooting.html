@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 8 — DNS Troubleshooting</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 8 of 20</p>
+<h1>DNS Troubleshooting</h1>
+
+<p>"It works on my machine but not yours" is one of the most common DNS symptoms — and it's usually not a broken record, it's two different resolvers holding two different cached answers. Knowing how to bypass the cache and query authoritatively directly is what separates a fast diagnosis from a confused half hour.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>dig example.com</code> uses your system's configured resolver (which might have a stale cached answer). <code>dig @8.8.8.8 example.com</code> asks Google's public resolver directly, bypassing whatever your local resolver has cached — a quick way to check if the problem is your resolver's cache or the record itself.</p>
+
+<h2>The narrowing sequence</h2>
+<table>
+<tr><th>Step</th><th>Command</th><th>Tells you</th></tr>
+<tr><td>1. Check the current answer</td><td><code>dig example.com</code></td><td>What your resolver currently returns</td></tr>
+<tr><td>2. Check a different resolver</td><td><code>dig @8.8.8.8 example.com</code></td><td>Whether it's your local cache specifically</td></tr>
+<tr><td>3. Check the authoritative source directly</td><td><code>dig @&lt;authoritative-ns&gt; example.com</code></td><td>The real, current, ground-truth answer — no caching involved</td></tr>
+<tr><td>4. Check the TTL</td><td><code>dig example.com</code>, read the number next to the record</td><td>How long a cached wrong answer could realistically persist</td></tr>
+</table>
+
+<h2>Common DNS failure patterns</h2>
+<ul>
+<li><strong>NXDOMAIN:</strong> the domain doesn't exist at all, from that resolver's perspective — check for a typo or confirm the domain is actually registered/delegated.</li>
+<li><strong>SERVFAIL:</strong> the resolver tried and got a failure partway through — often a misconfigured DNSSEC signature, or the authoritative server itself is down.</li>
+<li><strong>Different answers from different locations:</strong> often intentional (geo-based DNS/CDN routing, Lesson 17), not a bug — confirm whether the domain is expected to behave this way before assuming an error.</li>
+</ul>
+<p class="callout mistake">Flushing your local DNS cache fixes exactly one machine's stale-cache problem — it does nothing for anyone else's cached answer anywhere else on the internet. If the issue is reported across many users, the fix is waiting out the TTL (or reducing it before the next planned change), not flushing caches one machine at a time.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. <code>dig example.com</code> from your machine returns the old IP. <code>dig @8.8.8.8 example.com</code> returns the new, correct IP. What does that combination tell you?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The record itself is already correct at the authoritative level — your local/configured resolver is just serving a stale cached answer. Flushing your local cache (or waiting out the TTL) resolves it, not a DNS record problem.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>dig example.com
+dig @8.8.8.8 example.com
+dig example.com NS +short          # find the authoritative nameservers
+dig @&lt;one-of-those-ns&gt; example.com  # query authoritatively, no caching</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc8499" target="_blank" rel="noopener">RFC 8499 — DNS Terminology</a> — the official IETF reference defining recursive, authoritative, and related DNS terms precisely.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Narrow DNS issues in order: your resolver's cached answer &rarr; a different public resolver &rarr; the authoritative nameserver directly.</li>
+    <li>NXDOMAIN means the name doesn't exist from that resolver's view; SERVFAIL means the lookup itself broke partway through.</li>
+    <li>Flushing a local cache only fixes that one machine — a widely-reported stale answer needs the TTL to expire, not individual cache flushes.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When a DNS issue is reported by "some users, not others," suspect caching or geo-routing before suspecting a broken record — both produce that exact symptom.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0007-dns-fundamentals.html">&larr; Back: DNS fundamentals</a></span>
+  <span><a href="0009-http-https-fundamentals.html">Next: HTTP/HTTPS fundamentals &rarr;</a></span>
+</div>
+
+</body>
+</html>

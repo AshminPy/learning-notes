@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 9 — HTTP/HTTPS Fundamentals</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 9 of 20</p>
+<h1>HTTP/HTTPS Fundamentals</h1>
+
+<p>HTTP is the Application-layer protocol behind essentially every API call and webpage — a plain-text request/response exchange over the TCP connection Lesson 6 already covered. HTTPS is exactly the same protocol, wrapped in TLS encryption (Lesson 10) so the exchange can't be read or tampered with in transit.</p>
+
+<p class="callout"><strong>Simple example:</strong> A request is a method (<code>GET</code>, <code>POST</code>, ...), a path (<code>/users/42</code>), and headers. A response is a status code (<code>200</code>, <code>404</code>, ...), headers, and a body. <code>curl -v</code> shows both sides of this exchange in plain text, even over HTTPS — curl decrypts it for you to display.</p>
+
+<h2>Methods — what the request wants to do</h2>
+<table>
+<tr><th>Method</th><th>Typical use</th></tr>
+<tr><td>GET</td><td>Retrieve a resource, no side effects expected</td></tr>
+<tr><td>POST</td><td>Create something, or submit data that changes state</td></tr>
+<tr><td>PUT</td><td>Replace a resource entirely</td></tr>
+<tr><td>PATCH</td><td>Partially update a resource</td></tr>
+<tr><td>DELETE</td><td>Remove a resource</td></tr>
+</table>
+
+<h2>Status code ranges — what the response means</h2>
+<table>
+<tr><th>Range</th><th>Meaning</th></tr>
+<tr><td>2xx</td><td>Success</td></tr>
+<tr><td>3xx</td><td>Redirect — go look somewhere else</td></tr>
+<tr><td>4xx</td><td>Client error — the request itself was wrong (404 not found, 401 unauthorized, 403 forbidden)</td></tr>
+<tr><td>5xx</td><td>Server error — the request was fine, the server failed to handle it</td></tr>
+</table>
+<p class="callout mistake">401 and 403 get confused constantly: 401 means "I don't know who you are" (missing or invalid credentials); 403 means "I know who you are, and you're not allowed." Fixing the wrong one wastes time — a 403 isn't solved by re-authenticating if the account genuinely lacks permission.</p>
+
+<h2>Headers carry the metadata</h2>
+<p>Headers are key-value pairs that carry information outside the actual body — content type, authentication tokens, caching instructions, and more. <code>Content-Type: application/json</code> tells the receiver how to parse the body; <code>Authorization: Bearer &lt;token&gt;</code> is how most APIs authenticate a request.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. An API call returns 403. Will sending a valid API key/token fix it?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Not necessarily — 403 means the server already recognizes who's asking and is deliberately denying the action. That's a permissions problem, not an authentication problem; a 401 is the one that specifically means the credentials themselves are the issue.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>curl -v https://example.com 2>&1 | grep -E "^[<>]"
+# > lines are the request being sent, < lines are the response coming back</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc9110" target="_blank" rel="noopener">RFC 9110 — HTTP Semantics</a> — the official IETF specification for HTTP methods and status codes.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>HTTP is a plain-text request/response protocol over TCP; HTTPS is the same protocol wrapped in TLS.</li>
+    <li>Status codes group by first digit: 2xx success, 3xx redirect, 4xx client error, 5xx server error.</li>
+    <li>401 = unknown identity (authentication); 403 = known identity, denied anyway (authorization) — different problems, different fixes.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder"><code>curl -v</code> showing you both the request and response headers is often faster for diagnosing an API issue than reading application logs first.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0008-dns-troubleshooting.html">&larr; Back: DNS troubleshooting</a></span>
+  <span><a href="0010-tls-ssl-certificates.html">Next: TLS/SSL & certificates &rarr;</a></span>
+</div>
+
+</body>
+</html>
