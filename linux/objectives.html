@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Linux Course Roadmap & Progress Tracker</title>
-<meta name="description" content="Linux for Cloud & SRE course roadmap — 26 planned lessons grouped by LFCS exam domain, with progress checkboxes for published lessons.">
+<title>Linux Exam Objectives Tracker</title>
+<meta name="description" content="Linux for Cloud & SRE exam objectives tracker — 26 planned lessons grouped by LFCS exam domain, with progress checkboxes for published lessons.">
 <link rel="canonical" href="https://ashminpy.github.io/learning-notes/linux/objectives.html">
 <link rel="stylesheet" href="assets/style.css">
 <style>
@@ -15,27 +15,13 @@
   .item-list { list-style: none; padding-left: 0; }
   .item-list li { margin: 0.4rem 0; }
   .planned { color: var(--muted); font-style: italic; }
-  .type-badge {
-    display: inline-block; font-size: 0.7rem; font-weight: bold; text-transform: uppercase;
-    letter-spacing: 0.03em; padding: 0.05rem 0.4rem; border-radius: 3px; margin-right: 0.4rem;
-  }
-  .type-execute { background: #eaf3ea; color: #2e7d32; }
-  .type-diagnose { background: #fbecea; color: #b0281a; }
-  .type-decide { background: #eef0fa; color: #3949ab; }
-  .type-mixed { background: #f3e9f7; color: #6a1b9a; }
-  .type-reference { background: var(--code-bg); color: var(--muted); }
-  @media (prefers-color-scheme: dark) {
-    .type-execute { background: #1c2a1c; } .type-diagnose { background: #2a1a18; }
-    .type-decide { background: #1c2030; } .type-mixed { background: #241a2a; }
-  }
 </style>
 </head>
 <body>
 
 <p class="eyebrow">Linux for Cloud & SRE</p>
-<h1>Roadmap & Progress Tracker</h1>
+<h1>Exam Objectives Tracker</h1>
 <p>All 26 planned lessons, grouped by the official <a href="https://training.linuxfoundation.org/certification/linux-foundation-certified-sysadmin-lfcs/" target="_blank" rel="noopener">LFCS exam domains</a> and weights (verified 2026-08-01). Lessons publish incrementally — published lessons are linked and checkable; unpublished ones are listed as planned so the full outline is visible from day one. Checking a box does not guarantee exam readiness — use this to track review, not to predict a result. Progress is saved in this browser only.</p>
-<p>Every lesson opens with a real production moment, not a topic definition — but not every moment is an outage. <span class="type-badge type-execute">execute</span> = confidently perform a real task from scratch. <span class="type-badge type-diagnose">diagnose</span> = investigate a live incident. <span class="type-badge type-decide">decide</span> = a judgment call with real trade-offs. <span class="type-badge type-mixed">mixed</span> = an unlabeled review drawing on several earlier lessons at once, on purpose — real problems don't announce their category.</p>
 
 <p><button id="reset-progress" style="font-family:inherit;padding:0.4rem 0.8rem;border-radius:4px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;">Reset progress</button></p>
 
@@ -54,81 +40,70 @@ const STORE_KEY = "linux-objectives-progress";
 const state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
 function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
 
-// type: diagnose (investigate an incident) | execute (confidently do a real task)
-// | decide (judgment/trade-off call) | mixed (interleaved review, no topic hint)
-// | reference (cheat-sheet style, not scenario-typed) — rebalanced 2026-08-01,
-// see deploy-states/learning-notes-academy.md for why.
 const DOMAINS = [
   {
     name: "Operations Deployment",
     weight: 25,
     lessons: [
-      { id: "0007", type: "diagnose", title: "The Service That Restarts Itself Into a Crash Loop (systemd)", href: "lessons/0007-systemd-services.html" },
-      { id: "0008", type: "execute", title: "Installing and Pinning the Exact Version Your App Needs, Everywhere (package management)", href: "lessons/0008-package-management.html" },
-      { id: "0015", type: "diagnose", title: "The Process That's Running, But /proc Disagrees (kernel basics)", href: "lessons/0015-kernel-basics.html" },
-      { id: "0020", type: "decide", title: "Choosing the Right Access Control Model for a Compliance Audit (security fundamentals)", href: "lessons/0020-security-fundamentals.html" },
-      { id: "0021", type: "diagnose", title: "The Container That Wasn't Actually Isolated (namespaces, cgroups)", href: "lessons/0021-containers-linux-level.html" },
-      { id: "0022", type: "execute", title: "Scheduling a Job That Actually Runs — and Alerts You If It Doesn't (cron, systemd timers)", href: "lessons/0022-cron-systemd-timers.html" },
-      { id: "0025", type: "diagnose", title: "The Server That Won't Come Back Up (boot process)", href: "lessons/0025-boot-process.html" }
+      { id: "0007", title: "systemd & services", href: "lessons/0007-systemd-services.html" },
+      { id: "0008", title: "Package management", href: "lessons/0008-package-management.html" },
+      { id: "0015", title: "Kernel basics", href: "lessons/0015-kernel-basics.html" },
+      { id: "0020", title: "Security fundamentals (SELinux/AppArmor, firewalld/nftables)", href: "lessons/0020-security-fundamentals.html" },
+      { id: "0021", title: "Containers at the Linux level (namespaces, cgroups)", href: "lessons/0021-containers-linux-level.html" },
+      { id: "0022", title: "Automation with cron & systemd timers", href: "lessons/0022-cron-systemd-timers.html" },
+      { id: "0025", title: "Boot process & troubleshooting", href: "lessons/0025-boot-process.html" }
     ]
   },
   {
     name: "Networking",
     weight: 25,
     lessons: [
-      { id: "0010", type: "diagnose", title: "It Works From Your Laptop, Not From the Server (networking fundamentals)", href: "lessons/0010-networking-fundamentals.html" },
-      { id: "0011", type: "execute", title: "Setting Up Secure SSH Access for a New Teammate (SSH)", href: "lessons/0011-ssh.html" }
+      { id: "0010", title: "Networking fundamentals", href: "lessons/0010-networking-fundamentals.html" },
+      { id: "0011", title: "SSH (keys, config, tunneling, hardening)", href: "lessons/0011-ssh.html" }
     ]
   },
   {
     name: "Storage",
     weight: 20,
     lessons: [
-      { id: "0002", type: "diagnose", title: "The Disk That Isn't Full (filesystem hierarchy & navigation)", href: "lessons/0002-filesystem-navigation.html" },
-      { id: "0009", type: "execute", title: "Extending Production Storage Live, No Downtime (LVM, filesystems)", href: "lessons/0009-storage-disks.html" }
+      { id: "0002", title: "Filesystem hierarchy & navigation", href: "lessons/0002-filesystem-navigation.html" },
+      { id: "0009", title: "Storage & disks (partitions, LVM, filesystems, mounting)", href: "lessons/0009-storage-disks.html" }
     ]
   },
   {
     name: "Essential Commands",
     weight: 20,
     lessons: [
-      { id: "0003", type: "execute", title: "Standing Up Access for a New Engineer, Correctly (permissions & ownership)", href: "lessons/0003-permissions-ownership.html" },
-      { id: "0005", type: "diagnose", title: "The Process That Won't Die (process fundamentals)", href: "lessons/0005-processes-fundamentals.html" },
-      { id: "0006", type: "execute", title: "Running a Long Job That Survives You Logging Off (job control)", href: "lessons/0006-job-control.html" },
-      { id: "0012", type: "execute", title: "Turning a Manual Deploy Checklist Into a Script You Trust (bash fundamentals)", href: "lessons/0012-bash-fundamentals.html" },
-      { id: "0013", type: "decide", title: "How Defensive Should This Script Be? (bash advanced, error handling)", href: "lessons/0013-bash-advanced.html" },
-      { id: "0014", type: "diagnose", title: "Finding the One Bad Line in 40GB of Logs (text processing)", href: "lessons/0014-text-processing.html" },
-      { id: "0016", type: "diagnose", title: "OOM Killed the Wrong Process (memory management)", href: "lessons/0016-memory-management.html" },
-      { id: "0017", type: "diagnose", title: "One Core Pegged, Seven Idle (CPU & scheduling)", href: "lessons/0017-cpu-scheduling.html" },
-      { id: "0018", type: "diagnose", title: "The Response Time That Doubled Overnight (performance tuning)", href: "lessons/0018-performance-tuning.html" },
-      { id: "0019", type: "execute", title: "Setting Up Logging So the Evidence Is Never Missing Again (logging)", href: "lessons/0019-logging.html" },
-      { id: "0023", type: "diagnose", title: "The Bug You Can't Reproduce, Live in Production (debugging tools)", href: "lessons/0023-debugging-tools.html" },
-      { id: "0024", type: "mixed", title: "Mixed Incident Drill — No Hints, Which Domain Is This? (interleaved review)", href: "lessons/0024-production-incidents.html" }
+      { id: "0003", title: "Permissions & ownership", href: "lessons/0003-permissions-ownership.html" },
+      { id: "0005", title: "Processes fundamentals", href: "lessons/0005-processes-fundamentals.html" },
+      { id: "0006", title: "Job control & process management", href: "lessons/0006-job-control.html" },
+      { id: "0012", title: "Bash scripting fundamentals", href: "lessons/0012-bash-fundamentals.html" },
+      { id: "0013", title: "Bash scripting advanced", href: "lessons/0013-bash-advanced.html" },
+      { id: "0014", title: "Text processing (grep/sed/awk)", href: "lessons/0014-text-processing.html" },
+      { id: "0016", title: "Memory management", href: "lessons/0016-memory-management.html" },
+      { id: "0017", title: "CPU & scheduling", href: "lessons/0017-cpu-scheduling.html" },
+      { id: "0018", title: "Performance tuning & monitoring", href: "lessons/0018-performance-tuning.html" },
+      { id: "0019", title: "Logging", href: "lessons/0019-logging.html" },
+      { id: "0023", title: "Debugging tools (strace, lsof, tcpdump, dmesg)", href: "lessons/0023-debugging-tools.html" },
+      { id: "0024", title: "Common production incidents", href: "lessons/0024-production-incidents.html" }
     ]
   },
   {
     name: "Users and Groups",
     weight: 10,
     lessons: [
-      { id: "0004", type: "execute", title: "Setting Up Least-Privilege Sudo for a Growing Team (users, groups, sudo)", href: "lessons/0004-users-groups-sudo.html" }
+      { id: "0004", title: "Users, groups & sudo", href: "lessons/0004-users-groups-sudo.html" }
     ]
   }
 ];
 
 const FOUNDATIONS = [
-  { id: "0001", type: "diagnose", title: "The Server That Doesn't Behave Like Any Other (kernel, userspace, distros)", href: "lessons/0001-why-linux.html" },
-  { id: "0026", type: "reference", title: "Final review & LFCS/RHCSA cheat sheet", href: "lessons/0026-final-review.html" }
+  { id: "0001", title: "The kernel and the distro", href: "lessons/0001-why-linux.html" },
+  { id: "0026", title: "Final review & LFCS/RHCSA cheat sheet", href: "lessons/0026-final-review.html" }
 ];
 
 function published(l) {
   return l.id === "0001" || l.id === "0002";
-}
-
-function typeBadge(l) {
-  const badge = document.createElement("span");
-  badge.className = `type-badge type-${l.type}`;
-  badge.textContent = l.type;
-  return badge;
 }
 
 function renderList(container, lessons) {
@@ -145,12 +120,10 @@ function renderList(container, lessons) {
       a.textContent = l.title;
       li.appendChild(cb);
       li.appendChild(document.createTextNode(" "));
-      li.appendChild(typeBadge(l));
       li.appendChild(a);
     } else {
       li.className = "planned";
-      li.appendChild(typeBadge(l));
-      li.appendChild(document.createTextNode(`${l.title} (planned)`));
+      li.textContent = `${l.title} (planned)`;
     }
     container.appendChild(li);
   });

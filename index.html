@@ -54,6 +54,9 @@
   .card .status { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.5rem; }
   .card p.desc { margin: 0 0 0.6rem; }
   .card .card-links { font-size: 0.9rem; display: flex; gap: 1rem; flex-wrap: wrap; }
+  .category { margin-top: 2.5rem; }
+  .category h2 { font-size: 1.15rem; margin: 0 0 0.2rem; border: none; padding: 0; }
+  .category p.category-desc { color: var(--muted); font-size: 0.9rem; margin: 0 0 1rem; }
 </style>
 </head>
 <body>
@@ -68,57 +71,69 @@
 </div>
 <p class="feedback-link"><a href="https://github.com/AshminPy/learning-notes/issues/new?title=Learning%20notes%20correction%3A%20Homepage" target="_blank" rel="noopener">Report an issue / suggest a correction &rarr;</a></p>
 
-<div class="cards">
+<div class="category">
+  <h2>Zero to Hero</h2>
+  <p class="category-desc">Skill-building paths with no single certification as the goal — job-readiness or a full toolkit is the target.</p>
+  <div class="cards">
 
-  <div class="card">
-    <h2>AI/ML Engineer — Zero to Job-Ready</h2>
-    <p class="status">Complete — 34 of 34 lessons</p>
-    <p class="desc">Zero prior coding or AI/ML background to job-ready: Python foundations, core ML, deep learning, CV/NLP, cloud/GenAI, and a portfolio + interview-prep track. Built around the AWS AI Practitioner and IBM AI Engineering certifications.</p>
-    <p class="card-links"><a href="ai-ml-engineer/index.html">Start course &rarr;</a> <a href="ai-ml-engineer/objectives.html">Roadmap tracker &rarr;</a></p>
+    <div class="card">
+      <h2>AI/ML Engineer — Zero to Job-Ready</h2>
+      <p class="status">Complete — 34 of 34 lessons</p>
+      <p class="desc">Zero prior coding or AI/ML background to job-ready: Python foundations, core ML, deep learning, CV/NLP, cloud/GenAI, and a portfolio + interview-prep track. Built around the AWS AI Practitioner and IBM AI Engineering certifications.</p>
+      <p class="card-links"><a href="ai-ml-engineer/index.html">Start course &rarr;</a> <a href="ai-ml-engineer/objectives.html">Roadmap tracker &rarr;</a></p>
+    </div>
+
+    <div class="card">
+      <h2>Mac Power User &amp; SRE Toolkit</h2>
+      <p class="status">Complete — 24 of 24 lessons</p>
+      <p class="desc">Go from a new Mac to a 100%-keyboard SRE power-user setup: window management, launcher, terminal, and CLI foundations; reproducible dotfiles; SSH and YubiKey; safe multi-account git/AWS/gcloud; Kubernetes-from-the-terminal ergonomics; a fast, understood <code>.zshrc</code>.</p>
+      <p class="card-links"><a href="keyboard-workflow/index.html">Start course &rarr;</a> <a href="keyboard-workflow/objectives.html">Roadmap tracker &rarr;</a></p>
+    </div>
+
   </div>
+</div>
 
-  <div class="card">
-    <h2>Google Professional Cloud Architect</h2>
-    <p class="status">28 lessons published</p>
-    <p class="desc">Rapid-revision and active-recall companion covering compute, storage, networking, IAM/security, reliability, cost, and the business/technical process domains of the official PCA exam.</p>
-    <p class="card-links"><a href="gcp-pca/index.html">Start course &rarr;</a> <a href="gcp-pca/objectives.html">Objectives tracker &rarr;</a></p>
+<div class="category">
+  <h2>Exam-Focused</h2>
+  <p class="category-desc">Built around a specific official certification — objectives trackers are mapped to the real exam domains and weights.</p>
+  <div class="cards">
+
+    <div class="card">
+      <h2>Google Professional Cloud Architect</h2>
+      <p class="status">28 lessons published</p>
+      <p class="desc">Rapid-revision and active-recall companion covering compute, storage, networking, IAM/security, reliability, cost, and the business/technical process domains of the official PCA exam.</p>
+      <p class="card-links"><a href="gcp-pca/index.html">Start course &rarr;</a> <a href="gcp-pca/objectives.html">Objectives tracker &rarr;</a></p>
+    </div>
+
+    <div class="card">
+      <h2>Kubernetes CKA</h2>
+      <p class="status">24 lessons published</p>
+      <p class="desc">Hands-on, type-it-yourself revision covering Pods through cluster architecture, troubleshooting, and the full official CKA curriculum.</p>
+      <p class="card-links"><a href="kubernetes-cka/index.html">Start course &rarr;</a> <a href="kubernetes-cka/objectives.html">Objectives tracker &rarr;</a></p>
+    </div>
+
+    <div class="card">
+      <h2>Terraform — Zero to Expert</h2>
+      <p class="status">Complete — 37 of 37 lessons</p>
+      <p class="desc">IaC fundamentals, state, modules, testing, CI/CD, and production patterns — zero prior Terraform/IaC experience to production confidence. Built around the HashiCorp Certified Terraform Associate (004) exam.</p>
+      <p class="card-links"><a href="terraform/index.html">Start course &rarr;</a> <a href="terraform/objectives.html">Roadmap tracker &rarr;</a></p>
+    </div>
+
+    <div class="card">
+      <h2>Ansible — Zero to Expert</h2>
+      <p class="status">Complete — 36 of 36 lessons</p>
+      <p class="desc">Playbooks, roles, dynamic inventory, Vault, testing (ansible-lint, Molecule), execution environments, and automation controller/AWX — zero prior Ansible experience to production confidence. Built around the Red Hat Certified Specialist EX374 exam.</p>
+      <p class="card-links"><a href="ansible/index.html">Start course &rarr;</a> <a href="ansible/objectives.html">Roadmap tracker &rarr;</a></p>
+    </div>
+
+    <div class="card">
+      <h2>Linux for Cloud &amp; SRE</h2>
+      <p class="status">In progress — 2 of 26 lessons published</p>
+      <p class="desc">The floor every other course on this site runs on: filesystems, permissions, processes, systemd, networking, SSH, bash scripting, performance tuning, kernel basics, security, containers-at-the-Linux-level, and real production troubleshooting. Concept-aligned with LFCS.</p>
+      <p class="card-links"><a href="linux/index.html">Start course &rarr;</a> <a href="linux/objectives.html">Objectives tracker &rarr;</a></p>
+    </div>
+
   </div>
-
-  <div class="card">
-    <h2>Kubernetes CKA</h2>
-    <p class="status">24 lessons published</p>
-    <p class="desc">Hands-on, type-it-yourself revision covering Pods through cluster architecture, troubleshooting, and the full official CKA curriculum.</p>
-    <p class="card-links"><a href="kubernetes-cka/index.html">Start course &rarr;</a> <a href="kubernetes-cka/objectives.html">Objectives tracker &rarr;</a></p>
-  </div>
-
-  <div class="card">
-    <h2>Terraform — Zero to Expert</h2>
-    <p class="status">Complete — 37 of 37 lessons</p>
-    <p class="desc">IaC fundamentals, state, modules, testing, CI/CD, and production patterns — zero prior Terraform/IaC experience to production confidence. Built around the HashiCorp Certified Terraform Associate (004) exam.</p>
-    <p class="card-links"><a href="terraform/index.html">Start course &rarr;</a> <a href="terraform/objectives.html">Roadmap tracker &rarr;</a></p>
-  </div>
-
-  <div class="card">
-    <h2>Ansible — Zero to Expert</h2>
-    <p class="status">Complete — 36 of 36 lessons</p>
-    <p class="desc">Playbooks, roles, dynamic inventory, Vault, testing (ansible-lint, Molecule), execution environments, and automation controller/AWX — zero prior Ansible experience to production confidence. Built around the Red Hat Certified Specialist EX374 exam.</p>
-    <p class="card-links"><a href="ansible/index.html">Start course &rarr;</a> <a href="ansible/objectives.html">Roadmap tracker &rarr;</a></p>
-  </div>
-
-  <div class="card">
-    <h2>Linux for Cloud &amp; SRE — Zero to Hero</h2>
-    <p class="status">In progress — 2 of 26 lessons published</p>
-    <p class="desc">The floor every other course on this site runs on: filesystems, permissions, processes, systemd, networking, SSH, bash scripting, performance tuning, kernel basics, security, containers-at-the-Linux-level, and real production troubleshooting. Concept-aligned with LFCS.</p>
-    <p class="card-links"><a href="linux/index.html">Start course &rarr;</a> <a href="linux/objectives.html">Progress tracker &rarr;</a></p>
-  </div>
-
-  <div class="card">
-    <h2>Mac Power User &amp; SRE Toolkit</h2>
-    <p class="status">Complete — 24 of 24 lessons</p>
-    <p class="desc">Go from a new Mac to a 100%-keyboard SRE power-user setup: window management, launcher, terminal, and CLI foundations; reproducible dotfiles; SSH and YubiKey; safe multi-account git/AWS/gcloud; Kubernetes-from-the-terminal ergonomics; a fast, understood <code>.zshrc</code>.</p>
-    <p class="card-links"><a href="keyboard-workflow/index.html">Start course &rarr;</a> <a href="keyboard-workflow/objectives.html">Roadmap tracker &rarr;</a></p>
-  </div>
-
 </div>
 
 </body>
