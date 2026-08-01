@@ -91,10 +91,10 @@ th {
 }
 
 .trap, .callout.exam-tip {
-  border-left: 3px solid #b0281a;
+  border-left: 3px solid #ba6f64;
   padding: 0.1rem 1.1rem;
   margin: 1.5rem 0;
-  background: #fbecea;
+  background: #f8ebe9;
   border-radius: 0 4px 4px 0;
 }
 @media (prefers-color-scheme: dark) {
@@ -102,10 +102,10 @@ th {
 }
 
 .callout.mistake {
-  border-left: 3px solid #b5750a;
+  border-left: 3px solid #b8925a;
   padding: 0.1rem 1.1rem;
   margin: 1.5rem 0;
-  background: #fbf3e6;
+  background: #f8f0e3;
   border-radius: 0 4px 4px 0;
 }
 @media (prefers-color-scheme: dark) {
@@ -113,10 +113,10 @@ th {
 }
 
 .callout.security {
-  border-left: 3px solid #3949ab;
+  border-left: 3px solid #7078a8;
   padding: 0.1rem 1.1rem;
   margin: 1.5rem 0;
-  background: #eef0fa;
+  background: #ecedf7;
   border-radius: 0 4px 4px 0;
 }
 @media (prefers-color-scheme: dark) {
@@ -124,10 +124,10 @@ th {
 }
 
 .callout.production {
-  border-left: 3px solid #2e7d32;
+  border-left: 3px solid #679a6d;
   padding: 0.1rem 1.1rem;
   margin: 1.5rem 0;
-  background: #eaf3ea;
+  background: #e9f1e9;
   border-radius: 0 4px 4px 0;
 }
 @media (prefers-color-scheme: dark) {
@@ -135,10 +135,10 @@ th {
 }
 
 .callout.performance {
-  border-left: 3px solid #00838f;
+  border-left: 3px solid #5a9ba0;
   padding: 0.1rem 1.1rem;
   margin: 1.5rem 0;
-  background: #e5f4f5;
+  background: #e6f1f1;
   border-radius: 0 4px 4px 0;
 }
 @media (prefers-color-scheme: dark) {
@@ -146,10 +146,10 @@ th {
 }
 
 .callout.cost {
-  border-left: 3px solid #6a1b9a;
+  border-left: 3px solid #9670ac;
   padding: 0.1rem 1.1rem;
   margin: 1.5rem 0;
-  background: #f3e9f7;
+  background: #f1eaf5;
   border-radius: 0 4px 4px 0;
 }
 @media (prefers-color-scheme: dark) {
