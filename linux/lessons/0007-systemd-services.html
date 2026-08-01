@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 7 — systemd & Services</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 7 of 26</p>
+<h1>systemd & Services</h1>
+
+<p>systemd is the init system on nearly every modern Linux distro — it's PID 1, the first process the kernel starts, and it manages every other service: starting them in the right order, restarting them on failure, and logging their output.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>systemctl restart nginx</code> restarts the nginx service using its unit file — a small config file telling systemd exactly how to start it, what to do if it crashes, and what it depends on.</p>
+
+<h2>The core commands</h2>
+<table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>systemctl status nginx</code></td><td>Is it running, when did it start, recent log lines</td></tr>
+<tr><td><code>systemctl start/stop/restart nginx</code></td><td>Control it right now</td></tr>
+<tr><td><code>systemctl enable nginx</code></td><td>Start it automatically on boot (doesn't start it now)</td></tr>
+<tr><td><code>systemctl enable --now nginx</code></td><td>Enable on boot AND start it now</td></tr>
+<tr><td><code>journalctl -u nginx</code></td><td>Full logs for that specific service</td></tr>
+<tr><td><code>journalctl -u nginx -f</code></td><td>Follow logs live, like <code>tail -f</code></td></tr>
+</table>
+<p class="callout mistake"><code>systemctl start</code> alone doesn't survive a reboot — that's what <code>enable</code> is for. The two are independent: you can enable without starting (queued for next boot) or start without enabling (running now, gone after reboot).</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A service is running fine right now, but after the server reboots tonight, it's gone. What's the likely cause?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">It was started but never enabled — <code>systemctl start</code> runs it now; <code>systemctl enable</code> is the separate step that makes it start automatically on boot.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>systemctl status sshd            # check a service that's almost always installed
+systemctl is-enabled sshd        # is it set to start on boot?
+journalctl -u sshd -n 20         # last 20 log lines for it</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.freedesktop.org/software/systemd/man/latest/systemctl.html" target="_blank" rel="noopener">systemctl(1) man page</a> — the official systemd documentation.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>systemd is PID 1 on nearly every modern distro — it starts, stops, and restarts every other service.</li>
+    <li><code>start</code>/<code>stop</code> control it right now; <code>enable</code>/<code>disable</code> control whether it survives a reboot — independent settings.</li>
+    <li><code>journalctl -u &lt;service&gt;</code> is your first stop for a service's logs.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">A service stuck restarting in a loop? <code>journalctl -u &lt;service&gt; -n 50</code> almost always shows exactly why on the first read.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0006-job-control.html">&larr; Back: Job control & process management</a></span>
+  <span><a href="0008-package-management.html">Next: Package management &rarr;</a></span>
+</div>
+
+</body>
+</html>

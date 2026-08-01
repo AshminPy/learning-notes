@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 6 — Job Control & Process Management</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 6 of 26</p>
+<h1>Job Control & Process Management</h1>
+
+<p>A process launched from your shell is tied to that shell session by default — close the terminal, and the process gets SIGHUP and usually dies with it. Job control lets you run things in the background and manage whether they survive your session ending.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>long-task &amp;</code> starts it in the background of your current session — but log out, and it still dies. <code>nohup long-task &amp;</code> makes it immune to the hangup signal, so it survives you logging off entirely.</p>
+
+<h2>The toolkit</h2>
+<table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>cmd &amp;</code></td><td>Run in the background of the current session</td></tr>
+<tr><td><code>jobs</code></td><td>List background jobs in the current session</td></tr>
+<tr><td><code>fg %1</code></td><td>Bring job 1 back to the foreground</td></tr>
+<tr><td><code>bg %1</code></td><td>Resume a stopped job in the background</td></tr>
+<tr><td><code>nohup cmd &amp;</code></td><td>Immune to SIGHUP — survives you logging out</td></tr>
+<tr><td><code>disown</code></td><td>Detach an already-running background job from the shell, so closing the shell won't touch it</td></tr>
+</table>
+<p>For anything long-running you actually care about (a real deploy, a migration), a terminal multiplexer (<code>tmux</code> or <code>screen</code>) is usually the better tool — it keeps the whole session alive, not just one process, and you can reattach to it later.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You start a 3-hour data migration and need to close your laptop for the night. What's wrong with just running it plain and backgrounding it with <code>&amp;</code>?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">A plain background job is still tied to your SSH session — closing the laptop (or the connection dropping) sends SIGHUP and kills it. You need <code>nohup</code>, <code>disown</code>, or a multiplexer like <code>tmux</code> for it to actually survive.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>nohup sleep 300 &amp;         # start something that outlives your session
+jobs                       # see it listed
+disown -a                  # detach all jobs from this shell
+exit                       # the process keeps running even after you log out</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.gnu.org/software/bash/manual/html_node/Job-Control.html" target="_blank" rel="noopener">GNU Bash Manual — Job Control</a> — the official reference.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Background jobs (<code>&amp;</code>) are still tied to your session by default — they die on logout via SIGHUP.</li>
+    <li><code>nohup</code> and <code>disown</code> both detach a process from that hangup signal.</li>
+    <li>For anything you'll want to check on or reattach to later, <code>tmux</code>/<code>screen</code> beats plain backgrounding.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">If a job dies the moment you disconnect and you're sure you backgrounded it correctly, check whether it was actually <code>nohup</code>'d — a common, easy-to-miss gap.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0005-processes-fundamentals.html">&larr; Back: Processes fundamentals</a></span>
+  <span><a href="0007-systemd-services.html">Next: systemd & services &rarr;</a></span>
+</div>
+
+</body>
+</html>
