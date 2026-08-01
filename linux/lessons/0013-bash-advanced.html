@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 13 — Bash Scripting Advanced</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 13 of 26</p>
+<h1>Bash Scripting Advanced</h1>
+
+<p>The gap between a script that works on your laptop and one that's safe to run in production is a handful of specific habits: fail fast instead of limping on with bad state, quote your variables, and organize repeated logic into functions.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>set -euo pipefail</code> at the top of a script makes it exit immediately on any error (<code>-e</code>), on any use of an unset variable (<code>-u</code>), and treats a failure anywhere in a piped command as a failure of the whole pipeline (<code>-o pipefail</code>) — three silent-failure traps closed in one line.</p>
+
+<h2>The safety line every real script should have</h2>
+<pre><code>#!/bin/bash
+set -euo pipefail
+
+echo "This stops immediately if any command below fails."</code></pre>
+<table>
+<tr><th>Flag</th><th>Without it</th></tr>
+<tr><td><code>-e</code></td><td>A failed command is silently ignored, script keeps going with bad state</td></tr>
+<tr><td><code>-u</code></td><td>A typo'd variable name silently expands to an empty string instead of erroring</td></tr>
+<tr><td><code>-o pipefail</code></td><td>In <code>cmd1 | cmd2</code>, only <code>cmd2</code>'s exit code counts — <code>cmd1</code> can fail invisibly</td></tr>
+</table>
+
+<h2>Functions</h2>
+<pre><code>check_disk_space() {
+    local threshold=$1
+    local usage
+    usage=$(df / | awk 'NR==2 {print $5}' | tr -d '%')
+    if [ "$usage" -gt "$threshold" ]; then
+        echo "WARNING: disk usage is ${usage}%"
+        return 1
+    fi
+    return 0
+}
+
+check_disk_space 80</code></pre>
+<p><code>local</code> keeps a variable scoped to the function — without it, every variable in bash is global by default, and a name collision between a function and the main script becomes a real bug.</p>
+
+<h2>Arrays</h2>
+<pre><code>HOSTS=("web1" "web2" "web3")
+for h in "${HOSTS[@]}"; do
+    echo "Checking $h"
+done
+echo "Total hosts: ${#HOSTS[@]}"</code></pre>
+
+<h2>Quoting — the habit that prevents the most bugs</h2>
+<p class="callout mistake">Always quote variable expansions: <code>"$var"</code>, not <code>$var</code>. Without quotes, a variable containing a space or a filename with special characters gets split into multiple words or glob-expanded — a script that works in every test and then breaks on one real file with a space in its name is almost always a missing-quotes bug.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your script references <code>$FILENAME</code> but you actually named the variable <code>$FILE_NAME</code> earlier. With plain bash, what happens? With <code>set -u</code>?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Plain bash: <code>$FILENAME</code> silently expands to an empty string — the typo goes unnoticed and the script runs with wrong (empty) data. With <code>set -u</code>: bash immediately errors "unbound variable" and stops, catching the typo right away.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>echo '#!/bin/bash
+set -euo pipefail
+greet() {
+    local name=$1
+    echo "Hello, $name"
+}
+greet "World"' > safe.sh
+chmod +x safe.sh
+./safe.sh</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.gnu.org/software/bash/manual/bash.html#The-Set-Builtin" target="_blank" rel="noopener">GNU Bash Reference Manual — The Set Builtin</a> — the official reference for <code>set -e</code>/<code>-u</code>/<code>-o pipefail</code>.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>set -euo pipefail</code> is close to a default requirement for any script that isn't purely disposable.</li>
+    <li>Use <code>local</code> inside functions — otherwise every variable is global and name collisions become real bugs.</li>
+    <li>Quote every variable expansion (<code>"$var"</code>) — the single most common source of "works on my machine" script bugs.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">A script that behaves differently on one specific file or hostname almost always traces back to a missing quote — check that first before anything more exotic.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0012-bash-fundamentals.html">&larr; Back: Bash scripting fundamentals</a></span>
+  <span><a href="0014-text-processing.html">Next: Text processing &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 12 — Bash Scripting Fundamentals</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 12 of 26</p>
+<h1>Bash Scripting Fundamentals</h1>
+
+<p>A bash script is just a text file of commands you'd otherwise type one by one, saved so you can run them together, repeatably. The core building blocks — variables, conditionals, loops — are the same ideas from any programming language, just with bash's own syntax.</p>
+
+<p class="callout"><strong>Simple example:</strong> A script starts with a shebang line, <code>#!/bin/bash</code>, telling the system which interpreter to run it with. Make it executable (<code>chmod +x script.sh</code>) and run it directly (<code>./script.sh</code>) instead of typing <code>bash script.sh</code> every time.</p>
+
+<h2>Variables and arguments</h2>
+<pre><code>#!/bin/bash
+NAME="prod-web-1"
+echo "Checking host: $NAME"
+echo "First argument passed to this script: $1"
+echo "All arguments: $@"
+echo "Number of arguments: $#"</code></pre>
+<p class="callout mistake">No spaces around <code>=</code> when assigning a variable — <code>NAME="prod-web-1"</code> works, <code>NAME = "prod-web-1"</code> fails, because bash reads the second form as trying to run a command called <code>NAME</code>.</p>
+
+<h2>Conditionals</h2>
+<pre><code>if [ -f /etc/nginx/nginx.conf ]; then
+    echo "config exists"
+else
+    echo "config missing"
+fi</code></pre>
+<table>
+<tr><th>Test</th><th>Meaning</th></tr>
+<tr><td><code>-f file</code></td><td>File exists and is a regular file</td></tr>
+<tr><td><code>-d dir</code></td><td>Directory exists</td></tr>
+<tr><td><code>-z "$var"</code></td><td>String is empty</td></tr>
+<tr><td><code>"$a" == "$b"</code></td><td>Strings are equal</td></tr>
+</table>
+
+<h2>Loops</h2>
+<pre><code>for host in web1 web2 web3; do
+    echo "Pinging $host"
+    ping -c 1 "$host"
+done</code></pre>
+
+<h2>Exit codes — how success or failure is reported</h2>
+<p>Every command returns an exit code when it finishes: <code>0</code> means success, anything else means some kind of failure. <code>$?</code> holds the exit code of the last command run — checking it is how a script reacts to a command failing instead of blindly continuing.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A command in your script fails (returns exit code 1), but the script keeps running the next lines as if nothing happened. Why?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Bash doesn't stop on a failed command by default — it just moves to the next line. You have to check <code>$?</code> yourself, or add <code>set -e</code> near the top of the script to make it exit automatically on any failure.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>echo '#!/bin/bash
+echo "Hello, $1"
+echo "Exit code of last command was: $?"' > hello.sh
+chmod +x hello.sh
+./hello.sh World</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.gnu.org/software/bash/manual/bash.html" target="_blank" rel="noopener">GNU Bash Reference Manual</a> — the official Bash documentation.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Every script starts with <code>#!/bin/bash</code> and needs <code>chmod +x</code> to run directly.</li>
+    <li>No spaces around <code>=</code> in variable assignment — this trips up almost everyone once.</li>
+    <li>Bash doesn't stop on failure by default — check <code>$?</code> or use <code>set -e</code> if a failure should halt the script.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Lesson 13 builds on this with functions, arrays, and <code>set -euo pipefail</code> — the real production-safety habits for scripts that matter.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0011-ssh.html">&larr; Back: SSH</a></span>
+  <span><a href="0013-bash-advanced.html">Next: Bash scripting advanced &rarr;</a></span>
+</div>
+
+</body>
+</html>

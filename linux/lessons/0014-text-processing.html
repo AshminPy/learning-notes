@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 14 — Text Processing</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 14 of 26</p>
+<h1>Text Processing</h1>
+
+<p>Logs, config files, command output — almost everything on Linux is plain text, and three tools cover most of what you'll ever need to search, transform, or extract from it: <code>grep</code> to find lines, <code>sed</code> to change them, <code>awk</code> to pull fields out of them.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>grep "ERROR" app.log</code> prints every line containing "ERROR." Pipe it further — <code>grep "ERROR" app.log | wc -l</code> — and you get a count instead, one command doing what would otherwise take a script.</p>
+
+<h2>grep — find lines</h2>
+<table>
+<tr><th>Flag</th><th>What it does</th></tr>
+<tr><td><code>-i</code></td><td>Case-insensitive match</td></tr>
+<tr><td><code>-r</code></td><td>Search recursively through a directory</td></tr>
+<tr><td><code>-v</code></td><td>Invert — show lines that do NOT match</td></tr>
+<tr><td><code>-c</code></td><td>Count matching lines instead of printing them</td></tr>
+<tr><td><code>-n</code></td><td>Show line numbers alongside matches</td></tr>
+</table>
+
+<h2>sed — transform lines</h2>
+<pre><code>sed 's/foo/bar/' file.txt        # replace first "foo" per line with "bar"
+sed 's/foo/bar/g' file.txt       # replace every "foo" per line (g = global)
+sed -i 's/foo/bar/g' file.txt    # do it in-place, editing the file directly</code></pre>
+<p class="callout mistake"><code>sed -i</code> edits the file in place with no confirmation and no backup by default. Test the command without <code>-i</code> first, confirm the output looks right, then add <code>-i</code> — or use <code>sed -i.bak</code> to keep a backup copy automatically.</p>
+
+<h2>awk — extract fields</h2>
+<p>awk treats each line as a row of space-separated fields (<code>$1</code>, <code>$2</code>, ...), which makes it the natural tool for pulling one column out of structured output.</p>
+<pre><code>ps aux | awk '{print $2, $11}'   # print just PID and command from ps output
+df -h | awk '$5+0 > 80 {print}'  # print filesystems over 80% used</code></pre>
+
+<h2>Chaining them together</h2>
+<p>These tools are built to pipe into each other — that's the real power. Find the errors, then count the unique ones, then sort by frequency:</p>
+<pre><code>grep "ERROR" app.log | awk '{print $5}' | sort | uniq -c | sort -rn</code></pre>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You want to see how many times each unique error message appears in a log file, most frequent first. Which three commands would you chain together with <code>grep</code>?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>sort | uniq -c | sort -rn</code> — <code>sort</code> groups identical lines together (required before <code>uniq</code> can count them), <code>uniq -c</code> counts each group, and the final <code>sort -rn</code> orders by count, highest first.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>ps aux | awk '{print $11}' | sort | uniq -c | sort -rn | head
+# Shows every running command, counted and ranked by frequency</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.gnu.org/software/gawk/manual/gawk.html" target="_blank" rel="noopener">GNU Awk User's Guide</a> — the official reference.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>grep</code> finds lines, <code>sed</code> transforms them, <code>awk</code> extracts fields from them.</li>
+    <li>Test <code>sed</code> without <code>-i</code> first — in-place edits have no built-in undo.</li>
+    <li><code>sort | uniq -c | sort -rn</code> is the standard pattern for "count and rank" on any text stream.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">If a one-liner is getting past three or four pipes and hard to read, that's usually the signal to drop into a small bash script instead — Lessons 12-13 cover that.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0013-bash-advanced.html">&larr; Back: Bash scripting advanced</a></span>
+  <span><a href="0015-kernel-basics.html">Next: Kernel basics &rarr;</a></span>
+</div>
+
+</body>
+</html>
