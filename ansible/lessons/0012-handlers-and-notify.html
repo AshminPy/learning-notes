@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 12 — Handlers & notify</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 12 of 36</p>
+<h1>Handlers & notify</h1>
+
+<p>Lesson 7 taught you idempotency: a task should only report <code>changed</code> when it actually changed something. Lesson 11 taught you loops. Now put idempotency to work — restarting a service every single run, whether or not its config actually changed, is wasteful and risky (an unnecessary restart can drop connections for no reason). A <strong>handler</strong> is how you say "only do this if something upstream actually changed."</p>
+
+<p class="callout"><strong>Mental model:</strong> a handler is a task that sits off to the side, doing nothing, until a regular task <code>notify</code>s it — and even then, it only actually runs if that task reported <code>changed</code>. Think of it as a doorbell wired to a specific event: editing a config file rings the bell, and the bell triggers "restart the service." No edit, no ring, no restart.</p>
+
+<h2>The two pieces: handlers: and notify:</h2>
+<p>A handler is defined in its own <code>handlers:</code> section on the play, written exactly like a task — a <code>name:</code> and a module call:</p>
+
+<pre><code>handlers:
+  - name: Restart apache
+    ansible.builtin.service:
+      name: httpd
+      state: restarted</code></pre>
+
+<p>A regular task points at that handler by name using <code>notify:</code>:</p>
+
+<pre><code>tasks:
+  - name: Write the apache config file
+    ansible.builtin.template:
+      src: /srv/httpd.j2
+      dest: /etc/httpd.conf
+    notify:
+      - Restart apache</code></pre>
+
+<p>The link between the two is the <strong>name string</strong> — <code>notify: Restart apache</code> has to match <code>name: Restart apache</code> under <code>handlers:</code> exactly, character for character. There's no ID, no reference syntax, just a matching name. <code>notify:</code> can take a single name or a YAML list of names if one task should trigger several handlers.</p>
+
+<p>Here's the part that makes this idempotent instead of just "run it anyway": <code>notify</code> only actually fires the handler if the notifying task reports <code>changed</code>. If <code>ansible.builtin.template</code> looks at the file, sees it already matches, and reports <code>ok</code>, the handler is never triggered — not "triggered but skipped," genuinely never called. This is Lesson 7's idempotency rule, now driving a second task's behavior.</p>
+
+<h2>The detail that catches people out: handlers run at the end</h2>
+<p>Handlers do <strong>not</strong> run at the point in the task list where <code>notify:</code> appears. They run once, after all the regular tasks in that section of the play have finished. I confirmed the exact behavior against Ansible's own docs:</p>
+
+<blockquote>"Notifying the same handler multiple times will result in executing the handler only once regardless of how many tasks notify it."</blockquote>
+
+<p>So if three different tasks each edit a different config file and all three <code>notify: Restart apache</code>, Ansible does not restart Apache three times. It queues the notification, keeps running the rest of the tasks, and fires "Restart apache" <strong>once</strong>, deduplicated, after the last task in the play (or in <code>pre_tasks</code> / <code>roles</code> / <code>tasks</code> / <code>post_tasks</code> — each of those sections flushes its own handlers at its end). Handlers also run in the order they're <em>defined</em> under <code>handlers:</code>, not the order they were notified in.</p>
+
+<p class="callout"><strong>Best practice — the classic pattern:</strong> edit a config file with <code>ansible.builtin.template</code> or <code>ansible.builtin.copy</code>, and <code>notify</code> a handler that restarts the matching service. The service only bounces when the config genuinely changed — never on a routine run where nothing was different. This is the standard, idiomatic way to wire config changes to service restarts in Ansible; you'll use this pattern constantly from here on.</p>
+
+<p>One more edge case worth knowing now: if a task fails partway through a play, any handlers it already notified will <strong>not</strong> run, because Ansible stops that host's play on failure before reaching the end where handlers fire. You'll deal with error handling explicitly later in this course — for now, just know that a handler is not guaranteed to fire just because <code>notify:</code> was reached; the play has to reach its end successfully for that host.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A play has three tasks. Tasks 1 and 2 both edit config files and both <code>notify: Reload service</code>. Task 3 does something unrelated and doesn't notify anything. How many times does "Reload service" run?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Once — assuming at least one of task 1 or task 2 reported <code>changed</code>. Even though two tasks notified it, Ansible deduplicates and fires the handler a single time, after task 3 finishes.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You run a playbook. The task that writes a config file reports <code>ok</code> (not <code>changed</code>) because the file already matched. The task has <code>notify: Restart nginx</code>. Does the handler run?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No. <code>notify</code> only queues the handler when the task reports <code>changed</code>. An <code>ok</code> result means nothing changed, so the handler is never triggered — this is exactly what stops nginx from restarting on every run where the config was already correct.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Reuse the localhost inventory from earlier lessons. Create <code>handlers-demo.yml</code>:</p>
+
+<pre><code>- name: Handlers and notify demo
+  hosts: localhost
+
+  tasks:
+    - name: Write a demo file
+      ansible.builtin.copy:
+        content: "hello from the handlers lesson\n"
+        dest: /tmp/ansible-handlers-demo.txt
+      notify:
+        - Say the file changed
+
+  handlers:
+    - name: Say the file changed
+      ansible.builtin.debug:
+        msg: "Handler fired — the file actually changed this run."</code></pre>
+
+<p>Then:</p>
+<ul>
+<li>run <code>ansible-playbook -i inventory handlers-demo.yml</code></li>
+<li>check the <code>TASK [Write a demo file]</code> status — expect <code>changed</code> on this first run, since the file didn't exist yet</li>
+<li>look for a <code>RUNNING HANDLER [Say the file changed]</code> section after the tasks, and confirm the debug message printed</li>
+<li>run the exact same command a second time</li>
+<li>check the copy task's status again — expect <code>ok</code> this time, since the content is identical</li>
+<li>confirm the handler section does <strong>not</strong> appear at all on the second run — no notify, because nothing changed</li>
+</ul>
+<p>Try it yourself before checking the reference command below.</p>
+
+<div class="quiz">
+<p>Reveal the reference command</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>ansible-playbook -i inventory handlers-demo.yml
+# first run: copy task = changed, handler fires and prints the debug message
+
+ansible-playbook -i inventory handlers-demo.yml
+# second run: copy task = ok, no RUNNING HANDLER section at all</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_handlers.html" target="_blank" rel="noopener">docs.ansible.com — Handlers: running operations on change</a> (<code>handlers:</code> section syntax, <code>notify:</code> keyword, "notifying the same handler multiple times will result in executing the handler only once regardless of how many tasks notify it", handlers run at the end of the play, ordered by definition order not notify order) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A handler is a task defined under <code>handlers:</code> that only runs when a task <code>notify</code>s it by matching name — and only if that task reported <code>changed</code>.</li>
+    <li>Handlers run once, at the end of the play, no matter how many tasks notified them — deduplicated, and in the order they're defined, not the order they were notified.</li>
+    <li>The classic pattern: edit a config with <code>template</code> or <code>copy</code>, <code>notify</code> a "restart service" handler — the service only bounces when the config genuinely changed.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0011-loops.html">&larr; Lesson 11: Loops</a></span>
+  <span><a href="0013-jinja2-templating.html">Lesson 13: Jinja2 templating basics &rarr;</a></span>
+</div>
+
+</body>
+</html>

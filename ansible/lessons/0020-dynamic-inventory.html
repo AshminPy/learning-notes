@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 20 — Dynamic inventory</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 20 of 36</p>
+<h1>Dynamic inventory</h1>
+
+<p>Lesson 4 gave you the mental model for inventory: a list of hosts, hand-organized into groups, that you write and edit yourself. That works great for a handful of servers that don't change much. It falls apart the moment your infrastructure starts changing on its own — autoscaling groups, ephemeral cloud instances, containers that come and go by the hour. This lesson opens the "Inventory & Variables at Scale" phase of the course by showing you the fix: <strong>dynamic inventory</strong>, where Ansible asks a real source for the current list of hosts instead of you maintaining a file by hand.</p>
+
+<p class="callout"><strong>Mental model:</strong> a static inventory is a photograph of your infrastructure at the moment you wrote the file. A dynamic inventory is a live camera feed — Ansible asks the actual source of truth (a cloud provider's API, a CMDB) "who exists right now?" every time it runs.</p>
+
+<h2>Why static inventory breaks down at scale</h2>
+<p>Picture a team running an autoscaling group of web servers on AWS. Traffic goes up at 9am, the group scales from 3 instances to 12; traffic drops overnight, it scales back down to 2. Every one of those scaling events creates or destroys a real EC2 instance with its own IP address. If your inventory is a static <code>[webservers]</code> block you edit by hand, you now have a full-time job: log in, find the new IPs, add them to the file, remove the ones that got terminated, commit, repeat — forever, and often faster than a human can keep up.</p>
+<p>The official Ansible docs describe exactly this failure mode: "If your Ansible inventory fluctuates over time, with hosts spinning up and shutting down in response to business demands, the static inventory solutions described in <em>How to build your inventory</em> will not serve your needs." Static inventory isn't wrong — it's just built for infrastructure that mostly sits still. Autoscaling groups, spot instances, and Kubernetes-managed workloads don't sit still.</p>
+
+<h2>What dynamic inventory actually is</h2>
+<p>A <strong>dynamic inventory</strong> is a script or plugin that builds the inventory automatically by querying a real source at run time — a cloud provider's API (AWS, Azure, GCP), a CMDB, or any other system that already knows which hosts exist. Instead of you maintaining the list, Ansible asks the source directly, every time a playbook runs. Add a server in AWS and it appears in the next Ansible run with zero file edits; terminate one and it disappears the same way.</p>
+<p>Two mechanisms exist to do this, and it matters which one you reach for:</p>
+<ul>
+<li><strong>Inventory scripts</strong> — the original approach: an executable program that outputs JSON in the shape Ansible expects. Still supported today for backward compatibility, but Ansible's own docs are direct about it: "We recommend plugins over scripts for dynamic inventory."</li>
+<li><strong>Inventory plugins</strong> — the modern approach, built into Ansible collections. They "take advantage of the most recent updates to the Ansible Core code," and most of the older cloud inventory scripts have been retired in favor of a plugin in the matching collection.</li>
+</ul>
+<p class="callout"><strong>Mental model:</strong> think of an inventory plugin the same way you think of the collection modules from Lesson 19. A module is "one task, one API call, written in a standard shape Ansible understands." An inventory plugin is the same idea applied to the whole inventory: "one query to a real source, written in a standard shape Ansible understands," instead of a bespoke script every team reinvents.</p>
+
+<h2>Example: the <code>aws_ec2</code> inventory plugin</h2>
+<p>The <code>amazon.aws</code> collection you met in Lesson 19 ships an inventory plugin called <code>amazon.aws.aws_ec2</code>. It queries the EC2 API directly and turns your running instances into an Ansible inventory — no manual IP-copying required. A few concrete facts about it, confirmed from the plugin's own documentation:</p>
+<ul>
+<li>It needs AWS credentials to authenticate — access keys, a named profile, or an IAM instance role, the same credential options any AWS API caller uses.</li>
+<li>You can scope it with <code>regions</code> (which AWS regions to query — if you leave this out, it queries every non-restricted region) and <code>filters</code> (an EC2-style filter dictionary, so you can pull back only instances with a certain tag, for example).</li>
+<li>It can build Ansible groups automatically from EC2 tags and attributes using a <code>keyed_groups</code> setting — so instances tagged <code>role: webserver</code> can land in a <code>webservers</code> group without you writing that grouping logic yourself.</li>
+</ul>
+<p>This is one example among many — Azure, GCP, and most major CMDBs have an equivalent collection-provided plugin. The shape is always the same: point the plugin at your source, give it credentials, and it produces the inventory.</p>
+
+<h2>The YAML inventory-plugin config file</h2>
+<p>You don't write a script to use an inventory plugin — you write a small YAML config file, the same way you'd configure any other tool. Ansible recognizes which plugin to use from the file's <strong>name</strong>, not its location: the config file for <code>aws_ec2</code> must end in <code>aws_ec2.yml</code> or <code>aws_ec2.yaml</code> (for example, <code>production.aws_ec2.yml</code>). Inside, a required <code>plugin:</code> key names the plugin to use:</p>
+<pre><code>plugin: amazon.aws.aws_ec2
+regions:
+  - us-east-1
+filters:
+  tag:Environment: production</code></pre>
+<p>Read that top to bottom: <code>plugin:</code> tells Ansible "use the <code>amazon.aws.aws_ec2</code> plugin to build this inventory." <code>regions:</code> limits the query to <code>us-east-1</code> instead of scanning every AWS region. <code>filters:</code> narrows it further to instances tagged <code>Environment: production</code>. Point <code>ansible-inventory</code> or <code>ansible-playbook</code> at this file with <code>-i</code>, exactly like you'd point at a static <code>inventory.ini</code> — the difference is entirely inside the file, not in how you invoke Ansible.</p>
+<p class="callout"><strong>Best practice:</strong> a dynamic inventory config file is source-controlled like everything else, but it never contains credentials directly — those come from environment variables, a credentials file, or an IAM role attached to the machine running Ansible. If you ever see an AWS access key hardcoded in an inventory YAML file, that's a finding, not a style choice.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your company's web servers autoscale up and down hourly based on traffic. Should you use static or dynamic inventory, and why?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Dynamic inventory. Hosts are being created and destroyed automatically by the autoscaling group, so a hand-maintained static file would be wrong within the hour — either missing new instances or still listing terminated ones. A dynamic inventory plugin (like <code>amazon.aws.aws_ec2</code>) queries the cloud provider at run time and always reflects what's actually running right now, with no manual editing.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What must the config file for the <code>aws_ec2</code> inventory plugin be named, and what key inside it tells Ansible which plugin to use?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The filename must end with <code>aws_ec2.yml</code> or <code>aws_ec2.yaml</code> (e.g. <code>production.aws_ec2.yml</code>) — that's how Ansible recognizes it. Inside the file, the <code>plugin:</code> key names it: <code>plugin: amazon.aws.aws_ec2</code>.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Ansible still supports inventory scripts. Should you write a new one for a new project today?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">No. Scripts still work for backward compatibility, but Ansible's own docs recommend plugins over scripts for dynamic inventory — and most cloud providers already ship a maintained plugin in their collection (like <code>amazon.aws.aws_ec2</code>), so you're rarely starting from scratch.</div>
+</div>
+
+<h2>Hands-on: explore inventory plugins without any cloud credentials</h2>
+<p>A real <code>aws_ec2</code> inventory needs real AWS credentials and real EC2 instances — this course can't assume you have either. What you <em>can</em> do right now is confirm the plugin exists, read its documentation, and watch Ansible recognize a plugin config file even without credentials to complete the query.</p>
+<ol>
+<li>List every inventory plugin available in your Ansible install — this needs no credentials at all:
+<pre><code>ansible-doc -t inventory -l</code></pre>
+Look for entries under the <code>amazon.aws</code> namespace, such as <code>amazon.aws.aws_ec2</code> (only shows up if you installed the collection in Lesson 19 — <code>ansible-galaxy collection install amazon.aws</code> if it's missing).
+</li>
+<li>Read the plugin's own documentation, the same way you'd read a module's docs:
+<pre><code>ansible-doc -t inventory amazon.aws.aws_ec2</code></pre>
+Scan for the <code>regions</code>, <code>filters</code>, and <code>keyed_groups</code> options mentioned above — you're confirming the docs in this lesson against the plugin's real source of truth.
+</li>
+<li>Write a minimal config file named <code>demo.aws_ec2.yml</code>:
+<pre><code>plugin: amazon.aws.aws_ec2
+regions:
+  - us-east-1</code></pre>
+</li>
+<li>Try to use it:
+<pre><code>ansible-inventory -i demo.aws_ec2.yml --list</code></pre>
+Without valid AWS credentials this will fail — and that failure is the useful part. Read the error carefully: it should be an <em>authentication</em> error (Ansible recognized the file as an <code>aws_ec2</code> config and tried to call the EC2 API), not a "no such plugin" or "couldn't parse this file" error. That distinction confirms the plugin auto-detection worked correctly off the filename alone, even though the query itself couldn't complete.
+</li>
+</ol>
+<p class="callout"><strong>Why this matters:</strong> reading an error message carefully instead of just seeing "it failed" is a skill you'll use constantly with dynamic inventory. An auth error means the plumbing is right and you need real credentials. A "plugin not found" error means the collection isn't installed. A YAML parse error means the config file itself is wrong. Three different problems, three different fixes — the error text tells you which one you have.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/inventory_guide/intro_dynamic_inventory.html" target="_blank" rel="noopener">docs.ansible.com/ansible/latest/inventory_guide/intro_dynamic_inventory.html</a> — official Ansible dynamic inventory guide (why static inventory doesn't scale, plugins recommended over scripts, backward-compatible script support). <a href="https://docs.ansible.com/ansible/latest/collections/amazon/aws/aws_ec2_inventory.html" target="_blank" rel="noopener">amazon.aws.aws_ec2 inventory plugin docs</a> (filename convention, <code>plugin:</code> key, <code>regions</code>/<code>filters</code>/<code>keyed_groups</code> options, credential requirements). <a href="https://docs.ansible.com/ansible/latest/cli/ansible-doc.html" target="_blank" rel="noopener">ansible-doc CLI reference</a> (<code>-t inventory</code> plugin type, <code>-l</code> list flag) — all verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Static inventory (Lesson 4) works when hosts barely change. It breaks down when infrastructure fluctuates — autoscaling groups, ephemeral cloud instances — because hand-editing a file can't keep up.</li>
+    <li>Dynamic inventory queries a real source (cloud API, CMDB) at run time to build the host list automatically — no manual edits, always current.</li>
+    <li>Two mechanisms: inventory scripts (older, still supported) and inventory plugins (modern, recommended — "plugins over scripts for dynamic inventory").</li>
+    <li><code>amazon.aws.aws_ec2</code>, from the <code>amazon.aws</code> collection (Lesson 19), is one example — it queries EC2 directly, scoped with <code>regions</code> and <code>filters</code>.</li>
+    <li>Plugin config files are YAML, recognized by filename suffix (e.g. <code>*.aws_ec2.yml</code>), with a required <code>plugin:</code> key naming which plugin to use.</li>
+    <li><code>ansible-doc -t inventory -l</code> lists installed inventory plugins; <code>ansible-doc -t inventory &lt;plugin&gt;</code> shows one plugin's options — both work with zero cloud credentials.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Don't have AWS/Azure/GCP access to try a real dynamic inventory against? That's completely normal at this stage — the hands-on above is designed so you can verify the plugin mechanics without any cloud account. When you do get access to a real cloud environment, come back to this lesson and run the full <code>ansible-inventory --list</code> against it for real; the config file shape doesn't change.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0019-collections.html">&larr; Back: Lesson 19 — Collections</a></span>
+  <span><a href="0021-group-and-host-vars.html">Next: Lesson 21 — group_vars & host_vars &rarr;</a></span>
+</div>
+
+</body>
+</html>

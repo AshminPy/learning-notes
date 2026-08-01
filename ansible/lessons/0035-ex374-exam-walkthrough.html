@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 35 — EX374 exam domain walkthrough</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 35 of 36</p>
+<h1>EX374 exam domain walkthrough &amp; self-check</h1>
+
+<p>You've now got 34 lessons of hands-on Ansible behind you — playbooks, roles, dynamic inventory, vault, and a capstone that tied all of it together. This lesson teaches nothing new. It re-confirms exactly what Red Hat's EX374 actually tests, maps every official domain back to the lesson(s) that covered it, and gives you an honest look at the one or two spots this course doesn't fully cover — so you know exactly where to spend extra hands-on practice before booking the real thing.</p>
+
+<p class="callout"><strong>Mental model:</strong> treat this lesson as a mirror, not a study guide. There's no new syntax below. Read a domain, answer its self-check questions honestly (out loud or on paper, before checking a linked lesson), and pay closest attention to the gaps section — EX374 is hands-on and performance-based, so a domain with thin coverage here is thin coverage in the real lab too.</p>
+
+<h2>The 9 official exam domains — reconfirmed</h2>
+<p>Re-checked directly against Red Hat's own EX374 exam page (fetched 2026-07-31), the same source cited in <a href="0001-roadmap-and-cert-plan.html">Lesson 1</a> and <code>MISSION.md</code>: <a href="https://www.redhat.com/en/services/training/red-hat-certified-specialist-developing-automation-ansible-automation-platform-exam" target="_blank" rel="noopener">Red Hat Certified Specialist in Developing Automation with Ansible Automation Platform (EX374)</a>. Confirmed directly from the page: it's a "hands-on, practical exam" that "requires you to undertake real-world tasks" — not multiple choice — consisting of "a single section lasting four hours," based on Red Hat Ansible Automation Platform 2.5. The 9 domains, exactly as Red Hat names them:</p>
+<ol>
+<li>Understand and use Git</li>
+<li>Manage inventory variables</li>
+<li>Manage task execution</li>
+<li>Transform data with filters and plugins</li>
+<li>Delegate tasks</li>
+<li>Manage content collections</li>
+<li>Manage execution environments</li>
+<li>Manage inventories and credentials</li>
+<li>Manage automation controller</li>
+</ol>
+<p>Unlike some multiple-choice certifications, Red Hat does not publish a percentage weighting per domain for this exam — confirmed by its absence from the official page. Treat all 9 as equally exam-relevant rather than trying to guess which ones matter more.</p>
+
+<h2>Domain-to-lesson map</h2>
+<p>Where a domain's real sub-objectives (also confirmed from the official page) span several lessons, all of them are listed. Two domains have real gaps in this course — called out honestly rather than papered over.</p>
+<table>
+<tr><th>Exam domain</th><th>Covered in</th></tr>
+<tr><td>1. Understand and use Git</td><td><strong>Not covered by a dedicated lesson.</strong> This course assumes basic Git literacy (clone, add, commit, push, branch) as a prerequisite, matching Red Hat's own recommended AU374/RH294 prerequisite path. If <code>git clone</code>, committing, and pushing a branch aren't already comfortable, treat that as real pre-exam homework this course doesn't provide.</td></tr>
+<tr><td>2. Manage inventory variables</td><td><a href="0004-inventory-basics.html">Lesson 4 — Inventory basics</a>, <a href="0008-variables.html">Lesson 8 — Variables</a>, <a href="0021-group-and-host-vars.html">Lesson 21 — group_vars &amp; host_vars</a>, <a href="0022-variable-precedence.html">Lesson 22 — Variable precedence</a></td></tr>
+<tr><td>3. Manage task execution</td><td><a href="0005-ad-hoc-commands.html">Lesson 5 — Ad-hoc commands</a>, <a href="0006-first-playbook.html">Lesson 6 — First playbook</a>, <a href="0024-tags.html">Lesson 24 — Tags</a> (running selected tasks), <a href="0029-check-and-diff-mode.html">Lesson 29 — Check/diff mode</a>. Privilege escalation (<code>become</code>) appears woven through several lessons' examples (2, 10, 15, 19, 24) rather than as one dedicated lesson — worth a focused hands-on pass of your own before the exam.</td></tr>
+<tr><td>4. Transform data with filters and plugins</td><td><a href="0013-jinja2-templating.html">Lesson 13 — Jinja2 templating &amp; filters</a> covers filters solidly. <strong>Lookup plugins are a real gap</strong> — this course doesn't have a dedicated lesson on <code>lookup()</code>/<code>query()</code>. Budget extra practice time here specifically.</td></tr>
+<tr><td>5. Delegate tasks</td><td><a href="0025-delegation.html">Lesson 25 — Delegation</a> — direct, full match, including <code>delegate_to</code> and fact delegation.</td></tr>
+<tr><td>6. Manage content collections</td><td><a href="0018-ansible-galaxy.html">Lesson 18 — Ansible Galaxy</a>, <a href="0019-collections.html">Lesson 19 — Collections</a> cover installing and using collections solidly. <strong>Creating and publishing a collection</strong> (<code>ansible-galaxy collection init</code>, building, publishing) is a real gap — this course only covers the consumer side.</td></tr>
+<tr><td>7. Manage execution environments</td><td><a href="0030-execution-environments.html">Lesson 30 — Execution environments</a></td></tr>
+<tr><td>8. Manage inventories and credentials</td><td><a href="0020-dynamic-inventory.html">Lesson 20 — Dynamic inventory</a> (advanced/dynamic inventory), <a href="0026-ansible-vault.html">Lesson 26 — Ansible Vault</a> (playbook-level secrets — related but distinct from Automation Controller's own machine/source-control credential objects), <a href="0031-automation-platform-awx.html">Lesson 31 — Automation Platform / AWX</a> (controller-managed credentials specifically).</td></tr>
+<tr><td>9. Manage automation controller</td><td><a href="0031-automation-platform-awx.html">Lesson 31 — Ansible Automation Platform / AWX</a></td></tr>
+</table>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming a course this thorough must cover 100% of an exam 1-for-1. It doesn't, honestly: Git, lookup plugins, and collection publishing are real gaps above. Walking into the real EX374 lab assuming you're fully covered because "the course covered everything" would be exactly the kind of unverified assumption this whole site argues against — confirm your own comfort with each gap directly, ideally in a real terminal, before exam day.</p>
+
+<h2>Self-check: can you do this without looking?</h2>
+<p>Go domain by domain. Answer out loud or on paper before opening the linked lesson. Hesitating is useful information, not failure — it tells you exactly where to spend the next practice session.</p>
+
+<h3>1. Understand and use Git</h3>
+<ul>
+<li>Can you clone a repo, create a branch, commit a change, and push it, from memory, with no lookup?</li>
+</ul>
+
+<h3>2. Manage inventory variables</h3>
+<ul>
+<li>Can you explain the difference between <code>group_vars/all.yml</code> and a host's own <code>host_vars</code> file, and which one wins? → <a href="0021-group-and-host-vars.html">Lesson 21</a></li>
+<li>Can you name where <code>-e</code>/extra-vars sits in the precedence order relative to role defaults and inventory group_vars? → <a href="0022-variable-precedence.html">Lesson 22</a></li>
+</ul>
+
+<h3>3. Manage task execution</h3>
+<ul>
+<li>Can you run only the tasks tagged <code>config</code> in a large playbook, from memory? → <a href="0024-tags.html">Lesson 24</a></li>
+<li>Can you explain what <code>--check --diff</code> will and won't catch before a real run? → <a href="0029-check-and-diff-mode.html">Lesson 29</a></li>
+</ul>
+
+<h3>4. Transform data with filters and plugins</h3>
+<ul>
+<li>Can you write a Jinja2 filter chain from memory, e.g. defaulting an undefined variable and uppercasing it? → <a href="0013-jinja2-templating.html">Lesson 13</a></li>
+<li>Have you actually written a working <code>lookup()</code> call yourself, even once, outside this course? (If not — that's this domain's real gap, flagged above.)</li>
+</ul>
+
+<h3>5. Delegate tasks</h3>
+<ul>
+<li>Can you explain the difference between <code>delegate_to</code> and <code>run_once</code>, and when you'd combine them? → <a href="0025-delegation.html">Lesson 25</a></li>
+</ul>
+
+<h3>6. Manage content collections</h3>
+<ul>
+<li>Can you install a pinned collection version from a <code>requirements.yml</code>, from memory? → <a href="0019-collections.html">Lesson 19</a></li>
+<li>Have you ever run <code>ansible-galaxy collection init</code> yourself? (If not — this domain's real gap, flagged above.)</li>
+</ul>
+
+<h3>7. Manage execution environments</h3>
+<ul>
+<li>Can you explain what an execution environment actually packages, and why it's more than "just a container"? → <a href="0030-execution-environments.html">Lesson 30</a></li>
+</ul>
+
+<h3>8. Manage inventories and credentials</h3>
+<ul>
+<li>Can you explain the real difference between a Vault-encrypted variable and an Automation Controller machine credential? → <a href="0026-ansible-vault.html">Lesson 26</a>, <a href="0031-automation-platform-awx.html">Lesson 31</a></li>
+</ul>
+
+<h3>9. Manage automation controller</h3>
+<ul>
+<li>Can you describe how a job template ties an inventory, a credential, and a playbook together? → <a href="0031-automation-platform-awx.html">Lesson 31</a></li>
+</ul>
+
+<h2>Exam format reminders</h2>
+<p>Confirmed directly against Red Hat's own pages, dated 2026-07-31:</p>
+<ul>
+<li><strong>Hands-on, not multiple choice.</strong> The official page's own words: "This hands-on, practical exam requires you to undertake real-world tasks."</li>
+<li><strong>Timed.</strong> "This exam consists of a single section lasting four hours."</li>
+<li><strong>Version-specific.</strong> "This exam is based on Red Hat Ansible Automation Platform 2.5."</li>
+<li><strong>Closed workspace.</strong> Red Hat's remote-exam FAQ states candidates must "avoid having any materials or content related to the course or exam subject in your workspace" — Red Hat does not publish an explicit blanket "no internet access" statement on the pages checked for this lesson, so don't assume open-book access to external docs either way; prepare to work from memory and hands-on muscle memory, not a browser tab.</li>
+</ul>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You have a plaintext <code>vars/db.yml</code> file with a real password in it, already sitting on disk. Write the exact command that encrypts it in place, without retyping its contents.</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>ansible-vault encrypt vars/db.yml</code> — from Lesson 26. It encrypts the existing file's contents in place; no need to recreate it with <code>ansible-vault create</code> or retype anything.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A 40-task playbook has one task tagged <code>restart_only</code>. During the exam you need to run just that one task, fast, without touching anything else. What exact flag do you add to <code>ansible-playbook</code>?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>--tags restart_only</code> — from Lesson 24. This runs only tasks (or blocks/roles/plays) carrying that tag, skipping the other 39 tasks entirely, instead of running the whole playbook and hoping the change lands correctly.</div>
+</div>
+
+<h2>What to do next</h2>
+<p>Don't try to close every gap this lesson surfaced in one sitting. Pick the domain where you hesitated most — likely Git, lookup plugins, or collection publishing, the three flagged gaps above — and get real hands-on time with it outside this course before moving to <a href="0036-final-review.html">Lesson 36 — Final review &amp; cheat sheet</a>.</p>
+
+<h2>Source</h2>
+<p><a href="https://www.redhat.com/en/services/training/red-hat-certified-specialist-developing-automation-ansible-automation-platform-exam" target="_blank" rel="noopener">redhat.com — EX374 exam page</a> (confirmed hands-on/practical format, 4-hour single section, AAP 2.5 basis, and all 9 domain names with their sub-objectives, verbatim) · <a href="https://www.redhat.com/en/resources/certification-remote-exams-FAQ" target="_blank" rel="noopener">redhat.com — Certification remote exams FAQ</a> (confirmed the closed-workspace rule quoted above) — all verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>EX374 has 9 official domains (reconfirmed 2026-07-31, no published percentage weighting): Git, inventory variables, task execution, filters/plugins, delegation, content collections, execution environments, inventories/credentials, automation controller.</li>
+    <li>Most domains map cleanly onto specific lessons in this course — but 3 real gaps exist: Git itself (assumed prerequisite), lookup plugins specifically, and creating/publishing a collection. Budget extra hands-on time there.</li>
+    <li>It's hands-on and timed (4 hours, single section), based on AAP 2.5 — treat the self-check above as a rehearsal for doing, not just naming, each skill.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">If a self-check question above exposed a real gap, don't just reread the linked lesson passively — rebuild that one example yourself in a real terminal. That's what actually closes it before exam day.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0034-capstone-project.html">&larr; Lesson 34: Capstone project</a></span>
+  <span><a href="0036-final-review.html">Lesson 36: Final review &amp; cheat sheet &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 34 — Capstone project</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 34 of 36 — CAPSTONE</p>
+<h1>Capstone project: configure a small fleet</h1>
+
+<p class="callout"><strong>This is the capstone — the longest lesson in the course, on purpose.</strong> It doesn't teach anything new. It combines a static inventory (Lesson 4), a real role with defaults/templates/handlers (Lessons 16–17), facts (Lesson 9), a vault-encrypted secret (Lesson 26), and a check-mode dry run before a real run (Lesson 29) into one working project: idempotently configuring a small "fleet" of 3 example web servers. Like every hands-on example in this course, it needs zero paid infrastructure — the primary path uses your own machine as all 3 "hosts" at once. If you already have 2-3 real Linux VMs or containers, a stretch step at the end shows exactly what changes to make it real.</p>
+
+<h2>What you're building</h2>
+<p>A role that, given a host, writes that host's own small "site" — an <code>index.html</code> with a per-host welcome message, and a separate, non-public <code>app.conf</code> holding a secret that came from Ansible Vault, never from a plaintext file. Run it against 3 hosts, and you get 3 independent, correctly-templated sites, a secret that never touched git in plaintext, and a second run that changes nothing — proof the whole thing is idempotent, not just "worked once."</p>
+
+<h2>Step 0 — project folder</h2>
+<pre><code>mkdir -p capstone-fleet/roles
+cd capstone-fleet
+mkdir -p group_vars/web</code></pre>
+<p>The layout you're building toward:</p>
+<pre><code>capstone-fleet/
+├── inventory.ini
+├── site.yml
+├── group_vars/
+│   └── web/
+│       ├── vars.yml        # plain — site_title etc.
+│       └── secret.yml      # vault-encrypted — admin_api_key
+└── roles/
+    └── site_web/
+        ├── defaults/main.yml
+        ├── tasks/main.yml
+        ├── handlers/main.yml
+        └── templates/
+            ├── index.html.j2
+            └── app.conf.j2
+</code></pre>
+
+<h2>Step 1 — the inventory</h2>
+<p>Three "hosts," zero real infrastructure required — every entry points back at your own machine, exactly like Lesson 33's fake-fleet trick, so <code>ansible_connection=local</code> is all each one needs:</p>
+<pre><code># inventory.ini
+[web]
+web1 ansible_connection=local
+web2 ansible_connection=local
+web3 ansible_connection=local</code></pre>
+<p>If you'd rather point this at real documentation-range addresses for the sake of the exercise looking realistic, group them the same way and add real connection details later — the role itself doesn't change either way:</p>
+<pre><code># inventory.ini — the "real fleet" shape, for reference
+[web]
+web1 ansible_host=192.0.2.10
+web2 ansible_host=192.0.2.11
+web3 ansible_host=192.0.2.12</code></pre>
+
+<h2>Step 2 — scaffold the role</h2>
+<pre><code>cd roles
+ansible-galaxy role init site_web
+cd ..</code></pre>
+<p>Fill in only what you need, exactly Lesson 17's pattern — <code>defaults/main.yml</code> for overridable fallbacks:</p>
+<pre><code># roles/site_web/defaults/main.yml
+web_root: "/tmp/ansible-capstone/{{ inventory_hostname }}"
+site_title: "Capstone Demo"</code></pre>
+
+<h2>Step 3 — the templates</h2>
+<p>The public page — deliberately holds nothing sensitive, just facts (Lesson 9) and the per-host inventory name:</p>
+<pre><code>&lt;!-- roles/site_web/templates/index.html.j2 --&gt;
+&lt;html&gt;
+&lt;body&gt;
+  &lt;h1&gt;{{ site_title }}&lt;/h1&gt;
+  &lt;p&gt;Served from: {{ inventory_hostname }}&lt;/p&gt;
+  &lt;p&gt;Configured at: {{ ansible_date_time.iso8601 }}&lt;/p&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+<p>The app config — this one holds the secret, and is deliberately kept out of anything a browser would ever serve:</p>
+<pre><code># roles/site_web/templates/app.conf.j2
+# app.conf for {{ inventory_hostname }} — not web-served, mode 0600
+admin_api_key = {{ admin_api_key }}</code></pre>
+
+<h2>Step 4 — the vault-encrypted secret</h2>
+<p>Exactly Lesson 26's pattern: a plain variable file for anything non-sensitive, a whole separate file encrypted with Vault for the one thing that isn't:</p>
+<pre><code># group_vars/web/vars.yml — plain, safe to read in a PR
+site_title: "Capstone Demo — Web Fleet"</code></pre>
+<pre><code># create the encrypted file — opens your editor, encrypts on save
+$ ansible-vault create group_vars/web/secret.yml</code></pre>
+<p>Type this inside the editor that opens, then save and close:</p>
+<pre><code>admin_api_key: "capstone-demo-key-do-not-reuse"</code></pre>
+<p>Confirm it's genuinely ciphertext on disk, the same check Lesson 26 walked through:</p>
+<pre><code>$ cat group_vars/web/secret.yml
+$ANSIBLE_VAULT;1.1;AES256
+663835...  # unreadable — exactly what you want to see</code></pre>
+
+<h2>Step 5 — the tasks and handler</h2>
+<pre><code># roles/site_web/tasks/main.yml
+---
+- name: ensure web root exists
+  ansible.builtin.file:
+    path: "{{ web_root }}"
+    state: directory
+    mode: '0755'
+
+- name: deploy the public index page
+  ansible.builtin.template:
+    src: index.html.j2
+    dest: "{{ web_root }}/index.html"
+    mode: '0644'
+  notify: reload site
+
+- name: deploy the app config (holds the vaulted secret)
+  ansible.builtin.template:
+    src: app.conf.j2
+    dest: "{{ web_root }}/app.conf"
+    mode: '0600'
+  notify: reload site</code></pre>
+<pre><code># roles/site_web/handlers/main.yml
+---
+- name: reload site
+  ansible.builtin.file:
+    path: "{{ web_root }}/.reloaded"
+    state: touch</code></pre>
+<p>The handler stands in for "restart the web service" from Lesson 12 — it only fires when a task above it actually reported <code>changed</code>, and only once per host per run, no matter how many of the two tasks changed.</p>
+
+<h2>Step 6 — the playbook</h2>
+<pre><code># site.yml
+---
+- hosts: web
+  become: false
+  roles:
+    - site_web</code></pre>
+
+<h2>Step 7 — dry run first</h2>
+<p>Lesson 29's rule, applied for real before anything touches disk: <code>--check --diff</code> shows you exactly what would be created, with nothing actually written:</p>
+<pre><code>$ ansible-playbook site.yml -i inventory.ini --check --diff --ask-vault-pass
+# read every task's diff output — confirm index.html and app.conf
+# would be created with the values you expect, for all 3 hosts</code></pre>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You run the playbook for real, then immediately run the exact same command again with nothing else changed. What should the second <code>PLAY RECAP</code> show for every host, and what would it mean if it didn't?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Every host should show <code>changed=0</code> — the <code>file</code> and <code>template</code> modules both check current state before writing anything, so a second run with identical inputs has nothing left to do (Lesson 7). If a host showed <code>changed=1</code> or more on the second run with no inputs changed, that's a sign the templates or tasks aren't actually idempotent — for example a task that always reports changed regardless of real state, which is exactly the failure mode Lesson 7 warned about with raw <code>shell</code>/<code>command</code> tasks.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. <code>group_vars/web/secret.yml</code> is safe to commit to git. The vault password used to create it is not. Why is that split safe, and what would break the whole design if you got it backwards?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>secret.yml</code> is genuinely encrypted ciphertext on disk — committing it exposes nothing without the vault password, exactly Lesson 26's model. The vault password is the one thing that actually unlocks it. If you committed the vault password (in a file, in the workflow, anywhere in git) instead of keeping it out entirely, you'd have put the key right next to the lock — anyone who can read the repo could decrypt <code>admin_api_key</code>, making the encryption pointless.</div>
+</div>
+
+<h2>Step 8 — run it for real, then verify</h2>
+<pre><code>$ ansible-playbook site.yml -i inventory.ini --ask-vault-pass
+
+$ cat /tmp/ansible-capstone/web1/index.html
+$ cat /tmp/ansible-capstone/web2/index.html
+# confirm "Served from: web1" / "web2" differ — same template, per-host data
+
+$ cat /tmp/ansible-capstone/web1/app.conf
+# confirm admin_api_key is the plaintext value you typed in Step 4 —
+# proof Ansible decrypted it correctly at run time
+
+$ ls -l /tmp/ansible-capstone/web1/app.conf
+# confirm mode is 0600 — not world-readable, unlike index.html's 0644</code></pre>
+<p>Then prove idempotency directly — re-run the exact same command:</p>
+<pre><code>$ ansible-playbook site.yml -i inventory.ini --ask-vault-pass
+# PLAY RECAP: changed=0 for web1, web2, web3 — nothing left to do</code></pre>
+
+<h2>Optional stretch: a real web server</h2>
+<p>If you have 2-3 real Linux VMs or Docker containers available, the same role becomes a real one with two additions: a task installing and starting an actual web server package (<code>ansible.builtin.package</code>, conditioned on <code>ansible_facts['os_family']</code> the way Lesson 10 taught), and pointing <code>web_root</code> at that server's real document root instead of <code>/tmp</code>. The inventory, the vault file, the templates, and the handler pattern don't need to change at all — that's the whole benefit of having built this on roles and variables instead of one-off commands.</p>
+
+<h2>Commit it, minus the secret</h2>
+<p>Same discipline Lesson 26 established, now applied to a whole project:</p>
+<pre><code># .gitignore
+*.retry
+/tmp/ansible-capstone/</code></pre>
+<p>Commit everything, including <code>group_vars/web/secret.yml</code> — it's ciphertext, that's the point. Never commit the vault password itself, in any form, anywhere in the repo.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_checkmode.html" target="_blank" rel="noopener">docs.ansible.com — Check mode (dry run)</a> · <a href="https://docs.ansible.com/ansible/latest/vault_guide/vault_encrypting_content.html" target="_blank" rel="noopener">docs.ansible.com — Encrypting content with Ansible Vault</a> (same source as Lesson 26, confirms <code>ansible-vault create</code>) · <a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html" target="_blank" rel="noopener">docs.ansible.com — Roles</a> (confirms role directory layout and <code>ansible-galaxy role init</code>) — all verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>You've completed the hands-on core of the Ansible — Zero to Expert course.</strong>
+  <ul>
+    <li>The capstone combines a static inventory (Lesson 4), a role with defaults/templates/handlers (Lessons 16-17), facts (Lesson 9), a vault-encrypted secret (Lesson 26), and a <code>--check --diff</code> dry run (Lesson 29) into one working, idempotent project.</li>
+    <li>Every hands-on step ran on your own machine at zero cost, using the same "fake fleet via <code>ansible_connection=local</code>" trick from Lesson 33.</li>
+    <li>A second run with no input changes should always report <code>changed=0</code> — that's the proof the whole thing actually works, not just that it ran once.</li>
+    <li>The encrypted vault file gets committed to git; the vault password never does — the same rule from Lesson 26, now protecting a real project instead of a single example file.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error running this — a template rendering wrong, a vault password prompt behaving unexpectedly, a permissions problem? Paste the exact output and ask, step by step, rather than the whole run at once.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0033-performance-best-practices.html">&larr; Lesson 33: Performance &amp; best practices</a></span>
+  <span><a href="0035-ex374-exam-walkthrough.html">Lesson 35: EX374 exam domain walkthrough &rarr;</a></span>
+</div>
+
+</body>
+</html>

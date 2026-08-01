@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 16 — Roles: anatomy</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 16 of 36</p>
+<h1>Roles: anatomy</h1>
+
+<p>Every playbook you've written so far has kept tasks, handlers, variables, and templates loose in one project folder. That's fine for a handful of tasks. But once you're managing nginx on one set of hosts, PostgreSQL on another, and a monitoring agent everywhere, loose files stop scaling — you end up copy-pasting the same tasks between playbooks, or scrolling through one giant file that mixes three unrelated jobs together. A <strong>role</strong> is Ansible's answer: a standardized, reusable directory structure that packages tasks, handlers, variables, templates, and files together around one responsibility — "install and configure nginx" — so that responsibility can be written once and reused anywhere.</p>
+
+<p class="callout"><strong>Mental model:</strong> if you've seen the Terraform course in this series, a role is the same idea as a Terraform module — a self-contained, composable unit built around one job, with its own inputs and internals, that you can call from any project instead of rewriting. Terraform modules compose <em>provisioning</em>. Ansible roles compose <em>configuration</em>. Same instinct, different layer of the stack.</p>
+
+<h2>The standard directory layout</h2>
+<p>A role isn't a special file type — it's a folder with a specific, predictable set of subfolders that Ansible knows how to look inside automatically. Here's the layout, confirmed against Ansible's own documentation:</p>
+
+<pre><code>roles/
+    common/
+        tasks/
+            main.yml
+        handlers/
+            main.yml
+        templates/
+            ntp.conf.j2
+        files/
+            bar.txt
+            foo.sh
+        vars/
+            main.yml
+        defaults/
+            main.yml
+        meta/
+            main.yml</code></pre>
+
+<p><code>common</code> here is just an example role name — you'll create roles named things like <code>nginx</code> or <code>postgres</code>. Ansible finds and loads a role's pieces by convention: it looks for a file called <code>main.yml</code> inside each subdirectory, and if that subdirectory or file doesn't exist, it just skips it. You don't declare which pieces a role has anywhere — the presence of the folder <em>is</em> the declaration.</p>
+
+<p>Here's what each subdirectory is for, and how it maps to what you've already learned:</p>
+<ul>
+<li><strong><code>tasks/main.yml</code></strong> — the list of tasks the role runs, in order. This is exactly the <code>tasks:</code> list from Lesson 6's playbooks, just moved into its own file instead of sitting inline in the play.</li>
+<li><strong><code>handlers/main.yml</code></strong> — handlers the role provides, importable into the parent play for use by this role or others in the same play. Same handler mechanics as Lesson 12 (<code>notify:</code>, runs once at the end of the play) — just packaged with the role instead of declared loose.</li>
+<li><strong><code>templates/</code></strong> — Jinja2 template files (they end in <code>.j2</code>, like the <code>ntp.conf.j2</code> in the tree above) for use with the <code>template</code> module. This is the templating you built in Lessons 13–14, scoped to the role.</li>
+<li><strong><code>files/</code></strong> — static files for use with the <code>copy</code> module, and scripts for use with the <code>script</code> module. Unlike templates, nothing here gets rendered through Jinja2 — what's in the file is exactly what lands on the host.</li>
+<li><strong><code>vars/main.yml</code></strong> and <strong><code>defaults/main.yml</code></strong> — both hold variables, same <code>key: value</code> syntax from Lesson 8, but with a deliberate difference covered below.</li>
+<li><strong><code>meta/main.yml</code></strong> — metadata about the role: role dependencies (other roles this one requires) and, optionally, Ansible Galaxy metadata if you plan to publish it.</li>
+</ul>
+
+<p>Beyond these, the docs also list <code>library/</code>, <code>module_utils/</code>, and <code>lookup_plugins/</code> — for shipping custom modules, module utilities, and plugins inside a role. You won't need those as a beginner; they exist for teams extending Ansible itself, not for configuring servers.</p>
+
+<h2><code>defaults/main.yml</code> vs <code>vars/main.yml</code> — same syntax, opposite intent</h2>
+<p>Both files define variables for the role, and both use the same YAML you learned in Lesson 8. The difference is entirely about <strong>how easily the value can be overridden</strong> by whoever calls the role:</p>
+<ul>
+<li><strong><code>defaults/main.yml</code></strong> holds, in Ansible's own words, "very low precedence values for variables provided by the role." Put a value here when you expect callers to change it — a port number, a package version, a config flag. Defaults exist to be overridden.</li>
+<li><strong><code>vars/main.yml</code></strong> holds "high precedence variables provided by the role to the play." Put a value here when it's an internal detail the role depends on to function correctly, and you don't want a caller accidentally breaking the role by overriding it.</li>
+</ul>
+
+<p class="callout"><strong>Mental model:</strong> think of <code>defaults/</code> as the role's dials — knobs it hands you on purpose, expecting you to turn them. <code>vars/</code> is the role's internal wiring — values it needs to work correctly, that it isn't offering up for casual tweaking. If you're not sure which one a value belongs in, ask: "would I expect someone reusing this role to want to change this?" Yes → <code>defaults/</code>. No → <code>vars/</code>.</p>
+
+<p>This precedence difference is a small preview of a much bigger topic: Ansible has roughly twenty distinct precedence levels across defaults, vars, inventory variables, play variables, extra vars, and more. Lesson 22 covers the full precedence order in detail — for now, the one fact worth holding onto is: <strong>a role's own defaults are the lowest-precedence variable source in the whole system</strong>, deliberately, so that almost anything else can override them.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You're building an nginx role. It needs a handler that restarts the nginx service, a Jinja2 template for <code>nginx.conf</code>, and a variable <code>nginx_port</code> that callers should be free to change to something other than 80. Which subdirectory does each of these three things belong in?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The restart handler goes in <code>handlers/main.yml</code>. The Jinja2 template goes in <code>templates/</code> (as something like <code>nginx.conf.j2</code>). <code>nginx_port</code> goes in <code>defaults/main.yml</code> — not <code>vars/</code> — precisely because you want callers to override it easily; that's what low-precedence defaults are for.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A role has a value in <code>vars/main.yml</code> that a teammate is trying to override by setting the same variable name at the play level. Based on what you've read here, would you expect that override to work easily, or fight against the role?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">It fights against the role. <code>vars/main.yml</code> is high-precedence by design, so it's harder for outside values to win against it — that's the whole point of putting a value there instead of in <code>defaults/</code>. If a teammate keeps needing to override something in <code>vars/</code>, that's usually a sign the value belongs in <code>defaults/</code> instead. The exact precedence order across every variable source is Lesson 22.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html" target="_blank" rel="noopener">docs.ansible.com — Roles</a> (standard role directory tree, purpose of <code>tasks/</code>, <code>handlers/</code>, <code>templates/</code>, <code>files/</code>, <code>vars/</code>, <code>defaults/</code>, <code>meta/</code>, and the precedence wording for role defaults vs role vars) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A role is a standardized folder structure that packages tasks, handlers, vars, templates, and files around one responsibility — the configuration-layer equivalent of a Terraform module.</li>
+    <li>Standard layout: <code>roles/rolename/{tasks,handlers,vars,defaults,templates,files,meta}/main.yml</code>. Ansible finds each piece by convention — missing subdirectories are just skipped.</li>
+    <li><code>defaults/main.yml</code> is low-precedence, meant to be overridden by callers. <code>vars/main.yml</code> is high-precedence, meant to stay fixed. Same syntax, opposite intent — full precedence order comes in Lesson 22.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0015-file-management-modules.html">&larr; Lesson 15: File &amp; directory management modules</a></span>
+  <span><a href="0017-writing-your-first-role.html">Lesson 17: Writing your first role &rarr;</a></span>
+</div>
+
+</body>
+</html>

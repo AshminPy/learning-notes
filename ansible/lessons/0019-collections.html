@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 19 — Collections</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 19 of 36</p>
+<h1>Collections</h1>
+
+<p>Lesson 18 mentioned collections in passing while installing roles from Galaxy. Time to open that box properly. Every module you've called since Lesson 6 — <code>ansible.builtin.debug</code>, <code>ansible.builtin.file</code>, <code>ansible.builtin.copy</code>, <code>ansible.builtin.template</code> — already lives inside one. You've been using a collection this whole course without knowing its name.</p>
+
+<p class="callout"><strong>Mental model:</strong> a role (Lesson 16-17) is one reusable job — "configure Nginx," "set up a firewall baseline." A collection is a distribution package — like a library on PyPI or npm — that can bundle many roles, plus modules, plugins, and playbooks, all published and versioned together. A role is a recipe. A collection is the cookbook it ships in, and the cookbook can hold other things too.</p>
+
+<h2>What a collection actually contains</h2>
+<p>Confirmed against Ansible's own collections guide: a <strong>collection</strong> is Ansible's packaging format for distributing content. A single collection can bundle:</p>
+<ul>
+<li><strong>Modules</strong> — the building blocks tasks call, like <code>copy</code> or a cloud-provider API wrapper.</li>
+<li><strong>Plugins</strong> — connection types, filters, lookups, and other extension points.</li>
+<li><strong>Roles</strong> — yes, the Lesson 17 kind. A collection can bundle several finished roles.</li>
+<li><strong>Playbooks and docs</strong> — ready-to-use examples and reference material shipped alongside the code.</li>
+</ul>
+<p>You've already met three real ones by name:</p>
+<ul>
+<li><code>community.general</code> — a broad grab-bag of community-maintained modules that don't have a more specific home.</li>
+<li><code>ansible.posix</code> — modules for POSIX-specific system tasks (things like file ACLs, mounts).</li>
+<li><code>amazon.aws</code> — AWS-specific modules and plugins, maintained by AWS/the community for provisioning and managing AWS resources.</li>
+</ul>
+
+<h2>The naming pattern: namespace.collection_name</h2>
+<p>Every collection is named <code>namespace.collection_name</code> — the same two-part shape as the <code>namespace.role_name</code> pattern from Lesson 18, just one level up. <code>namespace</code> identifies who publishes it (a vendor, an org, or <code>ansible</code> and <code>community</code> for content Ansible itself curates); <code>collection_name</code> identifies the package. <code>amazon.aws</code> reads as "the <code>aws</code> collection, published by the <code>amazon</code> namespace" — exactly like <code>geerlingguy.nginx</code> read as "the <code>nginx</code> role, published by <code>geerlingguy</code>."</p>
+
+<h2>FQCN — the name you've already been typing</h2>
+<p>A <strong>Fully Qualified Collection Name (FQCN)</strong> is <code>namespace.collection_name.resource_name</code> — the collection's full name plus a dot plus the specific module (or plugin) inside it. This is the piece that reframes everything from Lesson 6 onward: <code>ansible.builtin.copy</code> is not a special "built-in" keyword — it's an FQCN. <code>ansible.builtin</code> is a real collection (the one that ships with Ansible core itself, containing native modules like <code>copy</code>, <code>file</code>, <code>template</code>, and <code>debug</code>), and <code>copy</code> is a module inside it. Every example playbook in this course has been calling FQCNs since Lesson 6, you just hadn't been told the pattern had a name yet.</p>
+
+<p class="callout"><strong>Best practice — always write the FQCN, never the short name.</strong> Ansible lets you write just <code>copy:</code> instead of <code>ansible.builtin.copy:</code> if nothing else on the system defines a module with that same short name. But the moment you install a second collection that also happens to ship a <code>copy</code> module, the short name becomes ambiguous — which one runs depends on collection search order, not on what you meant. Writing the full FQCN in every task removes that ambiguity permanently and makes the task self-documenting: anyone reading it knows exactly which collection's code is running, without checking your installed collections list first.</p>
+
+<h2>Installing a collection</h2>
+<p>Same tool as Lesson 18, different subcommand:</p>
+<pre><code>$ ansible-galaxy collection install namespace.collection_name</code></pre>
+<p>For example:</p>
+<pre><code>$ ansible-galaxy collection install community.general</code></pre>
+<p>Pin an exact version with a colon:</p>
+<pre><code>$ ansible-galaxy collection install community.general:==8.0.0</code></pre>
+
+<h2>Pinning collections in requirements.yml</h2>
+<p>Confirmed against the current collections guide: it's the <em>same file format</em> from Lesson 18, extended. A <code>requirements.yml</code> can hold a top-level <code>roles:</code> list, a top-level <code>collections:</code> list, or both in one file:</p>
+<pre><code>---
+roles:
+  - name: geerlingguy.nginx
+    version: "3.1.4"
+
+collections:
+  - name: community.general
+    version: "8.0.0"
+
+  - name: amazon.aws
+    version: ">=7.0.0,&lt;8.0.0"</code></pre>
+<p>Install everything the file lists — roles and collections together — with the same command from Lesson 18:</p>
+<pre><code>$ ansible-galaxy install -r requirements.yml</code></pre>
+<p>Or install only the collections half:</p>
+<pre><code>$ ansible-galaxy collection install -r requirements.yml</code></pre>
+<p>The version rule from Lesson 18 carries over exactly: pin it, commit the file to git, only bump on purpose after testing. An unpinned collection is the same silent moving target an unpinned role or an unpinned Terraform module source is.</p>
+
+<h2>Role vs collection — the distinction that matters</h2>
+<table>
+<tr><th>Role (Lesson 16-17)</th><th>Collection (this lesson)</th></tr>
+<tr><td>One specific automation job — e.g. "install and configure Nginx"</td><td>A distributable package — can contain many roles, modules, and plugins</td></tr>
+<tr><td>Named <code>namespace.role_name</code></td><td>Named <code>namespace.collection_name</code></td></tr>
+<tr><td>Used under a play's <code>roles:</code> key</td><td>Its modules are called via FQCN inside tasks; its roles (if any) are used like any role</td></tr>
+<tr><td>Installed with <code>ansible-galaxy role install</code></td><td>Installed with <code>ansible-galaxy collection install</code></td></tr>
+</table>
+<p>A collection can ship zero roles and just be a set of modules (like <code>ansible.builtin</code>). Or it can ship mostly roles (like <code>geerlingguy.php_roles</code>, seen in the official requirements.yml example). The two concepts aren't a hierarchy where one always contains the other — a collection is a packaging boundary, a role is a unit of automation logic. They're independent axes that happen to overlap often.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. What's the FQCN of the <code>copy</code> module you've been using since Lesson 6?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>ansible.builtin.copy</code> — <code>ansible.builtin</code> is the collection namespace.name that ships with Ansible core, and <code>copy</code> is the module inside it. Same pattern as <code>ansible.builtin.file</code>, <code>ansible.builtin.template</code>, and <code>ansible.builtin.debug</code> — every "built-in" module you've called in this course is really an FQCN pointing at the <code>ansible.builtin</code> collection.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Your project needs <code>community.general</code> for one module and <code>geerlingguy.nginx</code> for a full Nginx setup. Can one <code>requirements.yml</code> pin both, and what command installs everything in it?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Yes — put <code>geerlingguy.nginx</code> under a top-level <code>roles:</code> key and <code>community.general</code> under a top-level <code>collections:</code> key in the same <code>requirements.yml</code> file, each pinned with <code>version:</code>. Install both with one command: <code>ansible-galaxy install -r requirements.yml</code>.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<p>In your practice project folder:</p>
+<ul>
+<li>run <code>ansible-galaxy collection install community.general</code> and note where it installs</li>
+<li>write a small playbook task using an FQCN from that collection instead of <code>ansible.builtin</code> — check the <code>community.general</code> docs on Galaxy for a module name to try</li>
+<li>create (or extend) your <code>requirements.yml</code> from Lesson 18 to add a <code>collections:</code> section pinning <code>community.general</code> to a specific version</li>
+<li>run <code>ansible-galaxy install -r requirements.yml</code> and confirm both your pinned role and your pinned collection install</li>
+<li>go back to any task you wrote in earlier lessons using a short module name (like <code>copy:</code>) and rewrite it as the full FQCN (<code>ansible.builtin.copy:</code>) — get in the habit now</li>
+</ul>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/collections_guide/index.html" target="_blank" rel="noopener">docs.ansible.com — Collections guide</a> (collection definition, contents: modules/plugins/roles/playbooks, namespace.collection_name naming, FQCN, <code>ansible.builtin</code> as the collection shipping <code>copy</code>/<code>file</code>/<code>template</code>) · <a href="https://docs.ansible.com/ansible/latest/collections_guide/collections_installing.html" target="_blank" rel="noopener">docs.ansible.com — Installing collections</a> (<code>ansible-galaxy collection install</code> syntax, version pinning with <code>:==</code>, <code>requirements.yml</code> with combined <code>roles:</code> and <code>collections:</code> keys, <code>ansible-galaxy install -r requirements.yml</code> and <code>ansible-galaxy collection install -r requirements.yml</code>) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A <strong>collection</strong> (<code>namespace.collection_name</code>) is a distribution package that can bundle modules, plugins, roles, and playbooks together — bigger than a role, which is one specific automation job.</li>
+    <li>Every module you've used since Lesson 6 is an <strong>FQCN</strong> — <code>ansible.builtin.copy</code>, <code>ansible.builtin.file</code>, <code>ansible.builtin.template</code> all live in the <code>ansible.builtin</code> collection that ships with Ansible core.</li>
+    <li>Install a collection with <code>ansible-galaxy collection install namespace.collection_name</code>; pin it in the same <code>requirements.yml</code> from Lesson 18, which can hold both a <code>roles:</code> list and a <code>collections:</code> list.</li>
+    <li>Always write the full FQCN in tasks — it removes ambiguity if two installed collections ever ship a module with the same short name.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0018-ansible-galaxy.html">&larr; Lesson 18: Ansible Galaxy</a></span>
+  <span><a href="0020-dynamic-inventory.html">Lesson 20: Dynamic inventory &rarr;</a></span>
+</div>
+
+</body>
+</html>

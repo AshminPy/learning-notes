@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 7 — Idempotency</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 7 of 36</p>
+<h1>Idempotency</h1>
+
+<p>Stop here for a second. Of the 36 lessons in this course, this is the single most important one. Not because the syntax is hard — there's barely any new syntax at all — but because <strong>idempotency</strong> is the idea that everything else in Ansible is built on top of. If this mental model doesn't click, every lesson after this one will feel like memorizing module options instead of understanding a system. If it does click, the rest of the course is just filling in details.</p>
+
+<p>At the end of Lesson 6 you ran the same playbook twice and watched the <code>changed</code> count on the directory task drop to zero the second time. That wasn't a coincidence or a lucky module — that was idempotency, and this lesson is about exactly why it happened and why it matters.</p>
+
+<h2>The precise definition</h2>
+<p>Ansible's own glossary defines it plainly: an operation is <strong>idempotent</strong> if the result of performing it once is exactly the same as the result of performing it repeatedly, without any intervening actions.</p>
+
+<p>Translated into playbook terms: run the same playbook against the same host twice, back to back, and you should get two things —</p>
+<ul>
+<li>the host ends up in the <strong>same end state</strong> both times</li>
+<li>the <strong>second</strong> run reports no changes at all</li>
+</ul>
+
+<p>Notice what idempotency is <em>not</em>. It's not "the playbook doesn't error the second time." A command that silently does nothing useful on rerun but also doesn't crash is not what we mean. It's not "roughly the same state" either — it's the exact same state, verified every single run, by a module that actually checks before it acts.</p>
+
+<p class="callout"><strong>Mental model:</strong> you already met this pattern if you've done the Terraform course on this site. Terraform describes desired <em>infrastructure</em> state and reconciles reality toward it — apply twice with no changes in between, and the second plan shows zero changes. Ansible does the same thing, one level down the stack, for <em>configuration</em> on a host: desired state described in YAML, reconciled by modules that check reality before acting. Different tool, same declarative idea: say what you want, not the steps to get there, and let the tool figure out whether it needs to do anything at all.</p>
+
+<h2>Why this matters in practice</h2>
+<p>Idempotency isn't a nice theoretical property — it's what makes a playbook safe to use in ways a plain shell script never is:</p>
+<ul>
+<li><strong>Safe to re-run anytime.</strong> Playbook run failed halfway through because of a network blip? Just run it again. You don't need to figure out which tasks already succeeded — the ones already done will report <code>ok</code> and change nothing, and only the ones still needed will actually act.</li>
+<li><strong>Safe to schedule.</strong> A cron job or CI pipeline can run the same playbook every night, or every few minutes, without slowly making a mess of the host. If nothing has drifted, nothing changes.</li>
+<li><strong>Safe to run against a host that already has some config applied.</strong> You don't need a "clean" host to point a playbook at. Idempotent tasks check current state first — a host that's already 80% configured the way you want just shows mostly <code>ok</code> with a few <code>changed</code> for the missing 20%.</li>
+</ul>
+<p>Put together, this is why Ansible playbooks describe <strong>desired state</strong> rather than a sequence of one-time setup steps. You're not writing "install this, then edit that, then restart this service" as a script that only makes sense run once from a blank slate. You're writing "this package should be present, this file should look like this, this service should be running" — a description that's true or not true regardless of how many times you check it.</p>
+
+<h2>ok vs changed — now it means something</h2>
+<p>Lesson 6 introduced these two PLAY RECAP counters without explaining the "why." Now you have it:</p>
+<ul>
+<li><code>ok</code> — the task checked the host, found it already matched the desired state, and took <strong>no action</strong>.</li>
+<li><code>changed</code> — the task checked the host, found it did <strong>not</strong> match the desired state, and made a change to fix that.</li>
+</ul>
+<p>This is idempotency made visible, task by task, every single run. A well-written, fully idempotent playbook run against an already-configured host should show <code>changed=0</code> in the PLAY RECAP. If you expect a host to be untouched and you see a nonzero <code>changed</code> count, that's a signal worth investigating — either the host had drifted, or a task in your playbook isn't as idempotent as you assumed.</p>
+
+<p class="callout"><strong>Best practice:</strong> treat an unexpected <code>changed</code> count the same way you'd treat an unexpected line in a Terraform plan — stop and read <em>which</em> task changed before you shrug it off. Idempotency is what lets you trust that number; don't throw that trust away by ignoring it.</p>
+
+<h2>The gotcha: command and shell are not automatically idempotent</h2>
+<p>Here's the part that catches almost everyone. Lesson 5 told you to prefer dedicated modules (<code>package</code>, <code>service</code>, <code>file</code>, and friends) over <code>ansible.builtin.command</code> or <code>ansible.builtin.shell</code> whenever one exists. This lesson is why.</p>
+<p>Proper Ansible modules are idempotent <strong>by design</strong>. <code>ansible.builtin.file</code> with <code>state: directory</code> checks whether the directory already exists before creating it — that's built into the module's logic, you get it for free. <code>ansible.builtin.package</code> checks whether the package is already installed at the right version. <code>ansible.builtin.service</code> checks whether the service is already in the state you asked for. You didn't write any of that checking logic — the module author did, once, and every user of the module benefits.</p>
+<p><code>command</code> and <code>shell</code> have none of that. They just run whatever you told them to run, every single time, with no built-in awareness of "did I already do this?" Ansible's own documentation confirms this directly: the <code>command</code> module offers <code>creates</code> and <code>removes</code> parameters specifically because, without them, the module has no idea whether its job is already done — you have to tell it what file to check for.</p>
+<p>Concretely: a task like this will fail the <strong>second</strong> time you run it, because <code>mkdir</code> itself errors if the directory already exists, and nothing about the <code>shell</code> module stops it from trying:</p>
+<pre><code>- name: Make a directory (NOT idempotent)
+  ansible.builtin.shell: mkdir /tmp/foo</code></pre>
+<p>Compare that to the module version, which is idempotent with zero extra effort:</p>
+<pre><code>- name: Make a directory (idempotent)
+  ansible.builtin.file:
+    path: /tmp/foo
+    state: directory</code></pre>
+<p>Same end goal, but only one of these is safe to run twice. This is the concrete reason Lesson 5's advice — "reach for a dedicated module before <code>shell</code>" — is a rule about idempotency, not just style. If you must use <code>command</code> or <code>shell</code> because no dedicated module exists for what you need, you're now responsible for the idempotency check yourself, usually with <code>creates</code>/<code>removes</code>, or a conditional based on checking current state first. Nobody hands you that for free the way <code>ansible.builtin.file</code> does.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You run a playbook against a fresh host for the first time. Every task reports <code>changed</code>. You run the exact same playbook again immediately after, with nothing else touching the host in between. What should the PLAY RECAP show this time, if every task uses proper Ansible modules?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>changed=0</code> for that host, with the same <code>ok</code> count as the total number of tasks. The host is already in the desired state from the first run, so every task checks, finds nothing to do, and reports <code>ok</code> instead of <code>changed</code>. If you see any nonzero <code>changed</code> on the second run, either something on the host drifted between runs, or a task isn't truly idempotent.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A teammate writes <code>ansible.builtin.shell: mkdir /var/log/myapp</code> in a playbook with no <code>creates</code> parameter. What happens the second time this playbook runs against a host that already has that directory?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The task fails — <code>mkdir</code> errors out because the directory already exists, and the <code>shell</code> module has no built-in awareness that the job was already done, so it just re-runs the raw command. This is exactly the gotcha this lesson covers: <code>shell</code>/<code>command</code> are not idempotent by default. The fix is either switch to <code>ansible.builtin.file</code> with <code>state: directory</code> (idempotent by design), or add <code>creates: /var/log/myapp</code> to the shell task so it skips when the directory already exists.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<p>Reuse the <code>playbook.yml</code> from Lesson 6 — the one with the <code>debug</code> task and the <code>file</code> task creating <code>/tmp/ansible-practice</code>.</p>
+<ul>
+<li>Run it: <code>ansible-playbook -i inventory playbook.yml</code>. Note the PLAY RECAP — on a fresh host, the directory task should show <code>changed</code>.</li>
+<li>Run the exact same command again, immediately: <code>ansible-playbook -i inventory playbook.yml</code>. Check the PLAY RECAP again — the directory task should now be <code>ok</code>, and the line should read <code>changed=0</code>. That's idempotency, observed directly.</li>
+<li>Now add a third task at the end of the <code>tasks:</code> list to see the contrast:</li>
+</ul>
+<pre><code>    - name: Make a directory the non-idempotent way
+      ansible.builtin.shell: mkdir /tmp/ansible-shell-test</code></pre>
+<ul>
+<li>Run the playbook once — it succeeds, <code>changed</code> on that task.</li>
+<li>Run it again, immediately — this task should now <strong>fail</strong>, because <code>mkdir</code> refuses to create a directory that already exists, and <code>shell</code> did nothing to check for you first.</li>
+<li>Fix it by adding a guard: <code>creates: /tmp/ansible-shell-test</code> under the same <code>shell:</code> line. Run it a third time — it should now report <code>ok</code> instead of failing, because you gave Ansible a way to check whether the job was already done.</li>
+<li>Clean up when you're done: <code>rm -rf /tmp/ansible-practice /tmp/ansible-shell-test</code>.</li>
+</ul>
+<p>Try it yourself before checking the reference commands below.</p>
+
+<div class="quiz">
+<p>Reveal the reference commands</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>ansible-playbook -i inventory playbook.yml
+# check PLAY RECAP: directory task = changed
+
+ansible-playbook -i inventory playbook.yml
+# check PLAY RECAP: directory task = ok, changed=0
+
+# add the shell task, then:
+ansible-playbook -i inventory playbook.yml
+# shell task = changed (first time it runs, mkdir succeeds)
+
+ansible-playbook -i inventory playbook.yml
+# shell task = FAILS (mkdir: cannot create directory: File exists)
+
+# add "creates: /tmp/ansible-shell-test" under the shell task, then:
+ansible-playbook -i inventory playbook.yml
+# shell task = ok (creates check now guards it)
+
+rm -rf /tmp/ansible-practice /tmp/ansible-shell-test</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/reference_appendices/glossary.html" target="_blank" rel="noopener">docs.ansible.com — Glossary</a> (official definition: "An operation is idempotent if the result of performing it once is exactly the same as the result of performing it repeatedly without any intervening actions.") · <a href="https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html" target="_blank" rel="noopener">ansible.builtin.command module docs</a> (<code>creates</code>/<code>removes</code> parameters exist specifically because the module has no built-in idempotency check — confirming <code>command</code>/<code>shell</code> are not idempotent by default) — all verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><strong>Idempotency</strong>: running the same playbook against the same host twice gives the same end state, and the second run reports no changes. This is the core idea the whole course builds on — the same declarative spirit as Terraform's desired-state model, applied to configuration instead of infrastructure.</li>
+    <li>In the PLAY RECAP: <code>ok</code> means the task checked and found nothing to do; <code>changed</code> means the task had to act to reach desired state. A fully idempotent playbook re-run should show <code>changed=0</code>.</li>
+    <li>Proper modules (<code>package</code>, <code>service</code>, <code>file</code>, ...) are idempotent by design. <code>command</code>/<code>shell</code> are NOT — they just re-run the raw command every time, and can even fail on rerun (like <code>mkdir</code> on an existing directory) unless you add a guard like <code>creates:</code>. This is exactly why Lesson 5 said to prefer dedicated modules over shell.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0006-first-playbook.html">&larr; Lesson 6 — Your first playbook</a></span>
+  <span><a href="0008-variables.html">Lesson 8 — Variables &rarr;</a></span>
+</div>
+
+</body>
+</html>

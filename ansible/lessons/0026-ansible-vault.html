@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 26 — Ansible Vault</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 26 of 36</p>
+<h1>Ansible Vault</h1>
+
+<p>Real playbooks eventually need real secrets — a database password, an API key, a TLS private key you're pushing to a host. Those values have to live somewhere in your project: a variable file, group_vars, a task. If you type them in as plain text and run <code>git add</code>, you've just written a secret into your repo's history forever — readable by anyone with clone access, and still there even if you delete the file in a later commit. That's not a hypothetical; it's one of the most common real-world security incidents in infrastructure code.</p>
+
+<p>If you took the sibling Terraform course, this is the exact same problem you met in <a href="../../terraform/lessons/0024-sensitive-data.html">Terraform Lesson 24</a>: Terraform's <code>sensitive = true</code> hides a value from CLI output but still writes it into <code>terraform.tfstate</code> in plaintext — a display filter, not encryption. Ansible has the same underlying risk (secrets sitting in plaintext files that want to be committed), but it ships a real answer to it: <strong>Ansible Vault</strong>, which actually encrypts the file on disk.</p>
+
+<p class="callout"><strong>Mental model:</strong> Vault turns a file into a locked box. Anyone can see the box exists in your repo — file name, git history, the fact that it's there — but opening it (editing it, viewing it, or letting a playbook read the variables inside) requires the password. No password, no contents. That's a real security boundary, not a CLI filter.</p>
+
+<h2>What Vault actually encrypts</h2>
+<p>Ansible Vault can encrypt two different things, and the mental model for each is the same "locked box" idea, just at different sizes:</p>
+<ul>
+<li><strong>A whole file</strong> — a variables file, a whole playbook, any file Ansible would read. Once encrypted, the entire file's contents are ciphertext; nobody can read a line of it without the password.</li>
+<li><strong>A single value inline</strong> — one secret string embedded in an otherwise-plaintext, readable YAML file, using <code>ansible-vault encrypt_string</code>. Useful when the rest of the file has nothing sensitive in it and you don't want to lock the whole thing down.</li>
+</ul>
+
+<h2>The core commands</h2>
+<p>Confirmed against Ansible's own CLI reference and vault guide:</p>
+<pre><code># Create a new file, encrypted from the start — opens your editor,
+# encrypts on save
+$ ansible-vault create secrets.yml
+
+# Open an existing encrypted file, decrypted in your editor,
+# re-encrypted automatically when you save and close
+$ ansible-vault edit secrets.yml
+
+# Encrypt a file that already exists (has plaintext secrets in it right now)
+$ ansible-vault encrypt vars/prod.yml
+
+# Decrypt a file back to plaintext on disk — use sparingly, re-encrypt when done
+$ ansible-vault decrypt vars/prod.yml
+
+# View the decrypted contents in a pager, without writing plaintext to disk
+$ ansible-vault view secrets.yml</code></pre>
+
+<p>Every one of these prompts you for the vault password interactively unless you tell it where to get the password some other way (more on that below).</p>
+
+<h2>Encrypting a single value</h2>
+<p><code>encrypt_string</code> is the tool for the "just this one secret" case — you get back a block you paste directly into an otherwise plaintext YAML file:</p>
+<pre><code>$ ansible-vault encrypt_string --vault-password-file a_password_file 'S3cretPass!' --name 'db_password'</code></pre>
+<p>That prints a YAML block starting with <code>db_password: !vault |</code> followed by the encrypted blob — copy that whole block into your <code>vars.yml</code> as-is. The rest of the file stays readable; only that one value is locked.</p>
+
+<h2>Running a playbook that uses vault-encrypted content</h2>
+<p>Ansible needs the password at run time to decrypt whatever it reads, so <code>ansible-playbook</code> needs to be told where to get it:</p>
+<pre><code># Prompt for the password interactively
+$ ansible-playbook --ask-vault-pass site.yml
+
+# Read the password from a file
+$ ansible-playbook --vault-password-file /path/to/vault-password-file site.yml
+
+# Named vault IDs — supports multiple different passwords for
+# different files in the same run
+$ ansible-playbook --vault-id dev@prompt site.yml</code></pre>
+
+<p class="callout"><strong>Critical — the password file is a secret too:</strong> <code>--vault-password-file</code> is convenient (it's how CI systems like Jenkins supply the password without a human typing it), but that file contains the plaintext password that unlocks everything. Never commit the vault password file to git — that puts the key right next to the lock, and the whole exercise of encrypting the vault file was pointless. Keep the password file outside the repo entirely, or better, don't use a file on disk at all: pull the password from a secrets manager (Vault, AWS Secrets Manager) or your CI system's built-in secret store (a GitHub Actions secret, a GitLab CI variable) and feed it in at run time.</p>
+
+<h2>The best-practice pattern</h2>
+<p>Put the two pieces on opposite sides of the git boundary:</p>
+<ul>
+<li><strong>Commit the encrypted vault file to git.</strong> It's ciphertext — safe to store, review in a PR (as an unreadable blob), and version like any other file. This is the whole point: your secrets file lives in your repo history like everything else, without ever exposing the secret.</li>
+<li><strong>Keep the vault password itself completely out of git.</strong> No password in a <code>.tfvars</code>-style file, no password in a script committed to the repo, no password in a <code>.env</code> file that "just this once" gets committed. It lives in a secrets manager, a CI secret store, or — for solo/local work — a file outside the repo that's listed in your global gitignore, never the project's.</li>
+</ul>
+<p>Add the plaintext files you'll be encrypting-and-deleting, and any local password file, to <code>.gitignore</code> before you start:</p>
+<pre><code>vault-password-file
+*.decrypted</code></pre>
+
+<div class="quiz">
+<p>Q1. You run <code>ansible-vault encrypt vars/prod.yml</code> and commit the result. A teammate clones the repo and opens <code>vars/prod.yml</code> in a text editor, no Ansible involved. What do they see?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Ciphertext — an unreadable encrypted blob, not the YAML variables. Unlike Terraform's <code>sensitive = true</code> (which only hides a value from CLI output while the state file still holds it in plaintext), Vault genuinely encrypts the file's bytes. Without the vault password, the actual secret values are not recoverable from the file.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Your CI pipeline needs to run a vault-protected playbook unattended. Where should the vault password come from?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">A CI secret store (GitHub Actions secrets, GitLab CI variables) or a dedicated secrets manager — supplied to <code>--vault-password-file</code> or <code>--vault-id</code> at run time, never a password file committed to the repo. Committing the password file defeats Vault entirely: anyone who can read the repo can now decrypt the "protected" file too.</div>
+</div>
+
+<h2>Hands-on: encrypt, view, decrypt</h2>
+<p>In your practice folder, create a small plaintext variables file, <code>secrets.yml</code>:</p>
+<pre><code>db_user: admin
+db_password: correct-horse-battery-staple</code></pre>
+<p>Then walk the round trip yourself:</p>
+<ul>
+<li>encrypt it: <code>ansible-vault encrypt secrets.yml</code> — enter a password when prompted, confirm it</li>
+<li>open the file in a plain text editor (not <code>ansible-vault</code>, just <code>cat secrets.yml</code> or your editor) — confirm it's unreadable ciphertext starting with <code>$ANSIBLE_VAULT;1.1;AES256</code></li>
+<li>view the decrypted contents without changing the file on disk: <code>ansible-vault view secrets.yml</code> — enter the same password, confirm your two variables print in plaintext</li>
+<li>decrypt it back to plaintext on disk: <code>ansible-vault decrypt secrets.yml</code> — enter the password once more</li>
+<li>confirm it's readable plaintext again: <code>cat secrets.yml</code></li>
+</ul>
+<p>Try it yourself before checking the reference commands below.</p>
+
+<div class="quiz">
+<p>Reveal the reference commands</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>ansible-vault encrypt secrets.yml
+cat secrets.yml
+# unreadable ciphertext — confirm the $ANSIBLE_VAULT header line
+
+ansible-vault view secrets.yml
+# prompts for password, prints db_user / db_password in plaintext
+
+ansible-vault decrypt secrets.yml
+cat secrets.yml
+# back to plain, readable YAML</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/vault_guide/index.html" target="_blank" rel="noopener">docs.ansible.com — Ansible Vault guide</a> (overview, purpose of encrypting sensitive content) · <a href="https://docs.ansible.com/ansible/latest/vault_guide/vault_encrypting_content.html" target="_blank" rel="noopener">docs.ansible.com — Encrypting content with Ansible Vault</a> (confirmed <code>ansible-vault create/encrypt/edit/view/decrypt/encrypt_string</code> syntax and examples, including <code>--vault-password-file</code> and <code>--name</code> flags on <code>encrypt_string</code>) · <a href="https://docs.ansible.com/ansible/latest/vault_guide/vault_using_encrypted_content.html" target="_blank" rel="noopener">docs.ansible.com — Using encrypted variables and files</a> (confirmed <code>--ask-vault-pass</code>, <code>--vault-password-file</code>, <code>--vault-id</code> flags for <code>ansible-playbook</code>, and that a password file "can be either a file containing the password (in plain text), or ... a script") · <a href="https://docs.ansible.com/ansible/latest/cli/ansible-vault.html" target="_blank" rel="noopener">docs.ansible.com — ansible-vault CLI reference</a> (confirmed all subcommands: create, encrypt, decrypt, edit, view, rekey, encrypt_string) — all verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>The problem: playbooks and variable files often need real secrets, and committing them in plaintext to git is a security incident — the same underlying risk you met with Terraform state in Terraform Lesson 24, but Ansible Vault gives you a real fix, not just a display filter.</li>
+    <li>Vault encrypts a whole file (<code>create</code>, <code>encrypt</code>, <code>edit</code>, <code>view</code>, <code>decrypt</code>) or a single inline value (<code>encrypt_string</code>) — both require the vault password to read.</li>
+    <li>Run a vault-protected playbook with <code>--ask-vault-pass</code> (interactive prompt) or <code>--vault-password-file</code> / <code>--vault-id</code> (password from a file or script, for CI).</li>
+    <li>Never commit the vault password — file or otherwise — to git. That puts the key next to the lock. Supply it from a secrets manager or your CI's secret store instead.</li>
+    <li>Best-practice pattern: commit the <strong>encrypted vault file</strong> to git, keep the <strong>vault password</strong> completely out of git.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0025-delegation.html">&larr; Lesson 25: Delegation</a></span>
+  <span><a href="0027-ansible-lint.html">Lesson 27: ansible-lint &rarr;</a></span>
+</div>
+
+</body>
+</html>

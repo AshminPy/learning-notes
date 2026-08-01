@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 33 — Performance &amp; best practices</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 33 of 36</p>
+<h1>Performance &amp; best practices</h1>
+
+<p>A playbook that takes 4 seconds against 1 host can take 20 minutes against 200 — and most of that time isn't "doing work," it's waiting: waiting for SSH connections, waiting for fact-gathering nobody needed, waiting because only 5 hosts run at once by default. This lesson covers the handful of real, commonly-cited levers that actually change that, each one confirmed against Ansible's own documentation rather than folklore.</p>
+
+<p class="callout"><strong>Mental model:</strong> <code>forks</code> is the width of the pipe — how many hosts Ansible works on at the same moment. <code>strategy</code> is whether hosts have to stay in lockstep with each other or can run ahead once they're done. Widen the pipe, and/or stop making faster hosts wait for slower ones, and the same playbook finishes sooner — without changing a single task.</p>
+
+<h2>Forks: how many hosts run at once</h2>
+<p>Confirmed against Ansible's configuration reference: <code>forks</code> is the "Maximum number of forks Ansible will use to execute tasks on target hosts," and its <strong>default value is 5</strong>. Against an inventory of 5 hosts that's invisible. Against 100 hosts, only 5 run at a time by default — everyone else queues.</p>
+<pre><code># ansible.cfg
+[defaults]
+forks = 30
+
+# or per-run, no config file change needed
+$ ansible-playbook site.yml --forks 30
+# or
+$ ANSIBLE_FORKS=30 ansible-playbook site.yml</code></pre>
+<p>Raise it to roughly the number of hosts you actually want running simultaneously, bounded by what your control node and network can sustain (see the production note below) — there's no universal "right" number, only "higher than the default of 5 once your inventory is bigger than 5."</p>
+
+<h2>Strategy: linear vs. free</h2>
+<p>Confirmed against Ansible's playbook strategies documentation. The default, <code>linear</code>, means "Ansible runs each task on all hosts affected by a play before starting the next task on any host" — every host finishes task 1 before anyone starts task 2. <code>free</code> instead "allows each host to run until the end of the play as fast as it can," with no waiting on slower hosts:</p>
+<pre><code>- hosts: all
+  strategy: free
+  tasks:
+    - name: install packages
+      ansible.builtin.package:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ required_packages }}"</code></pre>
+<p><code>free</code> is the right call when hosts genuinely differ in speed (mixed instance sizes, some over a slower network link) and tasks don't depend on every host reaching the same point together. <code>linear</code> (the default) is right when a later task assumes every host already finished an earlier one — which is most playbooks, which is why it's the default.</p>
+
+<h2>Fact gathering: turn it off when you don't need it</h2>
+<p>Lesson 9 introduced facts; here's the performance side. Confirmed against Ansible's own docs: "By default, Ansible gathers facts at the beginning of each play" — every play, every host, even if not one task in that play references a single fact.</p>
+<pre><code>- hosts: webservers
+  gather_facts: false   # skip it entirely if this play never uses ansible_facts[...]
+  tasks:
+    - name: ensure nginx is running
+      ansible.builtin.service:
+        name: nginx
+        state: started</code></pre>
+<p>The documentation is explicit about why this matters at scale: "Disabling facts may particularly improve performance in push mode with very large numbers of systems." If a play only ever runs fixed, non-conditional tasks — no <code>when: ansible_facts[...]</code>, no OS-family branching from Lesson 10 — gathering facts for it is pure overhead.</p>
+<p>When you <em>do</em> need facts but re-run the same playbook often, fact <strong>caching</strong> is the other lever: "Fact caching can improve performance. If you manage thousands of hosts, you can configure fact caching to run nightly, and then manage configuration on a smaller set of servers periodically throughout the day" — gather once, reuse across many runs, instead of re-discovering the same facts every single time.</p>
+
+<h2>Pipelining: fewer SSH round-trips per task</h2>
+<p>Confirmed against Ansible's SSH connection plugin docs: pipelining "reduces the number of connection operations required to execute a module on the remote server, by executing many Ansible modules without actual file transfers." It's <strong>disabled by default</strong> because it can conflict with certain <code>sudo</code>/privilege-escalation configurations (specifically ones requiring a TTY) — but for most setups it's safe and a real speed win:</p>
+<pre><code># ansible.cfg
+[ssh_connection]
+pipelining = true</code></pre>
+<p>Enable it once, test a real playbook run against it, and keep it on if nothing broke — that's the whole rollout.</p>
+
+<h2>The anti-pattern: reaching for <code>shell</code>/<code>command</code> instead of a real module</h2>
+<p>This connects straight back to Lesson 7's idempotency and Lesson 5's ad-hoc guidance: <code>command</code>/<code>shell</code> aren't idempotent on their own, and every run re-executes the raw command whether anything needs to change or not. That's not just a correctness problem — it's a performance one too, at scale: a proper module (<code>package</code>, <code>service</code>, <code>file</code>, <code>copy</code>, <code>template</code>) checks current state first and reports <code>ok</code> (does nothing) when nothing needs to change, while a <code>shell</code> task pays the full cost of re-running every time, on every host, every play.</p>
+
+<p class="callout mistake"><strong>Common mistake:</strong> reaching for <code>ansible.builtin.shell: mkdir /opt/myapp</code> because it's the first thing that comes to mind, instead of <code>ansible.builtin.file: path=/opt/myapp state=directory</code>. Both "work" the first time. The <code>file</code> module checks whether the directory already exists and reports <code>ok</code> if so; the <code>shell</code> version re-runs <code>mkdir</code> every single time and can even report a failure on a rerun if the directory already exists and the underlying command isn't written to tolerate that. Confirmed against Ansible's own <code>command</code> module docs, which point you toward dedicated modules directly: "For rebooting systems, use the ansible.builtin.reboot... module" rather than a raw command — the same logic applies to almost every "I'll just shell out for this" instinct.</p>
+
+<p class="callout production"><strong>Production note:</strong> real teams don't crank <code>forks</code> to 100 blindly — the control node's CPU/network and the target hosts' own SSH connection limits are real ceilings. A common pattern: start at the default, double it, measure the actual wall-clock time difference on a real run, and stop increasing once the gain flattens out. Combine with <code>strategy: free</code> only when hosts are genuinely heterogeneous in speed — for a uniform fleet, <code>linear</code> plus higher <code>forks</code> is usually simpler to reason about and just as fast.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A playbook against 150 hosts is slow, and none of its tasks use <code>ansible_facts</code> or any conditional based on host facts. Name two independent config changes that would likely speed it up, and explain what each one actually does.</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">1) Raise <code>forks</code> above the default of 5, so more of the 150 hosts run each task simultaneously instead of queuing in batches of 5. 2) Set <code>gather_facts: false</code> on the play, since no task references any fact — this skips the automatic fact-gathering step Ansible otherwise runs at the start of every play, for every host, for no benefit here. (Enabling <code>pipelining</code> would be a third valid answer if privilege escalation isn't in play.)</div>
+</div>
+
+<div class="quiz">
+<p>Q2. Why is <code>command: mkdir /opt/data</code> a worse choice than <code>ansible.builtin.file: path=/opt/data state=directory</code>, even though both "create the directory" the first time you run them?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The <code>file</code> module is idempotent — it checks whether <code>/opt/data</code> already exists as a directory and reports <code>ok</code> (no action) if so, exactly like Lesson 7 covered. <code>command: mkdir /opt/data</code> just re-executes the raw <code>mkdir</code> every run, with no state check — on a rerun it can report a false "changed," or even fail outright if the underlying command errors on an existing directory, unless you add a manual guard like <code>creates:</code>. At scale, across every host and every run, that's real wasted work that a proper module simply skips.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>You don't need real infrastructure to see fact-gathering overhead — it's measurable on <code>localhost</code> alone. And you can simulate multiple hosts for free using several inventory entries that all point back to your own machine:</p>
+<pre><code># inventory-perf.ini — five "hosts," zero real infrastructure needed
+[fleet]
+node1 ansible_connection=local
+node2 ansible_connection=local
+node3 ansible_connection=local
+node4 ansible_connection=local
+node5 ansible_connection=local</code></pre>
+<ul>
+<li>write a tiny playbook, <code>perf-test.yml</code>, targeting <code>fleet</code>, with one harmless task (e.g. <code>ansible.builtin.debug: msg="hello"</code>)</li>
+<li>time a normal run: <code>time ansible-playbook -i inventory-perf.ini perf-test.yml</code></li>
+<li>time it again with facts turned off: add <code>gather_facts: false</code> to the play, rerun with <code>time</code> in front, and compare — you should see less time spent even on this tiny, five-fake-host example, because fact-gathering was skipped five times</li>
+<li>try <code>--forks 2</code> vs <code>--forks 5</code> against the same fake fleet and watch the <code>PLAY RECAP</code> timing change as fewer hosts wait behind each other</li>
+</ul>
+<p>Try it yourself before checking the reference commands below.</p>
+
+<div class="quiz">
+<p>Reveal the reference commands</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>time ansible-playbook -i inventory-perf.ini perf-test.yml
+# baseline, with default fact gathering
+
+# add "gather_facts: false" to the play in perf-test.yml, then:
+time ansible-playbook -i inventory-perf.ini perf-test.yml
+# should complete faster — no setup module run per host
+
+ansible-playbook -i inventory-perf.ini perf-test.yml --forks 2
+ansible-playbook -i inventory-perf.ini perf-test.yml --forks 5
+# compare wall-clock time in each PLAY RECAP</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/reference_appendices/config.html" target="_blank" rel="noopener">docs.ansible.com — Ansible configuration settings</a> (confirmed <code>forks</code>: "Maximum number of forks Ansible will use to execute tasks on target hosts," default <code>5</code>, set via <code>ansible.cfg</code>, <code>ANSIBLE_FORKS</code>, or <code>--forks</code>) · <a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_strategies.html" target="_blank" rel="noopener">docs.ansible.com — Strategies</a> (confirmed <code>linear</code> default behavior and <code>free</code> strategy wording) · <a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_vars_facts.html" target="_blank" rel="noopener">docs.ansible.com — Discovering variables: facts and magic variables</a> (confirmed default fact-gathering behavior, <code>gather_facts: false</code>, and fact-caching guidance) · <a href="https://docs.ansible.com/ansible/latest/collections/ansible/builtin/ssh_connection.html" target="_blank" rel="noopener">docs.ansible.com — ansible.builtin.ssh connection plugin</a> (confirmed <code>pipelining</code> description, default <code>false</code>, and config keys) · <a href="https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html" target="_blank" rel="noopener">docs.ansible.com — ansible.builtin.command module</a> (confirmed guidance to prefer dedicated modules over raw commands) — all verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>forks</code> (default 5) controls how many hosts run each task simultaneously — raise it for larger inventories, bounded by what your control node and network can sustain.</li>
+    <li><code>strategy: linear</code> (default) keeps every host in lockstep task by task; <code>strategy: free</code> lets each host race to the end of the play independently — pick <code>free</code> only when hosts genuinely differ in speed and don't depend on each other.</li>
+    <li><code>gather_facts: false</code> skips fact collection for plays that never use facts; fact caching avoids re-gathering the same facts on every run when you do need them.</li>
+    <li><code>pipelining = true</code> cuts SSH round-trips per task — off by default because of some privilege-escalation setups, safe to enable and test in most environments.</li>
+    <li>The single biggest anti-pattern: reaching for <code>shell</code>/<code>command</code> where a proper module already exists — it's not just less idempotent (Lesson 7), it's slower at scale because it never gets to report "nothing to do."</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Trying one of these against a real inventory and the numbers don't move the way you expected? Paste your actual before/after timing and the play, and we'll figure out what's really the bottleneck.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0032-cicd-for-ansible.html">&larr; Lesson 32: CI/CD for Ansible</a></span>
+  <span><a href="0034-capstone-project.html">Lesson 34: Capstone project &rarr;</a></span>
+</div>
+
+</body>
+</html>

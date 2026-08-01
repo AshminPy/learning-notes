@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 13 — Jinja2 templating basics</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 13 of 36</p>
+<h1>Jinja2 templating basics</h1>
+
+<p>Since Lesson 8 you've been writing <code>{{ variable_name }}</code> without asking where that syntax comes from. Time to answer that: it's <strong>Jinja2</strong>, a Python templating language Ansible uses under the hood. Every <code>{{ }}</code> substitution you've done so far is Jinja2 doing exactly one of its jobs — dropping a value into a string. Jinja2 can do a lot more than that: transform values on the way out, decide what text to include, and repeat a block of text for every item in a list. This lesson covers those three things, all still as plain text — no new Ansible module yet. Lesson 14 wires this into the <code>template</code> module to generate real config files.</p>
+
+<p class="callout"><strong>Mental model:</strong> Jinja2 is a text-generation language. Feed it a template (text with <code>{{ }}</code> and <code>{% %}</code> markers) plus some variables, and it renders out plain text — no markers left, just the final result. Everything in this lesson is about controlling what that final text looks like: which value gets substituted (filters), whether a chunk of text appears at all (<code>{% if %}</code>), and how many times a chunk repeats (<code>{% for %}</code>).</p>
+
+<h2>Filters — transform a value with a pipe</h2>
+<p>A <strong>filter</strong> changes a value on its way into the output, using the pipe character <code>|</code> after the variable. Confirmed against Jinja2's own docs, the shape is:</p>
+
+<pre><code>{{ variable | filter_name }}
+{{ variable | filter_name(argument) }}</code></pre>
+
+<p>Three filters you'll use constantly:</p>
+<ul>
+<li><strong><code>default</code></strong> — supply a fallback if the variable is undefined. Straight from Ansible's own docs: <code>{{ some_variable | default(5) }}</code> — if <code>some_variable</code> isn't defined, Ansible uses <code>5</code> instead of raising an "undefined variable" error and failing the whole run.</li>
+<li><strong><code>length</code></strong> — count items in a list (or characters in a string): <code>{{ my_list | length }}</code>.</li>
+<li><strong><code>upper</code></strong> (and its opposite, <code>lower</code>) — change case: <code>{{ ansible_hostname | upper }}</code> turns <code>web01</code> into <code>WEB01</code>.</li>
+</ul>
+
+<p>Filters chain left to right, same idea as piping commands in a shell: <code>{{ my_list | length | default(0) }}</code> feeds the result of <code>length</code> into <code>default</code>. And filters aren't an Ansible invention grafted on — the docs are explicit: "you can use all the standard filters and tests included in Jinja2," plus Ansible adds a handful of its own on top (you'll meet more of those later in the course). <code>default</code>, <code>length</code>, and <code>upper</code>/<code>lower</code> are all standard Jinja2, so they work anywhere Jinja2 runs, not just in Ansible.</p>
+
+<p class="callout"><strong>Why <code>default</code> matters more than it looks:</strong> without it, referencing an undefined variable stops your playbook cold with an error. <code>{{ retries | default(3) }}</code> means "use <code>retries</code> if someone set it, otherwise assume 3" — the same idea as a function parameter with a default value. You'll reach for this constantly once you start writing reusable templates and roles.</p>
+
+<h2><code>{% if %}</code> — conditional text, not a conditional task</h2>
+<p>Lesson 10 taught <code>when:</code> — a playbook keyword that decides whether a <em>task runs at all</em>. Jinja2's <code>{% if %}</code> looks similar but does something different: it decides whether a <em>chunk of text appears in the rendered output</em>. You're not inside a playbook's YAML structure anymore — you're inside a template, and <code>{% if %}</code> is Jinja2 deciding what to write to the file.</p>
+
+<pre><code>{% if ansible_facts['os_family'] == "Debian" %}
+This is a Debian-based system.
+{% else %}
+This is not a Debian-based system.
+{% endif %}</code></pre>
+
+<p>Render that with a Debian host's facts, and the output is just the line <code>This is a Debian-based system.</code> — the <code>{% if %}</code>, <code>{% else %}</code>, and <code>{% endif %}</code> markers themselves never appear in the result; Jinja2 consumes them while deciding which branch of plain text to keep.</p>
+
+<table>
+<tr><th></th><th><code>when:</code> (Lesson 10)</th><th><code>{% if %}</code> (this lesson)</th></tr>
+<tr><td>Lives</td><td>In the playbook YAML, as a task-level keyword</td><td>Inside a template file's text</td></tr>
+<tr><td>Controls</td><td>Whether a <em>task</em> runs</td><td>Whether a <em>chunk of text</em> is included in the rendered file</td></tr>
+<tr><td>Result if false</td><td>Task shows <code>skipped</code> in playbook output</td><td>That text simply isn't in the generated file — no "skip" to see</td></tr>
+</table>
+
+<h2><code>{% for %}</code> — repeating text, not repeating a task</h2>
+<p>Same relationship applies to loops. Lesson 11's <code>loop:</code> repeats a <em>task</em> once per item, with results you can see per item in the playbook run. Jinja2's <code>{% for %}</code> repeats a <em>block of text</em> once per item, inside a template — there's no task, no per-item "ok/changed" output, just more lines of rendered text.</p>
+
+<pre><code>{% for user in user_list %}
+{{ user }}
+{% endfor %}</code></pre>
+
+<p>Given <code>user_list: [alice, bob, carol]</code>, this template renders three lines — <code>alice</code>, <code>bob</code>, <code>carol</code> — one per loop iteration, with the <code>{% for %}</code>/<code>{% endfor %}</code> markers gone from the output, exactly like <code>{% if %}</code>. Jinja2 also exposes a <code>loop</code> variable inside the block — <code>loop.index</code> (1-based position), <code>loop.first</code>, <code>loop.last</code> — useful for things like adding a comma after every line except the last. You won't need those yet; just know they exist for when a template gets fussier about formatting.</p>
+
+<p class="callout"><strong>Mental model recap:</strong> <code>when:</code> and <code>loop:</code> are playbook keywords — they control which <em>tasks</em> execute and how many times. <code>{% if %}</code> and <code>{% for %}</code> are Jinja2 control structures — they control what <em>text</em> comes out of a template. Same-looking job (decide / repeat), completely different layer: one operates on tasks in a playbook run, the other operates on text inside a single file being rendered.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You write <code>{{ web_workers | default(4) }}</code> in a template, and <code>web_workers</code> was never defined anywhere. What ends up in the rendered output?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>4</code>. The <code>default</code> filter supplies that fallback value whenever the variable in front of it is undefined, instead of Ansible raising an "undefined variable" error and failing the run.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What's the actual difference between a playbook's <code>when:</code> keyword and a template's <code>{% if %}</code> block — they both look like "conditionals," so what changes?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>when:</code> decides whether a <em>task</em> runs during the playbook — you'd see it as <code>skipped</code> in the output. <code>{% if %}</code> lives inside a template file and decides whether a <em>chunk of text</em> appears in the rendered result — there's no task and no "skipped" status, the text is either in the generated file or it isn't.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>This is plain Jinja2 text — not wired into a playbook or the <code>template</code> module yet, that's Lesson 14. For now, write and read a template snippet directly to get comfortable with the syntax.</p>
+
+<p>Create a file <code>/tmp/snippet.j2</code> with this content:</p>
+
+<pre><code>Hostname: {{ ansible_hostname | upper }}
+
+Users on this host:
+{% for user in user_list %}
+  - {{ user }}
+{% endfor %}</code></pre>
+
+<p>You don't have a way to render this standalone yet (that needs the <code>template</code> module from Lesson 14), so for now:</p>
+<ul>
+<li>read the snippet back and, by hand, work out what it would render to if <code>ansible_hostname</code> is <code>web01</code> and <code>user_list</code> is <code>[alice, bob, carol]</code></li>
+<li>write your predicted output on paper or in a scratch file</li>
+<li>check your answer against the reveal below</li>
+</ul>
+<p>Try it yourself before checking the reference answer.</p>
+
+<div class="quiz">
+<p>Reveal the expected rendered output</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>Hostname: WEB01
+
+Users on this host:
+  - alice
+  - bob
+  - carol</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_templating.html" target="_blank" rel="noopener">docs.ansible.com — Templating (Jinja2)</a> (Jinja2 as Ansible's templating engine, "you can use all the standard filters and tests included in Jinja2") · <a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html" target="_blank" rel="noopener">docs.ansible.com — Filters</a> (<code>{{ some_variable | default(5) }}</code> exact syntax) · <a href="https://jinja.palletsprojects.com/en/stable/templates/" target="_blank" rel="noopener">jinja.palletsprojects.com — Template Designer Documentation</a> (<code>| filter</code> pipe syntax, <code>{% if %}/{% elif %}/{% else %}/{% endif %}</code>, <code>{% for %}/{% endfor %}</code>, <code>loop.index</code>/<code>loop.first</code>/<code>loop.last</code>) — all verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Jinja2 is the templating engine behind every <code>{{ }}</code> you've written since Lesson 8 — it renders a template plus variables into plain text.</li>
+    <li>Filters transform a value with a pipe: <code>{{ variable | default('fallback') }}</code>, <code>{{ list | length }}</code>, <code>{{ string | upper }}</code>. They're standard Jinja2, not Ansible-only, and they chain left to right.</li>
+    <li><code>{% if %}/{% endif %}</code> and <code>{% for %}/{% endfor %}</code> are Jinja2 control structures inside a template — they decide what <em>text</em> gets rendered, unlike the playbook keywords <code>when:</code> (Lesson 10) and <code>loop:</code> (Lesson 11), which decide whether/how many times a <em>task</em> runs.</li>
+    <li>Everything here is still plain Jinja2 text, not yet a real file on disk — Lesson 14's <code>template</code> module is what actually renders a <code>.j2</code> file to a destination path.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0012-handlers-and-notify.html">&larr; Lesson 12: Handlers &amp; notify</a></span>
+  <span><a href="0014-copy-vs-template.html">Lesson 14: copy vs template modules &rarr;</a></span>
+</div>
+
+</body>
+</html>

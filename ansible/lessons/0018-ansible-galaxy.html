@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 18 — Ansible Galaxy</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 18 of 36</p>
+<h1>Ansible Galaxy</h1>
+
+<p>Lesson 17 showed you how to package a task list into a reusable <strong>role</strong>. But you don't have to write every role yourself. Most of what you need — an Nginx setup, a Docker install, a firewall baseline — has already been written, tested, and shared by someone else. <strong>Ansible Galaxy</strong> is where that shared work lives.</p>
+
+<p class="callout"><strong>Mental model:</strong> Galaxy is to roles what a package registry (npm, PyPI, the Terraform Registry) is to code — a public hub where the community publishes reusable units, and you pull one down instead of writing it from scratch. Same trust model too: anyone can publish, so <em>you</em> are still responsible for checking what you install before it runs in production.</p>
+
+<h2>What galaxy.ansible.com actually hosts</h2>
+<p><a href="https://galaxy.ansible.com" target="_blank" rel="noopener">galaxy.ansible.com</a> is the public hub for two kinds of shareable content:</p>
+<ul>
+<li><strong>Roles</strong> — the reusable task-list units from Lesson 17, published under a <code>namespace.role_name</code> format (for example <code>geerlingguy.nginx</code>, a well-known community role).</li>
+<li><strong>Collections</strong> — a bigger packaging format that bundles roles, modules, plugins, and playbooks together. Collections are Lesson 19's topic in full; for now, just know Galaxy hosts both, and the install pattern you're about to learn works for both.</li>
+</ul>
+<p>Anyone can publish to Galaxy — individuals, vendors, and Red Hat itself all use it. That openness is exactly why the vetting habit later in this lesson matters.</p>
+
+<h2>Installing a single role</h2>
+<p>The command follows the same shape as the ad-hoc and playbook commands you already know:</p>
+<pre><code>$ ansible-galaxy role install namespace.role_name</code></pre>
+<p>For example, to install the popular Nginx role:</p>
+<pre><code>$ ansible-galaxy role install geerlingguy.nginx</code></pre>
+<p>By default this downloads into your configured roles path (often <code>~/.ansible/roles</code> or a <code>roles/</code> folder next to your playbook, depending on your config). Once it's there, you use it in a playbook exactly like the role you wrote by hand in Lesson 17:</p>
+<pre><code>- name: Configure web servers
+  hosts: webservers
+  roles:
+    - geerlingguy.nginx</code></pre>
+
+<h2>Pinning roles with requirements.yml</h2>
+<p>Installing one role by name is fine for trying something out. But a real project depends on <em>several</em> roles, and every teammate — plus your CI pipeline — needs to install the exact same set. That's what a <code>requirements.yml</code> file is for: one file that lists every role your project needs, with the version pinned.</p>
+<pre><code>roles:
+  - name: geerlingguy.nginx
+    version: "3.1.4"
+
+  - name: geerlingguy.docker
+    version: "7.4.4"
+
+  - src: https://github.com/bennojoy/nginx
+    version: "ee8aa41"</code></pre>
+<p>Install everything the file lists in one command:</p>
+<pre><code>$ ansible-galaxy install -r requirements.yml</code></pre>
+<p>Read the keys: <code>name</code> is the <code>namespace.role_name</code> to pull from Galaxy (or a custom download name), <code>src</code> can point at a Galaxy name or a raw git URL, and <code>version</code> pins a release tag, commit hash, or branch. If you skip <code>version</code>, Ansible installs whatever the latest release happens to be <em>at the moment you run the command</em> — and that moment is different for every teammate, every CI run, and every re-run six months from now.</p>
+
+<p class="callout"><strong>Mental model — same discipline as Terraform module versioning:</strong> if you've taken the Terraform course, this is the exact same lesson wearing a different hat. An unpinned module source resolves to "whatever is latest today," which silently changes under you later. An unpinned Galaxy role does the same thing. The fix in both cases is identical: pin the version, commit the pin to git, and only bump it on purpose, after testing.</p>
+
+<h2>Vet a role before it touches production</h2>
+<p>Anyone can publish to Galaxy — that's the same openness the Terraform Registry has for community modules, and it comes with the same responsibility: check what you're pulling in before it runs on real infrastructure. Before you depend on a Galaxy role for anything that matters, check:</p>
+<ul>
+<li><strong>Maintenance activity</strong> — when was the last commit or release? A role untouched for years may not work against current Ansible versions or target OS releases.</li>
+<li><strong>Download counts</strong> — Galaxy shows this on each role's page. High usage doesn't guarantee quality, but near-zero usage means almost nobody has found its bugs for you yet.</li>
+<li><strong>Open issues</strong> — check the linked source repository (usually GitHub). A long list of unresolved bug reports is a signal to read the code yourself before trusting it.</li>
+</ul>
+<p>This is the same checklist the Terraform course teaches for registry modules — because it's the same underlying risk: third-party code you didn't write, running with the permissions you gave it.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your team's playbook depends on a community role with no version pinned in <code>requirements.yml</code>. Six months later, a fresh <code>ansible-galaxy install -r requirements.yml</code> pulls a different version than what you tested. What's the fix?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Add a <code>version:</code> key under that role's entry in <code>requirements.yml</code>, pinned to the release tag (or commit hash) you actually tested against — then commit that file to git. From then on, everyone and every CI run installs the exact same version, and you only move to a newer one deliberately, after testing it. This is the same fix as an unpinned Terraform module source: unpinned third-party content is a moving target, and "it worked when I tested it" isn't true anymore once the version underneath you has silently changed.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<p>In your practice project folder:</p>
+<ul>
+<li>run <code>ansible-galaxy role install geerlingguy.timezone</code> (a small, low-risk role good for practice) and note where it installed</li>
+<li>create a <code>requirements.yml</code> with that same role, pinned to a specific <code>version:</code> — check the role's Galaxy page for a real release tag to use</li>
+<li>run <code>ansible-galaxy install -r requirements.yml</code> and confirm it installs that exact pinned version</li>
+<li>open the role's page on galaxy.ansible.com and check its last-updated date and download count before you'd trust it further</li>
+</ul>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/galaxy/user_guide.html" target="_blank" rel="noopener">docs.ansible.com — Galaxy user guide</a> (<code>ansible-galaxy role install</code> syntax, <code>requirements.yml</code> keys: <code>name</code>, <code>src</code>, <code>version</code>, <code>scm</code>, and the <code>ansible-galaxy install -r requirements.yml</code> command) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Ansible Galaxy (galaxy.ansible.com) is the public hub for community and vendor <strong>roles</strong> and <strong>collections</strong> — collections are covered fully in Lesson 19.</li>
+    <li>Install one role with <code>ansible-galaxy role install namespace.role_name</code>; install a whole project's set from a <code>requirements.yml</code> with <code>ansible-galaxy install -r requirements.yml</code>.</li>
+    <li>Always pin <code>version:</code> in <code>requirements.yml</code> — unpinned third-party content is a moving target, the same discipline as pinning Terraform module versions.</li>
+    <li>Vet a role before production use: check maintenance activity, download counts, and open issues, same as vetting a Terraform Registry module.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0017-writing-your-first-role.html">&larr; Lesson 17: Writing your first role</a></span>
+  <span><a href="0019-collections.html">Lesson 19: Collections &rarr;</a></span>
+</div>
+
+</body>
+</html>

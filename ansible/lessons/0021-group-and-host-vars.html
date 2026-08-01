@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 21 — group_vars & host_vars</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 21 of 36</p>
+<h1>group_vars & host_vars</h1>
+
+<p>Lesson 8 gave you <code>vars:</code> inside a play, and Lesson 20 gave you an inventory that can group hosts by environment or role. Put those two together and a problem shows up fast: if <code>dev</code> and <code>prod</code> need different values for the same variable, you either write two playbooks or stuff a pile of conditional <code>vars:</code> logic into one. Neither scales. <strong><code>group_vars</code></strong> and <strong><code>host_vars</code></strong> solve this a different way — variables that live next to your inventory, not inside your playbook, and get loaded automatically for the hosts they apply to.</p>
+
+<p class="callout"><strong>Mental model:</strong> a play's <code>vars:</code> is a note taped to one specific recipe — it only means something while that recipe is open. <code>group_vars</code>/<code>host_vars</code> is a label taped to the ingredient itself — the host or group — so <em>any</em> playbook that touches that host or group automatically sees the right values, with nothing written in the playbook at all.</p>
+
+<h2>The directory convention</h2>
+<p>Confirmed against Ansible's own inventory guide: create two directories, <code>group_vars/</code> and <code>host_vars/</code>, sitting alongside your inventory file (or alongside the playbook, if you're not using a separate inventory directory). Inside each, one file per group or per host, named after that group or host:</p>
+
+<pre><code>inventory/
+  hosts.ini
+  group_vars/
+    webservers.yml
+    dbservers.yml
+  host_vars/
+    web1.example.com.yml</code></pre>
+
+<p>If <code>hosts.ini</code> defines a host <code>web1.example.com</code> that belongs to the <code>webservers</code> group, Ansible automatically loads variables from <code>group_vars/webservers.yml</code> for every host in that group, and from <code>host_vars/web1.example.com.yml</code> for that one host specifically — no <code>vars_files:</code> line, no <code>include_vars</code> task, nothing referencing these files anywhere in your playbook. Ansible finds them itself, by matching the filename to a group name or host name from your inventory. Valid file extensions are <code>.yml</code>, <code>.yaml</code>, <code>.json</code>, or no extension at all; this course uses <code>.yml</code> throughout for consistency with everything else you've written.</p>
+
+<p>The docs also allow a directory instead of a single file — <code>group_vars/webservers/db_settings.yml</code> and <code>group_vars/webservers/cluster_settings.yml</code> both get loaded, read in lexicographical order, for the same group. That's a Lesson-16-style organization trick for when one group's variables grow too large for one file — you won't need it yet, but recognize the pattern if you see it in someone else's repo.</p>
+
+<h2>The special file: <code>group_vars/all.yml</code></h2>
+<p>One group name is reserved: <code>all</code>. A file at <code>group_vars/all.yml</code> applies to every host in your inventory, regardless of which other groups they belong to — it's the place for values that are truly global, like an organization-wide NTP server or a default SSH port. Anything more specific than "every single host" belongs in a named group's file instead, where it'll only apply to hosts that actually need it.</p>
+
+<h2>Why this beats inline <code>vars:</code> for this job</h2>
+<p>Nothing stops you from writing per-environment logic inside a play with conditionals, but it's the wrong tool. <code>group_vars</code>/<code>host_vars</code> keeps the data (what value does this environment need) separate from the logic (what should the playbook do) — the same playbook runs unmodified against <code>dev</code> or <code>prod</code>, and the file that changes when you add a new environment is a small variables file, not the playbook itself. It also means the variable definitions live in one predictable place instead of scattered across every play that happens to need them.</p>
+
+<h2>Practical example — a different <code>app_port</code> per environment</h2>
+<p>Say your inventory groups hosts by environment:</p>
+
+<pre><code>[dev]
+dev1.example.com
+
+[prod]
+prod1.example.com
+prod2.example.com</code></pre>
+
+<p>Give each group its own port with two small files:</p>
+
+<pre><code># group_vars/dev.yml
+app_port: 8080</code></pre>
+
+<pre><code># group_vars/prod.yml
+app_port: 443</code></pre>
+
+<p>Now one playbook — no <code>vars:</code>, no conditionals, no per-environment copy — references <code>{{ app_port }}</code>:</p>
+
+<pre><code>- name: Configure the app
+  hosts: all
+  tasks:
+    - name: Show the port this host will use
+      ansible.builtin.debug:
+        msg: "Listening on port {{ app_port }}"</code></pre>
+
+<p>Run it against <code>dev</code> and you'll see <code>8080</code>; run the exact same file against <code>prod</code> and you'll see <code>443</code> — because Ansible resolved <code>app_port</code> from the group each targeted host actually belongs to, before the play even started. That's the payoff: one playbook, correct behavior everywhere, and the only thing that differs between environments lives in two three-line files.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You have <code>group_vars/webservers.yml</code> setting <code>app_port: 8080</code> and <code>host_vars/web1.example.com.yml</code> setting <code>app_port: 9090</code>. <code>web1.example.com</code> is in the <code>webservers</code> group. Which value does a playbook running against <code>web1.example.com</code> see?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">9090. This is a preview of Lesson 22's full precedence order, but the mental model you can use right now: the more specific a variable's source is to one exact host, the more it wins. A host's own <code>host_vars</code> file is more specific than a group's <code>group_vars</code> file, so it takes priority.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You need a variable that should apply to literally every host in your inventory, no exceptions. Which file do you create?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>group_vars/all.yml</code> — the reserved group name <code>all</code> matches every host, regardless of what other groups they're in.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Build a small inventory with a <code>webservers</code> group, give that group a variable through <code>group_vars</code>, and prove a playbook picks it up with zero <code>vars:</code> block.</p>
+
+<p>Create the folder layout:</p>
+
+<pre><code>mkdir -p group_vars</code></pre>
+
+<p><code>inventory</code>:</p>
+
+<pre><code>[webservers]
+localhost ansible_connection=local</code></pre>
+
+<p><code>group_vars/webservers.yml</code>:</p>
+
+<pre><code>welcome_message: "Hello from the webservers group"</code></pre>
+
+<p><code>playbook.yml</code> — notice there is no <code>vars:</code> block anywhere in this file:</p>
+
+<pre><code>- name: Prove group_vars loads automatically
+  hosts: webservers
+  tasks:
+    - name: Print the group variable
+      ansible.builtin.debug:
+        msg: "{{ welcome_message }}"</code></pre>
+
+<p>Then:</p>
+<ul>
+<li>run <code>ansible-playbook -i inventory playbook.yml</code></li>
+<li>confirm the <code>TASK [Print the group variable]</code> output shows your message — even though <code>playbook.yml</code> never mentions <code>welcome_message</code> being set</li>
+<li>edit the value in <code>group_vars/webservers.yml</code> and run the playbook again — confirm the new value shows up, with the playbook file completely untouched</li>
+</ul>
+<p>Try it yourself before checking the reference commands below.</p>
+
+<div class="quiz">
+<p>Reveal the reference commands</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>mkdir -p group_vars
+# create inventory, group_vars/webservers.yml, playbook.yml as shown above
+ansible-playbook -i inventory playbook.yml
+# edit group_vars/webservers.yml, change welcome_message, then:
+ansible-playbook -i inventory playbook.yml</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html#organizing-host-and-group-variables" target="_blank" rel="noopener">docs.ansible.com — Organizing host and group variables</a> (<code>group_vars/</code>/<code>host_vars/</code> directory convention, per-group and per-host filenames matching inventory names, valid file extensions, directory-of-files form read in lexicographical order, <code>group_vars/all.yml</code> applying to every host) — verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>group_vars/&lt;groupname&gt;.yml</code> and <code>host_vars/&lt;hostname&gt;.yml</code>, sitting alongside your inventory, are loaded automatically for matching hosts — no <code>vars_files:</code>, no <code>include_vars</code>, nothing referenced in the playbook.</li>
+    <li><code>group_vars/all.yml</code> is the reserved file that applies to every host in the inventory.</li>
+    <li>This is the cleaner alternative to Lesson 8's inline <code>vars:</code> for anything environment- or host-specific — the same playbook behaves differently per group (e.g. <code>app_port</code> 8080 in <code>dev</code>, 443 in <code>prod</code>) with zero conditionals.</li>
+    <li>A host's own <code>host_vars</code> beats its group's <code>group_vars</code> when both set the same variable — the full precedence order across every source is Lesson 22.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0020-dynamic-inventory.html">&larr; Lesson 20: Dynamic inventory</a></span>
+  <span><a href="0022-variable-precedence.html">Lesson 22: Variable precedence deep dive &rarr;</a></span>
+</div>
+
+</body>
+</html>

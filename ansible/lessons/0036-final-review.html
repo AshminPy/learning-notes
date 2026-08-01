@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Final Review — Ansible Cheat Sheet</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 36 of 36 (Final Review)</p>
+<h1>Final review: the cheat sheet</h1>
+
+<p>Reference doc, not a new lesson — no new content, no new quiz. Every line below compresses something already taught across Lessons 1-35, pulled directly from each lesson's own recap. Bookmark this page for exam morning or your next real playbook.</p>
+
+<h2>1. Command reference, by phase</h2>
+<table>
+<tr><th>Lesson</th><th>Topic</th><th>Single most important command/concept</th></tr>
+<tr><td>1</td><td>Roadmap &amp; cert plan</td><td>10-phase course, EX374 = 4-hour hands-on lab exam, AAP 2.5</td></tr>
+<tr><td>2</td><td>Tools setup</td><td><code>ansible localhost -m ping -i inventory.ini</code> — "pong" proves the install works</td></tr>
+<tr><td>3</td><td>What is Ansible</td><td>Agentless, push-based, idempotent — configures what's already running (vs. Terraform, which provisions it)</td></tr>
+<tr><td>4</td><td>Inventory basics</td><td><code>ansible-inventory -i &lt;file&gt; --list</code> — inventory is the "where," separate from the playbook's "what"</td></tr>
+<tr><td>5</td><td>Ad-hoc commands</td><td><code>ansible &lt;pattern&gt; -i &lt;inv&gt; -m &lt;module&gt; -a "&lt;args&gt;"</code></td></tr>
+<tr><td>6</td><td>First playbook</td><td><code>ansible-playbook -i inventory playbook.yml</code> — always read the full PLAY RECAP</td></tr>
+<tr><td>7</td><td>Idempotency</td><td>Same playbook, same host, twice &rarr; same end state; a clean re-run shows <code>changed=0</code></td></tr>
+<tr><td>8</td><td>Variables</td><td><code>vars:</code> + <code>{{ var }}</code>; override any run with <code>-e "name=value"</code></td></tr>
+<tr><td>9</td><td>Facts</td><td><code>ansible_facts['os_family']</code> — gathered automatically unless <code>gather_facts: false</code></td></tr>
+<tr><td>10</td><td>Conditionals</td><td><code>when: &lt;condition&gt;</code> — false means skipped, not failed</td></tr>
+<tr><td>11</td><td>Loops</td><td><code>loop: [...]</code> + <code>{{ item }}</code> — the recommended keyword over <code>with_*</code></td></tr>
+<tr><td>12</td><td>Handlers &amp; notify</td><td><code>notify:</code> fires a <code>handlers:</code> entry only on <code>changed</code>, once per play</td></tr>
+<tr><td>13</td><td>Jinja2 templating</td><td><code>{{ variable | filter }}</code> — standard Jinja2, chains left to right</td></tr>
+<tr><td>14</td><td>copy vs template</td><td><code>copy</code> = as-is; <code>template</code> = renders Jinja2 first — both idempotent</td></tr>
+<tr><td>15</td><td>File management modules</td><td><code>file</code>, <code>lineinfile</code>, <code>stat</code> — always quote <code>mode</code>, e.g. <code>'0644'</code></td></tr>
+<tr><td>16</td><td>Roles: anatomy</td><td><code>roles/rolename/{tasks,handlers,vars,defaults,templates,files,meta}/main.yml</code></td></tr>
+<tr><td>17</td><td>Writing your first role</td><td><code>ansible-galaxy role init role_name</code></td></tr>
+<tr><td>18</td><td>Ansible Galaxy</td><td><code>ansible-galaxy install -r requirements.yml</code> — always pin <code>version:</code></td></tr>
+<tr><td>19</td><td>Collections</td><td>FQCN, e.g. <code>ansible.builtin.copy</code>; <code>ansible-galaxy collection install namespace.collection</code></td></tr>
+<tr><td>20</td><td>Dynamic inventory</td><td><code>ansible-doc -t inventory -l</code> — plugins over scripts for dynamic inventory</td></tr>
+<tr><td>21</td><td>group_vars &amp; host_vars</td><td><code>group_vars/&lt;group&gt;.yml</code> / <code>host_vars/&lt;host&gt;.yml</code> — loaded automatically, no wiring needed</td></tr>
+<tr><td>22</td><td>Variable precedence</td><td>role defaults &lt; group/host_vars &lt; play <code>vars:</code> &lt; role <code>vars/main.yml</code> &lt; <code>-e</code> (highest, always wins)</td></tr>
+<tr><td>23</td><td>Error handling</td><td><code>block:</code> / <code>rescue:</code> / <code>always:</code> — like try/except/finally</td></tr>
+<tr><td>24</td><td>Tags</td><td><code>--tags</code> / <code>--skip-tags</code> — <code>always</code> and <code>never</code> are reserved names</td></tr>
+<tr><td>25</td><td>Delegation</td><td><code>delegate_to: &lt;host&gt;</code> (where it runs) + <code>run_once: true</code> (how many times) — independent</td></tr>
+<tr><td>26</td><td>Ansible Vault</td><td><code>ansible-vault encrypt/decrypt/view/edit/create</code> — commit the encrypted file, never the password</td></tr>
+<tr><td>27</td><td>ansible-lint</td><td><code>ansible-lint &lt;path&gt;</code> — catches idempotency, deprecation, security, and style issues <code>--syntax-check</code> can't</td></tr>
+<tr><td>28</td><td>Molecule testing</td><td><code>molecule test</code> — create, converge, idempotence (re-run, expect zero changes), verify, destroy</td></tr>
+<tr><td>29</td><td>Check &amp; diff mode</td><td><code>--check --diff</code> — dry run + content diff; modules like <code>command</code>/<code>shell</code> are silently skipped, not "0 changes"</td></tr>
+<tr><td>30</td><td>Execution environments</td><td><code>ansible-builder build</code> from <code>execution-environment.yml</code> — a pinned, reproducible run-anywhere image</td></tr>
+<tr><td>31</td><td>Automation Platform / AWX</td><td>Job template = Project + Inventory + Credential, one launchable/reusable unit; AWX is upstream, Automation controller is Red Hat's supported product</td></tr>
+<tr><td>32</td><td>CI/CD for Ansible</td><td>Pipeline gates in order: lint &rarr; syntax-check &rarr; dry-run staging (<code>--check --diff</code>) &rarr; apply; vault password from CI secrets, never committed</td></tr>
+<tr><td>33</td><td>Performance &amp; best practices</td><td><code>forks</code> (default 5, raise for big inventories); <code>gather_facts: false</code> when facts aren't used</td></tr>
+<tr><td>34</td><td>Capstone project</td><td>Role + vault secret + <code>--check --diff</code> dry run + a real run that re-runs to <code>changed=0</code></td></tr>
+<tr><td>35</td><td>EX374 exam domain walkthrough</td><td>9 official domains, no published per-domain weighting; 3 real gaps: Git, lookup plugins, collection publishing</td></tr>
+</table>
+
+<h2>2. Playbook building blocks</h2>
+<table>
+<tr><th>Keyword</th><th>Purpose</th><th>Lesson</th></tr>
+<tr><td><code>hosts:</code></td><td>Which inventory group/host a play targets</td><td>6</td></tr>
+<tr><td><code>tasks:</code></td><td>The ordered list of actions a play runs</td><td>6</td></tr>
+<tr><td><code>vars:</code></td><td>Play-level variables</td><td>8</td></tr>
+<tr><td><code>when:</code></td><td>Conditional — skip a task if false</td><td>10</td></tr>
+<tr><td><code>loop:</code></td><td>Run a task once per list item</td><td>11</td></tr>
+<tr><td><code>notify:</code> / <code>handlers:</code></td><td>Run cleanup/restart logic only when something actually changed</td><td>12</td></tr>
+<tr><td><code>roles:</code></td><td>Package tasks/handlers/vars/templates around one responsibility</td><td>16-17</td></tr>
+<tr><td><code>block:</code> / <code>rescue:</code> / <code>always:</code></td><td>Group tasks, catch failures, always clean up</td><td>23</td></tr>
+<tr><td><code>tags:</code></td><td>Label a task/block/role/play for selective runs</td><td>24</td></tr>
+<tr><td><code>delegate_to:</code> / <code>run_once:</code></td><td>Run a task on a different host / exactly once for the play</td><td>25</td></tr>
+<tr><td><code>gather_facts:</code></td><td>Turn off automatic fact collection when a play doesn't need it</td><td>9, 33</td></tr>
+<tr><td><code>strategy:</code></td><td><code>linear</code> (default, lockstep) vs <code>free</code> (each host races ahead)</td><td>33</td></tr>
+</table>
+
+<h2>3. Mental models that matter more than syntax</h2>
+<ul>
+<li><strong>Idempotency is the core idea the whole course builds on.</strong> A properly-written playbook run twice reports <code>changed=0</code> the second time — the same end-state discipline Terraform applies to infrastructure, applied here to configuration. (Lesson 7)</li>
+<li><strong>Agentless and push-based.</strong> No software pre-installed on managed hosts; you trigger every run from the control node over SSH. (Lesson 3)</li>
+<li><strong>Precedence has one fixed order, and the higher source wins completely — nothing merges.</strong> Role defaults lose to everything; <code>-e</code> beats everything. (Lesson 22)</li>
+<li><strong>A proper module beats <code>shell</code>/<code>command</code> almost every time</strong> — not just for idempotency (Lesson 7), but for real performance at scale, since a module can report "nothing to do" instead of re-running blindly. (Lesson 33)</li>
+<li><strong>Vault encrypts a file's actual bytes — a real security boundary, not a display filter.</strong> Commit the encrypted file; never commit the password. (Lesson 26)</li>
+<li><strong>A role is the configuration-layer equivalent of a reusable module</strong> — one folder, one responsibility, callable from any playbook. (Lesson 16)</li>
+<li><strong>Dynamic inventory exists because infrastructure that autoscales can't be hand-edited into a static file fast enough.</strong> (Lesson 20)</li>
+</ul>
+
+<h2>4. Certification checklist</h2>
+<table>
+<tr><th>EX374 domain</th><th>Covered in</th></tr>
+<tr><td>Understand and use Git</td><td>Not covered — assumed prerequisite</td></tr>
+<tr><td>Manage inventory variables</td><td>Lessons 4, 8, 21, 22</td></tr>
+<tr><td>Manage task execution</td><td>Lessons 5, 6, 24, 29</td></tr>
+<tr><td>Transform data with filters and plugins</td><td>Lesson 13 (filters covered; lookup plugins are a gap)</td></tr>
+<tr><td>Delegate tasks</td><td>Lesson 25</td></tr>
+<tr><td>Manage content collections</td><td>Lessons 18-19 (consuming covered; creating/publishing is a gap)</td></tr>
+<tr><td>Manage execution environments</td><td>Lesson 30</td></tr>
+<tr><td>Manage inventories and credentials</td><td>Lessons 20, 26, 31</td></tr>
+<tr><td>Manage automation controller</td><td>Lesson 31</td></tr>
+</table>
+<p>Full self-check with real applied questions per domain: <a href="0035-ex374-exam-walkthrough.html">Lesson 35</a>. Book the real exam via the <a href="https://www.redhat.com/en/services/training/red-hat-certified-specialist-developing-automation-ansible-automation-platform-exam" target="_blank" rel="noopener">official Red Hat EX374 page</a> (hands-on, 4-hour single section, based on AAP 2.5, verified 2026-07-31) — this course does not have current pricing/scheduling details, so confirm those directly on Red Hat's own page.</p>
+
+<h2>What's next</h2>
+<ul>
+<li><strong>Close the 3 flagged gaps first</strong> — basic Git commands if rusty, a real <code>lookup()</code>/<code>query()</code> call, and <code>ansible-galaxy collection init</code> — before booking the exam, per Lesson 35.</li>
+<li><strong>Apply this to real infrastructure.</strong> Every hands-on example in this course deliberately used <code>localhost</code>/<code>ansible_connection=local</code> at zero cost — the next real step is redoing the <a href="0034-capstone-project.html">capstone</a> against 2-3 real Linux VMs or containers.</li>
+<li><strong>Go deeper (out of scope here, per MISSION.md):</strong> Red Hat's EX467 (Managing Automation) and EX457 (Ansible Network Automation) are natural next milestones once EX374 is done.</li>
+</ul>
+
+<div class="recap">
+  <strong>You've completed the Ansible — Zero to Expert course.</strong>
+  <ul>
+    <li>36 lessons, one capstone project, an exam domain map grounded in Red Hat's own official page.</li>
+    <li>Every line on this page traces back to a specific earlier lesson's own recap — nothing here is new, and the gaps above are stated honestly rather than papered over.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Questions about anything on this page, or ready to point this at a real inventory? Ask — that's the natural next step.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0035-ex374-exam-walkthrough.html">&larr; Back: Lesson 35 — EX374 exam domain walkthrough</a></span>
+  <span><a href="../objectives.html">Course roadmap tracker &rarr;</a></span>
+</div>
+
+</body>
+</html>

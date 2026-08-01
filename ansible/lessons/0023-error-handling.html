@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 23 — Error handling: block/rescue</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 23 of 36</p>
+<h1>Error handling: block/rescue</h1>
+
+<p>You already know the default from Lesson 6: if a task fails on a host, Ansible stops running further tasks in that play for that host. Everything in this lesson is about working <em>with</em> that default — telling Ansible more precisely what counts as a failure, and building recovery logic — not fighting it by accident.</p>
+
+<p class="callout"><strong>Mental model:</strong> the default "stop on failure" behavior is a safety net, the same reason a shell script with <code>set -e</code> stops instead of plowing ahead after an error. Don't casually turn it off. Everything below is a controlled, deliberate way to say "I know this can fail, and here's exactly what I want to happen when it does."</p>
+
+<h2>Why the default matters</h2>
+<p>Imagine a play that installs a package, then configures it, then restarts a service. If the install task fails and Ansible kept going anyway, the configure task might run against software that isn't there, and the restart might bounce a service into a broken state. Stopping immediately is what keeps a partial failure from turning into a worse mess. Treat "stop on failure" as correct behavior to design around, not a bug to route around.</p>
+
+<h2><code>ignore_errors</code> — continue past a failure</h2>
+<p>Sometimes you genuinely want to keep going even if a task fails — for example, a cleanup task that might fail if the thing it's cleaning up never existed. <code>ignore_errors: true</code> does exactly that, confirmed against Ansible's own docs:</p>
+
+<pre><code>- name: Do not count this as a failure
+  ansible.builtin.command: /bin/false
+  ignore_errors: true</code></pre>
+
+<p>The task still shows as <code>failed</code> in the output and in the play recap's <code>ignored</code> count, but Ansible moves on to the next task instead of stopping.</p>
+
+<p class="callout"><strong>Use sparingly.</strong> <code>ignore_errors: true</code> can mask real problems — a task quietly failing every single run, forever, with nobody noticing because the play always reports "success." It also only works when the task actually executes and returns a failed status; it cannot suppress an undefined variable, a connection failure, a missing package the module depends on, or a syntax error. If you reach for <code>ignore_errors</code>, ask first whether <code>failed_when</code> (next section) would let you define the real success condition instead — that's usually the better fix.</p>
+
+<h2><code>failed_when</code> and <code>changed_when</code> — redefine what counts</h2>
+<p>Ansible's default idea of "failed" is a non-zero return code, and its default idea of "changed" is module-specific. Sometimes that default is wrong for what you're running — a command-line tool that returns exit code 1 for "no results found" isn't necessarily broken, it just didn't find anything. <code>failed_when</code> and <code>changed_when</code> let you say precisely what failure and change mean for a task, using a condition checked against the task's own result.</p>
+
+<p><strong><code>failed_when</code></strong> — override when a task counts as failed:</p>
+<pre><code>- name: Fail task when either condition is met
+  ansible.builtin.command: /usr/bin/example-command
+  register: command_result
+  failed_when: command_result.rc != 0 or 'ERROR' in command_result.stdout</code></pre>
+
+<p>You can also list multiple conditions — as a list, they're joined with an implicit AND (all must be true to count as failed):</p>
+<pre><code>- name: Check if a file exists in temp and fail task if it does
+  ansible.builtin.command: ls /tmp/this_should_not_be_here
+  register: result
+  failed_when:
+    - result.rc == 0
+    - '"No such" not in result.stderr'</code></pre>
+
+<p><strong><code>changed_when</code></strong> — override when a task counts as changed (which affects handler triggering and your play recap's <code>changed</code> count):</p>
+<pre><code>- name: Report 'changed' when the return code is not equal to 2
+  ansible.builtin.shell: /usr/bin/billybass --mode="take me to the river"
+  register: bass_result
+  changed_when: "bass_result.rc != 2"
+
+- name: This will never report 'changed' status
+  ansible.builtin.shell: wall 'beep'
+  changed_when: False</code></pre>
+
+<p>Both directives need <code>register:</code> in almost every real use — you're checking the result of the task you just ran, so you need a name to check it by. This is the same <code>register</code> you've used before to capture task output; here it feeds directly into the condition.</p>
+
+<h2><code>block</code> / <code>rescue</code> / <code>always</code> — group, catch, and clean up</h2>
+<p>Everything so far handles one task at a time. <code>block</code> groups several tasks together and adds recovery logic around the whole group — confirmed against Ansible's own docs, and structurally similar in spirit to <code>try</code> / <code>except</code> / <code>finally</code> if you've seen exception handling in any general-purpose programming language:</p>
+
+<ul>
+<li><strong><code>block:</code></strong> — the tasks you actually want to run, in order. If any task in the block fails, the rest of the block is skipped (same "stop on failure" rule as a normal play, just scoped to this group).</li>
+<li><strong><code>rescue:</code></strong> — runs only if a task in the block failed. This is your recovery logic — the "except" clause. If nothing in the block fails, <code>rescue</code> is skipped entirely.</li>
+<li><strong><code>always:</code></strong> — runs no matter what happened in <code>block</code> or <code>rescue</code> — success, failure, or recovered failure. This is your "finally" clause, the place for cleanup that must happen either way.</li>
+</ul>
+
+<p>Here's the full example from Ansible's docs, showing all three together:</p>
+
+<pre><code>tasks:
+  - name: Attempt and graceful roll back demo
+    block:
+      - name: Print a message
+        ansible.builtin.debug:
+          msg: 'I execute normally'
+
+      - name: Force a failure
+        ansible.builtin.command: /bin/false
+
+      - name: Never print this
+        ansible.builtin.debug:
+          msg: 'I never execute, due to the above task failing, :-('
+    rescue:
+      - name: Print when errors
+        ansible.builtin.debug:
+          msg: 'I caught an error'
+
+      - name: Force a failure in middle of recovery! &gt;:-)
+        ansible.builtin.command: /bin/false
+
+      - name: Never print this
+        ansible.builtin.debug:
+          msg: 'I also never execute :-('
+    always:
+      - name: Always do this
+        ansible.builtin.debug:
+          msg: "This always executes"</code></pre>
+
+<p>Walk through what happens: <code>Print a message</code> runs fine, then <code>Force a failure</code> fails, so <code>Never print this</code> (still inside <code>block</code>) is skipped. Because the block failed, Ansible jumps to <code>rescue</code>: <code>Print when errors</code> runs, and — notice this — the rescue section can fail too, so if its own task fails, the rest of <code>rescue</code> is skipped the same way the block was. Either way, <code>always</code> runs at the end no matter what happened above it.</p>
+
+<p>Inside a <code>rescue:</code> section, Ansible gives you two special variables so recovery logic can react to exactly what went wrong, without you needing your own <code>register</code>:</p>
+<ul>
+<li><code>ansible_failed_task</code> — the task that triggered the rescue (for example, <code>ansible_failed_task.name</code> gives you its name).</li>
+<li><code>ansible_failed_result</code> — the failed task's captured result, the same shape you'd get from <code>register</code>.</li>
+</ul>
+
+<p class="callout"><strong>Best practice:</strong> reach for <code>block</code>/<code>rescue</code>/<code>always</code> when a failure needs a real response — rolling back a change, notifying someone, cleaning up a partial state. Reach for <code>failed_when</code> when the problem is that Ansible's definition of "failed" doesn't match reality for this specific command. Reach for <code>ignore_errors</code> last, and rarely — it's the bluntest tool of the three, with no logic attached to what happens next.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A block has three tasks. Task 2 fails. Does task 3 in the block run? Does the rescue section run?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No, task 3 does not run — the block stops at the first failure, same as a normal play. Yes, rescue runs, because the block as a whole failed. That's the entire point of pairing block with rescue: catch the failure and decide what to do next, instead of the play just dying.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. You have a task calling a command-line tool that returns exit code 1 when it finds "no results" — which isn't really an error for your use case. Should you reach for <code>ignore_errors</code> or <code>failed_when</code>?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>failed_when</code>. The task isn't really failing — Ansible's default definition of failure (non-zero exit code) just doesn't match your situation. Redefine what "failed" means for this task, for example <code>failed_when: result.rc not in [0, 1]</code>. <code>ignore_errors</code> would hide a real failure too — it can't tell the difference between "exit code 1 meaning no results" and "exit code 1 meaning something actually broke."</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<p>Write a playbook with one play targeting <code>localhost</code>. Inside it, build a <code>block</code>/<code>rescue</code>/<code>always</code> group:</p>
+<ul>
+<li>in <code>block:</code>, a task that will fail — reuse the docs' own trick, <code>ansible.builtin.command: /bin/false</code></li>
+<li>in <code>rescue:</code>, an <code>ansible.builtin.debug</code> task that prints a message about the failure, using <code>ansible_failed_task.name</code></li>
+<li>in <code>always:</code>, an <code>ansible.builtin.debug</code> task that prints something like "cleanup running regardless"</li>
+</ul>
+<p>Run it, then read the output top to bottom: confirm the block task shows failed, the rescue task ran and printed the failed task's name, and the always task ran too. Then check the <code>PLAY RECAP</code> — look for the <code>rescued</code> count from Lesson 6's recap line; this is exactly what it's counting.</p>
+<p>Try writing the YAML yourself before checking the reference below.</p>
+
+<div class="quiz">
+<p>Reveal the reference playbook</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>- name: Block rescue always practice
+  hosts: localhost
+  tasks:
+    - name: Attempt something risky
+      block:
+        - name: Force a failure
+          ansible.builtin.command: /bin/false
+
+      rescue:
+        - name: Report what failed
+          ansible.builtin.debug:
+            msg: "Recovered from failure in task: {{ ansible_failed_task.name }}"
+
+      always:
+        - name: Cleanup runs no matter what
+          ansible.builtin.debug:
+            msg: "cleanup running regardless"</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_error_handling.html" target="_blank" rel="noopener">docs.ansible.com — Error handling</a> (<code>ignore_errors</code>, <code>failed_when</code>, <code>changed_when</code> syntax and semantics) · <a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_blocks.html" target="_blank" rel="noopener">docs.ansible.com — Blocks</a> (<code>block</code>/<code>rescue</code>/<code>always</code> full example, <code>ansible_failed_task</code> and <code>ansible_failed_result</code> variables) — all verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Default behavior: a failed task stops the play for that host. That's a safety net — work with it deliberately, don't disable it casually.</li>
+    <li><code>ignore_errors: true</code> continues past a failure but can mask real problems — use it rarely, and prefer <code>failed_when</code> when the real issue is Ansible's definition of "failed" not matching your case.</li>
+    <li><code>failed_when</code> / <code>changed_when</code> let you define exactly what counts as failure or change for a task, checked against its registered result.</li>
+    <li><code>block:</code> groups tasks; <code>rescue:</code> catches a failure in the block and runs recovery logic (with <code>ansible_failed_task</code> / <code>ansible_failed_result</code> available); <code>always:</code> runs regardless — similar in shape to try/except/finally.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0022-variable-precedence.html">&larr; Lesson 22: Variable precedence deep dive</a></span>
+  <span><a href="0024-tags.html">Lesson 24: Tags &rarr;</a></span>
+</div>
+
+</body>
+</html>

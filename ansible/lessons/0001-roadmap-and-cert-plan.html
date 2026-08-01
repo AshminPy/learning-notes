@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 — Your roadmap: zero to Ansible expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 1 of 36</p>
+<h1>Your roadmap: zero to Ansible expert</h1>
+
+<p>You want to be able to open a real fleet of servers, describe the configuration they need in code, and push that configuration out with confidence — repeatably, safely, on a real team. You currently know zero Ansible. That gap closes in stages, not in one leap. This lesson is the map — read it once now, come back to it whenever you feel lost.</p>
+
+<p class="callout"><strong>The one thing to remember:</strong> the goal of this course is production automation confidence, not a certificate. The Red Hat Certified Specialist in Developing Automation with Ansible Automation Platform (EX374) shows up later as a checkpoint — a way to prove the fundamentals are solid — but passing it is not the finish line. Being able to write, review, and safely operate Ansible automation against real hosts is the finish line.</p>
+
+<h2>The 10 phases</h2>
+<p>36 short lessons, grouped into 10 phases. You don't need to memorize this — it's on the <a href="../objectives.html">roadmap tracker</a>, which you can check off as you go.</p>
+<table>
+<tr><th>Phase</th><th>What you learn</th></tr>
+<tr><td>A. Orientation &amp; Setup</td><td>This lesson + installing Ansible, setting up practice hosts</td></tr>
+<tr><td>B. Ansible Fundamentals</td><td>What Ansible actually is (agentless, push-based, SSH), inventory basics, ad-hoc commands, your first playbook, idempotency</td></tr>
+<tr><td>C. Core Playbook Language</td><td>Variables, facts, conditionals (<code>when</code>), loops, handlers &amp; <code>notify</code></td></tr>
+<tr><td>D. Templates &amp; Files</td><td>Jinja2 templating, <code>copy</code> vs <code>template</code>, file &amp; directory management modules</td></tr>
+<tr><td>E. Organizing Automation</td><td>Roles, writing your first role, Ansible Galaxy, collections</td></tr>
+<tr><td>F. Inventory &amp; Variables at Scale</td><td>Dynamic inventory, group_vars &amp; host_vars, variable precedence</td></tr>
+<tr><td>G. Advanced Playbook Techniques</td><td>Error handling with block/rescue, tags, delegation, Ansible Vault</td></tr>
+<tr><td>H. Testing &amp; Quality</td><td>ansible-lint, Molecule testing, check mode &amp; diff mode</td></tr>
+<tr><td>I. Production &amp; Scale</td><td>Execution environments, Ansible Automation Platform/AWX, CI/CD for Ansible, performance &amp; best practices</td></tr>
+<tr><td>J. Real Project &amp; Certification</td><td>Capstone project, EX374 exam domain walkthrough, final review &amp; cheat sheet</td></tr>
+</table>
+
+<h2>Why this order</h2>
+<p>Every phase is a prerequisite for the one after it — skipping ahead just means backfilling later, so trust the sequence:</p>
+<ul>
+<li><strong>You can't learn the core playbook language (Phase C) before you've run a playbook at all (Phase B).</strong> Variables, facts, and conditionals only make sense once you've watched a simple playbook connect to a host over SSH and change something idempotently. Idempotency in particular — the single most important concept in this whole course — has to be felt once before it can be reasoned about.</li>
+<li><strong>You can't organize automation into roles (Phase E) before you understand tasks, variables, and templates (Phases C-D).</strong> A role is just a directory convention for reusable tasks, variables, handlers, and templates. If you don't know what those pieces are individually, a role's folder structure is just memorized boilerplate.</li>
+<li><strong>You can't manage inventory and variables at scale (Phase F) before you understand basic inventory and variables (Phase B-C).</strong> Dynamic inventory and variable precedence are the scaled-up version of concepts you first meet as a flat inventory file and a simple <code>vars:</code> block. Learn the small version first.</li>
+<li><strong>You can't reason about advanced techniques like delegation and Vault (Phase G) before you've built and organized real playbooks and roles (Phases B-E).</strong> Error handling, tags, and secrets management are refinements to automation you already know how to write — not a starting point.</li>
+<li><strong>You can't test automation meaningfully (Phase H) before there's automation worth testing (Phases B-G).</strong> ansible-lint and Molecule exist to catch mistakes in playbooks and roles — you need real playbooks and roles first, and enough scar tissue to know what a mistake even looks like.</li>
+<li><strong>You can't reason about production concerns (Phase I) before you've seen the full lifecycle (Phases B-H).</strong> Execution environments, AWX, and CI/CD pipelines are what experienced teams add once the underlying automation is already solid — bolting them on earlier just adds ceremony with nothing behind it yet.</li>
+<li><strong>The certification (Phase J) comes at the end, not the start.</strong> EX374 is a 4-hour, hands-on, performance-based lab exam covering Git workflows, inventory/variable management, task execution, filters, delegation, collections, execution environments, and automation controller — content spanning nearly every phase above. Studying for it before Phase I would mean attempting lab tasks with no hands-on foundation underneath them.</li>
+</ul>
+
+<h2>The certification — and why it's a milestone, not the goal</h2>
+<p>Checked directly against Red Hat's own exam page (2026-07-30) — here's what's actually true about the <strong><a href="https://www.redhat.com/en/services/training/red-hat-certified-specialist-developing-automation-ansible-automation-platform-exam" target="_blank" rel="noopener">Red Hat Certified Specialist in Developing Automation with Ansible Automation Platform (EX374)</a></strong> right now:</p>
+<ul>
+<li><strong>Exam code:</strong> EX374</li>
+<li><strong>Format:</strong> hands-on, practical, performance-based — Red Hat's own wording: "requires you to undertake real-world tasks." This is <strong>not</strong> a multiple-choice exam.</li>
+<li><strong>Duration:</strong> 4 hours, one section</li>
+<li><strong>Tests:</strong> Red Hat Ansible Automation Platform 2.5</li>
+<li><strong>Prerequisites:</strong> completing AU374 (Developing Advanced Automation) or RH294 (Red Hat Linux Automation with Ansible) is recommended — or comparable hands-on experience. Not a hard gate, but the exam assumes that level of practical fluency.</li>
+<li><strong>During the exam:</strong> no internet access, no external documentation — only the product documentation shipped with the exam environment</li>
+<li><strong>Results:</strong> reported within 3 business days</li>
+<li><strong>Counts toward:</strong> Red Hat Certified Architect (RHCA)</li>
+</ul>
+
+<p class="callout">This is the important honest bit: EX374 is a lab exam, not a knowledge-recall test. You are graded on whether real automation you write, against real hosts, under time pressure, actually works — not on whether you can recognize the right answer in a list of four. Reading this course builds the mental models and the syntax fluency, but it cannot substitute for hands-on repetition on real hosts (a local VM, a set of containers, whatever you have access to). If you only ever read the lessons and never type the commands yourself, you will not be ready for this exam — and more importantly, you won't be ready for a real production incident either. That's why every phase in this course pairs concepts with something you actually run.</p>
+
+<h2>Source</h2>
+<p><a href="https://www.redhat.com/en/services/training/red-hat-certified-specialist-developing-automation-ansible-automation-platform-exam" target="_blank" rel="noopener">Red Hat Certified Specialist in Developing Automation with Ansible Automation Platform — official exam page</a>. Fetched and confirmed directly 2026-07-30: exam code EX374, hands-on/performance-based (not multiple choice), 4 hours, one section, tests Ansible Automation Platform 2.5, recommended prerequisite AU374 or RH294 or comparable experience, no internet/external docs allowed during the exam, results within 3 business days, counts toward RHCA.</p>
+
+<h2>What to do next</h2>
+<p>Go to <a href="0002-tools-setup.html">Lesson 2 — Tools setup</a> and install Ansible plus a practice host. You can't run a single task until that's done.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>36 lessons, 10 phases (A-J): Orientation &rarr; Fundamentals &rarr; Core Playbook Language &rarr; Templates &amp; Files &rarr; Organizing Automation &rarr; Inventory &amp; Variables at Scale &rarr; Advanced Playbook Techniques &rarr; Testing &amp; Quality &rarr; Production &amp; Scale &rarr; Real Project &amp; Certification.</li>
+    <li>Order matters: the core language needs a playbook you've already run, roles need tasks/variables/templates you already understand, production concerns need the full lifecycle behind you.</li>
+    <li>Cert: EX374 — 4-hour hands-on, performance-based lab exam, tests Ansible Automation Platform 2.5, recommended prerequisite AU374/RH294 or equivalent experience. It's a Phase J milestone, and it demands real hands-on practice, not just reading — this course cannot substitute for that.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Confused about anything here, or want to change the plan (timeline, practice environment, pace)? Ask — this roadmap should fit you, not the other way around.</footer>
+
+<div class="lesson-nav">
+  <span>&larr; Start</span>
+  <span><a href="0002-tools-setup.html">Next: Tools setup &rarr;</a></span>
+</div>
+
+</body>
+</html>

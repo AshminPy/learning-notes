@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 30 — Execution environments</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 30 of 36</p>
+<h1>Execution environments</h1>
+
+<p>"It works on my machine" is a real, common Ansible failure — not because the playbook logic is wrong, but because your laptop happens to have a particular Python version, particular collection versions installed at particular times, and dependencies nobody remembers installing. Your teammate's laptop, and the CI runner, don't have the exact same set. <strong>Execution environments</strong> exist to remove that variable entirely.</p>
+
+<p class="callout"><strong>Mental model:</strong> An execution environment is a container image — the same idea as a Docker image for a web app — but purpose-built to run Ansible. It bundles a specific <code>ansible-core</code> version, a specific Python version and its dependencies, and specific Ansible collections, all pinned together in one image. Run your playbook inside that image, on any machine, and you get identical execution every time — no more "it works on my machine."</p>
+
+<h2>The problem in concrete terms</h2>
+<table>
+<tr><th></th><th>Ad hoc local install</th><th>Execution environment</th></tr>
+<tr><td>Python/collection versions</td><td>Whatever got installed, whenever, on that one machine</td><td>Pinned exactly, in one definition file</td></tr>
+<tr><td>Consistency across people/CI</td><td>Drifts silently — everyone's setup is a little different</td><td>Identical everywhere the image is pulled and run</td></tr>
+<tr><td>"What's actually installed?"</td><td>You'd have to <code>pip list</code>/<code>ansible-galaxy collection list</code> and hope it matches</td><td>Fully declared in <code>execution-environment.yml</code>, inspectable on the image itself</td></tr>
+</table>
+
+<h2>ansible-builder — building the image</h2>
+<p>Confirmed against ansible-builder's own docs: you describe the environment in a file, then build it into a container image using Podman or Docker.</p>
+<p>A minimal <code>execution-environment.yml</code>:</p>
+<pre><code>---
+version: 3
+images:
+  base_image:
+    name: quay.io/ansible/ansible-runner:latest
+dependencies:
+  python:
+    - requests
+  galaxy:
+    collections:
+      - community.general</code></pre>
+<p>Build it:</p>
+<pre><code># Generate the build context only, without building the image
+$ ansible-builder create
+
+# Generate the build context AND build the image
+$ ansible-builder build -t my-execution-env:1.0</code></pre>
+<p>The result is a real container image — tag it, push it to a registry, and it's now a versioned, reusable artifact exactly like any other application image.</p>
+
+<h2>ansible-navigator — running content inside it</h2>
+<p>Confirmed against ansible-navigator's own docs: it's a command-line tool and text-based UI for running, reviewing, and troubleshooting Ansible content using an execution environment instead of your local Python/Ansible install.</p>
+<pre><code># Run a playbook inside an execution environment
+$ ansible-navigator run site.yml -m stdout
+
+# Inspect what's actually bundled inside an execution environment image —
+# Ansible/Python/collection versions, without guessing
+$ ansible-navigator images</code></pre>
+<p><code>ansible-navigator images</code> is the answer to "what version of collection X is really in this environment?" — instead of trusting your memory or a README, you inspect the image directly.</p>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating a running execution environment like a general-purpose container you SSH/exec into and patch by hand — installing one more Python package "just this once" because a task needs it right now. That silently recreates the exact problem execution environments exist to solve: the running container now differs from the image definition, and nobody else gets that fix. If a task needs something new, add it to <code>execution-environment.yml</code> and rebuild the image.</p>
+
+<p class="callout production"><strong>Production note:</strong> teams version execution environment images in a registry like any other container image (a real tag, e.g. <code>my-org/network-ee:2.3.1</code>), and reference that exact tag from CI pipelines and, later, from Automation Controller job templates (Lesson 31). "Which environment did this run use?" then always has an exact, reproducible answer — the image tag — instead of "whatever was on that person's laptop that day."</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Two teammates run the identical playbook — one succeeds, the other gets a module import error because a Python library is a slightly different version locally. What execution-environment-based fix prevents this entire class of bug, instead of asking both people to manually sync their local pip/collection versions?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Build one execution environment image with <code>ansible-builder</code> — pinning <code>ansible-core</code>, the Python dependencies, and the collections in <code>execution-environment.yml</code> — and have both people (and CI) run the playbook inside that same image via <code>ansible-navigator</code> instead of their own local install. Since everyone runs the identical image, "different local version" bugs can't occur.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What does <code>ansible-navigator images</code> let you check, and why does that matter once you're relying on execution environments instead of local installs?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">It lets you inspect exactly what's inside a given execution environment image — the Ansible Core, Python, and collection versions actually bundled in it — so you can confirm what a playbook will really run against instead of guessing based on what happens to be installed locally.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Where do you declare the Python packages and Ansible collections that should be baked into an execution environment image, and what command builds the image from that declaration?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4">In the <code>execution-environment.yml</code> definition file, under <code>dependencies.python</code> (a Python requirements list) and <code>dependencies.galaxy.collections</code> (an Ansible collections list). Built into an actual image with <code>ansible-builder build</code>.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>You don't need Podman/Docker installed to do this exercise usefully — write the definition file itself, the actual skill being tested here, and build it for real afterward if you have a container engine available.</p>
+<p>Write an <code>execution-environment.yml</code> for a fictional role that needs the <code>community.general</code> collection and the Python <code>requests</code> library, based on the standard Ansible runner base image. Try it yourself before checking the answer.</p>
+
+<div class="quiz">
+<p>Reveal a correct <code>execution-environment.yml</code></p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>---
+version: 3
+images:
+  base_image:
+    name: quay.io/ansible/ansible-runner:latest
+dependencies:
+  python:
+    - requests
+  galaxy:
+    collections:
+      - community.general</code></pre>
+</div>
+<p>If you do have Podman or Docker available, build it for real and confirm the image exists:</p>
+<pre><code>$ ansible-builder build -t practice-ee:1.0
+$ ansible-navigator images</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/projects/builder/en/latest/" target="_blank" rel="noopener">docs.ansible.com — ansible-builder documentation</a> (confirmed <code>execution-environment.yml</code> structure, <code>ansible-builder create</code>/<code>build</code> commands, Podman/Docker as the container backends) · <a href="https://docs.ansible.com/projects/navigator/" target="_blank" rel="noopener">docs.ansible.com — ansible-navigator documentation</a> (confirmed ansible-navigator as the CLI/TUI for running content against execution environments, and its role inspecting images) — all verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Execution environments solve "works on my machine": a container image bundling a pinned Ansible Core, Python, and collection set, run identically everywhere.</li>
+    <li><code>ansible-builder</code> builds the image from an <code>execution-environment.yml</code> definition (<code>python</code> and <code>galaxy.collections</code> dependencies) using <code>ansible-builder build</code>.</li>
+    <li><code>ansible-navigator</code> runs and inspects Ansible content against an execution environment — <code>ansible-navigator run</code> to execute, <code>ansible-navigator images</code> to see exactly what's bundled inside one.</li>
+    <li>Never hand-patch a running execution environment container — add the dependency to the definition file and rebuild, so the fix is reproducible for everyone.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0029-check-and-diff-mode.html">&larr; Lesson 29: Check and diff mode</a></span>
+  <span><a href="0031-automation-platform-awx.html">Lesson 31: Automation controller and AWX &rarr;</a></span>
+</div>
+
+</body>
+</html>

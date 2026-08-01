@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 29 — Check and diff mode</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 29 of 36</p>
+<h1>Check mode and diff mode</h1>
+
+<p>A role can be lint-clean (Lesson 27) and pass every Molecule test (Lesson 28) against a disposable container, and still surprise you the first time it runs against a real, unfamiliar set of hosts — different existing files, different facts, a variable nobody overrode the way you assumed. Before a playbook makes real changes to production, Ansible gives you a rehearsal: <code>--check</code> shows what WOULD change without changing anything, and <code>--diff</code> shows exactly what the actual content difference would be.</p>
+
+<p class="callout"><strong>Mental model:</strong> <code>--check</code> is a dry run — Ansible walks through every task, works out whether it WOULD report <code>changed</code>, and tells you, without touching the real system. <code>--diff</code> adds detail on top: for any task that changes file content, it prints an actual before/after diff, the same idea as <code>git diff</code>. If you took the Terraform course, this is the same discipline as <a href="../../terraform/lessons/0026-plan-review-discipline.html">Terraform Lesson 26, Plan review discipline</a> — never make a real change without reviewing what would happen first.</p>
+
+<h2>Running check mode</h2>
+<p>Add <code>--check</code> to any <code>ansible-playbook</code> run:</p>
+<pre><code>$ ansible-playbook deploy.yml --check</code></pre>
+<p>Every task still executes its logic and reports what it would do — <code>ok</code>, <code>changed</code>, or <code>failed</code> — but nothing on the target host is actually modified.</p>
+
+<h2>Adding diff mode</h2>
+<p>Combine it with <code>--diff</code> to see the actual content that would change, not just a changed/unchanged flag:</p>
+<pre><code>$ ansible-playbook deploy.yml --check --diff</code></pre>
+<p>For a task using the <code>template</code> or <code>copy</code> module, this prints a real unified diff of old vs. new file content — the clearest possible preview of what a config change would actually do. <code>--diff</code> also works without <code>--check</code>, on a real run, to show you what changed as it happens.</p>
+
+<h2>The critical caveat: not every module supports check mode</h2>
+<p>Confirmed directly from Ansible's own docs: "Modules that support check mode report the changes they would have made. Modules that do not support check mode report nothing and do nothing." The second half of that sentence is the trap — an unsupported module doesn't run for real during <code>--check</code>, but it also doesn't tell you anything. It's simply skipped, silently, as far as your dry-run report is concerned.</p>
+<p><code>command</code> and <code>shell</code> are the two you'll hit constantly — they don't support check mode. A playbook full of <code>shell</code> tasks can report "0 changes" under <code>--check</code> and tell you almost nothing about what the real run will actually do.</p>
+
+<table>
+<tr><th></th><th>Module supports check mode</th><th>Module doesn't support check mode</th></tr>
+<tr><td>During <code>--check</code></td><td>Evaluates the real logic, reports what it would change</td><td>Skipped — no real action, no meaningful report either</td></tr>
+<tr><td>Example modules</td><td><code>template</code>, <code>copy</code>, <code>file</code>, <code>package</code></td><td><code>command</code>, <code>shell</code> (by default)</td></tr>
+</table>
+
+<h2>Forcing a task's check-mode behaviour</h2>
+<p>The <code>check_mode</code> task keyword overrides the playbook-level setting for one specific task:</p>
+<pre><code># Force this task to always run for real, even during --check —
+# useful for a read-only diagnostic you want live output from
+- name: report current disk usage
+  ansible.builtin.command: df -h
+  check_mode: false
+
+# Force this task to always simulate, even on a real run
+- name: destructive cleanup step
+  ansible.builtin.command: rm -rf /var/cache/myapp
+  check_mode: true</code></pre>
+<p>There's also a magic variable, <code>ansible_check_mode</code>, for conditionally changing behaviour inside a task based on whether the run is a dry run:</p>
+<pre><code>- name: skip a task entirely in check mode
+  ansible.builtin.git:
+    repo: https://example.com/repo.git
+    dest: /opt/myapp
+  when: not ansible_check_mode</code></pre>
+
+<p class="callout mistake"><strong>Common mistake:</strong> seeing "0 changes" from <code>ansible-playbook --check</code> and assuming the real run will be identical. If any task uses <code>command</code>, <code>shell</code>, or another check-mode-unaware module, that task was skipped during the dry run, not verified — a clean <code>--check</code> result doesn't cover it at all. Check which modules your playbook actually uses before trusting a "no changes" dry run.</p>
+
+<p class="callout production"><strong>Production note:</strong> the real-world habit this lesson exists to teach: run <code>--check --diff</code> against production, actually read the diff output line by line, and only then run the playbook for real. Skipping the review step and just glancing at "looks fine" defeats the entire point — the value is in reading what would change, the same way you'd review a Terraform plan before <code>apply</code>.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You run <code>ansible-playbook deploy.yml --check</code> against production and it reports zero changes. The playbook has one task using the <code>shell</code> module. Can you be fully confident the real run will also make zero changes?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. The <code>shell</code> module doesn't support check mode, so during <code>--check</code> it isn't actually evaluated — it's skipped, not verified. "Zero changes" from the dry run tells you nothing about what that shell task would really do. You'd need to inspect that task separately, or test it carefully in a non-production environment.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. What's the difference in what <code>--check</code> and <code>--diff</code> each show you, and why run them together?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>--check</code> simulates the run and reports which tasks WOULD report changed, without making real changes. <code>--diff</code> shows the actual before/after content for tasks that change file content (templates, copied files, in-place edits). Together, you get both which tasks would change and exactly what that change's content looks like — the fullest possible dry-run picture.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. You have one read-only diagnostic task you want to actually execute even during a <code>--check</code> dry run, while every other task in the playbook stays fully simulated. What do you set on that one task?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
+<div class="answer" id="a4"><code>check_mode: false</code> on that specific task. It overrides the playbook-level <code>--check</code> setting so just that task runs for real, live, even inside a dry run — every other task in the playbook is still simulated normally.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>In a practice folder, create a small playbook that mixes a check-mode-aware module with one that isn't:</p>
+<pre><code>---
+- hosts: localhost
+  connection: local
+  tasks:
+    - name: write a config file from a template
+      ansible.builtin.copy:
+        content: "setting = enabled\n"
+        dest: /tmp/myapp.conf
+
+    - name: touch a marker file via shell
+      ansible.builtin.shell: touch /tmp/marker.txt</code></pre>
+<p>Then:</p>
+<ul>
+<li>run it for real once: <code>ansible-playbook site.yml</code> — both tasks report <code>changed</code></li>
+<li>run it again with <code>--check --diff</code>: <code>ansible-playbook site.yml --check --diff</code></li>
+<li>look closely at each task's status — the <code>copy</code> task should report no change (the file already matches) and print no diff; the <code>shell</code> task's behaviour is the one to pay attention to</li>
+<li>edit the <code>content:</code> value to a different string, then re-run with <code>--check --diff</code> and read the actual diff output for the <code>copy</code> task</li>
+</ul>
+<p>Try it yourself before checking the expected output below.</p>
+
+<div class="quiz">
+<p>Reveal what you should see</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">After the real run, a second <code>--check --diff</code> pass shows the <code>copy</code> task as unchanged (content already matches — no diff printed). The <code>shell</code> task shows as <code>changed</code> again on every <code>--check</code> run regardless — <code>shell</code> doesn't support check mode, so Ansible can't actually tell whether <code>touch</code> would do anything; it just reports its default "assume changed" behaviour. After editing the content and re-running with <code>--check --diff</code>, the <code>copy</code> task prints a real unified diff showing the old line removed and the new line added — exactly what would land on disk if you dropped <code>--check</code>.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_checkmode.html" target="_blank" rel="noopener">docs.ansible.com — Understanding check mode and diff mode</a> (confirmed <code>--check</code>/<code>--diff</code> command usage, the exact wording "Modules that support check mode report the changes they would have made. Modules that do not support check mode report nothing and do nothing," the <code>check_mode</code> task keyword, and the <code>ansible_check_mode</code> magic variable) — verified 2026-07-31.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>--check</code> is a dry run: tasks report what they would change, without changing anything for real.</li>
+    <li><code>--diff</code> adds an actual before/after content diff for file-changing tasks — run it together with <code>--check</code> for the fullest preview.</li>
+    <li>Critical caveat: modules that don't support check mode (<code>command</code>, <code>shell</code>) are simply skipped during <code>--check</code> — a "0 changes" dry run doesn't cover them at all.</li>
+    <li>Override per task with <code>check_mode: false</code> (always run for real) or <code>check_mode: true</code> (always simulate); use the <code>ansible_check_mode</code> magic variable to branch logic conditionally.</li>
+    <li>Production habit: always <code>--check --diff</code> against production, actually read the output, then run for real.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0028-molecule-testing.html">&larr; Lesson 28: Molecule testing</a></span>
+  <span><a href="0030-execution-environments.html">Lesson 30: Execution environments &rarr;</a></span>
+</div>
+
+</body>
+</html>

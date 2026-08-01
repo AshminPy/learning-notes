@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 6 — Your first playbook</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Ansible / Zero to Expert — Lesson 6 of 36</p>
+<h1>Your first playbook</h1>
+
+<p>Lesson 5 ran one-off commands with <code>ansible</code> — quick, but nothing was saved. Real automation needs to be written down, repeatable, and reviewable in a pull request like any other code. That's a <strong>playbook</strong>: a YAML file that says exactly what you want done, so anyone (including future you) can read it, run it, and get the same result.</p>
+
+<p class="callout"><strong>Mental model:</strong> an ad-hoc command is a sentence you say once. A playbook is a recipe you write down — so it can be handed to someone else, checked into git, reviewed before it runs, and repeated exactly the same way next time.</p>
+
+<h2>What a playbook actually is</h2>
+<p>A playbook is a YAML file containing a list of <strong>plays</strong>. Each play does two things: it picks a group of hosts to target, and it lists the <strong>tasks</strong> to run against them, in order, top to bottom. A task is one step — almost always one module call, like <code>ansible.builtin.debug</code> or <code>ansible.builtin.file</code>, the same modules you used ad-hoc in Lesson 5, just written down instead of typed on the command line.</p>
+
+<p>Here's the official example structure, confirmed against Ansible's own docs:</p>
+
+<pre><code>- name: Update web servers
+  hosts: webservers
+  remote_user: root
+
+  tasks:
+  - name: Ensure apache is at the latest version
+    ansible.builtin.yum:
+      name: httpd
+      state: latest
+
+  - name: Write the apache config file
+    ansible.builtin.template:
+      src: /srv/httpd.j2
+      dest: /etc/httpd.conf</code></pre>
+
+<p>Read the shape, not the specific modules yet:</p>
+<ul>
+<li>The whole file is a YAML <strong>list</strong> of plays — that's why it starts with <code>- name:</code>. This example has one play; a playbook can have several, each targeting different hosts.</li>
+<li><code>hosts:</code> — which group from your inventory this play runs against. Could be a single host, a group name, or <code>all</code>.</li>
+<li><code>tasks:</code> — another YAML list, one entry per task. Each task needs a <code>name:</code> (a human-readable description shown in the output — always write one, it's how you read the run later) and exactly one module call underneath it.</li>
+<li>Tasks run <strong>in order</strong>, top to bottom, within a play. No parallel surprises, no reordering.</li>
+</ul>
+
+<h2>Just enough YAML to not get stuck</h2>
+<p>You don't need a full YAML tutorial to write playbooks, but two rules will trip you up if nobody tells you upfront:</p>
+<ul>
+<li><strong>Indentation is structure, not decoration.</strong> YAML uses spaces (never tabs) to show what's nested inside what — a task's module call is indented under the task, which is indented under <code>tasks:</code>. Get the indentation wrong and either the file fails to parse, or worse, it parses into something you didn't mean.</li>
+<li><strong>Lists start with a dash and a space (<code>- </code>).</strong> Both plays and tasks are YAML lists, so both start with <code>-</code>. A dash followed by <code>name:</code> at the same indentation level means "here's a new item in this list."</li>
+</ul>
+<p>Pick any consistent number of spaces (two is the community convention, used in every official example) and stay consistent. An editor with YAML syntax highlighting will save you a lot of pain here — it's worth setting up before you go much further in this course.</p>
+
+<h2>Running a playbook</h2>
+<p>One command, always the same shape:</p>
+<pre><code>$ ansible-playbook -i inventory playbook.yml</code></pre>
+<p><code>-i inventory</code> points at the inventory file — the same flag and the same file you used with ad-hoc <code>ansible</code> commands in Lesson 5. <code>playbook.yml</code> is the file you just wrote. Nothing here is optional: without <code>-i</code>, Ansible falls back to its default inventory location, which is almost never what you want while you're learning.</p>
+
+<h2>Reading the output</h2>
+<p>Run a playbook and you'll see three kinds of sections, always in this order:</p>
+<pre><code>PLAY [My first play] ****************************************************************************
+
+TASK [Gathering Facts] **************************************************************************
+ok: [192.0.2.50]
+
+TASK [Ping my hosts] ****************************************************************************
+ok: [192.0.2.50]
+
+TASK [Print message] ****************************************************************************
+ok: [192.0.2.50] =&gt; {
+    "msg": "Hello world"
+}
+
+PLAY RECAP **************************************************************************************
+192.0.2.50: ok=3    changed=0    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0</code></pre>
+<ul>
+<li><strong>PLAY</strong> — one banner per play, named after its <code>name:</code>.</li>
+<li><strong>TASK</strong> — one banner per task, in the order you wrote them. Notice <code>Gathering Facts</code> runs automatically before your first task — Ansible collects information about each host before doing anything, you didn't write that task yourself.</li>
+<li><strong>PLAY RECAP</strong> — the summary, one line per host, with counts you'll read on every single run for the rest of your Ansible career:
+  <ul>
+    <li><code>ok</code> — tasks that succeeded and needed no change (the host already matched what you asked for).</li>
+    <li><code>changed</code> — tasks that succeeded and <em>did</em> change something on the host.</li>
+    <li><code>unreachable</code> — Ansible couldn't connect to the host at all (network, SSH, wrong address).</li>
+    <li><code>failed</code> — the task ran but reported an error.</li>
+    <li><code>skipped</code> — the task's condition wasn't met, so it didn't run (you'll meet conditionals later in this course).</li>
+  </ul>
+</li>
+</ul>
+<p class="callout"><strong>Best practice — always check the recap, not just "did it print red text":</strong> a run can show <code>failed=0</code> and still not be what you wanted if <code>changed</code> is higher than you expected, or <code>unreachable</code> is non-zero for a host you thought was fine. Get in the habit of reading all five numbers, every run — the same discipline as reading a Terraform plan before typing <code>yes</code>.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Your playbook has one play with three tasks. Task 2 fails on a host. Does Ansible still run task 3 on that host?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — by default, Ansible stops running further tasks in that play <em>for that host</em> as soon as one task fails on it. Other hosts that didn't fail keep going. (Ansible has options to change this behavior with error handling, covered later in this course — the default is "stop for the host that broke.")</div>
+</div>
+
+<div class="quiz">
+<p>Q2. In the PLAY RECAP, a host shows <code>ok=2 changed=0 unreachable=0 failed=0 skipped=0</code>. What does <code>changed=0</code> tell you?</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Every task succeeded, but none of them had to actually change anything on the host — the host was already in the desired state for all 2 tasks. This is a preview of <strong>idempotency</strong>, the exact topic of the next lesson: running the same playbook twice should show <code>changed=0</code> the second time.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Reuse the localhost inventory file from Lesson 4 (the one pointing at <code>localhost</code> with a local connection, no SSH needed). In the same folder, create <code>playbook.yml</code>:</p>
+
+<pre><code>- name: My first playbook
+  hosts: localhost
+  tasks:
+    - name: Print a message
+      ansible.builtin.debug:
+        msg: "Hello from my first playbook"
+
+    - name: Create a practice directory
+      ansible.builtin.file:
+        path: /tmp/ansible-practice
+        state: directory</code></pre>
+
+<p>Then:</p>
+<ul>
+<li>run <code>ansible-playbook -i inventory playbook.yml</code></li>
+<li>find the <code>TASK [Print a message]</code> section and confirm your message printed</li>
+<li>find the <code>TASK [Create a practice directory]</code> section — check its status. Was it <code>ok</code> or <code>changed</code>?</li>
+<li>read the <code>PLAY RECAP</code> line and check all five counts against what you expected</li>
+<li>confirm the directory exists: <code>ls -ld /tmp/ansible-practice</code></li>
+<li>run the exact same command a second time. Watch what happens to the <code>changed</code> count on the directory task — hold onto that observation, it's the whole subject of Lesson 7.</li>
+</ul>
+<p>Try it yourself before checking the reference command below.</p>
+
+<div class="quiz">
+<p>Reveal the reference command</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>ansible-playbook -i inventory playbook.yml
+ls -ld /tmp/ansible-practice
+ansible-playbook -i inventory playbook.yml
+# run it again — compare the "changed" count on the file task between the two runs</code></pre>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_intro.html" target="_blank" rel="noopener">docs.ansible.com — Playbooks intro</a> (play/task structure, YAML list syntax) · <a href="https://docs.ansible.com/ansible/latest/getting_started/get_started_playbook.html" target="_blank" rel="noopener">docs.ansible.com — Create a playbook</a> (example playbook, <code>ansible-playbook -i inventory.ini playbook.yaml</code> command, full PLAY / TASK / PLAY RECAP output including the <code>ok=/changed=/unreachable=/failed=/skipped=/rescued=/ignored=</code> line) · <a href="https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html" target="_blank" rel="noopener">ansible.builtin.file module docs</a> (<code>path</code>, <code>state: directory</code> parameters) — all verified 2026-07-30.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A playbook is a YAML file: a list of <strong>plays</strong>, each with <code>hosts:</code> to target and a <code>tasks:</code> list to run against them, in order.</li>
+    <li>YAML rule of thumb: indentation shows nesting (spaces, not tabs), and lists — plays, tasks — start with <code>- </code>.</li>
+    <li>Run it with <code>ansible-playbook -i inventory playbook.yml</code>, and always read the full <code>PLAY RECAP</code> line — <code>ok</code>, <code>changed</code>, <code>unreachable</code>, <code>failed</code>, <code>skipped</code> — not just whether it exited without red text.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Got a real error from your own terminal? Paste the exact text and ask — don't guess at what an Ansible error means, we'll read it together.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0005-ad-hoc-commands.html">&larr; Lesson 5: Ad-hoc commands</a></span>
+  <span><a href="0007-idempotency.html">Lesson 7: Idempotency &rarr;</a></span>
+</div>
+
+</body>
+</html>

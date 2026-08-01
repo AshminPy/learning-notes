@@ -1,0 +1,22 @@
+/* ansible theme — shared rules live in ../../assets/course-style.css, see ../../STYLE-GUIDE.md */
+@import url("../../assets/course-style.css");
+
+:root {
+  --bg: #fdfcf9;
+  --fg: #1b1b18;
+  --muted: #6b6558;
+  --accent: #b91c1c;
+  --rule: #d9d3c4;
+  --code-bg: #f9ecec;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a;
+    --fg: #e8e5dc;
+    --muted: #9a9488;
+    --accent: #f87171;
+    --rule: #3a382f;
+    --code-bg: #291d1d;
+  }
+}
