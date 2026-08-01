@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 10 — TLS/SSL & Certificates</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 10 of 20</p>
+<h1>TLS/SSL & Certificates</h1>
+
+<p>TLS (the modern successor to the older, now-deprecated SSL — people still say "SSL" out of habit) does two jobs at once: it encrypts the connection so no one in between can read it, and it proves the server's identity so you know you're actually talking to who you think you are. A certificate is what makes the second part possible.</p>
+
+<p class="callout"><strong>Simple example:</strong> When you visit an HTTPS site, its certificate is signed by a Certificate Authority (CA) your browser already trusts. The browser checks that signature — if it's valid and the domain matches, you get the padlock icon. If not, you get a warning page, because it can no longer vouch for who you're really connecting to.</p>
+
+<h2>The TLS handshake, high level</h2>
+<table>
+<tr><th>Step</th><th>What happens</th></tr>
+<tr><td>1. ClientHello</td><td>Client says what TLS versions/ciphers it supports</td></tr>
+<tr><td>2. ServerHello + certificate</td><td>Server picks a cipher, sends its certificate to prove identity</td></tr>
+<tr><td>3. Verification</td><td>Client checks the certificate's signature against trusted CAs, and that the domain matches</td></tr>
+<tr><td>4. Key exchange</td><td>Both sides agree on a shared encryption key for the rest of the session</td></tr>
+</table>
+<p>This whole exchange happens on top of the TCP handshake from Lesson 6, adding its own round trips before any actual HTTP request goes out — which is why the first connection to a new HTTPS host is slightly slower than a plain HTTP one.</p>
+
+<h2>What's actually in a certificate</h2>
+<ul>
+<li><strong>Subject</strong> — the domain(s) it's valid for</li>
+<li><strong>Issuer</strong> — the CA that signed it</li>
+<li><strong>Validity period</strong> — a start and expiry date</li>
+<li><strong>Public key</strong> — used in the key exchange</li>
+</ul>
+<p class="callout mistake">An expired certificate is one of the most common, entirely preventable outages — the certificate was valid for months, then one day it simply wasn't. Monitoring certificate expiry dates (most CAs and cloud load balancers support auto-renewal) is a basic operational habit, not an edge case to handle reactively.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A browser shows a certificate warning for a site that was working fine yesterday. What are the two most likely causes to check first?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The certificate expired (check the validity dates), or the certificate doesn't match the domain being visited (e.g., a recent DNS change points to a server with a certificate for a different name). Both are common, both are checkable in seconds with the right command.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>echo | openssl s_client -connect example.com:443 2>/dev/null | openssl x509 -noout -dates -subject -issuer
+# Shows the certificate's validity dates, subject, and issuing CA directly</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc8446" target="_blank" rel="noopener">RFC 8446 — The Transport Layer Security (TLS) Protocol Version 1.3</a> — the official IETF specification.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>TLS both encrypts a connection and verifies the server's identity via a certificate signed by a trusted CA.</li>
+    <li>The TLS handshake adds round trips on top of the TCP handshake — expected, small first-connection overhead.</li>
+    <li>Expired or mismatched certificates are a common, entirely preventable outage — monitor expiry, don't wait for a user report.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder"><code>openssl s_client</code> against any host is the fastest way to see exactly what certificate a server is actually presenting — faster than trusting what a dashboard claims is configured.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0009-http-https-fundamentals.html">&larr; Back: HTTP/HTTPS fundamentals</a></span>
+  <span><a href="0011-load-balancing.html">Next: Load balancing fundamentals &rarr;</a></span>
+</div>
+
+</body>
+</html>
