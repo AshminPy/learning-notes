@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 26 — Final Review</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 26 of 26 (Final Review)</p>
+<h1>Final Review — Cheat Sheet</h1>
+
+<p>This is a reference page, not a new lesson — no new material, no quiz. It pulls together the commands and traps from Lessons 1–25 into one place to skim before the exam.</p>
+
+<h2>Command cheat sheet</h2>
+
+<h3>Filesystem, permissions & storage</h3>
+<ul>
+<li><code>find</code> / <code>ls -la</code> / <code>pwd</code> — navigate and locate files (Lesson 2)</li>
+<li><code>chmod 755 file</code> / <code>chmod u+x file</code> — numeric vs. symbolic permissions (Lesson 3)</li>
+<li><code>chown user:group file</code> — change ownership (Lesson 3)</li>
+<li><code>lsblk</code> / <code>df -h</code> / <code>cat /etc/fstab</code> — disks, usage, and permanent mounts (Lesson 9)</li>
+</ul>
+
+<h3>Users, processes & jobs</h3>
+<ul>
+<li><code>id</code> / <code>groups</code> / <code>sudo</code> vs <code>su</code> — identity and privilege escalation (Lesson 4)</li>
+<li><code>visudo</code> — the only safe way to edit <code>/etc/sudoers</code> (Lesson 4)</li>
+<li><code>ps aux</code> / <code>kill -15</code> (SIGTERM, ask nicely) / <code>kill -9</code> (SIGKILL, last resort) (Lesson 5)</li>
+<li><code>nohup cmd &amp;</code> / <code>disown</code> / <code>tmux</code> — survive logout (Lesson 6)</li>
+</ul>
+
+<h3>Services & systemd</h3>
+<ul>
+<li><code>systemctl start/enable --now &lt;service&gt;</code> — start now vs. survive reboot are separate settings (Lesson 7)</li>
+<li><code>journalctl -u &lt;service&gt; --since "1 hour ago" -p err</code> — the standard narrowed log query (Lesson 19)</li>
+<li><code>systemctl --failed</code> / <code>journalctl -b</code> / <code>journalctl -b -1</code> — after a failed boot (Lesson 25)</li>
+</ul>
+
+<h3>Package management</h3>
+<ul>
+<li><code>apt install</code> / <code>dpkg -L</code> (Debian family) vs. <code>dnf install</code> / <code>rpm -ql</code> (RHEL family) (Lesson 8)</li>
+</ul>
+
+<h3>Networking & SSH</h3>
+<ul>
+<li><code>ip addr</code> / <code>ip route</code> / <code>ss -tulnp</code> / <code>dig</code> — diagnose outward, in order (Lesson 10)</li>
+<li><code>ssh-keygen</code> → <code>ssh-copy-id</code> → key-only login; never copy the private key (Lesson 11)</li>
+<li><code>PasswordAuthentication no</code> / <code>PermitRootLogin no</code> in <code>sshd_config</code> — production hardening (Lesson 11)</li>
+</ul>
+
+<h3>Bash & text processing</h3>
+<ul>
+<li><code>set -euo pipefail</code> — near-mandatory for any real script (Lesson 13)</li>
+<li>Always quote variables: <code>"$var"</code>, never bare <code>$var</code> (Lesson 13)</li>
+<li><code>grep | sort | uniq -c | sort -rn</code> — the standard "count and rank" pipeline (Lesson 14)</li>
+</ul>
+
+<h3>Kernel, memory & CPU</h3>
+<ul>
+<li><code>/proc</code> and <code>/sys</code> — live kernel state, the same source <code>top</code>/<code>ps</code>/<code>free</code> read from (Lesson 15)</li>
+<li><code>free -h</code> — watch "available," not "free"; low free + high cache is normal (Lesson 16)</li>
+<li><code>nproc</code> before judging any load average number — it's meaningless without core count (Lesson 17)</li>
+</ul>
+
+<h3>Performance, security & containers</h3>
+<ul>
+<li><code>vmstat 1 5</code> — first command for any "it's slow," before <code>top</code> (Lesson 18)</li>
+<li><code>getenforce</code> / <code>aa-status</code> — check before assuming a permissions bug (Lesson 20)</li>
+<li>Namespaces isolate what a process sees; cgroups limit what it can use — the two mechanisms behind every container (Lesson 21)</li>
+</ul>
+
+<h3>Debugging</h3>
+<ul>
+<li><code>strace -p &lt;pid&gt;</code> — every system call a running process makes (Lesson 23)</li>
+<li><code>lsof -i :&lt;port&gt;</code> — what's already using a port (Lesson 23)</li>
+</ul>
+
+<h2>Top 7 exam traps</h2>
+<ol>
+<li>A manual <code>mount</code> disappears on reboot — only <code>/etc/fstab</code> makes it permanent. See <a href="0009-storage-disks.html">Lesson 9</a>.</li>
+<li><code>systemctl start</code> and <code>systemctl enable</code> are independent — running now doesn't mean it survives a reboot, and vice versa. See <a href="0007-systemd-services.html">Lesson 7</a>.</li>
+<li>Cron jobs run with a minimal environment — no normal <code>$PATH</code>, so scripts that work by hand fail silently under cron unless they use full command paths. See <a href="0022-cron-systemd-timers.html">Lesson 22</a>.</li>
+<li>"Permission denied" with correct Unix permissions almost always means SELinux or AppArmor is the real blocker, a separate layer on top of normal permissions. See <a href="0020-security-fundamentals.html">Lesson 20</a>.</li>
+<li>A low "free" memory number with a high "buff/cache" number is healthy, not a leak — watch "available" instead. See <a href="0016-memory-management.html">Lesson 16</a>.</li>
+<li>Bash doesn't stop on a failed command by default — <code>set -euo pipefail</code> is what makes a script fail fast instead of continuing with bad state. See <a href="0013-bash-advanced.html">Lesson 13</a>.</li>
+<li>Restarting a failed service before reading its logs destroys the evidence needed to find the real cause. See <a href="0024-production-incidents.html">Lesson 24</a>.</li>
+</ol>
+
+<h2>Domain weights (LFCS exam, verified 2026-08-01)</h2>
+<ul>
+<li>Operations Deployment — 25%</li>
+<li>Networking — 25%</li>
+<li>Storage — 20%</li>
+<li>Essential Commands — 20%</li>
+<li>Users and Groups — 10%</li>
+</ul>
+
+<h2>Source</h2>
+<p><a href="https://training.linuxfoundation.org/certification/linux-foundation-certified-sysadmin-lfcs/" target="_blank" rel="noopener">Linux Foundation — LFCS exam overview</a> (domain weights) — the authoritative source for current exam scope.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>LFCS is hands-on and performance-based — muscle memory on the real commands matters more than memorized theory.</li>
+    <li>Most traps above are "it looks fine but isn't" — a setting that's independent of the one you just checked.</li>
+    <li>This course is concept-aligned with LFCS, not a substitute for hands-on practice on a real Linux system.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">End of course. Re-read any linked lesson above if a trap doesn't click yet.</footer>
+
+<div class="lesson-nav">
+  <a href="0025-boot-process.html">&larr; Boot process & troubleshooting</a>
+  <span>End of course</span>
+</div>
+
+</body>
+</html>

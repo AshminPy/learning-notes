@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 25 — Boot Process & Troubleshooting</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 25 of 26</p>
+<h1>Boot Process & Troubleshooting</h1>
+
+<p>A machine that won't boot, or boots into the wrong state, is one of the few incidents where SSH itself isn't available yet — you need to understand the boot sequence to know which stage failed and what console access you actually need.</p>
+
+<p class="callout"><strong>Simple example:</strong> A typo in <code>/etc/fstab</code> that references a filesystem that no longer exists can drop a server into an emergency/rescue shell on boot — it never gets far enough to start SSH, so the fix requires console access, not a remote login.</p>
+
+<h2>The boot sequence, high level</h2>
+<table>
+<tr><th>Stage</th><th>What happens</th></tr>
+<tr><td>Firmware (BIOS/UEFI)</td><td>Hardware self-test, then hands off to the bootloader</td></tr>
+<tr><td>Bootloader (GRUB, typically)</td><td>Loads the selected kernel and initial RAM disk into memory</td></tr>
+<tr><td>Kernel init</td><td>Kernel initializes hardware drivers, mounts the root filesystem</td></tr>
+<tr><td>systemd (PID 1)</td><td>Starts every service in dependency order, per Lesson 7 — reaches a "target" (runlevel equivalent) like <code>multi-user.target</code></td></tr>
+</table>
+<p>A failure early (firmware, bootloader) usually means no console output reaches you over SSH at all — you need physical or virtual console access (cloud provider's "serial console" feature, for a VM). A failure late (a specific systemd service failing) usually still lets you SSH in, since core networking already started.</p>
+
+<h2>Diagnosing after a failed boot</h2>
+<pre><code>systemctl --failed              # every service that failed to start this boot
+journalctl -b                   # full log of the current boot
+journalctl -b -1                # full log of the PREVIOUS boot (if it crashed)
+systemd-analyze blame           # which services took the longest to start</code></pre>
+<p class="callout mistake">If a system won't boot because of a bad <code>/etc/fstab</code> entry, adding <code>nofail</code> to that mount's options prevents it from blocking the entire boot in the future — a single bad mount shouldn't be able to take down an otherwise-healthy system.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A server rebooted after a config change and now SSH doesn't respond at all — not even a connection refused, just a timeout. Is this more likely an early-stage or late-stage boot failure?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Early-stage — if SSH doesn't even refuse the connection, networking likely never came up, meaning the failure happened before or during early systemd startup. You'd need console access, not another SSH attempt, to see what's actually happening.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>systemctl --failed              # any services that failed on this boot
+systemd-analyze                 # total boot time breakdown
+systemd-analyze blame | head    # slowest-starting services</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.freedesktop.org/software/systemd/man/latest/bootup.html" target="_blank" rel="noopener">systemd bootup(7) man page</a> — the official reference for the systemd boot sequence.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Boot order: firmware → bootloader (GRUB) → kernel init → systemd starts services to reach a target.</li>
+    <li>An early-stage failure usually means no SSH at all — you need console access; a late-stage (single service) failure usually still allows SSH in.</li>
+    <li><code>systemctl --failed</code> and <code>journalctl -b</code> are the first two commands after any boot problem.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">A cloud provider's "serial console" or "out-of-band console" feature is the equivalent of physical console access for a VM — know how to reach it before you need it during an actual outage.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0024-production-incidents.html">&larr; Back: Common production incidents</a></span>
+  <span><a href="0026-final-review.html">Next: Final review &rarr;</a></span>
+</div>
+
+</body>
+</html>
