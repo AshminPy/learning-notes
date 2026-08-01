@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 15 — Kernel Basics</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 15 of 26</p>
+<h1>Kernel Basics</h1>
+
+<p>Back in Lesson 1 you learned the kernel is the layer that talks directly to hardware. Now the practical side: the kernel exposes its internal state as files you can read directly, no special tool required — <code>/proc</code> and <code>/sys</code> are the two windows into that state.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>cat /proc/cpuinfo</code> shows exactly what CPU the kernel sees — model, core count, flags — read straight out of a live kernel data structure, not a static config file.</p>
+
+<h2>/proc — process and kernel state, live</h2>
+<table>
+<tr><th>Path</th><th>What it shows</th></tr>
+<tr><td><code>/proc/cpuinfo</code></td><td>CPU details</td></tr>
+<tr><td><code>/proc/meminfo</code></td><td>Memory details</td></tr>
+<tr><td><code>/proc/&lt;pid&gt;/status</code></td><td>Live state of one specific process</td></tr>
+<tr><td><code>/proc/loadavg</code></td><td>System load average</td></tr>
+<tr><td><code>/proc/version</code></td><td>Exact running kernel version</td></tr>
+</table>
+<p>Every number in <code>/proc</code> reflects the kernel's actual live state at the moment you read it — this is exactly what tools like <code>top</code>, <code>ps</code>, and <code>free</code> read from under the hood. There's no special API; they're reading these same files.</p>
+
+<h2>/sys — device and driver configuration</h2>
+<p><code>/sys</code> exposes the kernel's view of devices and drivers, and in many cases you can write to these files to change settings in real time. For example, some drivers expose tunables under <code>/sys/class/</code> that take effect immediately, without a reboot.</p>
+
+<h2>Loaded kernel modules</h2>
+<pre><code>lsmod                    # list currently loaded kernel modules
+modinfo &lt;module&gt;         # details about a specific module
+uname -r                 # exact kernel version running right now</code></pre>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. <code>top</code> shows you live CPU and memory numbers. Where does <code>top</code> actually get that data from?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">It reads the same files you can read yourself — <code>/proc/stat</code>, <code>/proc/meminfo</code>, and per-process data under <code>/proc/&lt;pid&gt;/</code>. There's no separate hidden API; <code>/proc</code> is the actual source.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>cat /proc/version           # exact kernel build info
+cat /proc/loadavg           # current system load
+lsmod | head                # kernel modules currently loaded</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man7.org/linux/man-pages/man5/proc.5.html" target="_blank" rel="noopener">proc(5) man page</a> — the official reference for the <code>/proc</code> filesystem.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>/proc</code> and <code>/sys</code> expose live kernel state as plain readable files — no special tool needed.</li>
+    <li>Familiar tools like <code>top</code>, <code>ps</code>, and <code>free</code> are just reading these same files for you.</li>
+    <li><code>lsmod</code> and <code>uname -r</code> tell you what modules are loaded and exactly which kernel is running.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When a monitoring tool reports a confusing number, checking the raw <code>/proc</code> file it's reading from is often the fastest way to tell if the tool is wrong or the system really is in that state.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0014-text-processing.html">&larr; Back: Text processing</a></span>
+  <span><a href="0016-memory-management.html">Next: Memory management &rarr;</a></span>
+</div>
+
+</body>
+</html>
