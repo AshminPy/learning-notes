@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 4 — Users, Groups & Sudo</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 4 of 26</p>
+<h1>Users, Groups & Sudo</h1>
+
+<p>Every user has a unique ID (UID) and belongs to a primary group plus zero or more supplementary groups. Regular users can't touch system files or other users' data — <code>sudo</code> is the controlled way to run one specific command as another user (almost always root), without logging in as that user.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>sudo systemctl restart nginx</code> runs just that one command as root, then you're back to your normal user. That's different from <code>su</code>, which switches your whole shell session to another user until you exit it.</p>
+
+<h2>Where this lives</h2>
+<table>
+<tr><th>File</th><th>What's in it</th></tr>
+<tr><td><code>/etc/passwd</code></td><td>Every user account: username, UID, home directory, default shell</td></tr>
+<tr><td><code>/etc/group</code></td><td>Every group and its members</td></tr>
+<tr><td><code>/etc/sudoers</code></td><td>Who's allowed to run <code>sudo</code>, and what they're allowed to run — edit only with <code>visudo</code>, which validates syntax before saving</td></tr>
+</table>
+<p class="callout mistake">Editing <code>/etc/sudoers</code> directly with a normal editor is a real way to lock yourself out of <code>sudo</code> entirely if you introduce a syntax error — <code>visudo</code> checks the file before it's saved, a plain editor doesn't.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. What's the difference between <code>sudo command</code> and <code>su</code>?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>sudo command</code> runs just that one command as root (usually), then returns you to your own user. <code>su</code> switches your entire shell session to another user until you explicitly exit.</div>
+</div>
+
+<h2>Now inspect your own system</h2>
+<pre><code>whoami                    # your current username
+id                         # your UID, primary group, and supplementary groups
+cat /etc/passwd | grep $(whoami)   # your own entry in the user database
+groups                     # every group you belong to</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man7.org/linux/man-pages/man5/sudoers.5.html" target="_blank" rel="noopener">sudoers(5) man page</a> — the official reference for sudo configuration.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Every user has a UID, a primary group, and optional supplementary groups.</li>
+    <li><code>sudo</code> runs one command as another user (usually root); <code>su</code> switches your whole session.</li>
+    <li><code>/etc/passwd</code> = users, <code>/etc/group</code> = groups, <code>/etc/sudoers</code> = who can sudo — always edit sudoers with <code>visudo</code>.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Locked yourself out of sudo before? It happens to everyone once — that's exactly why <code>visudo</code> exists.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0003-permissions-ownership.html">&larr; Back: Permissions & ownership</a></span>
+  <span><a href="0005-processes-fundamentals.html">Next: Processes fundamentals &rarr;</a></span>
+</div>
+
+</body>
+</html>

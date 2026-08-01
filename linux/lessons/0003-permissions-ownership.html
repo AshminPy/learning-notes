@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3 — Permissions & Ownership</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 3 of 26</p>
+<h1>Permissions & Ownership</h1>
+
+<p>Every file has an owner (a user) and a group, plus three permission sets — one for the owner, one for the group, one for everyone else. Each set has three bits: read, write, execute.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>ls -l</code> on a file shows <code>-rwxr-xr--</code>. Read it in three chunks of three: owner (<code>rwx</code> = read+write+execute), group (<code>r-x</code> = read+execute, no write), others (<code>r--</code> = read only).</p>
+
+<h2>The permission bits, and the two ways to set them</h2>
+<table>
+<tr><th>Bit</th><th>File meaning</th><th>Directory meaning</th></tr>
+<tr><td>r (read)</td><td>Can view contents</td><td>Can list files</td></tr>
+<tr><td>w (write)</td><td>Can modify contents</td><td>Can create/delete files inside</td></tr>
+<tr><td>x (execute)</td><td>Can run it as a program</td><td>Can <code>cd</code> into it</td></tr>
+</table>
+<p>You set permissions two ways:</p>
+<ul>
+<li><strong>Symbolic:</strong> <code>chmod u+x file</code> (add execute for the user/owner), <code>chmod g-w file</code> (remove write for the group)</li>
+<li><strong>Numeric (octal):</strong> each set is one digit, 0-7, adding r=4, w=2, x=1. <code>chmod 755 file</code> = owner 7 (rwx), group 5 (r-x), others 5 (r-x)</li>
+</ul>
+<p>Ownership is separate from permissions: <code>chown newuser file</code> changes the owner, <code>chgrp newgroup file</code> changes the group, <code>chown newuser:newgroup file</code> does both at once.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. What does <code>chmod 644</code> set?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Owner: read+write (6=4+2). Group: read only (4). Others: read only (4). The standard permission for a regular file that isn't meant to be executed.</div>
+</div>
+
+<h2>Now do it yourself</h2>
+<pre><code>touch myfile.txt
+ls -l myfile.txt          # see the default permissions
+chmod 640 myfile.txt      # owner rw-, group r--, others ---
+ls -l myfile.txt          # confirm the change
+chmod u+x myfile.txt      # add execute for the owner only
+ls -l myfile.txt</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man7.org/linux/man-pages/man1/chmod.1.html" target="_blank" rel="noopener">chmod(1) man page</a> — the official reference for every permission mode.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Every file has an owner, a group, and three permission sets (owner/group/others), each with read/write/execute.</li>
+    <li>Numeric mode: r=4, w=2, x=1, added per set — <code>755</code> = rwxr-xr-x.</li>
+    <li><code>chmod</code> changes permissions; <code>chown</code>/<code>chgrp</code> change ownership — two separate commands for two separate things.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Confused by a specific permission error? Paste the exact <code>ls -l</code> output and ask — permission bugs are almost always readable once you know how to parse that line.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0002-filesystem-navigation.html">&larr; Back: The filesystem tree</a></span>
+  <span><a href="0004-users-groups-sudo.html">Next: Users, groups & sudo &rarr;</a></span>
+</div>
+
+</body>
+</html>

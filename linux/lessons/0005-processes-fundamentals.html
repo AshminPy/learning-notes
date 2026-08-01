@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 5 — Processes Fundamentals</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Linux for Cloud & SRE — Lesson 5 of 26</p>
+<h1>Processes Fundamentals</h1>
+
+<p>Every running program is a process, identified by a process ID (PID). Processes have a lifecycle (running, sleeping, stopped, zombie) and the kernel talks to them using signals — small messages like "please stop" or "die right now."</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>kill -15 1234</code> sends <strong>SIGTERM</strong> to PID 1234 — a polite "please shut down," which the process can catch and clean up after. <code>kill -9 1234</code> sends <strong>SIGKILL</strong> — the kernel kills it immediately, no cleanup, no chance to object.</p>
+
+<h2>Inspecting and signaling processes</h2>
+<table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>ps aux</code></td><td>List every process, with user, CPU%, memory%, and command</td></tr>
+<tr><td><code>top</code> / <code>htop</code></td><td>Live, continuously updating process view</td></tr>
+<tr><td><code>kill -15 &lt;pid&gt;</code></td><td>SIGTERM — ask the process to stop gracefully</td></tr>
+<tr><td><code>kill -9 &lt;pid&gt;</code></td><td>SIGKILL — force-kill, cannot be caught or ignored</td></tr>
+<tr><td><code>pkill &lt;name&gt;</code></td><td>Kill by process name instead of PID</td></tr>
+</table>
+<p class="callout production">Always try SIGTERM (<code>kill -15</code>, or plain <code>kill</code>, which defaults to SIGTERM) before SIGKILL. A process that catches SIGTERM can flush data, close connections, and exit cleanly — SIGKILL gives it zero chance to do any of that.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Why would you reach for SIGKILL instead of SIGTERM?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">When SIGTERM was already sent and the process didn't respond (it's genuinely stuck or ignoring the signal) — SIGKILL is the last resort, not the default first move, because it skips all cleanup.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>sleep 300 &                # start a background process
+ps aux | grep sleep        # find its PID
+kill -15 %1                # or: kill -15 &lt;pid&gt;, ask it to stop
+jobs                       # confirm it's gone</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://man7.org/linux/man-pages/man7/signal.7.html" target="_blank" rel="noopener">signal(7) man page</a> — the official reference for every Linux signal.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Every running program is a process with a PID; the kernel manages its lifecycle.</li>
+    <li>Signals are how you communicate with a process — SIGTERM (15) asks nicely, SIGKILL (9) doesn't ask.</li>
+    <li>Always try SIGTERM first — it gives the process a chance to clean up before exiting.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">A process that ignores SIGTERM entirely and only dies to SIGKILL is worth investigating later, not just killing and forgetting — Lesson 23 covers that debugging.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0004-users-groups-sudo.html">&larr; Back: Users, groups & sudo</a></span>
+  <span><a href="0006-job-control.html">Next: Job control & process management &rarr;</a></span>
+</div>
+
+</body>
+</html>
