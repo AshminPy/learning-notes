@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 7 — DNS Fundamentals</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 7 of 20</p>
+<h1>DNS Fundamentals</h1>
+
+<p>DNS translates a domain name into the IP address a computer actually needs to connect. That translation isn't one lookup — it's a chain of servers, each responsible for one piece of the domain, queried in sequence from the most general to the most specific.</p>
+
+<p class="callout"><strong>Simple example:</strong> Resolving <code>www.example.com</code> means asking a root server "who handles .com?", then asking that .com server "who handles example.com?", then asking example.com's own nameserver "what's the address for www?" Each step narrows down one label of the domain.</p>
+
+<h2>Common record types</h2>
+<table>
+<tr><th>Record</th><th>Maps</th></tr>
+<tr><td>A</td><td>Domain name &rarr; IPv4 address</td></tr>
+<tr><td>AAAA</td><td>Domain name &rarr; IPv6 address</td></tr>
+<tr><td>CNAME</td><td>Domain name &rarr; another domain name (an alias)</td></tr>
+<tr><td>MX</td><td>Domain &rarr; mail server, with a priority</td></tr>
+<tr><td>TXT</td><td>Arbitrary text — commonly used for domain verification and email security (SPF/DKIM)</td></tr>
+<tr><td>NS</td><td>Which nameservers are authoritative for this domain</td></tr>
+</table>
+
+<h2>Recursive vs. authoritative</h2>
+<p>Your laptop doesn't walk the whole chain itself — it asks a recursive resolver (often your ISP's, or a public one like 8.8.8.8) to do that walk on its behalf and just return the final answer. The nameserver that actually owns the final answer for a specific domain is called authoritative for that domain — it's the source of truth, not a cache of someone else's answer.</p>
+
+<h2>Caching and TTL</h2>
+<p>Every DNS record has a TTL (time to live) — how long a resolver is allowed to cache that answer before it must ask again. This is exactly why a DNS change (pointing a domain at a new server) doesn't take effect everywhere instantly: resolvers holding a cached answer keep using it until that TTL expires, even though the authoritative record already changed.</p>
+<p class="callout mistake">Before a planned DNS cutover, lower the TTL well in advance (hours or a day ahead, not minutes) — a record with a 24-hour TTL set 5 minutes before the change means some users see the old answer for up to 24 more hours after the change goes live.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You updated a domain's A record an hour ago, but some users still reach the old server. The change was applied correctly on the authoritative nameserver. What's the most likely explanation?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Those users' resolvers are still serving a cached answer from before the change, and the record's TTL hasn't expired yet — this is expected DNS propagation behavior, not a broken change.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>dig example.com A               # the A record, plus its TTL
+dig example.com NS               # which nameservers are authoritative
+dig +trace example.com           # watch the full resolution chain, root to authoritative</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc1035" target="_blank" rel="noopener">RFC 1035 — Domain Names: Implementation and Specification</a> — the official IETF DNS specification.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>DNS resolution is a chain from root to authoritative nameserver — a recursive resolver walks that chain on your behalf.</li>
+    <li>A/AAAA map to IP addresses, CNAME aliases to another name, MX routes mail, TXT holds arbitrary verification text.</li>
+    <li>TTL controls caching — a low TTL set well before a planned change is what makes a DNS cutover fast and predictable.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder"><code>dig +trace</code> is worth running once deliberately, just to see the full root-to-authoritative chain happen in real time — it makes every later DNS lesson click faster.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0006-tcp-handshake.html">&larr; Back: The TCP handshake</a></span>
+  <span><a href="0008-dns-troubleshooting.html">Next: DNS troubleshooting &rarr;</a></span>
+</div>
+
+</body>
+</html>
