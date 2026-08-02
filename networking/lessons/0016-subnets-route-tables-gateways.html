@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 16 — Subnets, Route Tables & Gateways in the Cloud</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 16 of 20</p>
+<h1>Subnets, Route Tables & Gateways in the Cloud</h1>
+
+<p>A VPC's CIDR block (Lesson 15) is just the outer boundary — subnets carve it into smaller pieces, and what actually makes a subnet "public" or "private" isn't a special flag, it's simply which route table is attached to it and what that route table points to.</p>
+
+<p class="callout"><strong>Simple example:</strong> A "public" subnet is public because its route table has a route sending <code>0.0.0.0/0</code> traffic to an Internet Gateway. A "private" subnet either has no such route, or routes <code>0.0.0.0/0</code> to a NAT Gateway instead — same subnet mechanics, different route table.</p>
+
+<h2>Building the picture</h2>
+<table>
+<tr><th>Layer</th><th>Example</th></tr>
+<tr><td>VPC CIDR</td><td><code>10.0.0.0/16</code></td></tr>
+<tr><td>Public subnet</td><td><code>10.0.1.0/24</code> — route table sends <code>0.0.0.0/0</code> to Internet Gateway</td></tr>
+<tr><td>Private subnet</td><td><code>10.0.2.0/24</code> — route table sends <code>0.0.0.0/0</code> to NAT Gateway (or has no default route at all)</td></tr>
+</table>
+<p>This is the exact same CIDR subnetting math from Lesson 2, and the exact same longest-prefix-match routing logic from Lesson 4 — cloud networking doesn't introduce new concepts here, it just gives you a UI/API for configuring the same primitives.</p>
+
+<h2>A typical layout</h2>
+<p>A common pattern spreads resources across multiple availability zones for resilience, with a public and private subnet pair in each: load balancers and NAT Gateways live in the public subnets; application servers and databases live in the private subnets, reachable only from inside the VPC (or through the load balancer). This shape directly implements the "public entry point, private everything else" security posture from Lessons 12-13.</p>
+<p class="callout mistake">Route tables are associated per-subnet, not automatically inherited VPC-wide — adding a new subnet and forgetting to associate the right route table is a common setup mistake that leaves it either unexpectedly public or unable to reach the internet at all, silently, with no error until someone tries to use it.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A subnet has a route sending <code>0.0.0.0/0</code> to an Internet Gateway. Does that alone make every resource in the subnet reachable from the internet?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Not by itself — the resource also needs a public IP address, and security group rules (Lesson 13) must actually allow the inbound traffic. The route table controls the path; the public IP and security group control whether anything can actually use that path.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code># Conceptual exercise — sketch it on paper or a whiteboard:
+# 1. A /16 VPC CIDR
+# 2. Two /24 subnets in different availability zones, one public, one private
+# 3. Which route table entry makes each one public vs. private
+# This same sketch is the starting point of almost every real cloud VPC design.</code></pre>
+
+<h2>Source</h2>
+<p>Exact subnet/route table/gateway behavior is cloud-provider-specific — always check current official documentation for your provider before implementing (AWS VPC, GCP VPC, or Azure Virtual Network docs).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>"Public" and "private" subnets aren't a special property — they're defined entirely by which route table is attached and where its default route points.</li>
+    <li>This is the same CIDR and routing math from Lessons 2 and 4, just configured through a cloud provider's interface.</li>
+    <li>A route table alone doesn't make a resource reachable — it also needs a public IP and permissive security group rules.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When a new subnet "isn't working" as expected, checking its route table association first is usually faster than checking security groups — a missing or wrong association is a very common, very quiet failure.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0015-vpc-fundamentals.html">&larr; Back: VPC fundamentals</a></span>
+  <span><a href="0017-cdn-fundamentals.html">Next: CDN fundamentals &rarr;</a></span>
+</div>
+
+</body>
+</html>

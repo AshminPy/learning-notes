@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 19 — Network Troubleshooting Toolkit</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 19 of 20</p>
+<h1>Network Troubleshooting Toolkit</h1>
+
+<p>This lesson connects the whole course into one diagnostic order. Rather than guessing, the layered model from Lesson 1 gives you a natural sequence: confirm DNS resolves, confirm you can reach the host at all, confirm the specific port responds, confirm the application-level response is correct. Each step rules out one entire category of cause.</p>
+
+<p class="callout"><strong>Simple example:</strong> A failing API call could be broken DNS, an unreachable host, a closed port, a firewall block, or an application bug — five very different fixes. Working through the sequence below in order finds which one in under a minute, instead of guessing.</p>
+
+<h2>The narrowing sequence</h2>
+<table>
+<tr><th>Step</th><th>Command</th><th>Rules out</th></tr>
+<tr><td>1. DNS</td><td><code>dig hostname</code></td><td>Wrong or missing DNS record (Lesson 7-8)</td></tr>
+<tr><td>2. Basic reachability</td><td><code>ping hostname</code></td><td>Host completely unreachable at the network level</td></tr>
+<tr><td>3. Path/route</td><td><code>traceroute hostname</code> / <code>mtr hostname</code></td><td>Where along the path traffic actually stops</td></tr>
+<tr><td>4. Port reachability</td><td><code>curl -v hostname:port</code> / <code>nc -zv hostname port</code></td><td>Nothing listening, or a firewall silently dropping that specific port</td></tr>
+<tr><td>5. Application response</td><td><code>curl -v</code>, read status code and body</td><td>The network is fine — remaining issue is application-level</td></tr>
+</table>
+<p><code>traceroute</code>/<code>mtr</code> show every hop your packet passes through on the way to the destination, and where it stops responding — useful for narrowing "unreachable" down to a specific point in the path, rather than treating the whole route as one black box.</p>
+
+<h2>Cloud-specific tools worth knowing</h2>
+<p>Beyond the local commands above, cloud providers offer VPC flow logs — a record of every connection attempt through a network interface, including ones a security group blocked. This is often the fastest way to confirm "was this traffic even allowed to leave/enter" separately from "did the application respond correctly" — the two failure modes look identical from the client's side but have completely different fixes.</p>
+<p class="callout mistake">Testing connectivity from your own laptop and getting different results than a server-to-server test inside the cloud environment is common and expected — your laptop and the cloud resource are on entirely different networks, with different security group/firewall rules applying. Always test from the actual failing vantage point, not a convenient substitute.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. <code>ping</code> to a host succeeds, but a specific application port never responds — no error, just a hang. Where in the 5-step sequence does this land, and what's the likely cause?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Step 4 (port reachability) — basic network reachability is confirmed, but the port itself times out rather than being actively refused. That combination usually points to a firewall or security group silently dropping traffic to that specific port, rather than nothing listening (which would typically show "connection refused" instead).</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>dig example.com +short
+ping -c 3 example.com
+traceroute example.com          # or: mtr example.com, for a live continuous view
+curl -v https://example.com 2>&1 | tail -20</code></pre>
+
+<h2>Source</h2>
+<p>This lesson synthesizes the whole course — see Lessons 1, 4, 7-8, and 13 for each step's official primary source.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Diagnose network failures in order: DNS, basic reachability, path, port, application — each step rules out one entire category.</li>
+    <li><code>traceroute</code>/<code>mtr</code> narrow "unreachable" down to a specific hop instead of treating the path as a black box.</li>
+    <li>Always test from the actual failing vantage point — a laptop and a cloud resource sit on different networks with different rules.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">This exact sequence — DNS, reachability, path, port, application — is the single most reusable skill in this entire course. Internalize the order, not just the commands.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0018-api-gateways-reverse-proxies.html">&larr; Back: API gateways & reverse proxies</a></span>
+  <span><a href="0020-final-review.html">Next: Final review &rarr;</a></span>
+</div>
+
+</body>
+</html>
