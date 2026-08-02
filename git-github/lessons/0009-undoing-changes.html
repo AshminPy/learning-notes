@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 9 — Undoing Changes</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git & GitHub Engineering — Lesson 9 of 20</p>
+<h1>Undoing Changes</h1>
+
+<p>Git has four different "undo" commands, and picking the wrong one is a common source of real trouble — they operate on different areas from Lesson 1's three-stage model, and only one of them is safe to use on already-shared history.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>git restore file.txt</code> discards uncommitted changes to a file — gone, back to the last commit's version. <code>git revert &lt;commit&gt;</code> instead creates a brand-new commit that undoes an old one, leaving the original commit fully intact in history — the safe choice once something's already shared.</p>
+
+<h2>The four undo commands, by what they touch</h2>
+<table>
+<tr><th>Command</th><th>Undoes</th><th>Rewrites history?</th></tr>
+<tr><td><code>git restore &lt;file&gt;</code></td><td>Uncommitted changes in the working directory, back to the last commit</td><td>No — nothing was committed yet</td></tr>
+<tr><td><code>git restore --staged &lt;file&gt;</code></td><td>Unstages a file (moves it from staged back to just-modified) without discarding the edit itself</td><td>No</td></tr>
+<tr><td><code>git reset &lt;commit&gt;</code></td><td>Moves the current branch pointer to an earlier commit</td><td>Yes — later commits become unreachable from this branch</td></tr>
+<tr><td><code>git revert &lt;commit&gt;</code></td><td>Creates a new commit that undoes a specific past commit's changes</td><td>No — adds history, doesn't remove it</td></tr>
+</table>
+
+<h2>reset vs. revert — the choice that matters most</h2>
+<p><code>git reset</code> rewrites your branch to point somewhere earlier — exactly like a rebase (Lesson 5), it creates a divergence for anyone who already has the commits you're resetting past. <code>git revert</code> never removes a commit; it adds a new one that cancels a previous one out, which is why it's the only safe option for undoing something on a branch others have already pulled.</p>
+<p class="callout mistake">Running <code>git reset --hard</code> discards uncommitted working directory changes permanently, with no confirmation prompt and no easy undo — it's one of the few Git commands that can genuinely destroy real, uncommitted work in one step. Double-check <code>git status</code> and consider stashing (Lesson 10) before ever running it.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A bad commit was pushed to a shared branch two days ago, and three teammates have already pulled it. Should you <code>git reset</code> past it, or <code>git revert</code> it?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>git revert</code> — the commit is already shared, so rewriting history with <code>reset</code> would create the same divergence problem as rebasing shared work (Lesson 5). <code>revert</code> adds a new commit undoing the bad one, which is safe for everyone who already has the original.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>echo "oops" >> file.txt
+git restore file.txt              # discard the uncommitted change safely
+
+echo "real change" >> file.txt && git commit -am "a change"
+git revert HEAD --no-edit          # undo it with a new commit, history stays intact
+git log --oneline                  # see both the original and the revert commit</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/book/en/v2/Git-Tools-Reset-Demystified" target="_blank" rel="noopener">Pro Git — Reset Demystified</a> — the official Git documentation, git-scm.com.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>restore</code> discards uncommitted changes; <code>reset</code> moves the branch pointer (rewrites history); <code>revert</code> adds a new commit that undoes an old one (safe, preserves history).</li>
+    <li>Use <code>revert</code>, not <code>reset</code>, for anything already shared — the same rule as merge vs. rebase from Lesson 5.</li>
+    <li><code>git reset --hard</code> can permanently discard uncommitted work with no confirmation — treat it with real caution.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When unsure which undo command applies, ask first "has anyone else already seen this?" — that single question decides between the rewrite-history and add-history options.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0008-gitignore.html">&larr; Back: .gitignore & what not to track</a></span>
+  <span><a href="0010-stashing.html">Next: Stashing work in progress &rarr;</a></span>
+</div>
+
+</body>
+</html>

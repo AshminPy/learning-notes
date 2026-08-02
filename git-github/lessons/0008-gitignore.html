@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 8 — .gitignore & What Not to Track</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git & GitHub Engineering — Lesson 8 of 20</p>
+<h1>.gitignore & What Not to Track</h1>
+
+<p>Not everything in a project directory belongs in version control — build output, dependency folders, local environment files, and secrets should never be committed. A <code>.gitignore</code> file tells Git which paths to leave alone, so they never show up as "untracked" clutter in <code>git status</code> and can't be accidentally staged with a broad <code>git add .</code>.</p>
+
+<p class="callout"><strong>Simple example:</strong> A <code>.gitignore</code> containing <code>node_modules/</code> and <code>.env</code> means <code>git status</code> never lists them, and <code>git add .</code> silently skips them — even though they're sitting right there in your project folder.</p>
+
+<h2>Common patterns</h2>
+<table>
+<tr><th>Pattern</th><th>Matches</th></tr>
+<tr><td><code>*.log</code></td><td>Any file ending in <code>.log</code>, anywhere in the repo</td></tr>
+<tr><td><code>node_modules/</code></td><td>That directory and everything inside it</td></tr>
+<tr><td><code>.env</code></td><td>That exact file at the repo root</td></tr>
+<tr><td><code>build/</code></td><td>A build output directory</td></tr>
+<tr><td><code>!important.log</code></td><td>An exception — un-ignore one specific file that a broader pattern would otherwise match</td></tr>
+</table>
+
+<h2>.gitignore only works before a file is tracked</h2>
+<p>Adding a pattern to <code>.gitignore</code> has no effect on a file that's already been committed — it only prevents Git from noticing <em>new</em> untracked files matching that pattern. A file already in history needs to be explicitly removed with <code>git rm --cached &lt;file&gt;</code> (which untracks it going forward while leaving it on disk) before <code>.gitignore</code> can take over.</p>
+<p class="callout security">A secret (API key, password, credential file) committed to Git history is not safely removed just by deleting it in a later commit — the old commit still contains it, in full, in the repository's history forever, unless you deliberately rewrite history to remove it (a real, disruptive operation, not covered in this lesson) or rotate the leaked credential entirely. Treat any committed secret as compromised and rotate it — don't rely on a follow-up commit to "fix" it.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You add <code>.env</code> to <code>.gitignore</code>, but it was already committed three commits ago. Does <code>git status</code> stop showing it as changed?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — <code>.gitignore</code> only affects files Git doesn't already know about. Since <code>.env</code> is already tracked, it needs <code>git rm --cached .env</code> to actually stop tracking it; only then does the <code>.gitignore</code> entry take effect going forward.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>echo "*.log" > .gitignore
+echo "test log entry" > debug.log
+git status                    # debug.log doesn't appear — .gitignore is working
+git add .gitignore
+git commit -m "add gitignore"</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/docs/gitignore" target="_blank" rel="noopener">gitignore — official documentation</a> — git-scm.com.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>.gitignore</code> patterns keep build artifacts, dependencies, and local files out of <code>git status</code> and broad <code>add</code> commands.</li>
+    <li>It only affects untracked files — an already-committed file needs <code>git rm --cached</code> first.</li>
+    <li>A committed secret lives in history permanently until deliberately rewritten — rotate the credential, don't just delete it in a later commit.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Set up <code>.gitignore</code> before your first commit on a new project, not after — it's far easier to prevent tracking a file than to remove one already committed.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0007-remotes.html">&larr; Back: Remote repositories</a></span>
+  <span><a href="0009-undoing-changes.html">Next: Undoing changes &rarr;</a></span>
+</div>
+
+</body>
+</html>
