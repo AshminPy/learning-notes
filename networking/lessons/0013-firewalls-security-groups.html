@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 13 — Firewalls & Security Groups</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 13 of 20</p>
+<h1>Firewalls & Security Groups</h1>
+
+<p>A firewall's job is simple to state and easy to get wrong in practice: decide which traffic is allowed through, based on rules matching source, destination, port, and protocol. In the cloud, this usually takes the form of security groups (or equivalent) attached directly to resources, rather than one big perimeter box.</p>
+
+<p class="callout"><strong>Simple example:</strong> A security group rule "allow inbound TCP 443 from 0.0.0.0/0" means: accept HTTPS connections from anywhere. A rule "allow inbound TCP 22 from 10.0.0.0/16" means: accept SSH only from inside this specific private network — a much tighter, safer default for anything not meant to be public.</p>
+
+<h2>Stateful vs. stateless</h2>
+<p>Most cloud security groups are stateful — if you allow an inbound request, the matching outbound response is automatically allowed back out, without needing a separate rule for it. This differs from older stateless firewalls (like some cloud "network ACLs"), where inbound and outbound rules are independent and you must explicitly allow both directions, or a connection that looks "allowed" one way still fails.</p>
+<table>
+<tr><th></th><th>Stateful</th><th>Stateless</th></tr>
+<tr><td>Return traffic</td><td>Automatically allowed if the request was allowed</td><td>Needs its own explicit rule</td></tr>
+<tr><td>Typical example</td><td>Security groups</td><td>Network ACLs (often used as a second, coarser layer)</td></tr>
+</table>
+
+<h2>Default-deny is the safe default</h2>
+<p>A well-configured security posture starts from "deny everything" and adds specific allow rules — the opposite of starting open and trying to block bad actors one at a time. This is exactly the same mental model as the mandatory access control layer from the Linux course (SELinux/AppArmor): explicit allow, implicit deny.</p>
+<p class="callout mistake">"Allow all traffic from 0.0.0.0/0" on a port that should be internal-only (like a database's port) is one of the most common real-world security incidents — it happens most often when someone widens a rule temporarily to debug a connectivity issue and forgets to narrow it back. Always scope to the tightest range that still works, and treat a temporary widening as something that must be reverted, not left in place.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A security group allows inbound TCP 443 from anywhere. A user reports the connection works but response data seems to be silently dropped. In a stateful security group, does the outbound response need its own rule?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — in a stateful security group, the response to an already-allowed inbound request is automatically permitted back out. If traffic is being dropped, the problem is elsewhere (a stateless network ACL missing the return rule, or a different layer entirely) — not the security group's inbound rule.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code># On a Linux host (local firewall, from the Linux course's security lesson):
+firewall-cmd --list-all      # RHEL family
+ufw status verbose            # Debian/Ubuntu family
+# Both show current allow rules — the same "default-deny, explicit allow" model
+# applies whether it's a cloud security group or a host firewall.</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc9099" target="_blank" rel="noopener">RFC 9099 — Operational Security Considerations for IPv6 Networks</a> (Section 4, filtering) — cloud provider security group behavior is vendor-specific, always check current provider documentation for exact defaults and limits.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Cloud security groups are typically stateful — an allowed inbound request automatically permits its return traffic, no separate rule needed.</li>
+    <li>Default-deny with explicit allow rules is the safe baseline — the same model as mandatory access control.</li>
+    <li>A "temporarily" widened rule (0.0.0.0/0 on an internal port) left in place is one of the most common real-world security incidents.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Before closing out any debugging session that involved widening a firewall/security group rule, explicitly revert it — don't rely on remembering later.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0012-nat.html">&larr; Back: NAT & outbound internet access</a></span>
+  <span><a href="0014-vpns.html">Next: VPNs & private connectivity &rarr;</a></span>
+</div>
+
+</body>
+</html>
