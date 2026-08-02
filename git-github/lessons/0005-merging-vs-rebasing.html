@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 5 — Merging vs. Rebasing</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git & GitHub Engineering — Lesson 5 of 20</p>
+<h1>Merging vs. Rebasing</h1>
+
+<p>Both merge and rebase bring changes from one branch into another — the difference is what they do to history. A merge preserves exactly what happened, including a new "merge commit" tying the two histories together. A rebase rewrites history, replaying your branch's commits on top of the other branch as if they'd been made there from the start.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>git merge feature</code> from <code>main</code> creates a new commit with two parents — the tip of <code>main</code> and the tip of <code>feature</code> — and both branches' full history remains visible exactly as it happened. <code>git rebase main</code> from <code>feature</code> instead moves your feature commits to start from the current tip of <code>main</code>, producing a straight, linear history with no merge commit.</p>
+
+<h2>Side by side</h2>
+<table>
+<tr><th></th><th>Merge</th><th>Rebase</th></tr>
+<tr><td>History shape</td><td>Preserves branching exactly as it happened, plus a merge commit</td><td>Linear — looks like the work happened sequentially</td></tr>
+<tr><td>Rewrites existing commits?</td><td>No</td><td>Yes — creates new commits with new hashes</td></tr>
+<tr><td>Safe on shared/pushed branches?</td><td>Yes, always</td><td>Only if no one else has already pulled the commits being rewritten</td></tr>
+</table>
+
+<h2>The one rule that matters most</h2>
+<p class="callout mistake">Never rebase a branch that others have already pulled and are working from. Rebase creates brand-new commits (same content, different hashes) — anyone who already has the old commits now has a history that's diverged from yours in a way that's genuinely painful to reconcile. The safe default: rebase your own local, not-yet-pushed (or not-yet-shared) work; merge for anything already shared.</p>
+
+<h2>Why teams still choose rebase for feature branches</h2>
+<p>A clean, linear history (via rebase, or its GitHub equivalent "squash and merge") is easier to read later — <code>git log</code> tells a straight story instead of a tangle of merge commits from every small update. This is a real trade-off, not a strict rule: merge preserves more truth about what actually happened; rebase produces a more readable result. Different teams land differently here, and both are legitimate — know which your team uses.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You've pushed your feature branch, and a teammate has already pulled it and started their own commits on top. Is it safe to rebase your branch now?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — your teammate's local history now depends on the commits you'd be rewriting. Rebasing at this point creates a divergence between your rewritten history and their existing history, causing real conflicts when they try to sync. Merge instead, once a branch has been shared and built upon.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>git switch -c feature-a
+echo "a" >> file.txt && git commit -am "add a"
+git switch main
+echo "b" >> other.txt && git commit -am "add b"
+git switch feature-a
+git rebase main                 # feature-a's commit now replays on top of main's latest
+git log --oneline --all --graph  # compare this to what merge would have looked like</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/book/en/v2/Git-Branching-Rebasing" target="_blank" rel="noopener">Pro Git — Rebasing</a> — the official Git documentation, git-scm.com.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Merge preserves history exactly as it happened, adding a merge commit; rebase rewrites your commits to replay linearly on top of another branch.</li>
+    <li>Rebase creates new commit hashes — never rebase a branch others have already pulled and built on.</li>
+    <li>Both are legitimate choices with a real trade-off (truthful history vs. readable history) — know which your team uses.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When in doubt about whether a branch has been shared, treat it as shared and merge — the cost of an unnecessary merge commit is far lower than the cost of rewriting someone else's history.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0004-branching-fundamentals.html">&larr; Back: Branching fundamentals</a></span>
+  <span><a href="0006-resolving-merge-conflicts.html">Next: Resolving merge conflicts &rarr;</a></span>
+</div>
+
+</body>
+</html>
