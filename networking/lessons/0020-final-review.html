@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 20 — Final Review</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 20 of 20 (Final Review)</p>
+<h1>Final Review — Cheat Sheet</h1>
+
+<p>This is a reference page, not a new lesson — no new material, no quiz. It pulls together the commands and traps from Lessons 1–19 into one place to skim whenever you need a refresher.</p>
+
+<h2>Command cheat sheet</h2>
+
+<h3>Foundations</h3>
+<ul>
+<li><code>curl -v</code> — watch DNS, TCP connect, TLS, and HTTP happen as separate stages in order (Lesson 1)</li>
+<li>Usable hosts = 2^(32 − prefix) − 2 — the core CIDR subnetting formula (Lesson 2)</li>
+<li>10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 — the reserved private IPv4 ranges (Lesson 2)</li>
+<li><code>ip route show</code> / <code>ip route get &lt;ip&gt;</code> — read and test your own routing table; longest prefix match always wins (Lesson 4)</li>
+</ul>
+
+<h3>Transport</h3>
+<ul>
+<li>TCP = reliable, ordered, connection-oriented; UDP = fast, no guarantee, connectionless (Lesson 5)</li>
+<li>SYN → SYN-ACK → ACK — the three-way handshake before any real data flows (Lesson 6)</li>
+<li>"Connection refused" (actively rejected) vs. "connection timed out" (no reply at all) — different causes, different fixes (Lesson 6)</li>
+</ul>
+
+<h3>Naming & web</h3>
+<ul>
+<li><code>dig hostname</code> / <code>dig @8.8.8.8 hostname</code> / <code>dig @&lt;authoritative-ns&gt; hostname</code> — narrow a stale-answer DNS issue to cache vs. real record (Lesson 7-8)</li>
+<li>401 = who are you (authentication); 403 = I know who you are, denied anyway (authorization) (Lesson 9)</li>
+<li><code>openssl s_client -connect host:443</code> — see the actual certificate a server presents, expiry included (Lesson 10)</li>
+</ul>
+
+<h3>Traffic management</h3>
+<ul>
+<li>L4 load balancer sees IP/port only; L7 reads the full HTTP request — path/header routing needs L7 (Lesson 11)</li>
+<li>A health check must exercise the real critical dependency, not just "is the process alive" (Lesson 11)</li>
+<li>NAT allows outbound connections out naturally, blocks unsolicited inbound — no translation table entry to route them by (Lesson 12)</li>
+<li>Default-deny, explicit allow — the same model for cloud security groups and host firewalls (Lesson 13)</li>
+<li>A VPN tunnel showing "connected" doesn't guarantee traffic flows — check routing on both sides too (Lesson 14)</li>
+</ul>
+
+<h3>Cloud networking</h3>
+<ul>
+<li>A VPC is isolated by default — no inbound or outbound internet access without an explicit gateway (Lesson 15)</li>
+<li>"Public" vs. "private" subnet is entirely defined by the attached route table, not a special flag (Lesson 16)</li>
+<li>Cache hit = served from edge, fast; cache miss = fetched from origin once, then cached (Lesson 17)</li>
+<li>TLS termination at a proxy/load balancer means the hop onward to the backend is often plain HTTP (Lesson 18)</li>
+</ul>
+
+<h3>Troubleshooting</h3>
+<ul>
+<li>DNS → reachability → path → port → application — the standard 5-step narrowing sequence (Lesson 19)</li>
+<li>Always test from the actual failing vantage point — a laptop and a cloud resource are on different networks (Lesson 19)</li>
+</ul>
+
+<h2>Top 7 traps</h2>
+<ol>
+<li>Overlapping CIDR ranges between networks that might ever connect (VPN, peering) block that connection later — plan non-overlapping ranges up front. See <a href="0002-ip-addressing-subnetting.html">Lesson 2</a> and <a href="0015-vpc-fundamentals.html">Lesson 15</a>.</li>
+<li>A route existing in a table doesn't guarantee reachability — it's a direction, not a promise; the next hop or a firewall further along can still block it. See <a href="0004-routing-fundamentals.html">Lesson 4</a>.</li>
+<li>A stale DNS answer after a record change is expected caching behavior (TTL), not a broken change — flushing one machine's cache doesn't fix anyone else's. See <a href="0007-dns-fundamentals.html">Lesson 7</a>.</li>
+<li>401 vs. 403 get treated as the same failure but need opposite fixes — re-authenticating doesn't fix a genuine permissions denial. See <a href="0009-http-https-fundamentals.html">Lesson 9</a>.</li>
+<li>"Allow all from 0.0.0.0/0" left in place after temporary debugging is one of the most common real-world security incidents. See <a href="0013-firewalls-security-groups.html">Lesson 13</a>.</li>
+<li>A VPN tunnel reporting "connected" says nothing about whether routing on both sides is actually configured to use it. See <a href="0014-vpns.html">Lesson 14</a>.</li>
+<li>"The site uses HTTPS" only describes the client-facing hop — traffic after TLS termination at a proxy is frequently plain HTTP internally. See <a href="0018-api-gateways-reverse-proxies.html">Lesson 18</a>.</li>
+</ol>
+
+<h2>Source</h2>
+<p>This lesson synthesizes Lessons 1-19 — see each for its official IETF RFC or provider documentation reference.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Every cloud networking concept in this course maps back to a small set of primitives: layers, CIDR, routing, TCP/UDP, DNS caching, default-deny security.</li>
+    <li>Most traps above are "it looks connected/allowed but isn't really" — a setting independent of the one you already checked.</li>
+    <li>The 5-step troubleshooting sequence (Lesson 19) is the single most reusable skill from this course.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">End of course. Re-read any linked lesson above if a trap doesn't click yet.</footer>
+
+<div class="lesson-nav">
+  <a href="0019-network-troubleshooting-toolkit.html">&larr; Network troubleshooting toolkit</a>
+  <span>End of course</span>
+</div>
+
+</body>
+</html>

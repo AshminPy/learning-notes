@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 17 — CDN Fundamentals</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 17 of 20</p>
+<h1>CDN Fundamentals</h1>
+
+<p>A CDN (Content Delivery Network) caches your content at edge locations physically close to users worldwide, so a request doesn't have to travel all the way to your origin server every time. The result is lower latency for users far from your origin, and less load hitting your origin directly.</p>
+
+<p class="callout"><strong>Simple example:</strong> Without a CDN, a user in Tokyo requesting an image hosted in Virginia waits for that full round trip. With a CDN, that same image is cached at a Tokyo edge location after the first request — every subsequent request from nearby users is served locally, far faster.</p>
+
+<h2>Cache hit vs. cache miss</h2>
+<table>
+<tr><th>Result</th><th>What happened</th><th>Speed</th></tr>
+<tr><td>Cache hit</td><td>The edge location already had this content cached</td><td>Fast — served locally, origin never contacted</td></tr>
+<tr><td>Cache miss</td><td>The edge location didn't have it (or it expired) — fetches from origin, then caches it</td><td>Slower this one time, then cached for next time</td></tr>
+</table>
+<p>Response headers usually reveal which happened — a header like <code>X-Cache: HIT</code> or <code>CF-Cache-Status: HIT</code> (naming varies by CDN provider) tells you directly whether a request was served from cache or went back to origin.</p>
+
+<h2>Cache control — you decide what's cacheable</h2>
+<p>The <code>Cache-Control</code> HTTP header (set by your origin server) tells the CDN how long content can be cached and whether it can be cached at all. Static assets (images, CSS, JS with a version in the filename) are usually cached aggressively; personalized or frequently-changing content (a logged-in user's dashboard) is usually marked non-cacheable, or cached for a very short time.</p>
+<p class="callout mistake">Caching an API response that includes user-specific or sensitive data is a real, serious mistake — the CDN might serve one user's cached personalized response to a completely different user. <code>Cache-Control: private</code> or <code>no-store</code> exists specifically to prevent this, and it's worth double-checking on any endpoint returning per-user data.</p>
+
+<h2>Cache invalidation</h2>
+<p>When origin content changes before the cached copy's TTL expires, you need to explicitly invalidate (purge) the stale cached version at the edge — otherwise users keep seeing the old content until it naturally expires. Every CDN provider offers a purge/invalidation API or console action for exactly this.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You update an image on your origin server, but users still see the old version for a while afterward. Assuming the CDN is working correctly, what's happening?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The edge locations are still serving the previously cached version — it hasn't expired (per its <code>Cache-Control</code> TTL) yet, and no manual invalidation was triggered. This is expected CDN behavior, not a bug — the fix is either waiting out the TTL or explicitly invalidating the cached object.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>curl -sI https://example.com | grep -i "cache\|age\|x-cache"
+# Response headers often reveal caching behavior directly — Cache-Control, Age,
+# and any CDN-specific hit/miss header</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc9111" target="_blank" rel="noopener">RFC 9111 — HTTP Caching</a> — the official IETF specification for <code>Cache-Control</code> and related caching headers.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A CDN caches content at edge locations close to users — a cache hit is fast and skips the origin entirely; a cache miss fetches from origin once, then caches it.</li>
+    <li><code>Cache-Control</code> headers from the origin decide what's cacheable and for how long — user-specific data should generally be marked non-cacheable.</li>
+    <li>Content changed at origin before its cached TTL expires needs explicit invalidation, or users keep seeing the stale cached version.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">"Users are seeing old content after a deploy" is almost always a caching (CDN or browser) question first, an application bug second — check cache headers before diving into application code.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0016-subnets-route-tables-gateways.html">&larr; Back: Subnets, route tables & gateways</a></span>
+  <span><a href="0018-api-gateways-reverse-proxies.html">Next: API gateways & reverse proxies &rarr;</a></span>
+</div>
+
+</body>
+</html>

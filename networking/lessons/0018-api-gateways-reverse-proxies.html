@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 18 — API Gateways & Reverse Proxies</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 18 of 20</p>
+<h1>API Gateways & Reverse Proxies</h1>
+
+<p>A reverse proxy sits in front of one or more backend servers and forwards client requests to them, while the client only ever sees the proxy — the same basic shape as the L7 load balancer from Lesson 11, but the term "reverse proxy" is used more broadly for anything that also does extra work like caching, compression, or TLS termination. An API gateway is a reverse proxy purpose-built for APIs, adding API-specific concerns on top.</p>
+
+<p class="callout"><strong>Simple example:</strong> Nginx running in front of an application server is a classic reverse proxy — clients connect to Nginx, Nginx forwards to the app, and the client never talks to the app server directly. An API gateway does the same forwarding, but also handles things like rate limiting per API key and request validation before the request ever reaches your backend code.</p>
+
+<h2>What an API gateway typically adds beyond basic proxying</h2>
+<table>
+<tr><th>Feature</th><th>Why it matters</th></tr>
+<tr><td>Authentication/authorization</td><td>Validate API keys or tokens once, centrally — backends don't each reimplement it</td></tr>
+<tr><td>Rate limiting</td><td>Protect backends from being overwhelmed by one client, deliberately or accidentally</td></tr>
+<tr><td>Request/response transformation</td><td>Reshape a request before it reaches the backend, or a response before it reaches the client</td></tr>
+<tr><td>Routing to multiple services</td><td>One public entry point fronting many backend services (a common microservices pattern)</td></tr>
+</table>
+
+<h2>TLS termination — where encryption actually ends</h2>
+<p>"TLS termination" means the proxy decrypts the incoming HTTPS connection and forwards the request to the backend as plain HTTP over the internal network. This is a deliberate, common design — it centralizes certificate management in one place instead of every backend server needing its own certificate — but it means traffic between the proxy and backend is unencrypted unless a separate internal TLS layer is added.</p>
+<p class="callout mistake">Assuming "the site uses HTTPS" means every hop of the request is encrypted is a common misunderstanding — after TLS termination at a reverse proxy or load balancer, the internal hop to the backend is frequently plain HTTP. For sensitive internal traffic, that internal hop may need its own TLS layer, not just the client-facing one.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A user's browser connects over HTTPS to a load balancer, which then forwards to a backend server over plain HTTP inside the private network. Is any part of this request actually unencrypted?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Yes — the hop between the load balancer and the backend server is plain HTTP, unencrypted. The client-to-load-balancer hop is encrypted (that's the "HTTPS" the user sees), but TLS termination means encryption ends there unless a separate internal TLS layer is explicitly configured for the second hop.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>curl -sI https://example.com | grep -i "server\|via\|x-forwarded"
+# X-Forwarded-* headers, when present, are a strong signal a reverse proxy or
+# load balancer is in front of the actual backend</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc7239" target="_blank" rel="noopener">RFC 7239 — Forwarded HTTP Extension</a> — the official IETF specification for how proxies communicate original client information to backends.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A reverse proxy forwards client requests to backend servers, hiding those backends from direct client access — an API gateway is a reverse proxy specialized for APIs (auth, rate limiting, transformation).</li>
+    <li>TLS termination decrypts at the proxy — the hop onward to the backend is commonly plain HTTP unless separately encrypted.</li>
+    <li>"The site uses HTTPS" describes the client-facing hop, not necessarily every internal hop behind it.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When investigating whether internal traffic is actually encrypted, don't assume from the public-facing HTTPS — check what protocol the proxy actually uses on its backend connection.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0017-cdn-fundamentals.html">&larr; Back: CDN fundamentals</a></span>
+  <span><a href="0019-network-troubleshooting-toolkit.html">Next: Network troubleshooting toolkit &rarr;</a></span>
+</div>
+
+</body>
+</html>
