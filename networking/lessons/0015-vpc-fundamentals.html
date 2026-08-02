@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 15 — VPC Fundamentals</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 15 of 20</p>
+<h1>VPC Fundamentals</h1>
+
+<p>A VPC (Virtual Private Cloud) is your own logically isolated slice of a cloud provider's network — your own private address space, your own routing, your own security boundary, running on shared physical infrastructure you never directly see. Everything from Lessons 2-14 (CIDR, routing, NAT, firewalls) applies inside a VPC; a VPC is where those concepts actually get configured in cloud work.</p>
+
+<p class="callout"><strong>Simple example:</strong> Creating a VPC starts with exactly the CIDR block decision from Lesson 2 — pick a private range like <code>10.0.0.0/16</code>, and every subnet you create afterward carves out a smaller piece of that same range.</p>
+
+<h2>What a VPC actually contains</h2>
+<table>
+<tr><th>Component</th><th>Role</th></tr>
+<tr><td>CIDR block</td><td>The overall private address range for the whole VPC</td></tr>
+<tr><td>Subnets</td><td>Smaller CIDR slices within the VPC — public or private (Lesson 16)</td></tr>
+<tr><td>Route tables</td><td>Where traffic goes, per subnet (Lesson 16)</td></tr>
+<tr><td>Security groups / firewall rules</td><td>What traffic is allowed, per resource (Lesson 13)</td></tr>
+<tr><td>Internet/NAT Gateways</td><td>How (and whether) resources reach the public internet (Lesson 12)</td></tr>
+</table>
+<p>A VPC is isolated by default — nothing in it is reachable from outside unless you explicitly add a gateway, and nothing in it can reach the outside internet unless you explicitly add an Internet or NAT Gateway. This "isolated unless connected" default is the same default-deny mental model from Lesson 13, applied at the network-boundary level instead of the per-resource level.</p>
+
+<h2>Multiple VPCs and isolation</h2>
+<p>Two VPCs, even with identical or overlapping CIDR ranges, are completely isolated from each other by default — nothing in one can reach anything in the other unless you deliberately connect them (VPC peering, a VPN, or a transit gateway). This is useful for separating environments (production vs. staging) with a hard boundary, not just a naming convention.</p>
+<p class="callout mistake">Picking the exact same CIDR range for every VPC "because it's simple" blocks future peering between them (Lesson 14) — two VPCs with overlapping ranges can't be directly peered without renumbering. Plan distinct, non-overlapping ranges across VPCs from the start, the same lesson as Lesson 2's private-range planning, just one level up.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You create a brand-new VPC with no gateways attached yet. Can a resource inside it reach the public internet, or be reached from it?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Neither, by default — a VPC is fully isolated until you explicitly add an Internet Gateway (both directions, for public resources) or a NAT Gateway (outbound only). This is intentional, not a bug to fix.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code># Conceptual check — no cloud CLI required:
+# Sketch out a /16 VPC CIDR and how you'd split it into 2-4 subnets (Lesson 16
+# covers the actual subnetting math, same as Lesson 2's CIDR math applied here).</code></pre>
+
+<h2>Source</h2>
+<p>VPC implementation details are cloud-provider-specific — always check the current official documentation for your provider (AWS VPC, GCP VPC, or Azure Virtual Network docs) for exact limits and defaults, which change over time.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A VPC is your isolated private network slice in the cloud — everything from earlier lessons (CIDR, routing, NAT, firewalls) configures inside it.</li>
+    <li>A VPC is isolated by default: no inbound or outbound internet access without an explicitly added gateway.</li>
+    <li>Separate VPCs need distinct, non-overlapping CIDR ranges if they might ever need to be peered together later.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Every cloud networking concept in this course converges here — if a later lesson's terminology feels unfamiliar, it's almost certainly a VPC component described from a different angle.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0014-vpns.html">&larr; Back: VPNs & private connectivity</a></span>
+  <span><a href="0016-subnets-route-tables-gateways.html">Next: Subnets, route tables & gateways &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 14 — VPNs & Private Connectivity</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Networking for Cloud Engineers — Lesson 14 of 20</p>
+<h1>VPNs & Private Connectivity</h1>
+
+<p>A VPN creates an encrypted tunnel between two networks (or a device and a network) over the public internet, so traffic inside that tunnel behaves as if it's on a private, trusted network — even though it's physically traveling over the same internet as everything else.</p>
+
+<p class="callout"><strong>Simple example:</strong> A site-to-site VPN connects your office network to a cloud VPC — a server in the office can reach a private-subnet database in the cloud directly by its private IP, with no public exposure of that database anywhere, because the whole path between them is encrypted and routed through the tunnel.</p>
+
+<h2>Two common shapes</h2>
+<table>
+<tr><th>Type</th><th>Connects</th><th>Typical use</th></tr>
+<tr><td>Site-to-site</td><td>Two entire networks (office &harr; cloud VPC)</td><td>Persistent, always-on connectivity between fixed locations</td></tr>
+<tr><td>Client/remote-access</td><td>A single device &harr; a network</td><td>An individual engineer connecting to a private VPC from their laptop</td></tr>
+</table>
+
+<h2>Cloud private connectivity beyond VPN</h2>
+<p>Cloud providers also offer dedicated private connections (AWS Direct Connect, GCP Cloud Interconnect, Azure ExpressRoute — names vary by provider) that don't traverse the public internet at all, using a physical or provider-managed link instead. These trade the VPN's flexibility and low setup cost for more consistent latency and higher throughput — typically used when a VPN's variable internet-path performance isn't acceptable.</p>
+<p class="callout mistake">A VPN connects two networks — it doesn't automatically make routing or firewall rules on either side permissive. A common surprise: the tunnel comes up successfully (both ends report "connected"), but traffic still doesn't flow, because a route table on one side was never updated to send traffic for the other network through the tunnel. A working tunnel and working end-to-end connectivity are two separate things to verify.</p>
+
+<h2>VPC peering — a related but different concept</h2>
+<p>VPC peering connects two cloud VPCs directly to each other (often within the same provider), without an encrypted tunnel or gateway device — it's closer to routing two private networks together than to a VPN. Worth knowing as a distinct option: peering for VPC-to-VPC within the same cloud, VPN or dedicated connection for anything crossing into a different network entirely (like an on-premises office).</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. A site-to-site VPN shows "connected" on both ends, but a server on one side still can't reach a server on the other. What's the most common overlooked cause?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The route table on one (or both) sides was never updated to actually send traffic for the remote network's CIDR range through the VPN tunnel — the tunnel itself being up doesn't automatically create the routing needed to use it.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>ip route show | grep tun         # if a VPN tunnel interface exists locally, see its route
+ip addr show | grep tun           # confirm a tunnel interface is actually present and up</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc4301" target="_blank" rel="noopener">RFC 4301 — Security Architecture for the Internet Protocol (IPsec)</a> — the official IETF specification underlying most site-to-site VPN implementations.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A VPN is an encrypted tunnel making two networks (or a device and a network) behave as private/trusted, over the public internet.</li>
+    <li>Site-to-site connects two whole networks persistently; client/remote-access connects one device on demand.</li>
+    <li>A tunnel being "connected" doesn't guarantee traffic flows — routing on both sides must also send the right traffic through it.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When a VPN "isn't working," check the tunnel status and the route table separately — they fail independently, and conflating them wastes time.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0013-firewalls-security-groups.html">&larr; Back: Firewalls & security groups</a></span>
+  <span><a href="0015-vpc-fundamentals.html">Next: VPC fundamentals &rarr;</a></span>
+</div>
+
+</body>
+</html>
