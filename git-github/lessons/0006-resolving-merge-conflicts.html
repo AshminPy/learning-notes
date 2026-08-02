@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 6 — Resolving Merge Conflicts</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git & GitHub Engineering — Lesson 6 of 20</p>
+<h1>Resolving Merge Conflicts</h1>
+
+<p>A conflict happens when Git can't automatically decide how to combine two changes to the same lines — it needs a human to pick. This isn't a failure or an error state; it's Git correctly recognizing that it doesn't have enough information to guess safely, and asking you instead of guessing wrong.</p>
+
+<p class="callout"><strong>Simple example:</strong> Two branches both changed line 5 of the same file, differently. Git can't know which change is "correct" — it stops the merge, marks the file as conflicted, and inserts special markers showing both versions so you can decide.</p>
+
+<h2>Reading the conflict markers</h2>
+<pre><code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
+your current branch's version
+=======
+the other branch's version
+&gt;&gt;&gt;&gt;&gt;&gt;&gt; feature-branch</code></pre>
+<p>Everything between <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD</code> and <code>=======</code> is your current branch's version. Everything between <code>=======</code> and <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> is the incoming branch's version. Resolving means editing the file to what it <em>should</em> actually say — keeping one side, the other, a combination, or something new entirely — then removing all three marker lines completely.</p>
+
+<h2>The resolution workflow</h2>
+<table>
+<tr><th>Step</th><th>Command</th></tr>
+<tr><td>1. See which files conflict</td><td><code>git status</code></td></tr>
+<tr><td>2. Edit each conflicted file</td><td>Resolve manually, remove all marker lines</td></tr>
+<tr><td>3. Mark it resolved</td><td><code>git add &lt;file&gt;</code></td></tr>
+<tr><td>4. Complete the merge</td><td><code>git commit</code> (message is often pre-filled)</td></tr>
+</table>
+<p class="callout mistake">Committing a file with the conflict markers still left in it — because they were missed in the resolution — is a surprisingly common mistake, and it silently breaks the file (invalid syntax in code, garbled content elsewhere). Always re-read the resolved section fully before staging it, not just skim for the marker symbols.</p>
+
+<h2>Aborting if it's going wrong</h2>
+<p>If a merge conflict resolution is getting confusing or you realize you need more context first, <code>git merge --abort</code> cleanly cancels the whole merge and returns you to exactly where you were before it started — no harm done, no partial state left behind. This is a genuinely safe escape hatch, worth using rather than pushing through a resolution you're not confident about.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. Halfway through resolving a conflicted file, you realize you don't actually understand what the other branch's change was trying to do. What's the safe move?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>git merge --abort</code> — it cleanly cancels the merge and restores your branch to its exact pre-merge state, giving you time to investigate (read the other branch's commit, ask a teammate) before trying again with real understanding.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>git switch -c branch-a
+echo "version A" > shared.txt && git commit -am "A's version"
+git switch main
+echo "version B" > shared.txt && git commit -am "B's version"
+git merge branch-a          # this will conflict — practice resolving it
+cat shared.txt               # see the actual conflict markers
+# Edit shared.txt to resolve, then:
+git add shared.txt
+git commit</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/book/en/v2/Git-Branching-Basic-Branching-and-Merging" target="_blank" rel="noopener">Pro Git — Basic Branching and Merging</a> — the official Git documentation, git-scm.com.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A conflict means Git needs a human decision, not that anything went wrong — it's correctly avoiding a guess it can't make safely.</li>
+    <li>Resolve by editing to the correct final content and removing all three marker lines, then <code>git add</code> and <code>git commit</code>.</li>
+    <li><code>git merge --abort</code> is a safe, complete escape hatch if a resolution gets confusing mid-way.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Always re-read a resolved file fully, not just for marker symbols — a left-over marker line is invisible at a glance but breaks the file completely.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0005-merging-vs-rebasing.html">&larr; Back: Merging vs. rebasing</a></span>
+  <span><a href="0007-remotes.html">Next: Remote repositories &rarr;</a></span>
+</div>
+
+</body>
+</html>

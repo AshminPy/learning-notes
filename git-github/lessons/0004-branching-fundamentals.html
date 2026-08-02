@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 4 — Branching Fundamentals</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git & GitHub Engineering — Lesson 4 of 20</p>
+<h1>Branching Fundamentals</h1>
+
+<p>A branch is just a movable pointer to a commit — not a copy of your project. Creating a branch is instant and cheap precisely because of the snapshot model from Lesson 1: Git doesn't duplicate any files, it just adds a new named pointer alongside the ones you already have.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>git branch</code> shows every pointer you currently have (<code>main</code>, maybe <code>feature-login</code>). <code>git checkout -b feature-login</code> (or the newer <code>git switch -c feature-login</code>) creates a new pointer starting from your current commit, and moves you onto it — from here, new commits advance that branch's pointer, leaving <code>main</code> untouched.</p>
+
+<h2>The core branch commands</h2>
+<table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>git branch</code></td><td>List branches; current one marked with <code>*</code></td></tr>
+<tr><td><code>git branch &lt;name&gt;</code></td><td>Create a new branch (doesn't switch to it)</td></tr>
+<tr><td><code>git switch &lt;name&gt;</code></td><td>Switch to an existing branch</td></tr>
+<tr><td><code>git switch -c &lt;name&gt;</code></td><td>Create and switch in one step</td></tr>
+<tr><td><code>git branch -d &lt;name&gt;</code></td><td>Delete a branch (safe — refuses if it has unmerged commits)</td></tr>
+</table>
+<p><code>git switch</code> is the newer, clearer command for changing branches — <code>git checkout</code> still works and is common in older material and habits, but it also does file-restoration duty (Lesson 9), which is exactly the kind of overloaded command <code>switch</code> and <code>restore</code> were introduced to separate.</p>
+
+<h2>HEAD — what "current branch" actually means</h2>
+<p><code>HEAD</code> is Git's pointer to whatever you currently have checked out — normally, that's a pointer to your current branch, which itself points to a commit. When you commit, HEAD's branch pointer advances to the new commit. Understanding HEAD as "where you are right now" (rather than a fixed location) makes several later topics — detached HEAD state, rebase, reset — click faster.</p>
+<p class="callout mistake">Committing directly on <code>main</code> for exploratory or risky work is a common habit that's hard to cleanly undo later — a throwaway branch costs nothing to create and everything to skip. Default to branching for anything beyond a trivial one-line fix.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You create a new branch from <code>main</code> and make 3 commits on it. Does <code>main</code> change at all during this?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — <code>main</code>'s pointer stays exactly where it was. Only the new branch's pointer advances with each commit. This is exactly why branches are safe to experiment on: nothing you do there touches <code>main</code> until you explicitly merge it back.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>git switch -c my-first-branch
+echo "experiment" > scratch.txt
+git add scratch.txt
+git commit -m "try something"
+git log --oneline --all --graph    # see both branches' history visually
+git switch main                     # back to main — scratch.txt is gone from view here</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/book/en/v2/Git-Branching-Branches-in-a-Nutshell" target="_blank" rel="noopener">Pro Git — Branches in a Nutshell</a> — the official Git documentation, git-scm.com.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A branch is a lightweight, movable pointer to a commit — not a copy of the project, which is why creating one is instant.</li>
+    <li><code>HEAD</code> tracks where you currently are; committing advances the current branch's pointer, not any other branch.</li>
+    <li>Default to branching for anything beyond a trivial change — it costs nothing and keeps <code>main</code> safe.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder"><code>git log --oneline --all --graph</code> is worth running often early on — seeing the branch structure visually makes the pointer model concrete instead of abstract.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0003-basic-workflow.html">&larr; Back: The basic workflow</a></span>
+  <span><a href="0005-merging-vs-rebasing.html">Next: Merging vs. rebasing &rarr;</a></span>
+</div>
+
+</body>
+</html>
