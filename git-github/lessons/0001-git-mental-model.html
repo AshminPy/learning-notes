@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 — What Git Actually Is: The Mental Model</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git & GitHub Engineering — Lesson 1 of 20</p>
+<h1>What Git Actually Is: The Mental Model</h1>
+
+<p>The single most common wrong mental model of Git is "it stores a list of diffs between versions." That's actually how some older version control systems worked — Git does something different: every commit is a full snapshot of your entire project at that moment. Almost every confusing Git behavior makes sense once this clicks.</p>
+
+<p class="callout"><strong>Simple example:</strong> If you change one line in one file and commit, Git doesn't store "line 5 changed from X to Y." It stores a complete snapshot of the whole project as it exists right now — but efficiently, by reusing the unchanged files from the previous snapshot rather than copying everything.</p>
+
+<h2>The three areas every file moves through</h2>
+<table>
+<tr><th>Area</th><th>What it holds</th></tr>
+<tr><td>Working directory</td><td>The actual files on disk, as you're editing them right now</td></tr>
+<tr><td>Staging area (the "index")</td><td>Changes you've marked as ready to include in the next commit</td></tr>
+<tr><td>Repository (commit history)</td><td>Permanent, saved snapshots — each one a complete point-in-time record</td></tr>
+</table>
+<p>A change moves through these areas in order: you edit a file (working directory), <code>git add</code> it (staging area), then <code>git commit</code> it (repository, permanently recorded). This three-stage model is why <code>git add</code> exists at all — it lets you build up exactly the set of changes you want in the next commit, rather than being forced to commit every edit you've made.</p>
+
+<h2>Why "snapshots, not diffs" actually matters</h2>
+<p>Because each commit is a complete snapshot, checking out any past commit gives you the entire project exactly as it was — instantly, without replaying a chain of diffs to reconstruct it. This is also why branches are so cheap in Git: a branch is just a lightweight pointer to a specific commit, not a full copy of the project.</p>
+<p class="callout mistake">A common confusion: assuming <code>git add</code> means "save this change." It doesn't — it means "include this change in the next commit." The change isn't actually recorded in history until <code>git commit</code> runs. Losing uncommitted staged changes (e.g., from an accidental <code>git checkout</code> on the file) is a real, frequent early mistake.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You edit a file and run <code>git add</code>, but haven't committed yet. Is that change permanently recorded in Git's history?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — it's staged (marked ready for the next commit) but not yet committed. It only becomes a permanent part of history once <code>git commit</code> actually runs.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>mkdir git-lesson-1 && cd git-lesson-1
+git init
+echo "hello" > file.txt
+git status                # working directory: file.txt is untracked
+git add file.txt
+git status                # staging area: file.txt is staged, ready to commit
+git commit -m "first commit"
+git status                # repository: clean, the snapshot is saved</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/book/en/v2/Getting-Started-Git-Basics" target="_blank" rel="noopener">Pro Git — Git Basics</a> — the official Git documentation (freely available book, git-scm.com).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Git stores complete snapshots at each commit, not a chain of diffs — this is the core mental model everything else builds on.</li>
+    <li>Every change moves through three areas in order: working directory &rarr; staging area (<code>git add</code>) &rarr; repository (<code>git commit</code>).</li>
+    <li>A staged change isn't permanent history yet — only a committed one is.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">If a later lesson's behavior ever feels surprising, come back to "it's a snapshot, not a diff" first — it explains more Git behavior than any other single fact.</footer>
+
+<div class="lesson-nav">
+  <span></span>
+  <span><a href="0002-installing-configuring-git.html">Next: Installing & configuring Git &rarr;</a></span>
+</div>
+
+</body>
+</html>

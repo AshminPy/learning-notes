@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2 — Installing & Configuring Git</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git & GitHub Engineering — Lesson 2 of 20</p>
+<h1>Installing & Configuring Git</h1>
+
+<p>Before your first real commit, Git needs to know who you are — every commit permanently records an author name and email. Getting this right once, globally, means you never have to think about it again on a new repository.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>git config --global user.name "Ada Lovelace"</code> and <code>git config --global user.email "ada@example.com"</code> set your identity for every repository on this machine. Without this, Git will refuse to let you commit until it's set.</p>
+
+<h2>Config has three levels</h2>
+<table>
+<tr><th>Level</th><th>Flag</th><th>Applies to</th><th>Stored in</th></tr>
+<tr><td>System</td><td><code>--system</code></td><td>Every user on this machine</td><td>A system-wide config file</td></tr>
+<tr><td>Global</td><td><code>--global</code></td><td>Every repository for the current user</td><td><code>~/.gitconfig</code></td></tr>
+<tr><td>Local</td><td>(no flag, or <code>--local</code>)</td><td>Just the current repository</td><td><code>.git/config</code> inside that repo</td></tr>
+</table>
+<p>More specific always wins — a local setting overrides a global one, which overrides a system one. This is exactly why you can set your personal email globally, then override it with a work email locally inside a work repository, without those two settings conflicting.</p>
+
+<h2>Worth setting on day one</h2>
+<pre><code>git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+git config --global init.defaultBranch main
+git config --global core.editor "vim"       # or whatever editor you actually use
+git config --list                            # see everything currently set, and where it came from</code></pre>
+<p class="callout mistake">Committing with the wrong email (a common issue when switching between a personal and work machine, or personal and work GitHub accounts) means the commit won't be correctly attributed to your GitHub account in that repo's history — worth checking <code>git config user.email</code> whenever you clone a new repository tied to a different identity, not assuming the global default is always right.</p>
+
+<h2>Aliases — small time savers that compound</h2>
+<p>A Git alias lets you define a shortcut for a longer command: <code>git config --global alias.st status</code> means <code>git st</code> now runs <code>git status</code>. This seems trivial for one command, but compounds fast across the dozens of Git commands you'll run daily throughout this course.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You set your email globally to your personal address, but this specific repository needs your work email instead. What's the right way to handle that, without changing your global setting?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Run <code>git config user.email "work@example.com"</code> without <code>--global</code>, from inside that specific repository — a local setting overrides the global one only for that repo, leaving your global default untouched everywhere else.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+git config --list --show-origin | head -10   # see what's set and which file it came from</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/docs/git-config" target="_blank" rel="noopener">git-config — official documentation</a> — git-scm.com.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Git config has three levels — system, global, local — with local overriding global overriding system.</li>
+    <li><code>user.name</code> and <code>user.email</code> are the two essential settings; every commit records them permanently.</li>
+    <li>A repository tied to a different identity (work vs. personal) needs its own local override, not a change to your global default.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">Cloning a new repository under a different GitHub account? Check <code>git config user.email</code> in that repo before your first commit — it's a two-second check that avoids a wrongly-attributed commit later.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0001-git-mental-model.html">&larr; Back: What Git actually is</a></span>
+  <span><a href="0003-basic-workflow.html">Next: The basic workflow &rarr;</a></span>
+</div>
+
+</body>
+</html>

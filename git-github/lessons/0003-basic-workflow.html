@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3 — The Basic Workflow</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git & GitHub Engineering — Lesson 3 of 20</p>
+<h1>The Basic Workflow</h1>
+
+<p>Four commands cover the everyday loop of working with Git: <code>status</code> to see where things stand, <code>add</code> to stage changes, <code>commit</code> to save a snapshot, and <code>log</code> to see the history you've built. Everything else in this course adds capability on top of this loop — it never replaces it.</p>
+
+<p class="callout"><strong>Simple example:</strong> Edit a file, run <code>git status</code> to confirm what changed, <code>git add .</code> to stage everything, <code>git commit -m "add login form"</code> to save it, then <code>git log --oneline</code> to see it listed as the newest entry in history.</p>
+
+<h2>The four commands</h2>
+<table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>git status</code></td><td>Shows what's changed, staged, or untracked right now</td></tr>
+<tr><td><code>git add &lt;file&gt;</code> / <code>git add .</code></td><td>Stages one file, or everything changed, for the next commit</td></tr>
+<tr><td><code>git commit -m "message"</code></td><td>Saves a permanent snapshot of everything currently staged</td></tr>
+<tr><td><code>git log</code> / <code>git log --oneline</code></td><td>Shows the commit history, full detail or one line per commit</td></tr>
+</table>
+
+<h2>Writing a commit message that's actually useful later</h2>
+<p>A commit message should explain <em>why</em> a change was made, not just restate what the diff already shows. "Fix bug" tells a future reader (often you, months later) nothing; "fix race condition in session cleanup on concurrent logout" tells them exactly what to expect and why it mattered. <code>git log</code> is only as useful as the messages that built it.</p>
+<p class="callout mistake">Running <code>git commit -m "wip"</code> repeatedly and never going back to write a real message is a common habit that makes <code>git log</code> useless for anyone (including future you) trying to understand what actually happened and why. Lesson 11 covers cleaning this up after the fact with interactive rebase — but writing it right the first time is cheaper.</p>
+
+<h2>git diff — seeing exactly what changed</h2>
+<pre><code>git diff              # unstaged changes — what you've edited but not yet added
+git diff --staged      # staged changes — exactly what the next commit will contain</code></pre>
+<p>Checking <code>git diff --staged</code> right before committing is a simple habit that catches accidental inclusions (a debug print left in, a file you didn't mean to stage) before they become a permanent part of history.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You ran <code>git add .</code> and are about to commit. What's the fastest way to double-check exactly what will be included, before you commit it?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>git diff --staged</code> — it shows exactly what's staged and will go into the next commit, distinct from <code>git diff</code> alone, which shows unstaged changes instead.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>echo "line one" > notes.txt
+git add notes.txt
+git diff --staged             # see exactly what's about to be committed
+git commit -m "add initial notes file"
+git log --oneline              # see it in history</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/book/en/v2/Getting-Started-Git-Basics" target="_blank" rel="noopener">Pro Git — Git Basics</a> — the official Git documentation, git-scm.com.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>status</code>, <code>add</code>, <code>commit</code>, <code>log</code> — the four-command loop underlying everything else in Git.</li>
+    <li>A good commit message explains why a change was made, not just what changed — <code>git log</code> is only as useful as the messages behind it.</li>
+    <li><code>git diff --staged</code> right before committing catches accidental inclusions before they're permanent.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">This four-command loop is what you'll run dozens of times a day for the rest of your career — the rest of this course is about handling everything that doesn't fit this simple case.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0002-installing-configuring-git.html">&larr; Back: Installing & configuring Git</a></span>
+  <span><a href="0004-branching-fundamentals.html">Next: Branching fundamentals &rarr;</a></span>
+</div>
+
+</body>
+</html>
