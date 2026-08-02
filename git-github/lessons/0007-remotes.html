@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 7 — Remote Repositories: Push, Pull, Fetch</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git & GitHub Engineering — Lesson 7 of 20</p>
+<h1>Remote Repositories: Push, Pull, Fetch</h1>
+
+<p>Everything in Lessons 1-6 happens entirely on your own machine — a remote is simply another copy of the repository, usually hosted on GitHub, that you sync with explicitly. Git never syncs automatically; every exchange with a remote is a command you run on purpose.</p>
+
+<p class="callout"><strong>Simple example:</strong> <code>git clone &lt;url&gt;</code> downloads a full copy of a repository, including its entire history, and automatically sets up a remote called <code>origin</code> pointing back to where it came from. From then on, <code>git push origin main</code> sends your local commits there; <code>git pull origin main</code> brings their commits to you.</p>
+
+<h2>The core remote commands</h2>
+<table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>git clone &lt;url&gt;</code></td><td>Download a full copy of a remote repository</td></tr>
+<tr><td><code>git remote -v</code></td><td>List configured remotes and their URLs</td></tr>
+<tr><td><code>git fetch</code></td><td>Download remote changes, but don't merge them into your branch yet</td></tr>
+<tr><td><code>git pull</code></td><td>Fetch, then immediately merge (or rebase, if configured) into your current branch</td></tr>
+<tr><td><code>git push</code></td><td>Upload your local commits to the remote</td></tr>
+</table>
+
+<h2>Fetch vs. pull — a distinction worth keeping straight</h2>
+<p><code>git fetch</code> is the safer of the two: it updates your knowledge of what's on the remote (visible as <code>origin/main</code>) without touching your own working branch at all. <code>git pull</code> is fetch immediately followed by a merge — convenient, but it means your branch changes right away, potentially creating a merge commit or a conflict you weren't expecting. When you want to look before you act, <code>fetch</code> then decide is the more deliberate choice.</p>
+<p class="callout mistake"><code>git push</code> failing with a message about the remote having work you don't have locally is Git protecting you — it refuses to silently overwrite commits someone else pushed. The fix is <code>git pull</code> first (to bring in and reconcile those commits), then push again — never force-push past this without first understanding what you'd be discarding.</p>
+
+<h2>Tracking branches</h2>
+<p>A local branch can be "tracking" a remote branch — once set up (automatically on clone, or via <code>git push -u origin branch-name</code> the first time), plain <code>git push</code> and <code>git pull</code> know which remote branch to sync with, without needing to specify it every time.</p>
+
+<h2>Try it — before looking below</h2>
+<div class="quiz">
+<p>Q1. You want to see what changed on the remote before deciding whether to bring it into your branch. Should you run <code>git fetch</code> or <code>git pull</code>?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>git fetch</code> — it updates your local knowledge of the remote (<code>origin/main</code>) without touching your current branch, letting you inspect what changed (<code>git log main..origin/main</code>) before deciding to merge it in.</div>
+</div>
+
+<h2>Now try it yourself</h2>
+<pre><code>git remote -v                        # see configured remotes, if any
+git fetch origin                     # download remote state without merging
+git log main..origin/main --oneline  # see what's on the remote that you don't have yet</code></pre>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/book/en/v2/Git-Basics-Working-with-Remotes" target="_blank" rel="noopener">Pro Git — Working with Remotes</a> — the official Git documentation, git-scm.com.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Remotes are separate copies of the repository, usually on GitHub — Git only syncs with them when you explicitly run a command.</li>
+    <li><code>fetch</code> downloads and updates your knowledge of the remote without touching your branch; <code>pull</code> is fetch plus an immediate merge.</li>
+    <li>A rejected push means the remote has commits you don't — pull and reconcile first, don't force past it without understanding why.</li>
+  </ul>
+</div>
+
+<footer class="teacher-reminder">When unsure what a pull will actually do to your branch, fetch first and look — it costs nothing and removes the guesswork.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0006-resolving-merge-conflicts.html">&larr; Back: Resolving merge conflicts</a></span>
+  <span><a href="0008-gitignore.html">Next: .gitignore & what not to track &rarr;</a></span>
+</div>
+
+</body>
+</html>
