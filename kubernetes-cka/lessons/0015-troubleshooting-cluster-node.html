@@ -11,69 +11,216 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 15 of 24</p>
 <h1>Troubleshooting — cluster &amp; node level</h1>
 
-<p>This starts <strong>Troubleshooting</strong> — 30% of the exam, the biggest domain. From here on, less "new object," more "something's broken, find out why."</p>
+<h2>Why this matters</h2>
+<p>When a node goes bad at 3am, the gap between a 5-minute fix and a 45-minute outage almost never comes down to how much Kubernetes you know — it comes down to the order you checked things in. Engineers who can recite every <code>kubectl</code> flag from memory still burn 40 minutes SSHed into a node, grepping raw kubelet logs, before running the one command that would have named the problem in its very first line of output. This lesson is the method that <strong>Troubleshooting</strong> — 30% of the CKA exam, the single largest domain — is built around, and it's the same method real on-call runbooks are built around too: work from cluster-wide, down to node, down to component, down to logs. Never the other order. Never skip a layer because you're confident you already know the answer.</p>
 
-<p class="callout"><strong>Simple example:</strong> think of it like a funnel. Start wide (is the whole cluster okay?), then narrow — which node, then which part of that node, then read that part's own logs. Skip a step and you waste time guessing.</p>
+<p class="callout"><strong>Mental model:</strong> troubleshoot a cluster like a funnel, not a dartboard. Start wide — is the whole cluster healthy? — then narrow: which node, then which condition on that node, then that component's own logs. The funnel only works if every layer runs in order. Jumping straight to <code>journalctl -u kubelet</code> on a hunch, without first running <code>kubectl get events</code> and <code>kubectl describe node</code>, is how experienced engineers still end up fixing a symptom instead of the root cause — you patch what you found first, watch the real problem resurface an hour later, and pay for the mistake twice. Under pressure, the instinct is to skip steps to feel faster. Resist it: the funnel is faster precisely because it stops you from guessing.</p>
 
-<h2>Step by step</h2>
-<ol>
-<li><code>kubectl get nodes</code> — any node not <code>Ready</code>? That's your scope.</li>
-<li><code>kubectl describe node &lt;name&gt;</code> — read <strong>Conditions</strong>: <code>Ready</code>, <code>MemoryPressure</code>, <code>DiskPressure</code>, <code>PIDPressure</code>. Each is <code>True</code>/<code>False</code>/<code>Unknown</code>.</li>
-<li>SSH to the node, check kubelet: <code>systemctl status kubelet</code> and <code>journalctl -u kubelet -n 100 --no-pager</code>.</li>
-<li>If <code>kubectl</code> itself won't respond, the API server may be down. Drop to <code>crictl ps -a</code> — it talks to the container runtime directly, no API server needed.</li>
+<h2>Core concepts</h2>
+<p>Run <code>kubectl get nodes</code> first, always — it's cheap and it tells you your scope: one node, several, or none. If a node isn't <code>Ready</code>, <code>kubectl describe node &lt;name&gt;</code> is your next stop, and its <strong>Conditions</strong> block is doing more work than most people realize. There are five conditions, not one:</p>
+<table>
+<tr><th>Condition</th><th>What it means when true</th><th>What Kubernetes does automatically</th></tr>
+<tr><td><code>Ready</code> = <code>False</code></td><td>kubelet is running and posting status, but reports itself unhealthy</td><td>No new Pods scheduled here; existing Pods without a matching toleration are evicted after the default grace period</td></tr>
+<tr><td><code>Ready</code> = <code>Unknown</code></td><td>the node controller hasn't received a heartbeat within <code>node-monitor-grace-period</code> (default 50 seconds)</td><td>Kubernetes auto-adds a <code>node.kubernetes.io/unreachable</code> taint; Pods without a matching toleration are evicted after 5 minutes by default</td></tr>
+<tr><td><code>DiskPressure</code> = <code>True</code></td><td>disk capacity is low</td><td>A matching scheduling taint is added so new Pods stop landing here; the kubelet tries to reclaim space itself (e.g. deleting unused container images) before touching running Pods</td></tr>
+<tr><td><code>MemoryPressure</code> = <code>True</code></td><td>available node memory is low</td><td>Same pattern: scheduling taint first, then the kubelet proactively evicts Pods to reclaim memory if the pressure doesn't clear</td></tr>
+<tr><td><code>PIDPressure</code> = <code>True</code></td><td>too many processes are running on the node</td><td>Same pattern: scheduling taint first, then Pod eviction if pressure continues</td></tr>
+<tr><td><code>NetworkUnavailable</code> = <code>True</code></td><td>the node's network isn't correctly configured</td><td>Node isn't usable for Pod networking until this clears</td></tr>
+</table>
+<p>The <code>Ready</code> row splits into two rows on purpose — <code>False</code> and <code>Unknown</code> mean genuinely different things, and they demand different next steps. <code>False</code> means the kubelet is alive and talking, just unhappy: go read <em>its</em> logs. <code>Unknown</code> means nobody has heard from the kubelet at all: check whether the node is even reachable before you assume anything about what's running on it.</p>
+<p>The pressure conditions (<code>DiskPressure</code>, <code>MemoryPressure</code>, <code>PIDPressure</code>) come from the kubelet's own eviction manager watching a small set of signals — <code>memory.available</code>, <code>nodefs.available</code>, <code>nodefs.inodesFree</code>, <code>imagefs.available</code>, and <code>pid.available</code> among them — against configured thresholds. Cross a <em>hard</em> threshold and the kubelet terminates Pods immediately, with a 0-second grace period, no <code>PodDisruptionBudget</code>, no respecting <code>terminationGracePeriodSeconds</code>. Cross a <em>soft</em> threshold and it waits out a configurable grace period first. Either way, if the evicted Pod belongs to a Deployment, StatefulSet, or similar controller, the control plane immediately creates a replacement — this is the exact mechanic behind a mistake covered later in this lesson: restart or delete a Pod on a pressured node without checking node health first, and its replacement can land right back on the same overloaded node, or on a different node that's also running hot.</p>
+
+<h2>When kubectl itself can't help you</h2>
+<p><code>kubectl</code> talks to the API server — that's the whole tool, end to end. If the API server's own static Pod is down, <code>kubectl</code> has nothing to talk to, no matter how correct your command is. Per the official troubleshooting guide, an unreachable API server means you're "unable to stop, update, or start new pods, services, replication controller," but "existing pods and services should continue to work normally unless they depend on the Kubernetes API" — the data plane doesn't stop just because the control plane went quiet. For that situation, drop to <code>crictl ps -a</code> on the affected node: it talks to the container runtime directly, with no API server in the loop at all, and it's the documented tool for exactly this case.</p>
+<p>For logs: on a systemd-managed node, <code>journalctl -u kubelet</code> is your primary source for the kubelet itself (the docs note explicitly that on systemd-based systems you'll want <code>journalctl</code> over hunting for log files). Control-plane component logs depend on how the cluster was built — on a kubeadm cluster, the control plane runs as static Pods, so <code>crictl logs</code> or <code>kubectl logs -n kube-system &lt;pod&gt;</code> (when the API server itself is reachable) is your path; some distros still write to files like <code>/var/log/kube-apiserver.log</code>. When you don't yet know where to look, <code>kubectl cluster-info dump</code> pulls a wide, verbose snapshot of cluster and namespace state into one place — slow, but a reasonable last resort before you start SSHing around.</p>
+
+<h2>Production example</h2>
+<p class="callout production"><strong>Production note:</strong> real on-call runbooks for "node alert fired" are, almost without exception, this exact funnel written down as a checklist: check the cluster health dashboard (cluster-wide) → check the node's status and conditions (node) → check the specific component implicated by the condition (kubelet, container runtime, disk) → read that component's logs. Teams that skip straight to "restart the Pod" or "reboot the node" without that first look at node Conditions have a specific, repeatable failure mode: if the real problem is <code>DiskPressure</code> or <code>MemoryPressure</code>, deleting a Pod doesn't fix anything — its replacement gets scheduled somewhere, and if capacity is tight, "somewhere" can be another node that's also under pressure, or the same node once the taint briefly clears. You haven't fixed the incident, you've spread it. This is precisely why serious runbooks put "check node Conditions and Events" as a mandatory early gate, not an optional step for when you're not busy.</p>
+
+<h2>Hands-on exercise</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Practice separating a genuine signal from routine noise in a real event stream — the skill the funnel depends on at its very first step.</p>
+<h4>Scenario</h4>
+<p>Before you can use <code>kubectl get events</code> to diagnose anything real, you need to know what "normal" looks like, so an actual problem stands out instead of blending in.</p>
+<h4>Environment assumptions</h4>
+<p>Any cluster you can <code>kubectl</code> into — kind, minikube, or a real dev cluster. If you're on managed Kubernetes such as GKE Autopilot, you won't get node or kubelet SSH access — that's an intentional platform boundary the provider manages for you, not a gap in your setup, and it's fine for this exercise.</p>
+<h4>Commands</h4>
+<pre><code>kubectl get events --sort-by=.metadata.creationTimestamp -A</code></pre>
+<h4>Expected result</h4>
+<p>A chronological list mixing routine lifecycle events (<code>Scheduled</code>, <code>Pulled</code>, <code>Created</code>, <code>Started</code> — a healthy Pod coming up normally) with anything unusual, if something unusual has happened recently.</p>
+<h4>Verification</h4>
+<p>You've done this correctly if you can point to one event and say "that's noise — routine startup" and, ideally, one you'd flag as signal (<code>Killing</code>, <code>Evicted</code>, <code>FailedScheduling</code>, <code>BackOff</code>, anything with <code>NodeNotReady</code> or <code>NodeHasDiskPressure</code> in the reason). If your cluster is quiet, that's a valid result too — note what a fully-noise stream looks like so you recognize it later.</p>
+<h4>Common failure</h4>
+<p>Reading events top to bottom without sorting by timestamp first — without <code>--sort-by</code>, you can't tell what happened before what, and cause/effect gets scrambled.</p>
+<h4>Troubleshooting</h4>
+<p>If the command returns nothing at all, that's not a broken cluster — the default event retention window is short (roughly an hour), so events from anything that happened earlier have already rolled off.</p>
+<h4>Cleanup / rollback</h4>
+<p>None — this is a read-only command.</p>
+<h4>Production lesson</h4>
+<p>On a real on-call rotation, this exact command, sorted by time, is very often the fastest way to learn what happened — faster than opening a dashboard, faster than SSHing anywhere.</p>
+</div>
+
+<h2>Failure scenario</h2>
+<p>A realistic incident showing what skipping the funnel actually costs, minute by minute.</p>
+<ol class="timeline">
+<li><span class="t">03:14</span> PagerDuty fires: node <code>worker-07</code> is <code>NotReady</code>. On-call, still half asleep, has seen "kubelet flaked out" alerts before and goes in with that assumption already formed.</li>
+<li><span class="t">03:16</span> On-call SSHes straight to <code>worker-07</code> and runs <code>systemctl restart kubelet</code> — skipping <code>kubectl get events</code> and <code>kubectl describe node</code> entirely, because the hypothesis already feels obvious.</li>
+<li><span class="t">03:19</span> <code>kubectl get nodes</code> still shows <code>NotReady</code>. On-call restarts kubelet a second time, then a third, each time waiting a minute and checking again. No new evidence gathered between attempts — same action, repeated, expecting a different result.</li>
+<li><span class="t">03:24</span> Pods on <code>worker-07</code> start showing <code>Evicted</code> — the default 5-minute eviction window since the node first went <code>NotReady</code> has elapsed. The blast radius just grew from "one node" to "every workload that was running on it."</li>
+<li><span class="t">03:27</span> A second engineer joins and starts at the top of the funnel instead of where on-call left off: <code>kubectl get events --sort-by=.metadata.creationTimestamp -A</code>. Near the top: <code>Warning NodeHasDiskPressure worker-07</code>, timestamped several minutes <em>before</em> the first <code>NotReady</code> alert.</li>
+<li><span class="t">03:29</span> <code>kubectl describe node worker-07</code> confirms it: <code>DiskPressure = True</code>, <code>Ready = False</code> (not <code>Unknown</code> — the kubelet was alive and reporting the whole time, which is exactly why three kubelet restarts changed nothing).</li>
+<li><span class="t">03:32</span> On the node: <code>df -h</code> shows <code>/var</code> at 100%. A log-rotation cron job silently started failing two days ago; an unrelated app's container logs grew unbounded and filled the disk.</li>
+<li><span class="t">03:38</span> Fix applied: clear the runaway log files, restart the failed log-rotation job, confirm free space. No kubelet restart needed — it was never the problem.</li>
+<li><span class="t">03:44</span> <code>DiskPressure</code> clears, <code>Ready</code> flips back to <code>True</code>, the scheduler resumes placing Pods on <code>worker-07</code>. Total time: 30 minutes, most of it spent restarting a healthy component instead of reading the one event that named the real cause.</li>
+</ol>
+<p>The funnel — <code>get nodes</code> → <code>get events</code> → <code>describe node</code> → then, and only then, the node itself — would have shown <code>NodeHasDiskPressure</code> before anyone touched kubelet at all. That's a 10-minute incident, not a 30-minute one, and zero Pods evicted along the way.</p>
+
+<h2>Troubleshooting workflow</h2>
+<p>The general 10-step method, mapped explicitly onto cluster and node problems:</p>
+<ol class="troubleshooting">
+<li><strong>Confirm the symptom.</strong> <code>kubectl get nodes</code> — which node, what status, right now. Don't diagnose from a Slack message describing what someone else saw ten minutes ago.</li>
+<li><strong>Define scope.</strong> One node or several? <code>kubectl get nodes -o wide</code> across the whole cluster. One node pointing to something node-local (disk, kubelet, hardware); several pointing to something shared (control plane, network, a cloud-provider outage).</li>
+<li><strong>Check recent changes.</strong> Was a node drained for an upgrade recently? Did a DaemonSet or log-shipping agent just get updated? <code>kubectl get events --sort-by=.metadata.creationTimestamp -A</code> — cheap, chronological, and usually names the object and reason (<code>NodeNotReady</code>, <code>NodeHasDiskPressure</code>, <code>Evicted</code>) before you read a single log line.</li>
+<li><strong>Inspect the right state.</strong> <code>kubectl describe node &lt;name&gt;</code> for its full Conditions block and its own Events section. Only after that: SSH to the node itself, <code>systemctl status kubelet</code>, then <code>journalctl -u kubelet -n 100 --no-pager</code>.</li>
+<li><strong>Form a hypothesis.</strong> State it in one sentence you could defend to someone else: "Ready is False, not Unknown, so the kubelet is alive and reporting — the cause is whatever condition is True alongside it."</li>
+<li><strong>Test one variable.</strong> If you suspect disk, check disk — <code>df -h</code> on the node, not a kubelet restart. Change one thing, or check one thing, before you decide the hypothesis is right or wrong.</li>
+<li><strong>Apply the safest fix.</strong> Fix the actual resource constraint (free disk space, kill a runaway process, address memory pressure) rather than the kubelet — and don't delete or reschedule other Pods while you're still diagnosing, since that can push load onto a node that's already struggling.</li>
+<li><strong>Verify recovery.</strong> Re-run <code>kubectl get nodes</code> and confirm <code>Ready = True</code> and every pressure condition back to <code>False</code> — not just that the alert stopped firing.</li>
+<li><strong>Document the root cause.</strong> "Log rotation cron job failed silently two days prior; disk filled; kubelet correctly reported DiskPressure and Ready=False" — write down the real cause, not "restarted kubelet, it started working" (which, in this scenario, would be documenting a coincidence as a fix).</li>
+<li><strong>Prevent recurrence.</strong> Alert on disk usage and on a failed log-rotation job directly, before it becomes a node-level Kubernetes symptom — the earlier you catch the real cause, the less it looks like a "Kubernetes problem" at all.</li>
 </ol>
 
-<p class="callout"><code>Ready=False</code> means kubelet is running and says it's unhealthy. <code>Ready=Unknown</code> means no heartbeat at all — kubelet may be crashed or unreachable. Different next step: <code>False</code> → read kubelet's logs. <code>Unknown</code> → check if the node is reachable first.</p>
+<h2>Security &amp; reliability considerations</h2>
+<p class="callout security"><strong>Security note:</strong> in a self-managed cluster, node/SSH access should be scoped to the platform or infra team only, through an audited path (bastion host, short-lived session, no standing SSH keys handed out broadly) — not given to every engineer who might want to debug a Pod. A node isn't just compute: it holds the kubelet's own credentials, every mounted ServiceAccount token for every Pod scheduled there, and often node-level cloud IAM credentials. Anyone with node access effectively has a path to everything running on that node, which is a much bigger blast radius than "SSH access" sounds like on its own.</p>
+<p class="callout production"><strong>Reliability note:</strong> node-pressure eviction is a self-protection mechanism, not a failure — the kubelet killing Pods to save itself is the system working as designed. But it's also a cascading-failure risk in an under-provisioned or unevenly-loaded cluster: evicted Pods get rescheduled, rescheduling adds load elsewhere, and if remaining capacity is already thin, you can watch pressure hop from node to node. This is a real argument for headroom in cluster capacity planning, not just for redundancy across zones.</p>
 
-<h2>Try it — before looking below</h2>
+<p class="callout mistake"><strong>Common mistake:</strong> treating <code>Ready = Unknown</code> the same as <code>Ready = False</code>. They point to different next steps — <code>False</code> means go read the kubelet's own logs; <code>Unknown</code> means check whether the node is even reachable before you assume anything about what's running on it. Debugging a heartbeat-loss problem as if it were an application-level kubelet failure wastes real time.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> restarting a service, a Pod, or a whole node before running <code>kubectl get events</code> and <code>kubectl describe node</code>. A restart based on a hunch sometimes "fixes" things by accident (and teaches you the wrong lesson for next time), and sometimes actively makes things worse — as the failure scenario above shows, three kubelet restarts changed nothing because kubelet was never the problem.</p>
+
+<h2>Decision guide</h2>
+<table>
+<tr><th>Symptom</th><th>Start here</th><th>Why</th></tr>
+<tr><td>One Pod misbehaving, cluster and node otherwise healthy</td><td><code>kubectl describe pod</code> / <code>kubectl logs</code> (covered in Lesson 16)</td><td>Scope is already narrow — jumping up to node or cluster checks first wastes time you don't need to spend</td></tr>
+<tr><td>One node <code>NotReady</code> or showing a pressure condition, others fine</td><td><code>kubectl get nodes</code> → <code>kubectl describe node</code> → <code>kubectl get events -A</code></td><td>This is exactly the funnel this lesson teaches — node-scoped symptom, node-scoped diagnosis</td></tr>
+<tr><td>Multiple nodes degraded, or the whole cluster feels "off"</td><td><code>kubectl get events --sort-by=.metadata.creationTimestamp -A</code> first, then compare nodes for a shared cause</td><td>A shared symptom across many nodes is usually one shared cause (control plane, network, cloud outage), not N independent, unrelated kubelet failures</td></tr>
+<tr><td><code>kubectl</code> commands hang or time out entirely</td><td>Check API server health on the control-plane node; fall back to <code>crictl ps -a</code> directly on affected nodes</td><td><code>kubectl</code> only works if the API server does — a dead API server needs a different toolset, not more <code>kubectl</code> retries</td></tr>
+</table>
+<p><strong>Default recommendation:</strong> whatever the symptom, start one level higher than you think you need to. Confirming "yes, this really is scoped to one Pod" or "yes, this really is scoped to one node" takes seconds and prevents the single most common troubleshooting mistake: solving the wrong-sized problem.</p>
+
+<h2>Knowledge check</h2>
 <div class="quiz">
 <p>Q1. Why can't <code>kubectl</code> always diagnose a control-plane outage?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1"><code>kubectl</code> talks to the API server. If the API server's own static pod is down, <code>kubectl</code> has nothing to talk to. Use <code>crictl ps -a</code> on the control-plane node instead — it bypasses the API server.</div>
+<div class="answer" id="a1"><code>kubectl</code> talks to the API server. If the API server's own static Pod is down, <code>kubectl</code> has nothing to talk to. Use <code>crictl ps -a</code> on the node instead — it talks to the container runtime directly, bypassing the API server entirely.</div>
 </div>
 
 <div class="quiz">
 <p>Q2. What's your first command, cluster-wide, before you even pick a node?</p>
 <input type="text" id="q2" placeholder="type your answer">
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2"><code>kubectl get events --sort-by=.metadata.creationTimestamp -A</code> — cheap, chronological, often names the object and reason (<code>NodeNotReady</code>, <code>Evicted</code>) before you read a single log.</div>
+<div class="answer" id="a2"><code>kubectl get events --sort-by=.metadata.creationTimestamp -A</code> — cheap, chronological, and it often names the object and reason (<code>NodeNotReady</code>, <code>NodeHasDiskPressure</code>, <code>Evicted</code>) before you've read a single log line.</div>
 </div>
 
-<h2>Now try it yourself</h2>
-<p>A Pod is stuck Pending, its node shows <code>NotReady</code>. Write your diagnostic order before revealing.</p>
 <div class="quiz">
-<p>Reveal the checklist</p>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<p>Q3. A Pod is stuck <code>Pending</code>, and its node shows <code>NotReady</code>. Write your diagnostic order before revealing.</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal the checklist</button>
 <div class="answer" id="a3">
 <ol>
-<li><code>kubectl get nodes</code> — one node, or several? Several often means something shared (network, control plane, cloud outage).</li>
-<li><code>kubectl describe node &lt;name&gt;</code> — Conditions + Events.</li>
-<li><code>kubectl get events --sort-by=.metadata.creationTimestamp -A</code> — anything around that timestamp.</li>
-<li>SSH to the node. <code>systemctl status kubelet</code> — running at all?</li>
-<li><code>journalctl -u kubelet -n 100 --no-pager</code> — expired cert, can't reach API server, disk full, etc.</li>
-<li>If kubelet looks fine but pods aren't up: <code>crictl ps -a</code> for runtime-level state.</li>
-<li>Fix root cause, re-run <code>kubectl get nodes</code>, confirm <code>Ready</code>.</li>
+<li><code>kubectl get nodes</code> — one node affected, or several? Several often means something shared (network, control plane, cloud outage).</li>
+<li><code>kubectl describe node &lt;name&gt;</code> — Conditions block, plus its own Events section.</li>
+<li><code>kubectl get events --sort-by=.metadata.creationTimestamp -A</code> — anything else around that timestamp, cluster-wide.</li>
+<li>SSH to the node. <code>systemctl status kubelet</code> — is it even running?</li>
+<li><code>journalctl -u kubelet -n 100 --no-pager</code> — expired cert, can't reach the API server, disk full, and so on.</li>
+<li>If kubelet looks healthy but Pods still aren't coming up: <code>crictl ps -a</code> for runtime-level state.</li>
+<li>Fix the root cause, re-run <code>kubectl get nodes</code>, confirm <code>Ready = True</code> before declaring it resolved.</li>
 </ol>
 </div>
 </div>
 
-<h2>Hands-on</h2>
-<p>Pick a Pod in your own cluster and run <code>kubectl get events --sort-by=.metadata.creationTimestamp -n &lt;its-namespace&gt;</code> for real. On managed Kubernetes (e.g. GKE Autopilot) you won't get node/kubelet SSH access — that's expected, it's a boundary the platform manages for you. Just confirm you can read the event stream and spot signal vs. noise.</p>
+<div class="quiz">
+<p>Q4. A node shows <code>Ready = Unknown</code>. What does that specifically tell you?</p>
+<div class="opts">
+<label>A. The kubelet is running but is reporting itself as unhealthy right now</label>
+<label>B. The node controller has not received a heartbeat within the grace period</label>
+<label>C. The kubelet has crashed and will never send a heartbeat again</label>
+<label>D. The node has too many processes and can't schedule new work</label>
+</div>
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a4">B. <code>Unknown</code> means the node controller hasn't heard from the node within <code>node-monitor-grace-period</code> (default 50 seconds) — it says nothing about whether the kubelet is healthy, unhealthy, or actually crashed, only that no heartbeat has arrived. (A describes <code>Ready = False</code>. C overstates what <code>Unknown</code> proves — the node might reconnect. D describes <code>PIDPressure</code>.)</div>
+</div>
+
+<div class="quiz">
+<p>Q5. A node's <code>DiskPressure</code> condition flips to <code>True</code>. What happens automatically, right away?</p>
+<div class="opts">
+<label>A. The scheduler stops placing new Pods on that specific node</label>
+<label>B. The API server immediately removes the node object entirely</label>
+<label>C. Every Pod on the node is deleted within the next second</label>
+<label>D. The kubelet permanently disables itself until an operator acts</label>
+</div>
+<button onclick="document.getElementById('a5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a5">A. Kubernetes adds a matching scheduling taint the moment the condition goes <code>True</code>, so the scheduler stops placing new Pods there. Existing Pods aren't touched immediately — the kubelet first tries to reclaim space itself (e.g. removing unused images) and only evicts running Pods if the pressure doesn't clear. (B and D don't happen automatically at all; C skips the kubelet's own reclaim-first behavior.)</div>
+</div>
+
+<h2>Certification mapping</h2>
+<p><strong>Troubleshooting</strong> — 30% of the CKA exam, the single largest domain. This lesson is its foundation: the cluster-wide → node → component → logs funnel, and the discipline of checking Conditions and Events before touching anything, is the method every later Troubleshooting lesson (application/workload, networking, storage) reuses without re-explaining it.</p>
+
+<h2>Production challenge</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Work a multi-symptom incident to its one real root cause, using only the funnel — no live cluster required, this is a diagnostic-reasoning exercise using the output below, exactly like a real on-call handoff.</p>
+<h4>Scenario</h4>
+<p>You're paged with three things reported at once: several Pods stuck <code>Pending</code>, one node <code>NotReady</code>, and a vague mention of "disk pressure" in a teammate's handoff note. Here's what you pull:</p>
+<pre><code>$ kubectl get nodes
+NAME       STATUS     ROLES    AGE   VERSION
+node-a     Ready      &lt;none&gt;   40d   v1.30.2
+node-b     NotReady   &lt;none&gt;   40d   v1.30.2
+node-c     Ready      &lt;none&gt;   40d   v1.30.2
+
+$ kubectl get pods -A | grep Pending
+checkout    orders-7d9b6-abc12    0/1   Pending   0   3m
+checkout    orders-7d9b6-def34    0/1   Pending   0   3m
+billing     invoicer-99f-xz1      0/1   Pending   0   2m
+
+$ kubectl get events --sort-by=.metadata.creationTimestamp -A | tail -6
+... Warning  FreeDiskSpaceFailed    node/node-b            (combined) failed to garbage collect required amount of images
+... Normal   NodeHasDiskPressure    node/node-b            Node node-b status is now: NodeHasDiskPressure
+... Warning  FailedScheduling       pod/orders-7d9b6-abc12 0/3 nodes are available: 1 node(s) had untolerated taint {node.kubernetes.io/disk-pressure: }, 2 Insufficient cpu
+... Warning  FailedScheduling       pod/orders-7d9b6-def34 0/3 nodes are available: 1 node(s) had untolerated taint {node.kubernetes.io/disk-pressure: }, 2 Insufficient cpu
+... Warning  FailedScheduling       pod/invoicer-99f-xz1   0/3 nodes are available: 1 node(s) had untolerated taint {node.kubernetes.io/disk-pressure: }, 2 Insufficient cpu
+... Normal   NodeNotReady           node/node-b            Node node-b status is now: NotReady</code></pre>
+<h4>Commands</h4>
+<p>Before reading further: write down, in order, which commands you'd run next and what you expect each one to confirm.</p>
+<h4>Expected result</h4>
+<p>This is one root cause wearing three costumes, not three unrelated problems. <code>node-b</code> hit <code>DiskPressure</code>, got auto-tainted, and stopped accepting new Pods. That shrank the cluster's effective scheduling capacity from three nodes to two — and <code>node-a</code>/<code>node-c</code> don't have enough spare CPU between them to fit all three Pending Pods, hence <code>Insufficient cpu</code> stacked on top of the taint in every <code>FailedScheduling</code> message.</p>
+<h4>Verification</h4>
+<p><code>kubectl describe node node-b</code> should show <code>DiskPressure = True</code> and <code>Ready = False</code> (posted by a live kubelet, not <code>Unknown</code>) with a reason referencing disk space. If you had node access, <code>df -h</code> on <code>node-b</code> would confirm which filesystem is full.</p>
+<h4>Common failure</h4>
+<p>Triaging the three <code>Pending</code> Pods as three separate application-team tickets — "why won't <em>my</em> Pod schedule" — instead of noticing they all started failing within the same one-minute window as <code>node-b</code>'s disk event. Symptoms that start at the same moment across unrelated teams are a strong signal of one shared upstream cause.</p>
+<h4>Troubleshooting</h4>
+<p>If clearing <code>node-b</code>'s disk fixes it today but it fills again in a week, look for the same pattern as this lesson's failure scenario: a silently-failed log rotation job or an unbounded container log, not a one-off fluke.</p>
+<h4>Cleanup / rollback</h4>
+<p>None — this is a reasoning exercise against provided output, not a change made to a live cluster.</p>
+<h4>Production lesson</h4>
+<p>Three tickets that land at the same time, from three different teams, almost always share one cause. Check for that before you split the incident into three separate investigations — you'll close it in a third of the time.</p>
+</div>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/tasks/debug/debug-cluster/" target="_blank" rel="noopener">kubernetes.io/docs/tasks/debug/debug-cluster</a> and <a href="https://kubernetes.io/docs/concepts/architecture/nodes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/architecture/nodes</a> — the exact pages allowed in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/tasks/debug/debug-cluster/" target="_blank" rel="noopener">kubernetes.io/docs/tasks/debug/debug-cluster</a>, <a href="https://kubernetes.io/docs/concepts/architecture/nodes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/architecture/nodes</a>, <a href="https://kubernetes.io/docs/reference/node/node-status/" target="_blank" rel="noopener">kubernetes.io/docs/reference/node/node-status</a>, and <a href="https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction</a> — verified 2026-08-03. The first two are the exact pages allowed in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Funnel: cluster-wide symptom &rarr; which node &rarr; which component &rarr; its logs.</li>
-    <li><code>kubectl describe node</code> Conditions tell you <code>False</code> (kubelet unhealthy) vs. <code>Unknown</code> (no heartbeat) — different next step.</li>
-    <li>If the API server itself is down, <code>kubectl</code> can't help — use <code>crictl ps -a</code> instead.</li>
+    <li>Funnel, in order, every time: cluster-wide symptom &rarr; which node &rarr; which condition/component &rarr; that component's own logs. Skipping a layer under pressure is how you fix a symptom instead of the root cause.</li>
+    <li>Five node Conditions, not one: <code>Ready</code>, <code>DiskPressure</code>, <code>MemoryPressure</code>, <code>PIDPressure</code>, <code>NetworkUnavailable</code>. <code>Ready = False</code> (kubelet alive, unhealthy) and <code>Ready = Unknown</code> (no heartbeat) need different next steps.</li>
+    <li>Pressure conditions auto-taint the node against new scheduling immediately, and can trigger the kubelet to evict running Pods if the pressure doesn't clear — restarting a Pod without checking node health can push the replacement onto another already-stressed node.</li>
+    <li>If the API server itself is down, <code>kubectl</code> can't help — use <code>crictl ps -a</code> directly against the container runtime instead.</li>
+    <li>Node/SSH access is a real security boundary, not just a convenience — it exposes every Pod's ServiceAccount token on that node, so scope it to the platform team, audited.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<footer class="teacher-reminder">Stuck, or got a different result than expected? Paste the exact <code>kubectl describe node</code> or event output back to your teacher — a real Conditions block is more useful to work from than a hypothetical one.</footer>
 
 <div class="lesson-nav">
   <a href="0014-cluster-architecture-etcd-upgrades-tls.html">&larr; etcd, upgrades &amp; TLS</a>

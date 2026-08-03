@@ -11,24 +11,113 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 19 of 24</p>
 <h1>CRDs &amp; Operators</h1>
 
-<p><code>Pod</code>, <code>Deployment</code>, <code>Service</code> — every <code>kind</code> you've written so far is one Kubernetes ships with. A <strong>CustomResourceDefinition (CRD)</strong> lets someone add a brand new <code>kind</code> to your cluster's API, as if it were built in.</p>
+<h2>Why this matters</h2>
+<p>A CustomResourceDefinition lets anyone with cluster-admin rights add a brand-new API type to your cluster with a single <code>kubectl apply</code> — no review of Kubernetes' own code, no core binary touched. That convenience cuts both ways. Install a CRD together with its Operator from a source you haven't audited, and you've given that code a standing reconcile loop that runs forever, with whatever RBAC permissions its ServiceAccount happens to hold — often broad ones, because watching and fixing a custom resource cluster-wide usually needs cluster-wide read/write access. The same pattern also produces one of the most disorienting silent failures a newcomer hits in Kubernetes: you write a perfectly valid custom object, <code>kubectl apply</code> reports <code>created</code>, and then genuinely nothing happens — no error, no result, no log line anywhere. That's not a bug in your YAML. It's the expected behavior of a CRD with no Operator watching it, and this lesson exists so "nothing happened" stops being mysterious.</p>
 
-<p class="callout"><strong>Simple example:</strong> a CRD is a blank order form — it defines the fields a new object type accepts, nothing more. An <strong>Operator</strong> is the person who reads submitted forms and actually does the work. Install the CRD and nothing happens; you need an Operator watching it to act.</p>
+<p class="callout"><strong>Mental model:</strong> a CRD is a blank order form — it defines exactly which fields a new object type accepts, and the API server will happily file away any form filled in correctly. An <strong>Operator</strong> is the person who actually reads submitted forms from the inbox and does something about them. Sharpen that: almost every other object on this course already has someone reading its inbox before you ever touch it — a Deployment's ReplicaSet controller, a Job's controller, a Service's endpoint controller, all run inside <code>kube-controller-manager</code> and start watching the moment your cluster boots, whether or not you ever create an object of that kind. A CRD ships with zero readers. The API server validates your object against its schema, stores it in etcd, and returns success — exactly like it would for a Pod or a Deployment — but unless you deployed an Operator yourself, that form sits in an inbox nobody is checking. Same-looking success message, completely different real-world outcome. That's the trap this mental model predicts: <code>kubectl apply</code> succeeding tells you nothing about whether anything is actually going to happen.</p>
 
 <h2>CRD — a new kind, defined</h2>
-<p>Installing a CRD teaches the API server a new <code>kind</code> — e.g. cert-manager installs a <code>Certificate</code> CRD. You can create objects of that kind immediately, they just do nothing until something is watching them.</p>
+<p>Installing a CRD teaches the API server a new <code>kind</code> — cert-manager, for example, installs a <code>Certificate</code> CRD (more on cert-manager below). The moment it's installed, you can create objects of that kind immediately: the API server validates them against the CRD's schema, stores them in etcd, and serves them back through <code>kubectl get</code> — exactly the same storage and retrieval behavior every built-in kind gets. Kubernetes' own docs are direct about the limit here: "on their own, custom resources let you store and retrieve structured data. When you combine a custom resource with a custom controller, custom resources provide a true declarative API." Storage and retrieval, on their own, is all a CRD buys you.</p>
 <pre><code>kubectl get crds                       # every custom kind installed in this cluster
 kubectl explain certificate.spec       # CRDs support explain, same as built-in kinds
 </code></pre>
+<p><code>kubectl explain</code> works against a CRD's schema the same way it works against a built-in kind's, because a CRD is required to publish a schema — kubectl reads field names, types, and descriptions straight from the API server, with no special-case code for custom kinds. From kubectl's point of view, a well-defined custom kind and a built-in kind look identical. The only difference is who's watching.</p>
+
+<h2>The status subresource — where the Operator writes back</h2>
+<p>Every object on this course follows the same split: <code>spec</code> is what you want, <code>status</code> is what's actually true. You've been writing <code>spec</code> since Lesson 1; you've mostly been reading, not writing, <code>status</code> — because for built-in kinds, the built-in controller is the only thing meant to write it. The same rule applies to custom resources, and it's the single most important convention an Operator has to respect. Kubernetes' own docs describe the pattern generally: "the Kubernetes declarative API enforces a separation of responsibilities. You declare the desired state of your resource. The Kubernetes controller keeps the current state of Kubernetes objects in sync with your declared desired state." Applied to a CRD: you write <code>spec</code>, the Operator reads it, does the real-world work, and writes the outcome — success, failure, or in-progress — back into <code>status</code>. A well-built Operator should never write to an object's own <code>spec</code>; if it did, it would be silently overriding what you asked for instead of reporting what actually happened.</p>
+<p>This is also your primary diagnostic tool later in this lesson: a custom object's <code>status.conditions</code> field is where a well-built Operator tells you, in structured form, exactly what it thinks is wrong — before you ever need to read a single log line.</p>
+
+<h2>CRD versioning, briefly — know it exists</h2>
+<p>One more mechanism worth recognizing rather than mastering at this stage: a CRD can serve more than one API version at once (<code>v1alpha1</code> and <code>v1beta1</code>, for example), so some clients can keep using the old version while others migrate to the new one. Exactly one served version must be marked the <em>storage version</em> — the shape actually persisted in etcd — and every other served version is converted to and from that shape on request. If the versions are structurally identical, Kubernetes' default <code>None</code> conversion strategy handles this for free, changing only the <code>apiVersion</code> field. If the schema genuinely changed between versions — a field renamed or restructured — you need a <strong>conversion webhook</strong>: a small HTTP service the API server calls to translate an object between versions. You won't write one of these for the exam, or probably for most of your career — just recognize "conversion webhook" as "the thing that translates between CRD versions when a simple field-rename in a manifest isn't enough."</p>
 
 <h2>Operator — the controller that acts on it</h2>
-<p>An Operator is ordinary code, running as an ordinary Deployment/Pod in your cluster, doing the exact same thing <code>kube-controller-manager</code> does for built-in objects: watch for a desired state, compare to actual state, reconcile the difference. Create a <code>Certificate</code> object — the cert-manager Operator notices, requests a cert, and writes the result into a Secret. You never told it how; the CRD only described the shape of the request.</p>
+<p>An Operator is ordinary code, running as an ordinary Deployment/Pod in your cluster, doing the exact same job <code>kube-controller-manager</code> does for built-in objects: watch for a desired state, compare it to actual state, reconcile the difference. Kubernetes' own docs put it plainly: "Operators are software extensions to Kubernetes that make use of custom resources to manage applications and their components. Operators follow Kubernetes principles, notably the control loop." Create a <code>Certificate</code> object — the cert-manager Operator notices, requests a certificate from whatever issuer you configured, and writes the result into a Secret. You never told it how; the CRD only described the shape of the request.</p>
 <pre><code>kubectl get pods -n cert-manager       # the Operator is just a Pod
 kubectl logs -n cert-manager deploy/cert-manager   # troubleshoot it like any workload
 </code></pre>
-<p>This is the same reconcile-loop pattern from Lesson 4 (a Deployment's controller keeps replica count matching spec) — CRDs and Operators just let you extend that pattern to things Kubernetes didn't ship with.</p>
+<p>This is the same reconcile-loop pattern from Lesson 4 — a Deployment's ReplicaSet controller keeps replica count matching spec, forever, without you asking it to check again. CRDs and Operators just extend that exact pattern to things Kubernetes didn't ship with. The only genuinely new risk is who wrote the loop: for a Deployment, it's Kubernetes' own reviewed code; for a custom kind, it's whoever built the Operator you installed.</p>
 
-<h2>Try it — before looking below</h2>
+<h2>Production example</h2>
+<p class="callout production"><strong>Production note:</strong> the default answer to "we need Kubernetes to manage X for us" should be "is there already a well-audited CRD + Operator for X from a reputable project," not "let's write one." cert-manager is the canonical example: it's a <a href="https://www.cncf.io/projects/cert-manager/" target="_blank" rel="noopener">CNCF Graduated project</a> (accepted 2020, graduated September 2024) that installs a <code>Certificate</code> CRD plus a controller, and its own docs describe the job plainly — it "creates TLS certificates for workloads in your Kubernetes or OpenShift cluster and renews the certificates before they expire," storing "the private key and certificate...in a Kubernetes Secret which is mounted by an application Pod or used by an Ingress controller." Thousands of clusters run this exact Operator instead of every team hand-rolling a cron job that calls an ACME API and rotates a Secret. Hand-rolling that yourself means you own the reconcile loop, the retry/backoff logic, the RBAC surface, and every edge case in certificate renewal, forever. Reaching for cert-manager means you inherit a maintained, widely-reviewed implementation instead — at the cost of trusting its maintainers and its RBAC footprint, which is exactly the trade-off the Decision guide below makes explicit.</p>
+
+<h2>Hands-on exercise</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Prove to yourself that a CRD is inspectable exactly like a built-in kind, and that its Operator is just another Pod you can check on.</p>
+<h4>Scenario</h4>
+<p>You want to see a real CRD's schema with <code>kubectl explain</code> before you ever trust a Certificate manifest you copy from a README.</p>
+<h4>Environment assumptions</h4>
+<p>Any cluster you can <code>kubectl</code> into (kind, minikube, or a real dev cluster) with outbound internet access to pull a public manifest and container images. No existing <code>cert-manager</code> namespace.</p>
+<h4>Commands</h4>
+<pre><code>kubectl get crds
+# a bare kind/minikube cluster commonly prints "No resources found" here — expected, not broken
+
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.21.1/cert-manager.yaml
+kubectl get crds | grep cert-manager.io
+kubectl explain certificate.spec
+kubectl get pods -n cert-manager --watch</code></pre>
+<h4>Expected result</h4>
+<p>After the apply, <code>get crds</code> lists several <code>*.cert-manager.io</code> CRDs (<code>certificates</code>, <code>issuers</code>, <code>clusterissuers</code>, among others). <code>kubectl explain certificate.spec</code> prints a structured field list — <code>secretName</code>, <code>issuerRef</code>, <code>dnsNames</code>, <code>duration</code>, and more — the same explain output style you've used for every built-in kind since Lesson 1. Within a minute or two, <code>--watch</code> shows three Pods (<code>cert-manager</code>, <code>cert-manager-cainjector</code>, <code>cert-manager-webhook</code>) reach <code>Running</code>.</p>
+<h4>Verification</h4>
+<p>Stop the watch (Ctrl-C) once all three Pods read <code>1/1 Running</code>. That's your Operator — a real workload, schedulable, restartable, and log-able like anything else in this course, not a mysterious control-plane feature.</p>
+<h4>Common failure</h4>
+<p>The webhook Pod takes noticeably longer than the other two to go <code>Running</code> (it waits on a certificate of its own being injected by <code>cainjector</code>) — don't assume the install failed if it's still <code>0/1</code> after 20-30 seconds; give it the full couple of minutes before troubleshooting further.</p>
+<h4>Troubleshooting</h4>
+<p>If <code>kubectl explain certificate.spec</code> errors that the server doesn't recognize the resource type, the CRDs haven't finished registering yet — re-run <code>kubectl get crds | grep cert-manager.io</code> first to confirm they exist, then retry.</p>
+<h4>Cleanup / rollback</h4>
+<p>Leave cert-manager installed — the Failure scenario, Troubleshooting workflow, and Production challenge below all assume it's still running.</p>
+<h4>Production lesson</h4>
+<p><code>kubectl explain</code> succeeding only proves the CRD is installed and its schema is readable. It proves nothing about whether an Operator is running, or whether it will ever act on an object you create — that's a completely separate fact, and the next two sections are about exactly that gap.</p>
+</div>
+
+<h2>Failure scenario</h2>
+<p>A realistic incident built from the exact gap above — except this time the CRD, the Operator, and every object created against it were all fine on day one. The failure shows up days later, somewhere else entirely.</p>
+<ol class="timeline">
+<li><span class="t">Mon 09:14</span> A platform engineer runs a routine "scale down idle workloads" cleanup script, targeting Deployments with near-zero recent CPU usage. <code>cert-manager</code>'s own Deployment matches the filter — its work is bursty, only active during issuance/renewal — and gets scaled to 0 replicas along with several genuinely idle apps.</li>
+<li><span class="t">Mon 09:15</span> <code>kubectl get pods -n cert-manager</code> would show zero Pods, but nobody runs it — the cleanup script's dashboard only reports "Deployments scaled down: 14," not which ones, and no alert exists for "an Operator's replica count dropped to zero."</li>
+<li><span class="t">Mon–Fri</span> Teams keep creating and updating <code>Certificate</code> objects as normal all week. Each one is accepted by the API server and stored in etcd, showing a stale <code>status.conditions</code> from its last real reconcile. Nothing updates it and nothing errors either, because nothing is reconciling at all.</li>
+<li><span class="t">Fri 06:58</span> A production Ingress's TLS certificate crosses its actual expiry. Its scheduled renewal — which would normally fire well before this point — never happened, because no Operator has watched it for four days.</li>
+<li><span class="t">Fri 07:02</span> Customers hit browser TLS warnings on the checkout domain; the error-rate alert fires almost immediately after.</li>
+<li><span class="t">Fri 07:06</span> On-call runs <code>kubectl get pods -n cert-manager</code> as one of the first checks — <code>No resources found</code>. That single command finds the root cause in under a minute.</li>
+<li><span class="t">Fri 07:08</span> Fix applied: <code>kubectl scale deployment cert-manager -n cert-manager --replicas=1</code> (and the same for <code>cainjector</code> and <code>webhook</code>). The reconcile loop resumes immediately.</li>
+<li><span class="t">Fri 07:11</span> cert-manager notices the expired certificate on its next reconcile pass and issues a new one automatically — nobody touches the <code>Certificate</code> object itself, because its <code>spec</code> was correct the entire time.</li>
+<li><span class="t">Fri 07:15</span> Verified: the new certificate is live in the Secret, the Ingress serves it, browser warnings are gone.</li>
+<li><span class="t">Fri 09:00</span> Postmortem action item: alert explicitly on "any Operator Deployment's ready replicas == 0," separate from application-level alerts — an Operator being down produces no application error until something it manages actually expires or drifts.</li>
+</ol>
+
+<h2>Troubleshooting workflow</h2>
+<p>The general method, applied specifically to "I created a custom object and nothing is happening":</p>
+<ol class="troubleshooting">
+<li><strong>Confirm the symptom.</strong> Run <code>kubectl get &lt;kind&gt; &lt;name&gt; -o yaml</code> yourself — is <code>status</code> genuinely empty or stale, not just "I expected more by now"?</li>
+<li><strong>Define scope.</strong> <code>kubectl get &lt;kind&gt; --all-namespaces</code> — is it one broken object, or is every object of this kind stalled at once? The second pattern points straight at the Operator itself.</li>
+<li><strong>Check recent changes.</strong> <code>kubectl get events -n &lt;operator-namespace&gt; --sort-by=.lastTimestamp</code> — was the Operator's Deployment scaled, restarted, or the CRD just upgraded to a new served version?</li>
+<li><strong>Confirm the primitives exist and are alive.</strong> <code>kubectl get crd &lt;plural&gt;.&lt;group&gt;</code> confirms the kind is really installed, not a typo accidentally matching a different CRD; <code>kubectl get pods -n &lt;operator-namespace&gt;</code> confirms the Operator's Pod is actually <code>Running</code>, not <code>0</code>, <code>Pending</code>, or <code>CrashLoopBackOff</code>. If it isn't, stop here — fix the Operator, not your object.</li>
+<li><strong>Read what the Operator already told you.</strong> <code>kubectl describe &lt;kind&gt; &lt;name&gt;</code> — its <code>Status.Conditions</code> and <code>Events</code> sections are where a well-built Operator reports its own diagnosis, before you ever need a log line.</li>
+<li><strong>Check the Operator's own logs for errors reconciling YOUR specific object.</strong> <code>kubectl logs -n &lt;operator-namespace&gt; deploy/&lt;operator&gt; | grep &lt;object-name&gt;</code> — treat this as the secondary, noisier source. cert-manager's own troubleshooting docs say exactly this: don't reach for logs first, check conditions and events before them.</li>
+<li><strong>Form a hypothesis.</strong> For example: "the Operator is healthy, but this object references an Issuer that doesn't exist," versus "the whole Operator has been down since Monday."</li>
+<li><strong>Test one variable.</strong> Fix only the one field you suspect (a bad reference, say) and re-apply — don't also restart the Operator or recreate the object in the same step, or you won't know which change actually fixed it.</li>
+<li><strong>Apply the safest fix and verify.</strong> Correct <code>spec</code> if the mistake is yours; scale or restart the Operator if it's down. Never hand-edit <code>status</code> — it's the Operator's field, and your edit is overwritten on the next reconcile anyway. Confirm <code>status.conditions</code> reports success afterward (cert-manager's <code>Ready: True</code>, for example).</li>
+<li><strong>Document the root cause and prevent recurrence.</strong> Write down the actual cause ("Operator scaled to 0 by a cleanup script," not "cert-manager broke"), and add the missing signal — per the Failure scenario above, an alert on the Operator's own health, not just on the objects it manages.</li>
+</ol>
+
+<p class="callout security"><strong>Security note:</strong> an Operator's ServiceAccount usually needs broad permissions to do its job — cert-manager's controller, for example, needs to read and write Secrets across namespaces and watch Certificates and Issuers cluster-wide, which in practice means a ClusterRole, not a narrow namespaced Role. Lesson 9 covered why that matters: RBAC is additive-only, with no deny rules — a broad ClusterRoleBinding for an Operator's ServiceAccount is exactly the kind of grant that lesson told you to scrutinize, except this time the code exercising those permissions isn't something your own team wrote. Installing a CRD and its Operator is not a config change — it's extending your cluster's trusted codebase to include someone else's controller, running continuously, with standing permissions you granted once and, realistically, may never review again. Treat "which Operators are installed, and what can their ServiceAccounts touch" as a real line item on your cluster's security inventory, not a one-time install-day decision.</p>
+
+<p class="callout production"><strong>Reliability note:</strong> every custom object's future is coupled to one Operator's uptime — if it runs as a single replica with no PodDisruptionBudget, a single node drain or an accidental scale-to-zero (see the Failure scenario above) halts reconciliation for every object of that kind, cluster-wide, with no error surfaced anywhere until something it manages actually expires or drifts. Many production-grade Operators support running multiple replicas with leader election (the same mechanism <code>kube-controller-manager</code> itself uses) so only one instance actively reconciles while the others stand ready to take over. Check whether the Operator you're installing supports this instead of assuming a single Pod is an acceptable single point of failure.</p>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming a custom object failed because of a typo in your YAML, when the real cause is that no Operator is installed or running at all. The API server validates your object against the CRD's schema and will happily accept a perfectly-typed object that nothing will ever act on — schema-valid and functionally-inert are two completely different properties, and <code>kubectl apply</code> succeeding tells you nothing about the second one.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> checking only whether <code>kubectl apply</code> succeeded and never reading the object's own <code>status</code> field afterward. A healthy, <code>Running</code> Operator Pod doesn't mean it's succeeding at reconciling every object it manages — <code>status.conditions</code> is where it reports per-object failures (a bad reference, a quota limit, an expired credential), and skipping that check is how a broken <code>Certificate</code> sits silently failing for days, exactly like the Failure scenario above.</p>
+
+<h2>Decision guide</h2>
+<table>
+<tr><th>Option</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
+<tr><td>CRD + Operator, well-audited OSS (e.g. cert-manager)</td><td>A reputable project already solves this exact problem, with an active maintainer community</td><td>No such project exists, or it doesn't fit your environment or compliance model</td><td>Inherits someone else's release cadence, bugs, and RBAC footprint — but far less engineering than building your own</td></tr>
+<tr><td>CRD + Operator, hand-rolled</td><td>You need a genuinely new declarative API that many teams will consume via <code>kubectl</code>/GitOps, and nothing existing fits</td><td>A one-off automation need, or you lack the capacity to run a 24/7 reconcile loop through its full lifecycle</td><td>Full control over the API shape, at the cost of owning the reconcile loop, retries, RBAC, and every edge case forever</td></tr>
+<tr><td>ConfigMap-driven approach</td><td>The "custom behavior" is really just parameterizing an existing controller or workload — simple key/value config, one consumer</td><td>You need real schema validation, a dedicated <code>status</code> field, or a stable API contract shared by multiple teams</td><td>Much cheaper to build, but no validation and no explicit success/failure signal — a typo just does the wrong thing silently</td></tr>
+<tr><td>External tool (outside the cluster)</td><td>The resource being managed genuinely lives outside Kubernetes anyway (cloud IAM, DNS, cross-cluster billing)</td><td>The thing being managed is fundamentally in-cluster state (Pods, Secrets) that benefits from a standing reconcile loop</td><td>Keeps your cluster's trusted codebase smaller, but you lose "watch and self-heal" and often reintroduce manual drift</td></tr>
+</table>
+<p><strong>Default recommendation:</strong> reach for an existing, well-audited CRD + Operator before hand-rolling one — the engineering and security cost of running your own reconcile loop is real and ongoing. Use a ConfigMap-driven approach for genuinely simple parameterization, and go external only when the managed resource doesn't actually live inside the cluster.</p>
+
+<h2>Knowledge check</h2>
 <div class="quiz">
 <p>Q1. You create a custom-kind object and nothing happens — no error, no result. What's the most likely reason?</p>
 <input type="text" id="q1" placeholder="type your answer">
@@ -43,19 +132,122 @@ kubectl logs -n cert-manager deploy/cert-manager   # troubleshoot it like any wo
 <div class="answer" id="a2">Nothing is lost — they're stored in etcd like any other object. Once the Operator's Pod is Running again, its reconcile loop picks up every object that doesn't yet match desired state, same as a Deployment controller catching up after a restart.</div>
 </div>
 
+<div class="quiz">
+<p>Q3. Where does a well-built Operator write the result of its last reconcile attempt for a custom object — success, failure, or in progress?</p>
+<div class="opts">
+<label>A. Into the object's <code>spec</code> field, next to the desired state</label>
+<label>B. Into the object's <code>status</code> field, next to the desired state</label>
+<label>C. Into a second object created only to hold status</label>
+<label>D. Into the Operator's pod logs, never on the object</label>
+</div>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a3">B. The declarative API pattern keeps <code>spec</code> (what you want) and <code>status</code> (what's actually true) as separate fields on the same object — an Operator should only ever write <code>status</code>.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. A CRD adds a new <code>v1beta1</code> version alongside its existing <code>v1alpha1</code>, and the schema is structurally identical between the two. What's needed to serve both?</p>
+<div class="opts">
+<label>A. A custom conversion webhook that you write and run</label>
+<label>B. The default <code>None</code> strategy — only <code>apiVersion</code> changes</label>
+<label>C. A completely separate CRD object per version</label>
+<label>D. Nothing — Kubernetes refuses to serve two versions</label>
+</div>
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a4">B. A conversion webhook is only required when the schema genuinely changes between versions. If it doesn't, the default <code>None</code> strategy handles it for free.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. Why does installing a CRD and its Operator effectively extend your cluster's trusted codebase, even though you didn't write any of that code yourself?</p>
+<input type="text" id="q5" placeholder="type your answer">
+<button onclick="document.getElementById('a5').classList.add('shown')">Reveal</button>
+<div class="answer" id="a5">Because the Operator's ServiceAccount usually holds broad, often cluster-scoped RBAC permissions to do its job, and that code now runs continuously with those permissions. Lesson 9's RBAC rule — no grant means no access, but any grant is a standing capability — applies just as much to code you installed as to code your own team wrote.</div>
+</div>
+
+<h2>Certification mapping</h2>
+<p>Directly covers <strong>Cluster Architecture, Installation &amp; Configuration (25%)</strong> — CRDs and the Operator pattern are named extension mechanisms in this domain, alongside the CNI/CSI/CRI interfaces from Lesson 18. It also touches <strong>Troubleshooting (30%)</strong>: "I created an object and nothing happened" is exactly the kind of scenario-based question that domain tests, and the troubleshooting workflow above is the transferable method.</p>
+
+<h2>Production challenge</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Diagnose a custom object stuck in a failed state using only the signals a real Operator exposes — <code>kubectl describe</code>, and only if needed, its logs — in the same order a real on-call engineer would use.</p>
+<h4>Scenario</h4>
+<p>A teammate created a <code>Certificate</code> for a new internal tool, pointing at a <code>ClusterIssuer</code> name they misremembered. It's been sitting unissued for an hour and they've pinged you: "TLS isn't working, can you check?"</p>
+<h4>Environment assumptions</h4>
+<p>cert-manager already installed and <code>Running</code> (from the Hands-on exercise above). Create the broken state yourself first — this simulates the teammate's mistake:</p>
+<pre><code>kubectl create namespace demo-tls
+cat &lt;&lt;'EOF' | kubectl apply -f -
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: demo-cert
+  namespace: demo-tls
+spec:
+  secretName: demo-cert-tls
+  dnsNames:
+  - demo.example.com
+  issuerRef:
+    name: does-not-exist
+    kind: ClusterIssuer
+EOF</code></pre>
+<h4>Commands</h4>
+<p>Diagnose it the way the Troubleshooting workflow above prescribes — state before logs:</p>
+<pre><code>kubectl get certificate demo-cert -n demo-tls
+kubectl describe certificate demo-cert -n demo-tls
+kubectl get clusterissuer does-not-exist    # confirm your hypothesis before "fixing" anything
+
+# Only reach for logs if describe's Conditions/Events genuinely don't explain it:
+kubectl logs -n cert-manager deploy/cert-manager | grep demo-cert</code></pre>
+<h4>Expected result</h4>
+<p><code>kubectl get certificate</code> shows a <code>READY</code> column of <code>False</code>, not blank — proof the Operator <em>is</em> reconciling this object, it just can't complete it. <code>describe</code>'s <code>Status.Conditions</code> section shows a condition of <code>Type: Ready</code>, <code>Status: False</code>, with a <code>Reason</code> and <code>Message</code> naming the problem. cert-manager's own troubleshooting docs show this exact shape for a different failure (a missing Secret):</p>
+<pre><code>Status:
+  Conditions:
+    Message:  Issuing certificate as Secret does not exist
+    Reason:   DoesNotExist
+    Status:   False
+    Type:     Ready</code></pre>
+<p>Your <code>Reason</code>/<code>Message</code> will name the missing <code>ClusterIssuer</code> instead — read what it actually says rather than assuming it matches this example verbatim; the exact wording depends on your cert-manager version and what's actually broken. <code>kubectl get clusterissuer does-not-exist</code> confirms the object genuinely doesn't exist, proving the hypothesis before you touch anything.</p>
+<h4>Verification</h4>
+<p>Fix it by creating the missing Issuer (a minimal self-signed one is enough to prove the reconcile loop — no real CA needed):</p>
+<pre><code>cat &lt;&lt;'EOF' | kubectl apply -f -
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: does-not-exist
+spec:
+  selfSigned: {}
+EOF
+kubectl get certificate demo-cert -n demo-tls --watch</code></pre>
+<p><code>READY</code> should flip to <code>True</code> within roughly a minute, with no change made to the <code>Certificate</code> object itself — the fix was entirely on the Issuer side, exactly as <code>describe</code> told you.</p>
+<h4>Common failure</h4>
+<p>Staring at the <code>Certificate</code> object's YAML looking for a typo in <code>dnsNames</code> or <code>secretName</code> — there isn't one. The object's shape is completely valid; it references something that doesn't exist, and no amount of re-reading the YAML in isolation reveals that. Only the Operator's own reconcile output (<code>status.conditions</code>) can.</p>
+<h4>Troubleshooting</h4>
+<p>If <code>describe</code> shows no <code>Conditions</code> at all — not even a <code>False</code> one — that's a different problem than the one this exercise built: it means nothing has ever reconciled this object, which points back at "is the Operator even Running" (Hands-on exercise, step one), not at a bad reference.</p>
+<h4>Cleanup / rollback</h4>
+<pre><code>kubectl delete certificate demo-cert -n demo-tls --ignore-not-found
+kubectl delete clusterissuer does-not-exist --ignore-not-found
+kubectl delete namespace demo-tls --ignore-not-found
+# Optional full cleanup of the Hands-on exercise's install:
+kubectl delete -f https://github.com/cert-manager/cert-manager/releases/download/v1.21.1/cert-manager.yaml</code></pre>
+<h4>Production lesson</h4>
+<p>The habit that separates a fast diagnosis from a confused hour of YAML-staring is the same one from the Troubleshooting workflow: read <code>status.conditions</code> and <code>Events</code> before logs, and logs before guessing. cert-manager's own docs say this explicitly — don't reach for controller logs first, they're verbose; check conditions and events before them. That ordering generalizes to any CRD + Operator pair you'll ever troubleshoot, not just this one.</p>
+</div>
+
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/" target="_blank" rel="noopener">kubernetes.io/docs — Custom Resources</a> and <a href="https://kubernetes.io/docs/concepts/extend-kubernetes/operator/" target="_blank" rel="noopener">kubernetes.io/docs — Operator pattern</a> — exam-allowed pages.</p>
+<p><a href="https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/" target="_blank" rel="noopener">kubernetes.io/docs — Custom Resources</a>, <a href="https://kubernetes.io/docs/concepts/extend-kubernetes/operator/" target="_blank" rel="noopener">kubernetes.io/docs — Operator pattern</a>, and <a href="https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definition-versioning/" target="_blank" rel="noopener">kubernetes.io/docs — CRD versioning</a> — verified 2026-08-03, all exam-allowed pages. Production-example and exercise details verified against <a href="https://cert-manager.io/docs/" target="_blank" rel="noopener">cert-manager.io/docs</a> (installation, Certificate resource, and troubleshooting pages) and <a href="https://www.cncf.io/projects/cert-manager/" target="_blank" rel="noopener">cncf.io — cert-manager project status</a>, verified the same date.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>A CRD only defines a new <code>kind</code> — it doesn't act on it.</li>
-    <li>An Operator is a normal Pod running a reconcile loop, the same pattern as built-in controllers.</li>
-    <li>Custom objects persist in etcd even if the Operator is down — it catches up once it's back.</li>
+    <li>A CRD only teaches the API server a new <code>kind</code> and gives it storage/retrieval — it has zero real-world effect until an Operator is watching it.</li>
+    <li>An Operator is ordinary code (a Pod, usually a Deployment) running the same reconcile-loop pattern as built-in controllers, extended to a custom kind.</li>
+    <li>Operators write outcomes to <code>status</code>, never <code>spec</code> — <code>spec</code> is what you asked for, <code>status</code> is what actually happened. Check <code>status.conditions</code> before logs.</li>
+    <li>A CRD can serve multiple versions; a conversion webhook is only needed when the schema genuinely changes between them.</li>
+    <li>Installing a CRD + Operator extends your cluster's trusted codebase, usually with broad RBAC permissions on the Operator's ServiceAccount — treat it as a security decision, not just a feature install.</li>
+    <li>Default to a well-audited existing Operator (cert-manager, for TLS) over hand-rolling your own, unless nothing suitable exists.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<footer class="teacher-reminder">Stuck, or got a different result than "Expected result" above? Paste the exact command and output back to your teacher — a mismatch between what you saw and what this lesson predicted is the most useful thing you can bring back.</footer>
 
 <div class="lesson-nav">
   <a href="0018-extension-interfaces.html">&larr; Extension interfaces: CNI, CSI, CRI</a>

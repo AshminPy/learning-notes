@@ -11,73 +11,195 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 1 of 24</p>
 <h1>The Pod</h1>
 
-<p>A Pod is the smallest thing Kubernetes runs. Everything bigger (Deployment, Service, Job) is just "a Pod, plus extra rules."</p>
+<h2>Why this matters</h2>
+<p>The single most common mistake people make when they start running real workloads on Kubernetes is treating a Pod like a small VM — something you keep alive, patch, and expect back after a restart. It isn't. A Pod is disposable by design, and every workload controller you'll learn later (Deployment, StatefulSet, Job, DaemonSet) exists purely to manage the creation and replacement of Pods for you. If this lesson doesn't land, rolling updates, self-healing, and Services will all feel like unexplained magic instead of predictable consequences of one simple fact: <strong>Kubernetes never repairs a Pod — it replaces it.</strong></p>
 
-<p class="callout"><strong>Simple example:</strong> think of a Pod like one shipping container. Inside it: one or more apps that share the same address and the same fate — they start together, they stop together. Most Pods hold just one app.</p>
+<p class="callout"><strong>Mental model:</strong> a Pod is a boarding pass, not the passenger. When a flight is cancelled, the airline doesn't fix your old boarding pass — it issues you a new one, for a new flight, with a new seat number. Kubernetes does the same thing: when a Pod dies, the replacement is "near-identical" (same image, same spec) but it is a brand-new object, with a new identity and — this is the part that causes real incidents — usually a new IP address. If any part of your system assumes "this Pod will always come back" or "this Pod will always have this IP," it will break the first time a node fails or you scale down and back up.</p>
 
-<h2>What's inside a Pod manifest</h2>
-<p>Every Kubernetes object (Pod, Deployment, Service — all of them) is written the same shape:</p>
+<h2>Core concepts</h2>
+<p>Every Kubernetes object — Pod, Deployment, Service, all of them — is written in the same four-part shape:</p>
 <pre><code>apiVersion: v1
 kind: Pod
 metadata:
-  name: my-nginx
+  name: nginx
 spec:
   containers:
-    - name: nginx
-      image: nginx
+  - name: nginx
+    image: nginx:1.29
+    ports:
+    - containerPort: 80
 </code></pre>
-<p>Four parts, always:</p>
 <ul>
 <li><code>apiVersion</code> — which version of the Kubernetes API this object uses</li>
 <li><code>kind</code> — what kind of object this is (here: <code>Pod</code>)</li>
 <li><code>metadata</code> — its name and labels</li>
-<li><code>spec</code> — what you actually want (here: run the <code>nginx</code> image)</li>
+<li><code>spec</code> — what you actually want (here: run the <code>nginx</code> image, one container)</li>
 </ul>
-<p>Learn these four once. Every object you write from here on reuses the same shape.</p>
+<p>Learn these four once — every object you write from here on reuses the same shape.</p>
 
-<h2>Try it — before looking below</h2>
-<div class="quiz">
-<p>Q1. Which of the four parts says <em>what container to actually run</em>?</p>
-<input type="text" id="q1" placeholder="type your answer">
-<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1"><code>spec</code> — specifically <code>spec.containers</code>.</div>
+<p>The official definition: a Pod "is a group of one or more containers, with shared storage and network resources, and a specification for how to run the containers." The containers in a Pod share a set of Linux namespaces and cgroups — the same isolation mechanisms that separate one container from another — which is why containers in the same Pod can talk to each other over <code>localhost</code> and see the same mounted volumes. Most Pods hold exactly one container; running more than one in a Pod is explicitly called out by the docs as "a relatively advanced use case," reserved for containers that are genuinely tightly coupled (a sidecar that ships logs, for example) — not a way to group unrelated apps.</p>
+
+<p>Internally: you send this manifest to the API server, the scheduler picks a node for it, and the <strong>kubelet</strong> on that node is what actually creates the containers and keeps watching them locally — it's the kubelet's job to apply <code>restartPolicy</code>, report Pod status back to the API server, and terminate containers gracefully (30 seconds by default) when the Pod is deleted. Nothing above the kubelet — no controller, no scheduler — is watching a bare Pod after it's created; that's the detail this whole lesson hinges on.</p>
+
+<table>
+<tr><th>Pod phase</th><th>What it means</th></tr>
+<tr><td><code>Pending</code></td><td>Accepted by the cluster, but at least one container isn't set up yet (includes time waiting to be scheduled or pulling images)</td></tr>
+<tr><td><code>Running</code></td><td>Bound to a node, all containers created, at least one still running or starting/restarting</td></tr>
+<tr><td><code>Succeeded</code></td><td>All containers terminated successfully and will not be restarted</td></tr>
+<tr><td><code>Failed</code></td><td>All containers terminated and at least one failed (non-zero exit or killed by the system)</td></tr>
+<tr><td><code>Unknown</code></td><td>The cluster lost contact with the node and can't determine the Pod's state</td></tr>
+</table>
+<p class="callout"><strong>Simple example:</strong> <code>CrashLoopBackOff</code> is <em>not</em> one of these phases — it's a display string kubectl shows you in the Status column when a container keeps failing to start. The Pod's real phase underneath is usually still <code>Running</code> or <code>Pending</code>. Don't confuse the friendly status text with the actual API phase; if you're scripting against Pod state, read <code>.status.phase</code>, not the word kubectl prints.</p>
+
+<h2>Production example</h2>
+<p class="callout production"><strong>Production note:</strong> you will almost never see a bare Pod manifest survive code review for a real service. A stateless API, a queue worker, a batch job — every one of them is defined as a Deployment, StatefulSet, or Job, and Kubernetes creates the underlying Pods for you. Bare Pods show up in production for exactly two legitimate reasons: quick interactive debugging (<code>kubectl run debug --image=busybox -it --rm -- sh</code>) and as the thing a controller creates on your behalf — you'll still write raw Pod YAML constantly on the CKA exam, because the exam tests whether you understand the primitive underneath the controllers.</p>
+
+<h2>Hands-on exercise</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Prove to yourself — don't just take the lesson's word for it — that a bare Pod has no self-healing.</p>
+<h4>Scenario</h4>
+<p>You want to confirm what happens when a bare Pod is deleted, before you trust that claim in a real incident.</p>
+<h4>Environment assumptions</h4>
+<p>Any cluster you can <code>kubectl</code> into (kind, minikube, or a real dev cluster), no existing resource named <code>my-nginx</code> in the current namespace.</p>
+<h4>Commands</h4>
+<pre><code>kubectl run my-nginx --image=nginx:1.29
+kubectl get pod my-nginx -o wide
+kubectl delete pod my-nginx
+kubectl get pod my-nginx</code></pre>
+<h4>Expected result</h4>
+<p>The first <code>get</code> shows <code>my-nginx</code> <code>Running</code>. After <code>delete</code>, the second <code>get</code> returns <code>Error from server (NotFound)</code> — nothing recreated it.</p>
+<h4>Verification</h4>
+<p>The <code>NotFound</code> error itself is the proof. If you instead see a Pod named <code>my-nginx</code> running with a different <code>AGE</code>, something else in your cluster (a controller, an admission webhook, a GitOps tool) recreated it — that's worth investigating, not this lesson's behavior.</p>
+<h4>Common failure</h4>
+<p>Expecting the Pod to come back the way a Deployment's Pod would. It won't — there is no controller watching a bare Pod.</p>
+<h4>Troubleshooting</h4>
+<p>If <code>kubectl run</code> errors about an already-existing resource, someone (or something) left a Pod with that name behind — <code>kubectl delete pod my-nginx --ignore-not-found</code> first, then retry.</p>
+<h4>Cleanup / rollback</h4>
+<p>Nothing to clean up — the Pod is already deleted by the exercise itself.</p>
+<h4>Production lesson</h4>
+<p>This exact gap — "no controller, no recreation" — is a real production incident category. A workload that looks fine today can have zero resilience to a node failure tomorrow, and the only way to see that from the manifest alone is to know it's a bare Pod, not a Deployment.</p>
 </div>
 
-<h2>Now write your own</h2>
-<p>Open a terminal or editor. Write a Pod manifest by hand (no copy-paste) with:</p>
-<ul>
-<li>a name of your choice</li>
-<li>the <code>redis</code> image</li>
-</ul>
-<p>Try it before you look at the answer below.</p>
+<h2>Failure scenario</h2>
+<p>A realistic incident, built from the fact you just proved above — except this time the Pod <em>does</em> come back, and that's what causes the outage.</p>
+<ol class="timeline">
+<li><span class="t">14:02</span> Alert fires: the <code>payment-worker</code> Deployment's health check is failing. On-call opens <code>kubectl get pods</code> — the worker Pod is <code>Running</code>, healthy, no restarts.</li>
+<li><span class="t">14:03</span> App logs show <code>connection refused</code> to <code>10.244.1.15</code> — a downstream Pod IP that's hardcoded in a debug config file left over from an earlier troubleshooting session, instead of the proper Service name.</li>
+<li><span class="t">14:06</span> On-call checks that downstream Pod: it's <code>Running</code> too, but its IP is now <code>10.244.2.9</code>. <code>kubectl get events</code> shows the node it used to live on was cordoned and drained 20 minutes earlier for a routine upgrade — its controller recreated it on a different node, with a new IP, exactly as designed.</li>
+<li><span class="t">14:09</span> Root cause identified: nothing is actually broken. The config file assumed a Pod IP was permanent. It never was.</li>
+<li><span class="t">14:12</span> Fix applied: point the config at the Service's stable ClusterIP / DNS name instead of the Pod IP, and restart <code>payment-worker</code> to pick up the change.</li>
+<li><span class="t">14:15</span> Verified: <code>payment-worker</code> connects successfully; health check passes.</li>
+</ol>
+
+<h2>Troubleshooting workflow</h2>
+<p>The general method, applied to "a Pod isn't doing what I expect":</p>
+<ol class="troubleshooting">
+<li><strong>Confirm the symptom.</strong> Run <code>kubectl get pods</code> yourself — is it <code>Pending</code>, <code>CrashLoopBackOff</code>, or genuinely gone? Don't diagnose from memory of what it looked like yesterday.</li>
+<li><strong>Define scope.</strong> Is it one Pod, every Pod on a node, or every Pod in the namespace? <code>kubectl get pods -o wide --all-namespaces</code> tells you if this is isolated or systemic.</li>
+<li><strong>Check recent changes.</strong> <code>kubectl get events --sort-by=.lastTimestamp</code> — was this Pod deleted and recreated, evicted, or has it never successfully started?</li>
+<li><strong>Inspect the right state.</strong> <code>kubectl describe pod &lt;name&gt;</code> for its Events section; <code>kubectl logs &lt;name&gt; --previous</code> if it has restarted, to see the logs from the crash, not the fresh container.</li>
+<li><strong>Form a hypothesis.</strong> For example: "this isn't the same Pod I saw this morning — it was replaced."</li>
+<li><strong>Test one variable.</strong> Compare <code>kubectl get pod &lt;name&gt; -o jsonpath='{.metadata.uid}'</code> against a UID you noted earlier, instead of assuming replacement vs. in-place restart.</li>
+<li><strong>Apply the safest fix.</strong> If it's IP churn, fix the caller to use a Service/DNS name — don't hardcode Pod IPs, and don't delete more Pods while you're still diagnosing.</li>
+<li><strong>Verify recovery.</strong> Confirm the dependent system can reach it again through the Service, not just that the Pod itself looks healthy.</li>
+<li><strong>Document the root cause.</strong> "Hardcoded Pod IP; Pod identities are not stable" — write this down, don't just fix and move on.</li>
+<li><strong>Prevent recurrence.</strong> Add a review check: no raw Pod IPs in application config, ever — only Service DNS names.</li>
+</ol>
+
+<p class="callout security"><strong>Security note:</strong> a bare Pod runs under the <code>default</code> ServiceAccount of its namespace unless you set <code>spec.serviceAccountName</code> explicitly — it inherits whatever RBAC permissions that ServiceAccount has. A debug Pod you spin up with a broad, convenient base image inherits that same blast radius. Use a minimal image and the least-privileged ServiceAccount available for anything you run interactively, not just for real workloads.</p>
+
+<p class="callout production"><strong>Reliability note:</strong> "no self-healing" isn't a footnote, it's the headline reliability property of a bare Pod. There is a real cost dimension too: an abandoned debug Pod nobody deletes sits consuming node CPU/memory allocation indefinitely, since nothing is watching it to clean it up either.</p>
+
+<p class="callout mistake"><strong>Common mistake:</strong> creating bare Pods for real workloads because it's the first primitive you learn, then being surprised weeks later when a routine node drain takes the workload down permanently instead of rescheduling it.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> assuming "restart" means the same Pod comes back. It doesn't. <code>restartPolicy</code> only governs whether the kubelet restarts a failed <em>container inside a Pod that still exists</em> — it has nothing to do with what happens when the Pod itself is deleted or evicted.</p>
+
+<h2>Decision guide</h2>
+<table>
+<tr><th>Option</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
+<tr><td>Bare Pod</td><td>Quick interactive debugging, one-off scratch work</td><td>Anything that must survive a node failure</td><td>No self-healing, no rolling updates, no scaling</td></tr>
+<tr><td>Deployment</td><td>Stateless replicated app (web API, worker pool)</td><td>App needs stable per-instance identity or storage</td><td>Slight extra YAML for a real controller and rollout history</td></tr>
+<tr><td>Job</td><td>Run-to-completion task (migration, one-time batch)</td><td>Anything meant to run indefinitely</td><td>Won't restart the workload once it succeeds — by design</td></tr>
+<tr><td>DaemonSet</td><td>Exactly one Pod per (matching) node — log shipper, node exporter</td><td>App doesn't need to run on every node</td><td>Scales with your node count, not your traffic</td></tr>
+</table>
+<p><strong>Default recommendation:</strong> reach for a Deployment even for a single replica — it costs you nothing extra in complexity and buys self-healing for free. Use a bare Pod only when you explicitly want something disposable and unmanaged.</p>
+
+<h2>Knowledge check</h2>
+<div class="quiz">
+<p>Q1. If the Node running your bare Pod crashes, what recreates the Pod?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Nothing. A bare Pod has no controller watching it, so it stays gone until you (or something else) create it again.</div>
+</div>
 
 <div class="quiz">
-<p>Reveal the reference answer</p>
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a2"><code>apiVersion: v1
-kind: Pod
-metadata:
-  name: my-redis
-spec:
-  containers:
-    - name: redis
-      image: redis
-</code></pre>
+<p>Q2. Which <code>restartPolicy</code> value means Kubernetes never automatically restarts a failed container in the Pod?</p>
+<div class="opts">
+<label>A. Always — restart every time it exits</label>
+<label>B. Never — do not restart it at all</label>
+<label>C. OnFailure — restart on nonzero exit</label>
+<label>D. Default — restart based on image config</label>
+</div>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a2">B. <code>Never</code> — the container is left stopped. (<code>Always</code> is the Pod default; <code>OnFailure</code> restarts only on a non-zero exit code; "Default" isn't a real value — there's no config-driven fourth option.)</div>
+</div>
+
+<h2>Certification mapping</h2>
+<p>Foundational — not separately weighted, but every domain on the CKA exam sits on top of it. Directly underpins <strong>Workloads &amp; Scheduling (15%)</strong>, and you cannot reason correctly about <strong>Services &amp; Networking (20%)</strong>, <strong>Storage (10%)</strong>, or <strong>Troubleshooting (30%)</strong> without first knowing what a Pod actually is and isn't.</p>
+
+<h2>Production challenge</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Fix a hardcoded-Pod-IP bug yourself, without being told the exact fix — using only what this lesson covered.</p>
+<h4>Scenario</h4>
+<p>Your teammate wrote a health-check script that runs from inside a debug Pod on the cluster. It curls a backend Pod's IP address directly and worked fine yesterday. Today it fails.</p>
+<h4>Environment assumptions</h4>
+<p>A kind/minikube cluster. Create the setup yourself first:</p>
+<pre><code>kubectl run backend --image=nginx:1.29 --labels=app=backend
+kubectl expose pod backend --port=80 --name=backend-svc
+kubectl run debugger --image=busybox --restart=Never -it --rm -- sh -c \
+  "wget -qO- http://$(kubectl get pod backend -o jsonpath='{.status.podIP}')"</code></pre>
+<h4>Commands</h4>
+<p>Force the exact failure from the scenario, then fix it:</p>
+<pre><code># 1. Force an IP change, simulating the backend Pod being replaced
+kubectl delete pod backend
+kubectl run backend --image=nginx:1.29 --labels=app=backend
+
+# 2. Re-run the ORIGINAL hardcoded-IP script above — it now fails or hits the wrong Pod
+
+# 3. Fix it: use the Service name instead of a Pod IP
+kubectl run debugger --image=busybox --restart=Never -it --rm -- sh -c \
+  "wget -qO- http://backend-svc"</code></pre>
+<h4>Expected result</h4>
+<p>Step 2 fails or silently succeeds against stale data if the old IP was reassigned; step 3 succeeds regardless of how many times <code>backend</code> has been replaced.</p>
+<h4>Verification</h4>
+<p>Repeat the delete-and-recreate cycle on <code>backend</code> a second time, then re-run only the Service-name version. It should keep working every time — that repeatability is the actual proof, not a single success.</p>
+<h4>Common failure</h4>
+<p>"Fixing" it by hardcoding the <em>new</em> IP instead of switching to the Service name — this doesn't fix the root cause, it just delays the next failure.</p>
+<h4>Troubleshooting</h4>
+<p>Service DNS names (like <code>backend-svc</code>) only resolve from inside the cluster's network — that's why the debug script runs as a Pod on the cluster, not from your laptop. If you try this from outside the cluster, name resolution will fail; that's expected, not a bug in this exercise.</p>
+<h4>Cleanup / rollback</h4>
+<pre><code>kubectl delete pod backend --ignore-not-found
+kubectl delete service backend-svc --ignore-not-found</code></pre>
+<h4>Production lesson</h4>
+<p>"It worked yesterday" plus "nothing changed in my code" is exactly the signature of a Pod-identity bug. Lesson 3 covers Services in depth — this challenge is why they exist.</p>
 </div>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/workloads/pods/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/pods</a> — the exact page you can search in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/concepts/workloads/pods/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/pods</a> and <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle</a> — verified 2026-08-02. Both are searchable in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>A Pod = one or more containers that share an IP and a lifecycle.</li>
-    <li>Every object: <code>apiVersion</code>, <code>kind</code>, <code>metadata</code>, <code>spec</code>.</li>
-    <li><code>spec.containers</code> is the part a Pod can't exist without.</li>
+    <li>A Pod = one or more containers sharing network and storage; every object follows the same <code>apiVersion</code>/<code>kind</code>/<code>metadata</code>/<code>spec</code> shape.</li>
+    <li>Kubernetes never repairs a Pod — a "restarted" Pod is actually a new object with a new UID and usually a new IP.</li>
+    <li><code>restartPolicy</code> (<code>Always</code> default, <code>OnFailure</code>, <code>Never</code>) only governs containers restarting inside a Pod that still exists — it has no effect on Pod-level replacement.</li>
+    <li>A bare Pod has no controller watching it — no self-healing, no rolling updates. Default to a Deployment instead.</li>
+    <li><code>CrashLoopBackOff</code> is a kubectl status string, not a real Pod phase — the real values are <code>Pending</code>, <code>Running</code>, <code>Succeeded</code>, <code>Failed</code>, <code>Unknown</code>.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<footer class="teacher-reminder">Stuck, or got a different result than "Expected result" above? Paste the exact command and output back to your teacher — a mismatch between what you saw and what this lesson predicted is the most useful thing you can bring back.</footer>
 
 <div class="lesson-nav">
   <span>&larr; Start</span>

@@ -11,26 +11,35 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 17 of 24</p>
 <h1>Helm &amp; Kustomize</h1>
 
-<p>Every object so far, you've written by hand. In the real world, cluster components (an Ingress controller, cert-manager, Prometheus) ship as someone else's YAML — dozens or hundreds of files. Helm and Kustomize are the two tools the exam expects you to know for installing and adapting that YAML without hand-editing every file.</p>
+<h2>Why this matters</h2>
+<p>Every object you've written so far, you wrote by hand. In the real world, cluster components — an Ingress controller, cert-manager, the Prometheus stack — ship as someone else's YAML, dozens or hundreds of files, and your own team's app needs slightly different config in dev, staging, and prod. Helm and Kustomize are the two tools the exam (and real platform teams) use to install and adapt that YAML without hand-editing every file. The stakes are not theoretical: a single <code>helm upgrade</code> that changes one line in a shared chart's <code>values.yaml</code> doesn't touch one Pod — it can roll a broken config out to every environment that chart is used in, silently, because the whole point of a chart is that many teams reuse the same templates. And when that broken rollout is live at 2am, the on-call engineer who doesn't already know <code>helm rollback &lt;release&gt; &lt;revision&gt;</code> cold — not <code>kubectl edit</code>, not deleting and reapplying files by hand — burns real incident minutes rediscovering it from scratch, or worse, "fixes" it in a way the tool doesn't know about and quietly undoes later.</p>
 
-<p class="callout"><strong>Simple example:</strong> Helm packages and templates a whole app into one installable unit (a "chart") — think an app store install. Kustomize takes plain YAML you already have and layers small, targeted edits on top ("overlays") without touching the original files. Different problem, both exam-tested, often used together.</p>
+<p class="callout"><strong>Mental model:</strong> Helm and Kustomize are two different translators that both compile down to the same target language — plain Kubernetes API objects. The API server has no <code>spec.createdBy: helm</code> field it checks before scheduling a Pod, evaluating a probe, or enforcing RBAC; the moment an object exists in etcd, whatever tool produced it is irrelevant to how the cluster treats it. This predicts something you can verify yourself: run <code>kubectl get deployment &lt;name&gt; -o yaml</code> against a Deployment created by <code>helm install</code> and one created by <code>kubectl apply -k</code>, and the <code>spec</code> block — <code>replicas</code>, <code>template</code>, containers, probes, resource limits — reads like ordinary Deployment YAML either way, with only a handful of tool-specific labels layered on top (Helm adds <code>app.kubernetes.io/managed-by: Helm</code> and <code>helm.sh/chart</code>; Kustomize adds none by default). It also predicts the trap this lesson's Common mistakes section covers below: since the cluster itself doesn't enforce which tool "owns" an object, a <code>kubectl edit</code> on a Helm-managed or Kustomize-managed resource is accepted immediately and unconditionally — the drift only surfaces the next time that tool tries to reconcile the object, not before.</p>
 
 <h2>Helm — install and manage packaged apps</h2>
-<p>A <strong>chart</strong> is a packaged set of templated manifests plus a <code>values.yaml</code> of defaults. Installing one creates a <strong>release</strong> — a tracked, named instance of that chart in your cluster.</p>
+<p>A <strong>chart</strong> is a packaged, templated set of manifests plus a <code>values.yaml</code> of defaults — the reusable unit you <code>helm install</code>. Installing a chart creates a <strong>release</strong>: a named, tracked instance of that chart in a specific namespace. Every release keeps a full revision history — <code>helm install</code>, <code>helm upgrade</code>, and <code>helm rollback</code> each increment the release's revision counter by exactly 1, starting from revision 1 on install. That history is what makes rollback possible at all: it isn't "undo my last edit," it's "redeploy the manifests exactly as they were at revision N."</p>
 <pre><code>helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm repo update
 helm install my-ingress ingress-nginx/ingress-nginx
 </code></pre>
 <ul>
-<li><code>helm upgrade my-ingress ingress-nginx/ingress-nginx --set controller.replicaCount=2</code> — change config, same release</li>
-<li><code>helm rollback my-ingress 1</code> — back to a previous revision</li>
-<li><code>helm uninstall my-ingress</code> — remove everything the chart created</li>
-<li><code>helm template ingress-nginx/ingress-nginx</code> — render the manifests locally, without installing anything</li>
+<li><code>helm upgrade my-ingress ingress-nginx/ingress-nginx --set controller.replicaCount=2</code> — apply a config change to the same release; revision +1</li>
+<li><code>helm history my-ingress</code> — list every revision this release has ever had: number, timestamp, status, chart version, app version, and a one-line description</li>
+<li><code>helm rollback my-ingress 1</code> — redeploy revision 1's manifests. This does <strong>not</strong> take the release back to "revision 1" — it creates a brand-new revision (say, revision 4) whose content matches revision 1. <code>helm history</code> afterward still lists every revision that ever happened, in order, never rewound.</li>
+<li><code>helm uninstall my-ingress</code> — delete every object the chart created; add <code>--keep-history</code> if you might want to inspect past revisions later without a live release</li>
+<li><code>helm template ingress-nginx/ingress-nginx</code> — render the manifests locally: no cluster contact, nothing installed, values normally looked up in-cluster are faked</li>
+<li><code>helm get manifest my-ingress</code> — fetch the exact YAML the currently-installed release actually applied, straight from Helm's own record</li>
 </ul>
-<p>Whatever Helm installs is still ordinary Kubernetes objects underneath — <code>kubectl get all -l app.kubernetes.io/instance=my-ingress</code> shows them. Troubleshoot a Helm-installed app exactly like any other: <code>describe</code>, <code>logs</code>, <code>get events</code>. Helm only changes how it got created.</p>
+<p>A real <code>helm history</code> looks like this — read the columns, not just the numbers:</p>
+<pre><code>REVISION  UPDATED                   STATUS      CHART        APP VERSION  DESCRIPTION
+1         Mon Aug  3 09:12:01 2026  superseded  demo-0.1.0   1.16.0       Install complete
+2         Mon Aug  3 09:14:33 2026  superseded  demo-0.1.0   1.16.0       Upgrade complete
+3         Mon Aug  3 09:16:50 2026  deployed    demo-0.1.0   1.16.0       Rolled back to 1
+</code></pre>
+<p>Whatever Helm installs is still ordinary Kubernetes objects underneath — <code>kubectl get all -l app.kubernetes.io/instance=my-ingress</code> shows them, using the label every Helm-created object carries automatically. Troubleshoot a Helm-installed app exactly like any other: <code>describe</code>, <code>logs</code>, <code>get events</code>. Helm only changes how it got created — not how it behaves once it exists, and not how you debug it.</p>
 
 <h2>Kustomize — patch YAML without templating</h2>
-<p>Kustomize has been built into <code>kubectl</code> since v1.14 — no install needed. It starts from a <strong>base</strong> (plain manifests) and applies <strong>overlays</strong> (small patches) for each environment.</p>
+<p>Kustomize has been built into <code>kubectl</code> since v1.14 (2019) — no separate install. It starts from a <strong>base</strong> (plain manifests) and layers <strong>overlays</strong> (small, targeted patches) on top, one per environment — no templating language, no <code>{{ }}</code>, just your real YAML plus patches.</p>
 <pre><code># base/kustomization.yaml
 resources:
   - deployment.yaml
@@ -51,15 +60,106 @@ patches:
 <ul>
 <li><code>kubectl kustomize overlays/prod</code> — render the final YAML, don't apply</li>
 <li><code>kubectl apply -k overlays/prod</code> — render and apply in one step</li>
+<li><code>kubectl diff -k overlays/prod</code> — render, then diff the result against what's actually live in the cluster, without applying anything</li>
 </ul>
-<p>No templating language, no <code>{{ }}</code> — just your real YAML, plus patches. That's the whole pitch.</p>
+<p>Two generator fields solve a real problem from Lesson 6: a Pod that reads a ConfigMap as an environment variable freezes that value at container start and never picks it up again without a manual rollout. <code>configMapGenerator</code> (and its twin, <code>secretGenerator</code>) build the ConfigMap or Secret from literals or files <em>and</em> append a content hash to its generated name — change the content, the hash changes, the name changes. Kustomize then automatically rewrites every reference to that name across your manifests, so the Pod template itself changes on the next apply — which forces a real rollout with new Pods that read the new value. No separate restart step, no Reloader-style controller needed.</p>
+<pre><code># base/kustomization.yaml
+configMapGenerator:
+  - name: app-config
+    literals:
+      - LOG_LEVEL=info
+resources:
+  - deployment.yaml
+</code></pre>
+<p><code>kubectl kustomize .</code> on that base renders a ConfigMap named something like <code>app-config-c888dfbhf8</code>. Change <code>LOG_LEVEL</code> to <code>debug</code> and the suffix changes too — any Deployment in the same kustomization that references <code>app-config</code> gets rewritten to reference the new name automatically, which is exactly the "new object, new rollout" pattern Lesson 6 recommended hand-building with a content-hash suffix.</p>
 
-<h2>Try it — before looking below</h2>
+<h2>Production example</h2>
+<p class="callout production"><strong>Production note:</strong> most platform teams standardize on one tool per boundary, not one tool for everything. A common real split: Helm for anything you install from someone else — ingress-nginx, cert-manager, the Prometheus stack — because those projects already ship and version their own charts, and you want their tested upgrade path, not one you invent yourself. Kustomize for internal apps across environments — the same 40-line Deployment for a team's own service, with three overlays (dev/staging/prod) that differ only in replica count, resource limits, and one environment variable — because there's no reusable "package" here to justify chart authoring and its versioning overhead for code your own team owns end to end. Mixing both without that boundary — wrapping your own single app in a Helm chart <em>and</em> patching the result with Kustomize, or hand-authoring chart templates for something that's really one Deployment with three tiny variants — is the pattern that produces the most confused on-call handoffs, because now two tools both believe they own the same object's reconciliation. Either way, the render step belongs in CI before <code>apply</code> ever runs: a pipeline stage that runs <code>helm template</code> or <code>kubectl kustomize</code> and reviews the rendered diff catches a bad <code>values.yaml</code> change or a broken JSON patch while it's still text on a pull request — not after it's already live.</p>
+
+<h2>Hands-on exercise</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Prove to yourself — don't take the lesson's word for it — what a Helm "revision" actually is, and that <code>helm rollback</code> doesn't rewind the revision counter.</p>
+<h4>Scenario</h4>
+<p>You want to see revision history and rollback behave with your own eyes before you'd trust <code>helm rollback</code> in a real incident.</p>
+<h4>Environment assumptions</h4>
+<p>A kind/minikube cluster (or real dev cluster) with the Helm v3 CLI installed locally, and outbound internet access from the cluster's nodes to pull the <code>nginx</code> image. No existing release named <code>demo-release</code> in the current namespace.</p>
+<h4>Commands</h4>
+<pre><code>helm create demo
+helm install demo-release ./demo
+kubectl get pods -l app.kubernetes.io/instance=demo-release
+
+helm upgrade demo-release ./demo --set replicaCount=3
+kubectl get pods -l app.kubernetes.io/instance=demo-release
+helm history demo-release
+
+helm rollback demo-release 1
+kubectl get pods -l app.kubernetes.io/instance=demo-release
+helm history demo-release</code></pre>
+<h4>Expected result</h4>
+<p>After <code>install</code>: one Pod (the chart's default <code>replicaCount: 1</code>). After <code>upgrade</code>: three Pods, and <code>helm history</code> shows revisions 1 and 2. After <code>rollback</code>: one Pod again — but <code>helm history</code> now shows <strong>three</strong> revisions (1, 2, 3), with revision 3 described as "Rolled back to 1," not a return to "revision 1."</p>
+<h4>Verification</h4>
+<p>The Pod count after rollback (1) proves the rollback took effect. The revision count in <code>helm history</code> (3, not 1) proves rollback creates a new revision instead of rewinding the counter — a distinction that matters the moment you script anything, or communicate anything to a teammate, using a specific revision number.</p>
+<h4>Common failure</h4>
+<p>Assuming <code>helm rollback demo-release 1</code> puts the release "back at revision 1" — then checking <code>helm history</code> afterward and being confused that the latest revision number is 3, not 1.</p>
+<h4>Troubleshooting</h4>
+<p>If <code>helm install</code> errors that the release already exists, a previous run wasn't cleaned up — run <code>helm uninstall demo-release --ignore-not-found</code> first. If <code>kubectl get pods</code> shows nothing after install, check <code>kubectl get events</code> for <code>ImagePullBackOff</code> — the default scaffold chart pulls <code>nginx</code> from Docker Hub, so this exercise needs real outbound network access from the cluster's nodes.</p>
+<h4>Cleanup / rollback</h4>
+<pre><code>helm uninstall demo-release --ignore-not-found
+rm -rf demo</code></pre>
+<h4>Production lesson</h4>
+<p><code>helm rollback &lt;release&gt; &lt;revision&gt;</code> is the command you need cold during an incident — it restores known-good manifests in seconds. Hand-editing the live Deployment instead (<code>kubectl scale</code>, <code>kubectl edit</code>) doesn't touch the chart's recorded state — the next <code>helm upgrade</code>, even an unrelated one, can silently undo your manual fix, because Helm reconciles toward what its own revision history says the object should look like, not toward whatever is currently running.</p>
+</div>
+
+<h2>Failure scenario</h2>
+<p>A realistic incident built on a fact you can check yourself: the default chart scaffold's <code>readinessProbe</code> checks <code>httpGet</code> path <code>/</code> — change that path in a values override to something the app doesn't actually serve, and Lesson 11's readiness mechanics kick in exactly as documented: the Pod stays <code>Running</code>, it just stops receiving traffic.</p>
+<ol class="timeline">
+<li><span class="t">14:02</span> Alert fires: the <code>payments-api</code> Deployment shows 0 of 3 Pods Ready. On-call runs <code>kubectl get pods -l app.kubernetes.io/instance=payments-api</code> — all three Pods are <code>Running</code>, zero restarts, but every one reads <code>0/1</code> in the READY column.</li>
+<li><span class="t">14:04</span> <code>kubectl describe pod</code> shows the Events section: <code>Readiness probe failed: HTTP probe failed with statuscode: 404</code> against path <code>/healthz</code>.</li>
+<li><span class="t">14:06</span> On-call runs <code>helm history payments-api</code> — revision 14 deployed 22 minutes ago, description "Upgrade complete." <code>helm get manifest payments-api</code> shows the current readiness probe pointing at <code>/healthz</code>; the chart's default before this revision was plain <code>/</code>.</li>
+<li><span class="t">14:09</span> Root cause identified: the shared chart's new version added a <code>/healthz</code> default, and the values override enabling it went out before the application code that actually serves that route — next week's release, not this one.</li>
+<li><span class="t">14:11</span> Fix applied: <code>helm rollback payments-api 13</code> — not a live <code>kubectl patch</code> on the probe, because a manual edit would drift from what Helm's own revision history says revision 14 should look like, and get silently reasserted the next time anyone runs a legitimate <code>helm upgrade</code>.</li>
+<li><span class="t">14:13</span> Verified: within one probe interval, all three Pods read <code>1/1</code> Ready; Service endpoints repopulate; traffic resumes.</li>
+<li><span class="t">14:30</span> Root cause recorded, fix scheduled: add a CI step that runs <code>helm template</code> on every chart-version bump and diffs the rendered probe config against the previous revision, so a mismatched probe path fails a pull request instead of reaching production.</li>
+</ol>
+
+<h2>Troubleshooting workflow</h2>
+<p>The general method, applied specifically to "a Helm release or Kustomize-applied app is broken":</p>
+<ol class="troubleshooting">
+<li><strong>Confirm the symptom.</strong> <code>kubectl get pods,deployment</code> for the actual current state — Ready counts, restarts, age — not what you remember it looking like yesterday.</li>
+<li><strong>Define scope.</strong> One Pod, the whole release, or every consumer of a shared chart or base? <code>kubectl get pods -l app.kubernetes.io/instance=&lt;release&gt;</code> (Helm) or by the app's own labels (Kustomize) tells you if this is isolated or systemic.</li>
+<li><strong>Check recent changes.</strong> <code>helm history &lt;release&gt;</code> for timestamps and descriptions, or <code>git log</code>/<code>git diff</code> on the kustomization and its overlay — was this deployed recently, and by exactly what change?</li>
+<li><strong>Inspect the right state.</strong> Compare rendered intent against live reality: <code>helm get manifest &lt;release&gt;</code> vs. <code>kubectl get &lt;kind&gt; -o yaml</code>, or <code>kubectl diff -k &lt;overlay&gt;</code> directly — this is the step that reveals drift, not just breakage.</li>
+<li><strong>Form a hypothesis.</strong> For example: "the last upgrade changed the readiness probe path" or "someone hand-edited this object and it's drifted from the base."</li>
+<li><strong>Test one variable.</strong> Diff exactly what changed — <code>helm get manifest --revision N-1</code> against the current revision, or the specific overlay commit — rather than re-deploying blind and hoping.</li>
+<li><strong>Apply the safest fix.</strong> <code>helm rollback &lt;release&gt; &lt;previous-revision&gt;</code>, or revert the kustomization change in git and <code>kubectl apply -k</code> again — not a live <code>kubectl edit</code>/<code>patch</code>, which the tool won't know about and may silently overwrite or conflict with on the next legitimate change.</li>
+<li><strong>Verify recovery.</strong> Confirm probes pass and Service endpoints repopulate with <code>kubectl get endpoints</code>, not just that the rollback command exited 0.</li>
+<li><strong>Document the root cause.</strong> Record exactly which revision or commit introduced the bad value, and which field — "readinessProbe.httpGet.path changed in chart v2.3.0's default values" — not just "rolled back and it's fine now."</li>
+<li><strong>Prevent recurrence.</strong> Add a CI render-and-review step (<code>helm template</code> / <code>kubectl kustomize</code>) before merge, so the same class of mistake fails a pull request instead of reaching a live cluster.</li>
+</ol>
+
+<p class="callout security"><strong>Security note:</strong> Helm supports nine lifecycle hooks (<code>pre-install</code>, <code>post-install</code>, <code>pre-delete</code>, <code>post-delete</code>, <code>pre-upgrade</code>, <code>post-upgrade</code>, <code>pre-rollback</code>, <code>post-rollback</code>, <code>test</code>) that are just ordinary Kubernetes manifests — usually Jobs — marked with a special annotation. Helm's own docs don't carry an explicit warning about this, but it follows directly from what a hook is: a chart from a repository you don't control can ship a hook Job that runs an arbitrary container image, with whatever RBAC permissions the identity running <code>helm install</code>/<code>helm upgrade</code> has. Helm doesn't sandbox this in any way — installing a third-party chart is functionally the same trust decision as applying someone else's raw manifests to your cluster. Treat <code>helm repo add</code> the way you'd treat adding a new package registry: verify the source, and pin exact chart versions instead of always pulling the latest.</p>
+
+<p class="callout production"><strong>Reliability note:</strong> rollback capability is the real reliability payoff of tracking deployments through Helm's revision history or a Git-tracked Kustomize overlay at all — it gives you a known-good state to return to in seconds during an incident, instead of reconstructing "what did this look like before" from memory. That safety net only holds if nobody hand-edits the live objects in between: both tools reconcile toward what they think the object should look like based on their own recorded state, not toward whatever is actually running right now.</p>
+
+<p class="callout mistake"><strong>Common mistake:</strong> hand-editing (<code>kubectl edit</code>, <code>patch</code>, or <code>scale</code>) an object that a Helm release or a Kustomize base manages, to fix something quickly during an incident. It works immediately — the API server has no concept of "this object belongs to a tool" — but the fix is invisible to Helm's revision history or the kustomization's patches, and the next legitimate <code>helm upgrade</code> or <code>kubectl apply -k</code> can silently revert it without warning.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> mixing Helm and Kustomize on the same object without a clear boundary — for example, using Kustomize to patch a Deployment that a Helm chart also manages. Now two tools both believe they own that object's reconciliation, and whichever one runs last silently wins, with no error telling you the other tool's intended state was dropped.</p>
+
+<h2>Decision guide</h2>
+<table>
+<tr><th>Option</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
+<tr><td>Helm</td><td>Installing a reusable third-party package — ingress controllers, cert-manager, monitoring stacks — with someone else's tested release path</td><td>A single internal app with no real "package" boundary to justify chart authoring</td><td>Rollback and revision history built in; adds a templating layer and its own release state you now have to reason about</td></tr>
+<tr><td>Kustomize</td><td>Your own app across environments (dev/staging/prod) that differ only in small config values</td><td>You need someone else's already-versioned package — you'd be hand-maintaining patches against their upstream YAML forever</td><td>No templating, keeps real YAML readable; no built-in rollback — you rely on Git history for that, not the tool itself</td></tr>
+<tr><td>Plain <code>kubectl apply -f</code></td><td>Ad hoc single-cluster objects, quick debugging resources, one-off exam scenarios</td><td>Multiple environments, or anything that needs a repeatable audit trail of what changed and when</td><td>Zero extra tooling to learn; every environment difference is hand-maintained as a separate file, with no revision history beyond kubectl's own last-applied-configuration annotation</td></tr>
+</table>
+<p><strong>Default recommendation:</strong> Helm for anything you didn't author yourself; Kustomize for your own app's environment differences; plain <code>kubectl apply -f</code> only for one-off objects or throwaway debugging — never as the only deployment method for something more than one environment depends on.</p>
+
+<h2>Knowledge check</h2>
 <div class="quiz">
 <p>Q1. You need to deploy the same app to dev and prod, only the replica count differs. Kustomize or Helm — which fits with less setup, and why?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">Kustomize — one base, two small overlays, no templating language or chart authoring needed. Helm is worth the extra structure when you're distributing a reusable package to other people/teams, not for a single app with a one-line difference between environments.</div>
+<div class="answer" id="a1">Kustomize — one base, two small overlays, no templating language or chart authoring needed. Helm is worth the extra structure when you're distributing a reusable package to other people or teams, not for a single app with a one-line difference between environments.</div>
 </div>
 
 <div class="quiz">
@@ -69,19 +169,115 @@ patches:
 <div class="answer" id="a2">No — <code>kubectl get pods</code>, <code>kubectl describe pod</code>, <code>kubectl logs</code>, same as always. Helm's involvement ended the moment the objects were created; find them with <code>kubectl get all -l app.kubernetes.io/instance=&lt;release&gt;</code> if you don't know their names.</div>
 </div>
 
+<div class="quiz">
+<p>Q3. You run <code>helm rollback my-release 2</code>. Afterward, <code>helm history</code> shows revision 5 as the latest, described "Rolled back to 2." Why isn't the latest revision number 2?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">Because rollback doesn't rewind the counter — every install, upgrade, or rollback increments the revision number by 1. Revision 5's content matches revision 2, but it's still a brand-new entry in the history, not a return to entry 2.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. A Deployment reads a value from a ConfigMap as an environment variable. You update the ConfigMap's data through Kustomize's <code>configMapGenerator</code>. What actually makes the running Pods pick up the new value?</p>
+<div class="opts">
+<label>A. Kustomize restarts the Pods immediately after generating it</label>
+<label>B. The generated name changes, forcing a new Pod rollout</label>
+<label>C. The kubelet re-reads the env var without any restart</label>
+<label>D. Nothing — env vars refresh automatically every sync</label>
+</div>
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a4">B. The content-hash suffix Kustomize appends to the generated ConfigMap's name changes whenever its data changes, and every reference to that name is rewritten automatically — forcing a real Pod template change and a real rollout, which is the only thing that can update an env var (see Lesson 6). A, C, and D all describe live-update mechanisms that don't exist for environment variables.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. Your team owns one internal service that needs slightly different replica counts in dev, staging, and prod, with no plan to share it as a package. Per this lesson's decision guide, what's the recommended default?</p>
+<div class="opts">
+<label>A. Author a Helm chart with three values files</label>
+<label>B. Use Kustomize with one base, three overlays</label>
+<label>C. Maintain three fully separate manifest copies</label>
+<label>D. Patch the live objects by hand per environment</label>
+</div>
+<button onclick="document.getElementById('a5').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a5">B. Kustomize's base-plus-overlay model fits exactly this shape — one shared base, small per-environment patches — without the chart-authoring and versioning overhead Helm exists for. A adds structure this app doesn't need; C throws away the shared base, so every future change is repeated three times by hand; D is the hand-editing mistake this lesson warns against, with no audit trail at all.</div>
+</div>
+
+<h2>Certification mapping</h2>
+<p>Falls under <strong>Cluster Architecture, Installation &amp; Configuration (25%)</strong> on the CKA exam objectives — the domain covering how a cluster's components and workloads get installed and configured, alongside kubeadm, etcd, RBAC, the extension interfaces (CNI/CSI/CRI), and CRDs.</p>
+
+<h2>Production challenge</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Diagnose drift between a Kustomize base/overlay and what's actually running in the cluster, without being told what changed — using only <code>kubectl diff -k</code> and the method above.</p>
+<h4>Scenario</h4>
+<p>A teammate says: "the prod overlay says 3 replicas, but I keep seeing 5 Pods, and nobody remembers changing the overlay."</p>
+<h4>Environment assumptions</h4>
+<p>A kind/minikube cluster with kubectl v1.14+ (kustomize support is built in). No existing Deployment named <code>web</code> in the current namespace. Build the drifted scenario yourself first, then diagnose it as if you didn't:</p>
+<pre><code>mkdir -p demo-kustomize/base demo-kustomize/overlays/prod
+
+cat > demo-kustomize/base/deployment.yaml <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: web }
+  template:
+    metadata: { labels: { app: web } }
+    spec:
+      containers:
+      - name: web
+        image: nginx:1.29
+EOF
+
+cat > demo-kustomize/base/kustomization.yaml <<'EOF'
+resources:
+  - deployment.yaml
+EOF
+
+cat > demo-kustomize/overlays/prod/kustomization.yaml <<'EOF'
+resources:
+  - ../../base
+EOF
+
+kubectl apply -k demo-kustomize/overlays/prod
+
+# Simulate the "nobody remembers" drift: someone hand-scaled it during an incident
+kubectl scale deployment web --replicas=5</code></pre>
+<h4>Commands</h4>
+<p>Diagnose it using only read/diff commands — no editing yet:</p>
+<pre><code>kubectl get deployment web
+kubectl diff -k demo-kustomize/overlays/prod</code></pre>
+<h4>Expected result</h4>
+<p><code>kubectl get deployment web</code> shows <code>5/5</code> replicas. <code>kubectl diff -k</code> prints a diff on <code>spec.replicas</code>: live is 5, the overlay's rendered manifest says 3 — proof the live object has drifted from what's tracked in the kustomization, and by exactly how much.</p>
+<h4>Verification</h4>
+<p>Re-run <code>kubectl apply -k demo-kustomize/overlays/prod</code> and confirm <code>kubectl get deployment web</code> returns to <code>3/3</code>. The diff you found is exactly what <code>apply</code> corrects — nothing more, nothing less.</p>
+<h4>Common failure</h4>
+<p>"Fixing" this by hand-scaling back to 3 (<code>kubectl scale deployment web --replicas=3</code>) instead of running <code>kubectl apply -k</code>. It happens to produce the same end state here, but it doesn't fix the actual problem — a base/overlay that reality no longer matches — and teaches nothing about why the drift happened in the first place.</p>
+<h4>Troubleshooting</h4>
+<p>If <code>kubectl diff -k</code> prints nothing, the drift was already reconciled by something else — a GitOps controller, a scheduled <code>kubectl apply -k</code> job — before you looked. Check <code>kubectl get deployment web -o yaml</code> for recent changes in <code>metadata.managedFields</code>, and ask whether anything automated re-applies this kustomization on a schedule.</p>
+<h4>Cleanup / rollback</h4>
+<pre><code>kubectl delete -k demo-kustomize/overlays/prod --ignore-not-found
+rm -rf demo-kustomize</code></pre>
+<h4>Production lesson</h4>
+<p><code>kubectl diff -k</code> is the single command that answers "did someone change this by hand?" without guessing — the Kustomize equivalent of comparing <code>helm get manifest</code> against live state. It belongs at the front of your troubleshooting workflow, before you touch anything, not as an afterthought once something's already broken.</p>
+</div>
+
 <h2>Source</h2>
-<p><a href="https://helm.sh/docs/" target="_blank" rel="noopener">helm.sh/docs</a> and <a href="https://kubectl.docs.kubernetes.io/references/kustomize/" target="_blank" rel="noopener">kubectl.docs.kubernetes.io — Kustomize reference</a> — exam-allowed pages.</p>
+<p><a href="https://helm.sh/docs/intro/using_helm/" target="_blank" rel="noopener">helm.sh/docs/intro/using_helm</a>, the <a href="https://helm.sh/docs/helm/helm/" target="_blank" rel="noopener">Helm CLI command reference</a> (install/upgrade/rollback/history/uninstall/template/get manifest), <a href="https://helm.sh/docs/faq/changes_since_helm2/" target="_blank" rel="noopener">Helm's three-way merge patch explanation</a>, and <a href="https://kubectl.docs.kubernetes.io/references/kustomize/kustomization/configmapgenerator/" target="_blank" rel="noopener">kubectl.docs.kubernetes.io — configMapGenerator/secretGenerator reference</a> — verified 2026-08-03. All are searchable in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Helm = package + template + track as a "release." Kustomize = patch existing plain YAML, no templating.</li>
-    <li><code>kubectl apply -k &lt;dir&gt;</code> is built into kubectl — no separate install.</li>
-    <li>Whatever either tool creates is ordinary Kubernetes objects — troubleshoot the same way regardless of how they got created.</li>
+    <li>Helm = package + template + track as a "release," with a revision history where install/upgrade/rollback each add 1 — rollback creates a new revision matching old content, it never rewinds the counter.</li>
+    <li>Kustomize = patch existing plain YAML, no templating; <code>configMapGenerator</code>/<code>secretGenerator</code> append a content-hash suffix so a config change forces a real rollout, solving Lesson 6's "env var frozen at start" problem.</li>
+    <li><code>kubectl apply -k</code>/<code>kubectl kustomize</code>/<code>kubectl diff -k</code> are all built into kubectl since v1.14 — no separate install.</li>
+    <li>Whatever either tool creates is ordinary Kubernetes objects — troubleshoot the same way regardless of how they got created, using <code>helm get manifest</code> or <code>kubectl diff -k</code> to compare intended vs. live state.</li>
+    <li>Hand-editing a Helm- or Kustomize-managed live object is accepted instantly by the API server, but invisible to the tool's own state — the next legitimate upgrade/apply can silently revert it.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<footer class="teacher-reminder">Stuck, or got a different result than "Expected result" above? Paste the exact command and output back to your teacher — a mismatch between what you saw and what this lesson predicted is the most useful thing you can bring back.</footer>
 
 <div class="lesson-nav">
   <a href="0016-troubleshooting-application-workload.html">&larr; Troubleshooting: application &amp; workload</a>

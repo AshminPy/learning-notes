@@ -11,98 +11,285 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 9 of 24</p>
 <h1>RBAC — ServiceAccount, Role, RoleBinding</h1>
 
-<p>Every manifest so far assumed permissions just work. They don't. RBAC (Role-Based Access Control) is the layer that says who is allowed to do what.</p>
+<h2>Why this matters</h2>
+<p>Over-permissioned ServiceAccounts show up again and again in real Kubernetes security reviews as one of the most common findings — right alongside exposed dashboards and unpatched images. The reason it matters more than most misconfigurations: a Pod is compromised through the <em>application</em> running inside it (a dependency vulnerability, a deserialization bug, a leaked credential baked into an image) far more often than through Kubernetes itself. When that happens, the attacker doesn't get "into Kubernetes" in the abstract — they get exactly whatever identity that Pod's ServiceAccount carries, no more and no less. A compromised Pod running as <code>default</code> with no RBAC bound to it is a contained, boring incident. A compromised Pod whose ServiceAccount is bound to <code>cluster-admin</code> — because someone wired it up "temporarily" during a deploy pipeline setup and never came back to narrow it — is a full cluster compromise: every Secret, every ConfigMap, every workload, in every namespace, readable and writable by whoever now controls that one Pod. This lesson is about the exact objects that decide which of those two outcomes you get.</p>
 
-<p class="callout"><strong>Simple example:</strong> think of RBAC like a keycard system. A <strong>ServiceAccount</strong> is the badge a Pod wears. A <strong>Role</strong> is the list of doors a badge type may open. A <strong>RoleBinding</strong> is what actually hands the badge those keys — no binding, no access, no matter what the Role allows.</p>
+<p class="callout"><strong>Mental model:</strong> RBAC is a whitelist with no ceiling and no override. Every permission check is one question — "is there an explicit rule, anywhere, that allows this?" — and nothing else. There's no deny list to add an exception to, no priority system between rules, and, this is the part that causes real incidents, no automatic expiry or built-in containment on anything you grant. If you bind a ServiceAccount to <code>cluster-admin</code> "just for now, I'll fix it later," Kubernetes enforces that grant identically on day one and day two hundred — nothing about the word "temporarily" is checked or enforced anywhere in the system. The only thing that ever narrows a grant is a human going back and editing or deleting the binding. Once you accept that, you can predict the failure mode before you see it: the most dangerous RBAC mistake usually isn't a <em>missing</em> grant — that breaks something loudly, immediately, and gets fixed the same day. It's an <em>excess</em> grant that works fine for months, silently, until the day something else goes wrong at the same time.</p>
 
-<h2>The three pieces</h2>
-<p>A Role lists what's allowed:</p>
+<h2>Core concepts</h2>
+<p>Four objects, in two pairs. A Role lists what's allowed:</p>
 <pre><code>apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: pod-reader
+  namespace: rbac-demo
 rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
 </code></pre>
-<ul>
-<li><strong>ServiceAccount</strong> — an identity a Pod can act as, instead of you</li>
-<li><strong>Role</strong> — which <code>verbs</code> are allowed on which <code>resources</code>, in one namespace (shown above)</li>
-<li><strong>RoleBinding</strong> — grants the Role to a subject (ServiceAccount, User, or Group)</li>
-</ul>
-<p><strong>ClusterRole</strong> / <strong>ClusterRoleBinding</strong> are the same two objects, just cluster-scoped instead of namespaced.</p>
+<table>
+<tr><th>Object</th><th>Scope</th><th>Defines</th></tr>
+<tr><td>ServiceAccount</td><td>Namespaced</td><td>An identity a Pod can act as, instead of a human user</td></tr>
+<tr><td>Role</td><td>Namespaced</td><td>Allowed verbs on resources, inside exactly one namespace</td></tr>
+<tr><td>ClusterRole</td><td>Cluster-wide</td><td>Allowed verbs on resources — namespaced or cluster-scoped (Nodes, PersistentVolumes) — or non-resource URLs like <code>/healthz</code></td></tr>
+<tr><td>RoleBinding</td><td>Namespaced</td><td>Grants a Role <em>or</em> a ClusterRole to a subject, scoped to the RoleBinding's own namespace</td></tr>
+<tr><td>ClusterRoleBinding</td><td>Cluster-wide</td><td>Grants a ClusterRole to a subject, across every namespace in the cluster</td></tr>
+</table>
+<p>The detail most people miss: a RoleBinding can reference a <em>ClusterRole</em>, not just a Role. This lets a platform team define one reusable rule set once, then apply it namespace-by-namespace without redefining it each time. What actually grants the access is still the RoleBinding, and the RoleBinding's own namespace is what bounds the grant — referencing a cluster-wide ClusterRole does not make the grant cluster-wide.</p>
+<pre><code>apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: read-secrets
+  namespace: payments
+subjects:
+  - kind: ServiceAccount
+    name: reporting-sa
+    namespace: payments
+roleRef:
+  kind: ClusterRole
+  name: secret-reader
+  apiGroup: rbac.authorization.k8s.io
+</code></pre>
+<p>This binding grants <code>reporting-sa</code> the rules in the cluster-scoped ClusterRole <code>secret-reader</code> — but only inside the <code>payments</code> namespace, because that's where the RoleBinding lives. A different ClusterRoleBinding to the same <code>secret-reader</code> ClusterRole would instead grant it everywhere, in every namespace, present and future.</p>
 
-<p class="callout">RBAC is additive only. There are no deny rules. A missing grant means no access — full stop.</p>
+<p><strong>How the decision actually gets made.</strong> Every API request goes through two separate checks: authentication (who are you?) and authorization (are you allowed to do this?). RBAC only answers the second question — by the time RBAC runs, your identity is already settled, either a <code>User</code>, a <code>Group</code>, or, for anything running inside the cluster, the exact string <code>system:serviceaccount:&lt;namespace&gt;:&lt;name&gt;</code>. The RBAC authorizer looks at every RoleBinding and ClusterRoleBinding in the cluster, keeps the ones naming your identity as a subject, follows each one's <code>roleRef</code> to its Role or ClusterRole, and unions every rule from all of them. If any single rule in that union matches the verb, resource, apiGroup, and (for namespaced resources) namespace of your request, it's allowed. If none do, it's denied — there is no separate deny rule to evaluate, because denial is just the absence of a matching allow.</p>
 
-<h2>Try it — before looking below</h2>
+<p><code>kubectl auth can-i</code> runs this exact check for you without ever attempting the action:</p>
+<pre><code>kubectl auth can-i &lt;verb&gt; &lt;resource&gt; --as=&lt;identity&gt; -n &lt;namespace&gt;</code></pre>
+<p>For a ServiceAccount, <code>&lt;identity&gt;</code> is the full <code>system:serviceaccount:&lt;namespace&gt;:&lt;name&gt;</code> string, not the ServiceAccount's short name. This is the single most useful command in this lesson: it tells you what RBAC will decide before you find out the hard way from a Forbidden error in a real workload.</p>
+
+<p><strong>ServiceAccounts and token mounting.</strong> Every namespace has a ServiceAccount named <code>default</code> whether you created one or not. Any Pod that doesn't set <code>spec.serviceAccountName</code> explicitly runs as that namespace's <code>default</code> ServiceAccount and inherits whatever RBAC is bound to it. Kubernetes mounts that ServiceAccount's credentials into the Pod automatically, via a projected volume at <code>/var/run/secrets/kubernetes.io/serviceaccount/</code> (containing <code>token</code>, <code>ca.crt</code>, and <code>namespace</code>). Since Kubernetes v1.22 that token comes from the TokenRequest API rather than a static Secret — it has a bounded lifetime and is automatically invalidated roughly 60 seconds after the Pod's <code>deletionTimestamp</code>, not indefinitely valid the way old-style token Secrets were.</p>
+<p>You control whether that mount happens at all with <code>automountServiceAccountToken</code> (a boolean, default <code>true</code>), settable on the ServiceAccount itself or on the Pod spec — if both are set, the Pod's value wins:</p>
+<pre><code>apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: report-reader-sa
+automountServiceAccountToken: false
+</code></pre>
+<p>Most workloads never call the Kubernetes API at all — a web server handling HTTP traffic has no reason to hold a token that can talk to the API server. For those, set <code>automountServiceAccountToken: false</code> and remove a credential that has no legitimate use but is still a hole to steal if the Pod is compromised.</p>
+
+<p><strong>Aggregated ClusterRoles.</strong> Instead of hand-maintaining one giant ClusterRole, you can label several smaller ClusterRoles and let the control plane combine their rules into an aggregate automatically:</p>
+<pre><code>apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: monitoring-viewer
+aggregationRule:
+  clusterRoleSelectors:
+    - matchLabels:
+        rbac.example.com/aggregate-to-monitoring-viewer: "true"
+rules: [] # filled in automatically — never edit this by hand
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: monitoring-viewer-pods
+  labels:
+    rbac.example.com/aggregate-to-monitoring-viewer: "true"
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+</code></pre>
+<p>The control plane continuously watches for any ClusterRole carrying the matching label and merges its rules into <code>monitoring-viewer</code>'s empty <code>rules: []</code>. This is the same technique an operator's own CRD can use to plug a narrow, purpose-built ClusterRole into a broader one — without anyone hand-editing the broader role every time a new component ships.</p>
+
+<h2>Production example</h2>
+<p class="callout production"><strong>Production note:</strong> a real 15-microservice namespace has 15 ServiceAccounts, one per Deployment, each with a Role scoped to exactly the resources that one service touches — not one shared <code>default</code> ServiceAccount for the whole namespace. The reason isn't tidiness: if <code>checkout-api</code>'s Pod is compromised through a dependency vulnerability, the blast radius should be <code>checkout-api</code>'s own permissions, not whatever the namespace's most-permissive workload happens to need. CI/CD ServiceAccounts get extra scrutiny in security reviews for exactly this reason: a deploy pipeline's ServiceAccount usually needs broad-looking verbs (<code>create</code>, <code>update</code>, <code>patch</code>, <code>delete</code> across several resource kinds) to actually do its job, which makes it look superficially similar to <code>cluster-admin</code> at a glance. A careful reviewer checks whether that breadth is scoped to only the namespaces the pipeline deploys to, or left cluster-wide "to be safe" — the second option is a standing privilege-escalation path, not a convenience.</p>
+
+<h2>Hands-on exercise</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Prove, with <code>kubectl auth can-i</code>, that a Role grants exactly what you wrote — no more, no less — and nothing outside its own namespace.</p>
+<h4>Scenario</h4>
+<p>A monitoring script needs read-only access to Pods in one namespace. You'll build the ServiceAccount, Role, and RoleBinding by hand, then verify both the allowed and the denied paths.</p>
+<h4>Environment assumptions</h4>
+<p>Any cluster you can <code>kubectl</code> into (kind, minikube, or a real dev cluster); no existing namespace called <code>rbac-demo</code>.</p>
+<h4>Commands</h4>
+<pre><code>kubectl create namespace rbac-demo
+kubectl create serviceaccount pod-reader-sa -n rbac-demo
+kubectl create role pod-reader --verb=get --verb=list --resource=pods -n rbac-demo
+kubectl create rolebinding pod-reader-binding \
+  --role=pod-reader --serviceaccount=rbac-demo:pod-reader-sa -n rbac-demo
+
+kubectl auth can-i get pods --as=system:serviceaccount:rbac-demo:pod-reader-sa -n rbac-demo
+kubectl auth can-i list pods --as=system:serviceaccount:rbac-demo:pod-reader-sa -n rbac-demo
+kubectl auth can-i delete pods --as=system:serviceaccount:rbac-demo:pod-reader-sa -n rbac-demo
+kubectl auth can-i get pods --as=system:serviceaccount:rbac-demo:pod-reader-sa -n default</code></pre>
+<h4>Expected result</h4>
+<p>The first two checks return <code>yes</code>. The third returns <code>no</code> — <code>delete</code> was never granted. The fourth also returns <code>no</code> — the Role is namespaced to <code>rbac-demo</code> and grants nothing in <code>default</code>, even though it's the same ServiceAccount identity.</p>
+<h4>Verification</h4>
+<p>The exact <code>yes</code>/<code>no</code> pattern above is the proof. If the fourth check unexpectedly returns <code>yes</code>, something else in your cluster (a stray ClusterRoleBinding) is granting this identity access — that's worth investigating, not this lesson's behavior.</p>
+<h4>Common failure</h4>
+<p>Forgetting <code>-n rbac-demo</code> on the <code>can-i</code> check and testing against your current default namespace instead — this produces a false <code>no</code> that looks like a broken Role when the Role is actually fine.</p>
+<h4>Troubleshooting</h4>
+<p>If the first check returns <code>no</code> when you expected <code>yes</code>, run <code>kubectl get rolebinding pod-reader-binding -n rbac-demo -o yaml</code> and confirm <code>subjects[0].name</code> is exactly <code>pod-reader-sa</code>. A typo here applies with no validation error and produces silent, total zero access — nothing in the apply step warns you.</p>
+<h4>Cleanup / rollback</h4>
+<pre><code>kubectl delete namespace rbac-demo</code></pre>
+<h4>Production lesson</h4>
+<p>The identity string <code>system:serviceaccount:&lt;namespace&gt;:&lt;name&gt;</code> is exactly what appears in API server audit logs and in every Forbidden error message. Learn to read it now — in a real incident you'll be grepping for it under pressure, not looking it up.</p>
+</div>
+
+<h2>Failure scenario</h2>
+<p>A realistic incident built directly from the mental model above — an excess grant with no expiry, sitting quietly until something else goes wrong.</p>
+<ol class="timeline">
+<li><span class="t">2026-02-03 09:14</span> Setup: an engineer stands up the <code>ci-deploy</code> pipeline's ServiceAccount <code>ci-deploy-sa</code> in the <code>ci</code> namespace. The pipeline needs to create Deployments, Services, and ConfigMaps across several app namespaces. Under launch-week pressure, they bind it to the built-in <code>cluster-admin</code> ClusterRole via a ClusterRoleBinding instead of writing a scoped Role, with a comment: <code># TODO narrow this after launch</code>.</li>
+<li><span class="t">2026-02-03 09:15</span> Launch ships on time. The TODO is never revisited — no ticket, no expiry, no calendar reminder attached to it.</li>
+<li><span class="t">2026-08-01 22:47</span> Symptom: a compromised dependency pulled in during a routine version-bump PR executes attacker code inside the CI pipeline's build step, with the <code>ci-deploy-sa</code> token mounted in that build Pod.</li>
+<li><span class="t">2026-08-01 22:52</span> Using that token, the attacker runs <code>kubectl get secrets --all-namespaces</code>. Because the binding is <code>cluster-admin</code> with no scoping, it succeeds against every namespace in the cluster, not just <code>ci</code>.</li>
+<li><span class="t">2026-08-02 06:03</span> Security tooling flags anomalous audit log volume: thousands of <code>secrets get</code> calls from a single ServiceAccount identity, across namespaces it has never touched before.</li>
+<li><span class="t">2026-08-02 06:20</span> On-call confirms with <code>kubectl get clusterrolebindings -o json | jq</code>: <code>ci-deploy-sa</code> has been bound to <code>cluster-admin</code> since February. Every Secret in the cluster — including production database credentials — must now be treated as compromised.</li>
+<li><span class="t">2026-08-02 07:00</span> Containment: the ClusterRoleBinding is deleted. Access is revoked immediately — RBAC is checked on every request, so there is no cached "already granted" state left to clean up. Every credential the ServiceAccount could read is rotated.</li>
+<li><span class="t">2026-08-02 11:00</span> Fix: <code>ci-deploy-sa</code> is rebound to a namespaced Role, defined only in the namespaces the pipeline actually deploys to, granting only the verbs (<code>get</code>, <code>create</code>, <code>update</code>, <code>patch</code>) and resources (<code>deployments</code>, <code>services</code>, <code>configmaps</code>) it uses.</li>
+</ol>
+
+<h2>Troubleshooting workflow</h2>
+<p>The general method, applied to "my workload is getting Forbidden errors":</p>
+<ol class="troubleshooting">
+<li><strong>Confirm the symptom.</strong> Get the exact Forbidden error text from the client or <code>kubectl logs</code> — it already contains the identity, verb, resource, and namespace it was denied for. Don't paraphrase it from memory.</li>
+<li><strong>Define scope.</strong> Is it one workload, or every workload sharing that ServiceAccount? <code>kubectl get pods -n &lt;ns&gt; -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.serviceAccountName}{"\n"}{end}'</code> shows who else carries the same identity.</li>
+<li><strong>Check recent changes.</strong> <code>kubectl get events -n &lt;ns&gt; --sort-by=.lastTimestamp</code>, and check git history on the Role/RoleBinding manifests — was one edited, replaced, or deleted recently?</li>
+<li><strong>Confirm identity, reproduce outside the app.</strong> <code>kubectl auth can-i &lt;verb&gt; &lt;resource&gt; --as=system:serviceaccount:&lt;ns&gt;:&lt;name&gt; -n &lt;ns&gt;</code> — use the exact verb, resource, and namespace from the error, not an approximation.</li>
+<li><strong>Check Role vs. ClusterRole scope.</strong> Is the permission defined in a namespaced Role when the request is actually cluster-scoped, or vice versa? <code>kubectl describe role &lt;name&gt; -n &lt;ns&gt;</code> (or <code>describe clusterrole</code>) shows the rules Kubernetes actually stored, not what you think you applied.</li>
+<li><strong>Check the RoleBinding's roleRef and subjects.</strong> <code>kubectl get rolebinding &lt;name&gt; -n &lt;ns&gt; -o yaml</code> — confirm <code>roleRef.name</code> matches an existing Role/ClusterRole exactly, and <code>subjects[].kind</code>/<code>.name</code>/<code>.namespace</code> match the calling identity exactly. A mismatch here applies with no error and produces total, silent zero access.</li>
+<li><strong>Check namespace alignment.</strong> A Role and the RoleBinding that uses it must live in the same namespace, and that namespace must match the one the request is actually made against — the namespace the Pod runs in, not necessarily the namespace it's trying to act on.</li>
+<li><strong>Form and test one hypothesis.</strong> For example: "this RoleBinding references a Role that was deleted in last week's cleanup." Confirm with <code>kubectl get role &lt;name&gt; -n &lt;ns&gt;</code> before changing anything.</li>
+<li><strong>Apply the minimal fix, then re-verify.</strong> Add the missing rule or correct the binding, then re-run the exact <code>can-i</code> check from step 4 before touching the real workload.</li>
+<li><strong>Document the root cause and prevent recurrence.</strong> Record which rule was missing and why. Consider whether an aggregated ClusterRole, or a policy check blocking wildcard verbs at admission time, would have caught this before it reached production.</li>
+</ol>
+
+<p class="callout security"><strong>Security note:</strong> default to least privilege — grant the specific verbs and resource names a workload actually uses, not <code>verbs: ["*"]</code> or <code>resources: ["*"]</code> "to make it work." A wildcard verb combined with a wildcard resource and a wildcard apiGroup is functionally equivalent to <code>cluster-admin</code> if bound broadly enough, and it is far more common than an actual <code>cluster-admin</code> binding because it looks like ordinary, forgettable YAML. Audit <code>ClusterRoleBinding</code>s to <code>cluster-admin</code> on a schedule, not just after an incident: <code>kubectl get clusterrolebindings -o json | jq -r '.items[] | select(.roleRef.name=="cluster-admin") | .metadata.name'</code> lists every subject currently holding it — every one of those should have a documented reason to exist.</p>
+<p class="callout security"><strong>Security note:</strong> set <code>automountServiceAccountToken: false</code> on any ServiceAccount (or Pod) that never calls the Kubernetes API — most application workloads fall into this category. A mounted token an application never uses is pure downside: it adds nothing to the workload's function and gives an attacker who compromises that Pod one more credential to steal.</p>
+
+<p class="callout mistake"><strong>Common mistake:</strong> binding to the wrong subject kind or name — writing <code>kind: User</code> for what's actually a ServiceAccount, or a small typo in the ServiceAccount's name. The RoleBinding applies with no validation error, and the workload silently has zero access. The failure only surfaces later, as a Forbidden error in the running workload, often in production.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> granting <code>list</code>/<code>watch</code> on Secrets cluster-wide "to make an operator work," instead of scoping to the one namespace and the specific Secret names it actually needs. This is one of the most common findings in real RBAC reviews, because it turns any compromise of that one identity into a full-cluster credential leak.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> treating <code>cluster-admin</code> as a debugging shortcut — "just for now, I'll fix it later." Per the mental model above, there's no automatic expiry or containment on that grant, so "later" only happens if an audit or an incident forces it.</p>
+
+<h2>Decision guide</h2>
+<table>
+<tr><th>Option</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
+<tr><td>Role + RoleBinding</td><td>Permission only needs to apply within one namespace — the default case for app workloads</td><td>The same permission must apply across many or all namespaces, or targets a cluster-scoped resource (Nodes, PersistentVolumes)</td><td>Must be repeated in every namespace that needs it</td></tr>
+<tr><td>ClusterRole + ClusterRoleBinding</td><td>The permission genuinely must apply cluster-wide — cluster admins, controllers watching every namespace, non-resource URLs</td><td>Only one or a few namespaces actually need it</td><td>Broadest possible blast radius — grants access in every namespace, including ones created later</td></tr>
+<tr><td>ClusterRole + RoleBinding (per namespace)</td><td>You want one reusable, centrally-maintained rule set applied to several specific namespaces without redefining it each time</td><td>You actually want the grant to auto-extend to future namespaces — it won't, each namespace needs its own RoleBinding</td><td>Least duplication of the three real options, but needs one RoleBinding per namespace, kept current as namespaces are added</td></tr>
+<tr><td>ClusterRoleBinding as a shortcut</td><td>Almost never for a workload — reserve for the rare identity that must act everywhere, present and future, with no per-namespace maintenance</td><td>"Just in case it needs another namespace later" — this is exactly the failure mode in the timeline above</td><td>Zero maintenance per new namespace, but zero containment if the credential is compromised</td></tr>
+</table>
+<p><strong>Default recommendation:</strong> start with a namespaced Role and RoleBinding for anything workload-facing. Only reach for a ClusterRole or ClusterRoleBinding when you can name the specific cluster-scoped resource or genuine cross-namespace requirement that forces it — never as a shortcut to avoid writing the same Role twice.</p>
+
+<h2>Knowledge check</h2>
 <div class="quiz">
 <p>Q1. What actually grants a Role to someone — as opposed to just defining what it allows?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">A RoleBinding (or ClusterRoleBinding). The Role only defines permissions — the binding attaches it to a subject.</div>
+<div class="answer" id="a1">A RoleBinding (or ClusterRoleBinding). The Role only defines permissions — the binding attaches it to a subject. No binding means no access, no matter what the Role allows.</div>
 </div>
 
 <div class="quiz">
-<p>Q2. What command checks if ServiceAccount <code>ci-bot</code> in namespace <code>ci</code> can delete pods — without actually testing it?</p>
+<p>Q2. What command checks whether ServiceAccount <code>ci-bot</code> in namespace <code>ci</code> can delete Pods — without actually testing it?</p>
 <input type="text" id="q2" placeholder="type your answer">
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
 <div class="answer" id="a2"><code>kubectl auth can-i delete pods --as=system:serviceaccount:ci:ci-bot -n ci</code></div>
 </div>
 
-<h2>Now write your own</h2>
-<p>Write three manifests by hand (no copy-paste) that together let a workload read Pods and nothing else:</p>
-<ul>
-<li>a <strong>ServiceAccount</strong>, any name, in a namespace of your choice</li>
-<li>a <strong>Role</strong> in the same namespace allowing <code>get</code> and <code>list</code> on <code>pods</code> only</li>
-<li>a <strong>RoleBinding</strong> connecting the two</li>
-</ul>
-<p>Apply all three, then confirm with <code>kubectl auth can-i</code> before checking the answer below.</p>
+<div class="quiz">
+<p>Q3. A ServiceAccount has <code>automountServiceAccountToken: false</code>. A Pod using that ServiceAccount sets <code>automountServiceAccountToken: true</code> directly. Which setting wins?</p>
+<div class="opts">
+<label>A. The ServiceAccount setting always wins, ignoring the Pod</label>
+<label>B. The Pod's own setting overrides the ServiceAccount's setting</label>
+<label>C. Kubernetes rejects the Pod as invalid config</label>
+<label>D. Whichever value was set most recently in time</label>
+</div>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a3">B. The Pod spec's value takes precedence over the ServiceAccount's setting — so this Pod's token would be mounted despite the ServiceAccount saying not to. (There's no rejection, and timing has nothing to do with it.)</div>
+</div>
 
 <div class="quiz">
-<p>Reveal the reference answer</p>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a3"><code>apiVersion: v1
-kind: ServiceAccount
+<p>Q4. A RoleBinding in namespace <code>payments</code> references a ClusterRole named <code>secret-reader</code>. Where does this actually grant read access to Secrets?</p>
+<div class="opts">
+<label>A. Only inside the payments namespace, nowhere else</label>
+<label>B. Inside every namespace across the whole cluster</label>
+<label>C. Nowhere — RoleBindings cannot reference ClusterRoles</label>
+<label>D. Only inside the kube-system namespace specifically</label>
+</div>
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a4">A. The RoleBinding's own namespace bounds the grant, even though the rules come from a cluster-scoped ClusterRole. (RoleBindings referencing ClusterRoles is a documented, supported pattern — not a rejection, and there's nothing kube-system-specific about it.)</div>
+</div>
+
+<h2>Certification mapping</h2>
+<p>This lesson sits in <strong>Cluster Architecture, Installation &amp; Configuration (25%)</strong> of the CKA exam — the same domain as static Pods, etcd, and highly-available control planes. RBAC also shows up indirectly anywhere the exam expects you to fix a "workload can't do X" scenario, since that's frequently an RBAC gap in disguise.</p>
+
+<h2>Production challenge</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Rewrite an inherited, over-permissioned Role down to the minimum a specific workload actually needs — then prove the rewrite with <code>kubectl auth can-i</code>, not by reading the YAML and assuming it's right.</p>
+<h4>Scenario</h4>
+<p>You inherit this Role, bound to a <code>log-shipper</code> ServiceAccount in namespace <code>logging</code>:</p>
+<pre><code>apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
 metadata:
-  name: pod-reader-sa
----
+  name: log-shipper-role
+  namespace: logging
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+</code></pre>
+<p>The <code>log-shipper</code> workload's actual, documented job: read Pod metadata and Pod logs in the <code>logging</code> namespace, to tag shipped log lines with Pod name and labels. It never creates, modifies, or deletes anything, and it never touches Secrets, ConfigMaps, or any resource outside <code>logging</code>.</p>
+<h4>Environment assumptions</h4>
+<p>A kind/minikube cluster. Create the namespace, ServiceAccount, Role, and RoleBinding above yourself first if they don't exist.</p>
+<h4>Commands</h4>
+<pre><code># 1. Confirm the current (dangerous) breadth of the inherited Role
+kubectl auth can-i delete secrets --as=system:serviceaccount:logging:log-shipper -n logging
+kubectl auth can-i delete pods --as=system:serviceaccount:logging:log-shipper -n logging
+
+# 2. Rewrite the Role to only what log-shipper's documented job needs
+kubectl apply -f - &lt;&lt;'EOF'
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: pod-reader
+  name: log-shipper-role
+  namespace: logging
 rules:
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: read-pods
-subjects:
-  - kind: ServiceAccount
-    name: pod-reader-sa
-roleRef:
-  kind: Role
-  name: pod-reader
-  apiGroup: rbac.authorization.k8s.io
-</code></pre>
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+EOF
+
+# 3. Re-verify: the needed access still works, the dangerous access is gone
+kubectl auth can-i get pods --as=system:serviceaccount:logging:log-shipper -n logging
+kubectl auth can-i get pods/log --as=system:serviceaccount:logging:log-shipper -n logging
+kubectl auth can-i delete secrets --as=system:serviceaccount:logging:log-shipper -n logging
+kubectl auth can-i delete pods --as=system:serviceaccount:logging:log-shipper -n logging</code></pre>
+<h4>Expected result</h4>
+<p>Step 1: both checks return <code>yes</code> — the wildcard Role hides its real breadth until you actually ask. Step 3: <code>get pods</code> and <code>get pods/log</code> return <code>yes</code>; <code>delete secrets</code> and <code>delete pods</code> return <code>no</code>.</p>
+<h4>Verification</h4>
+<p>All four step-3 checks together are the proof — confirming only the "yes" checks isn't enough, since a Role can be both correctly permissive and incorrectly permissive at the same time.</p>
+<h4>Common failure</h4>
+<p>Granting <code>resources: ["pods"]</code> but forgetting the separate <code>pods/log</code> subresource line — this grants Pod metadata access (so <code>get pods</code> succeeds) but not log content, so the workload's actual log-reading calls still fail with Forbidden even though the "obvious" permission is in place.</p>
+<h4>Troubleshooting</h4>
+<p>If <code>delete secrets</code> still returns <code>yes</code> after the rewrite, a second binding is probably still pointing at this ServiceAccount. <code>kubectl get rolebindings,clusterrolebindings --all-namespaces -o json | jq '.items[] | select(.subjects[]?.name=="log-shipper")'</code> finds every binding referencing this identity — RBAC unions all of them, so removing only one doesn't help if another survives.</p>
+<h4>Cleanup / rollback</h4>
+<pre><code>kubectl delete namespace logging</code></pre>
+<h4>Production lesson</h4>
+<p>Least privilege isn't a one-time YAML edit — it's a routine you repeat whenever a Role is inherited from someone else, because "it works" is not evidence that it's scoped correctly. A Role with <code>["*"]</code> "works" for absolutely everything, which is exactly the problem it hides.</p>
 </div>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/reference/access-authn-authz/rbac/" target="_blank" rel="noopener">kubernetes.io/docs/reference/access-authn-authz/rbac</a> — the exact page you can search in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/reference/access-authn-authz/rbac/" target="_blank" rel="noopener">kubernetes.io/docs/reference/access-authn-authz/rbac</a> and <a href="https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/" target="_blank" rel="noopener">kubernetes.io/docs/tasks/configure-pod-container/configure-service-account</a> — verified 2026-08-03. Both are searchable in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>ServiceAccount = an identity a Pod acts as. Role = allowed verbs on resources. RoleBinding = what grants the Role.</li>
-    <li>ClusterRole / ClusterRoleBinding are the same pair, cluster-scoped.</li>
-    <li>RBAC is additive only — no deny rules, and no grant means no access.</li>
+    <li>ServiceAccount = an identity a Pod acts as. Role/ClusterRole = allowed verbs on resources. RoleBinding/ClusterRoleBinding = what actually grants it — no binding, no access.</li>
+    <li>A RoleBinding can reference a ClusterRole; the RoleBinding's own namespace still bounds the grant. Only a ClusterRoleBinding grants cluster-wide.</li>
+    <li>RBAC is additive only — no deny rules, no automatic expiry, no built-in containment. A "temporary" <code>cluster-admin</code> binding is permanent until a human removes it.</li>
+    <li>Every namespace has a <code>default</code> ServiceAccount; unset <code>serviceAccountName</code> means a Pod inherits it. <code>automountServiceAccountToken: false</code> (Pod-level overrides ServiceAccount-level) removes an unused credential from workloads that never call the API server.</li>
+    <li><code>kubectl auth can-i &lt;verb&gt; &lt;resource&gt; --as=system:serviceaccount:&lt;ns&gt;:&lt;name&gt; -n &lt;ns&gt;</code> is the fastest way to prove what RBAC actually allows, instead of reading YAML and guessing.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<footer class="teacher-reminder">Stuck, or got a different <code>yes</code>/<code>no</code> pattern than "Expected result" above? Paste the exact <code>can-i</code> command and its output back to your teacher — a mismatch there is usually a RoleBinding subject or namespace detail worth tracing together.</footer>
 
 <div class="lesson-nav">
   <a href="0008-ingress.html">&larr; Ingress &rarr; Service</a>

@@ -11,9 +11,10 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 4 of 24</p>
 <h1>Deployment</h1>
 
-<p>A bare Pod has no memory. Kill it and it stays dead — nothing recreates it. A <strong>Deployment</strong> fixes that: it watches a Pod template and keeps the right number of copies running, always.</p>
+<h2>Why this matters</h2>
+<p>A Deployment is the controller you'll use for nearly every stateless workload you ever run on Kubernetes — and it's also where a huge share of real rollout incidents start, because the entire mechanism hides behind one innocent-looking command: <code>kubectl apply</code>. Misunderstand the Deployment → ReplicaSet → Pod chain, and a routine image bump turns into an outage: you assume "change the image, it just works," ship a broken build, and by the time anyone notices, the healthy old Pods are already gone because nobody understood how fast the rollout would replace them. The other classic trap is trying to rename or re-label an app mid-migration — <code>spec.selector</code> is immutable the instant a Deployment is created, so a perfectly reasonable-looking <code>kubectl apply</code> with an updated selector doesn't quietly update anything, it gets flatly rejected by the API, often during a maintenance window with people watching. This lesson builds the mental model that prevents both.</p>
 
-<p class="callout"><strong>Simple example:</strong> think of a Deployment like a staffing agency with a standing order — "always keep 3 people on this shift." If one quits, the agency notices and sends a replacement. You never manage the individual worker.</p>
+<p class="callout"><strong>Mental model:</strong> a Deployment is a policy document, not a hands-on manager. It states one thing — "I want N Pods matching this exact template" — and hands that policy entirely to a ReplicaSet, which is the object that actually creates and deletes Pods to match the count. The Deployment itself never touches a Pod directly: not to create it, not to fix it, and not to notice if you changed one by hand. That predicts something that surprises almost everyone the first time: <code>kubectl edit pod</code> on a Pod owned by a Deployment can succeed, and the change can even work — until that specific Pod is ever replaced (a crash, a node drain, a future rollout). At that point the ReplicaSet builds the replacement strictly from the template stored on the ReplicaSet object, not from your edit, and your fix silently disappears — often days later, when nobody remembers making it.</p>
 
 <h2>What's inside a Deployment manifest</h2>
 <pre><code>apiVersion: apps/v1
@@ -34,70 +35,198 @@ spec:
         - name: nginx
           image: nginx
 </code></pre>
-<p>Three parts:</p>
+<p>Three parts do the real work:</p>
 <ul>
 <li><code>spec.replicas</code> — how many Pod copies should exist</li>
-<li><code>spec.selector.matchLabels</code> — how the Deployment finds "which Pods are mine"</li>
-<li><code>spec.template</code> — a full Pod spec, embedded (this is the Pod manifest you already know)</li>
+<li><code>spec.selector.matchLabels</code> — how the Deployment (and its ReplicaSet) finds "which Pods are mine"</li>
+<li><code>spec.template</code> — a full Pod spec, embedded (this is the same Pod manifest shape from Lesson 1)</li>
 </ul>
-<p><strong>Gotcha:</strong> <code>spec.selector.matchLabels</code> must exactly match <code>spec.template.metadata.labels</code>, or the Deployment is invalid.</p>
-<p>A Deployment doesn't touch Pods directly — it creates and manages a <strong>ReplicaSet</strong>, and the ReplicaSet creates and watches the Pods. Update the image and re-apply: a new ReplicaSet is created and scaled up, the old one scaled to zero. That's a rolling update.</p>
+<p><code>spec.selector</code> must match <code>spec.template.metadata.labels</code> exactly, or the Deployment is rejected by the API at creation time — not silently accepted and left broken. Kubernetes' own documentation is explicit about this: <code>.spec.selector</code> must match <code>.spec.template.metadata.labels</code>, or it will be rejected by the API.</p>
 
-<h2>Try it — before looking below</h2>
+<h2>The chain: Deployment &rarr; ReplicaSet &rarr; Pod</h2>
+<p>A Deployment doesn't create Pods. It creates and manages a <strong>ReplicaSet</strong>, and the ReplicaSet is the object that actually creates, watches, and deletes Pods to keep the count right. The Deployment controller tags every ReplicaSet it creates (or adopts) with a <code>pod-template-hash</code> label, generated from the Pod template's content — this is how the Deployment tells its own ReplicaSets apart from each other and makes sure a Deployment's child ReplicaSets never overlap.</p>
+<p>This chain is also why <strong>not every change to a Deployment does the same thing</strong>. A rollout — a brand-new ReplicaSet, scaled up while the old one scales down — is triggered if and only if <code>spec.template</code> changes: a new image, a changed env var, a different label on the Pod template. Changing <code>spec.replicas</code> alone is just scaling; it resizes the existing ReplicaSet and never creates a new one. Confusing these two is a common source of "why didn't my rollout do anything" confusion — because nothing about the Pod template changed, nothing should have.</p>
+
+<h2>Rolling update mechanics</h2>
+<p>The default <code>spec.strategy.type</code> is <code>RollingUpdate</code> (you don't have to specify it). Two fields control exactly how aggressive that rolling update is, and both default to <strong>25%</strong>:</p>
+<ul>
+<li><code>maxUnavailable</code> — the maximum number of Pods that can be unavailable during the update. If given as a percentage, the absolute number is calculated by <strong>rounding down</strong>.</li>
+<li><code>maxSurge</code> — the maximum number of Pods that can be created over the desired count. If given as a percentage, the absolute number is calculated by <strong>rounding up</strong>.</li>
+</ul>
+<p>Neither can be zero if the other is also zero — Kubernetes refuses a strategy that could freeze the rollout entirely. The two numbers bound the rollout from opposite directions: <code>maxUnavailable</code> guarantees a floor on how much capacity you keep serving traffic; <code>maxSurge</code> caps how much extra capacity (and cluster resource) the rollout is allowed to consume while it's in flight. The old and new ReplicaSets scale in tandem inside those two bounds — the controller keeps nudging the new ReplicaSet up and the old one down, one small step at a time, never letting available Pods drop below the <code>maxUnavailable</code> floor or total Pods rise above the <code>maxSurge</code> ceiling.</p>
+<table>
+<tr><th>Setting (defaults, 25%)</th><th>Rounding</th><th>Worked example — 10 desired replicas</th></tr>
+<tr><td><code>maxUnavailable</code></td><td>Rounds down</td><td>25% of 10 = 2.5 &rarr; 2 unavailable allowed, so at least 8 Pods stay available at all times</td></tr>
+<tr><td><code>maxSurge</code></td><td>Rounds up</td><td>25% of 10 = 2.5 &rarr; 3 extra allowed, so at most 13 Pods (old + new) exist at once</td></tr>
+</table>
+<p>A Deployment is only considered a <strong>complete</strong> rollout once every replica is updated to the latest version, every replica is available, and no old replicas are still running — that third condition is why <code>kubectl get rs</code> keeps showing the old ReplicaSet at <code>0/0/0</code> for a while: it isn't gone, it's parked at zero, retained (by default, the last 10 revisions, via <code>spec.revisionHistoryLimit</code>) specifically so a rollback has something to roll back to.</p>
+<p>The alternative strategy, <code>Recreate</code>, is blunt by comparison: all existing Pods are killed before any new ones are created. No mixed-version window, no surge — but a real downtime gap between the last old Pod terminating and the first new Pod becoming ready.</p>
+
+<h2>Production example</h2>
+<p class="callout production"><strong>Production note:</strong> <code>spec.selector</code> is immutable after a Deployment is created (in <code>apps/v1</code>) — this is the single most common "gotcha" in real Deployment renames or migrations. A team decides to rename a service from <code>api-legacy</code> to <code>api-checkout</code> as part of a cleanup, edits the selector's <code>app</code> label to match the new name, and runs <code>kubectl apply -f deployment.yaml</code> expecting a routine update. It gets flatly rejected instead — not because the new selector wouldn't match the template (they updated both), but because the API refuses to change <code>spec.selector</code> on an existing Deployment at all, full stop. The real migration path is to create a brand-new Deployment object with the new name and selector, let it run side-by-side with the old one as two independent ReplicaSet trees, point the Service's selector at the new labels once the new Deployment is healthy, then delete the old Deployment. You don't rename a Deployment in place — you migrate traffic between two of them.</p>
+
+<h2>Hands-on exercise</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Prove to yourself that a rolling update replaces Pods by standing up a brand-new ReplicaSet, not by editing existing Pods — and watch the <code>maxSurge</code>/<code>maxUnavailable</code> defaults bound the rollout in real time.</p>
+<h4>Scenario</h4>
+<p>You maintain <code>my-nginx</code> at 3 replicas and need to ship <code>nginx:1.27</code> with no downtime.</p>
+<h4>Environment assumptions</h4>
+<p>Any cluster you can <code>kubectl</code> into (kind, minikube, or a real dev cluster), no existing Deployment named <code>my-nginx</code> in the current namespace.</p>
+<h4>Commands</h4>
+<pre><code>kubectl create deployment my-nginx --image=nginx:1.25 --replicas=3
+kubectl rollout status deployment/my-nginx
+kubectl get rs -l app=my-nginx
+
+kubectl set image deployment/my-nginx nginx=nginx:1.27
+kubectl rollout status deployment/my-nginx
+kubectl get rs -l app=my-nginx
+kubectl rollout history deployment/my-nginx</code></pre>
+<h4>Expected result</h4>
+<p>The first <code>rollout status</code> reports <code>deployment "my-nginx" successfully rolled out</code> with one ReplicaSet at <code>3/3/3</code>. After <code>set image</code>, <code>get rs</code> briefly shows two ReplicaSets — the old one counting down, the new one counting up — before settling on the new one at <code>3/3/3</code> and the old one at <code>0/0/0</code>. The second <code>rollout status</code> also reports success.</p>
+<h4>Verification</h4>
+<p><code>kubectl get pods -l app=my-nginx -o jsonpath='{.items[*].spec.containers[0].image}'</code> should print <code>nginx:1.27</code> three times — confirming every live Pod came from the new ReplicaSet, not a patched old one.</p>
+<h4>Common failure</h4>
+<p>Mistaking the old ReplicaSet still showing up in <code>kubectl get rs</code> (at <code>0/0/0</code>) for a leftover bug. It isn't — it's retained on purpose, up to <code>spec.revisionHistoryLimit</code> (default 10), exactly so <code>kubectl rollout undo</code> has something to roll back to.</p>
+<h4>Troubleshooting</h4>
+<p>If the second <code>rollout status</code> hangs instead of completing, run <code>kubectl get pods -l app=my-nginx</code> — if the new Pods show <code>ImagePullBackOff</code>, you mistyped the tag. Fix it with another <code>kubectl set image</code> pointing at a real tag; you don't need <code>rollout undo</code> for a same-generation typo, the rollout self-corrects toward the new template.</p>
+<h4>Cleanup / rollback</h4>
+<pre><code>kubectl delete deployment my-nginx --ignore-not-found</code></pre>
+<h4>Production lesson</h4>
+<p>The rolling update only advances as fast as new Pods become <em>ready</em>. If you never define a readiness probe, Kubernetes treats a Pod as ready the moment its container starts — which can mean live traffic reaches a Pod before your app has actually finished initializing. A future lesson covers probes; file this away as the reason they matter here.</p>
+</div>
+
+<h2>Failure scenario</h2>
+<p>A realistic incident: a bad image reaches production, and on-call has to decide fast whether to debug forward or roll back.</p>
+<ol class="timeline">
+<li><span class="t">14:02</span> PagerDuty fires: <code>checkout-api</code> error rate over 5%. On-call runs <code>kubectl get pods -l app=checkout-api</code> — 2 of 5 Pods are in <code>CrashLoopBackOff</code>, restart count climbing.</li>
+<li><span class="t">14:03</span> <code>kubectl rollout status deployment/checkout-api</code> reports <code>Waiting for deployment "checkout-api" rollout to finish: 2 out of 5 new replicas have been updated...</code> — it isn't progressing.</li>
+<li><span class="t">14:05</span> <code>kubectl logs &lt;crashing-pod&gt; --previous</code> shows the app panicking on startup: <code>FATAL: environment variable DB_DSN is not set</code>. The new image expects a config key nobody wired into the Deployment's env.</li>
+<li><span class="t">14:07</span> <code>kubectl rollout history deployment/checkout-api</code> confirms this is revision 14 — the image bump that shipped 10 minutes ago. Nothing else changed.</li>
+<li><span class="t">14:09</span> Decision: this needs a reviewed ConfigMap change, not a live hotfix. On-call runs <code>kubectl rollout undo deployment/checkout-api</code> rather than debugging forward under pressure.</li>
+<li><span class="t">14:10</span> <code>kubectl rollout status deployment/checkout-api</code> shows the old ReplicaSet scaling back up and the broken one scaling to zero.</li>
+<li><span class="t">14:12</span> Verified: all 5 Pods <code>Running</code> on the previous image; error rate back to baseline within 2 minutes of the undo.</li>
+<li><span class="t">14:20</span> Postmortem note logged: root cause was a missing env var in the new image's rollout, caught by unit tests but never exercised against the real ConfigMap. Action item: add a staging rollout gate before prod.</li>
+</ol>
+
+<h2>Troubleshooting workflow</h2>
+<p>The general method, applied to "my Deployment's rollout is stuck or degraded":</p>
+<ol class="troubleshooting">
+<li><strong>Confirm the symptom.</strong> Run <code>kubectl rollout status deployment/&lt;name&gt;</code> yourself — is it genuinely stuck ("Waiting for deployment... to finish"), or did it already report success and the real problem is somewhere else?</li>
+<li><strong>Define scope.</strong> Is only this Deployment degraded, or is every rollout in the namespace failing? A cluster-wide resource or quota problem looks very different from one bad image.</li>
+<li><strong>Check recent changes.</strong> <code>kubectl rollout history deployment/&lt;name&gt;</code> plus your CI/CD log — what actually changed in this revision: image tag, env vars, resource requests, probe config?</li>
+<li><strong>Inspect the right state.</strong> <code>kubectl get rs -l &lt;selector&gt;</code> for desired/current/ready per ReplicaSet; <code>kubectl get pods -l &lt;selector&gt;</code> for individual status; <code>kubectl describe pod &lt;new-pod&gt;</code> for its Events section; <code>kubectl logs &lt;pod&gt; --previous</code> if it has restarted.</li>
+<li><strong>Form a hypothesis.</strong> For example: "the new image crashes on start because of a missing env var" versus "the new Pods are Pending because the surge Pods don't fit in the namespace's resource quota."</li>
+<li><strong>Test one variable.</strong> The Events line in <code>describe pod</code> tells you which: <code>CrashLoopBackOff</code> plus a non-zero exit code points at the app itself; <code>Pending</code> plus <code>FailedScheduling</code> points at capacity or quota; <code>ImagePullBackOff</code> points at the image reference.</li>
+<li><strong>Apply the safest fix.</strong> If the new revision is broken, <code>kubectl rollout undo deployment/&lt;name&gt;</code> is fast, safe, and reversible. Only forward-fix in place if the cause is trivial and already verified — don't debug live while users are affected.</li>
+<li><strong>Verify recovery.</strong> <code>kubectl rollout status</code> reports success, <code>kubectl get rs</code> shows the healthy ReplicaSet back at full desired/ready count, and your real error-rate or latency dashboard — not just kubectl — confirms it.</li>
+<li><strong>Document the root cause.</strong> Record the exact trigger ("revision 14 shipped without the <code>DB_DSN</code> env var"), referencing the revision number from <code>rollout history</code>, not a vague "bad deploy."</li>
+<li><strong>Prevent recurrence.</strong> Add the missing config to a pre-deploy validation step, or gate production rollouts behind a canary/staging Deployment that would have caught this before it reached live replicas.</li>
+</ol>
+
+<p class="callout production"><strong>Reliability note:</strong> <code>maxSurge</code> and <code>maxUnavailable</code> are a real capacity trade-off, not just rollout-speed knobs. Push <code>maxUnavailable</code> up (say, 50% or 100%) and a rollout finishes faster, but you accept a bigger dip in serving capacity while it runs — tolerable for a batch worker, risky for a payment API at peak traffic. Push <code>maxSurge</code> up instead and the rollout keeps full capacity throughout, but temporarily doubles (or more) the CPU/memory actually requested from the cluster — if your namespace's ResourceQuota or the cluster's free capacity can't absorb that surge, the new Pods just sit <code>Pending</code> instead of rolling out at all. The 25%/25% default is a reasonable balance for most services; treat any change to these values as a capacity-planning decision, not a cosmetic one.</p>
+
+<p class="callout security"><strong>Security note:</strong> a Deployment's own attack surface is thin — the real exposure lives in <code>spec.template</code> (image, ServiceAccount, securityContext), already covered in Lesson 1. What's specific to Deployments: RBAC write access to <code>deployments</code> (update/patch) is functionally equivalent to code-execution capability in the cluster, because editing <code>spec.template.spec.containers[].image</code> or <code>command</code> lets you run any image you want, with whatever privileges that Pod's ServiceAccount and securityContext already grant. If you wouldn't hand someone <code>kubectl exec</code> into your production Pods, don't hand them edit access to the Deployment either — it reaches the same place, one <code>kubectl apply</code> later.</p>
+
+<p class="callout mistake"><strong>Common mistake:</strong> running <code>kubectl edit pod</code> (or patching a single Pod's image) on a Pod owned by a Deployment, expecting the fix to persist. It can even appear to work — a Pod's container image is one of the few fields you can edit on a live Pod — but the ReplicaSet's stored template was never touched. The next time that specific Pod is replaced for any reason, the replacement comes from the ReplicaSet's original template, and the fix is gone with no error or warning.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> letting <code>spec.selector.matchLabels</code> and <code>spec.template.metadata.labels</code> drift while hand-editing YAML — even one extra label on either side is a mismatch. The API rejects the Deployment outright rather than silently misbehaving, which is the right failure mode, but it's confusing the first time you hit it because the error surfaces at apply time, with no earlier warning.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> assuming you can rename an app by editing <code>spec.selector</code> on an existing Deployment. You can't — <code>spec.selector</code> is immutable after creation, full stop, and the apply is rejected outright. Teams still discover this mid-migration instead of planning for it up front (see the Production note above).</p>
+
+<h2>Decision guide</h2>
+<table>
+<tr><th>Strategy</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
+<tr><td><code>RollingUpdate</code> (default)</td><td>Stateless app where old and new versions can safely coexist (two versions of a REST API behind the same Service)</td><td>Old and new versions must never coexist (breaking DB schema change, a singleton holding an exclusive lock or port)</td><td>Rollout takes longer, briefly mixes versions, surge Pods add temporary resource cost</td></tr>
+<tr><td><code>Recreate</code></td><td>A hard version incompatibility makes mixed-version traffic unsafe</td><td>Anything user-facing where downtime is unacceptable</td><td>Full downtime window between the last old Pod terminating and the first new Pod becoming ready</td></tr>
+</table>
+<p><strong>Default recommendation:</strong> stay on <code>RollingUpdate</code> at its 25%/25% defaults unless you have a specific, named reason — usually a breaking schema or contract change — to accept a downtime window with <code>Recreate</code>.</p>
+
+<h2>Knowledge check</h2>
 <div class="quiz">
-<p>Q1. What two fields must match for a Deployment to be valid?</p>
+<p>Q1. What two fields must match exactly for a Deployment manifest to be accepted by the API?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1"><code>spec.selector.matchLabels</code> must match <code>spec.template.metadata.labels</code>.</div>
+<div class="answer" id="a1"><code>spec.selector.matchLabels</code> must match <code>spec.template.metadata.labels</code>. A mismatch is rejected by the API at creation time.</div>
 </div>
-
-<h2>Now write your own</h2>
-<p>Turn your Lesson 2 Pod into a Deployment with 3 replicas — by hand. It needs:</p>
-<ul>
-<li><code>apiVersion: apps/v1</code>, <code>kind: Deployment</code> (Pod is <code>v1</code>, Deployment is <code>apps/v1</code>)</li>
-<li><code>spec.replicas: 3</code></li>
-<li><code>spec.selector.matchLabels</code> and <code>spec.template.metadata.labels</code> — same key/value</li>
-</ul>
-<p>Apply it, then run <code>kubectl get deploy</code>, <code>kubectl get rs</code>, and <code>kubectl get pods --show-labels</code>. Try it before you look below.</p>
 
 <div class="quiz">
-<p>Reveal the reference answer</p>
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a2"><code>apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: my-nginx
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: my-nginx
-  template:
-    metadata:
-      labels:
-        app: my-nginx
-    spec:
-      containers:
-        - name: nginx
-          image: nginx
-</code></pre>
+<p>Q2. A Deployment has 3 replicas and default RollingUpdate settings. What's the maximum number of Pods that can exist at once mid-rollout?</p>
+<div class="opts">
+<label>A. Three Pods total</label>
+<label>B. Four Pods total</label>
+<label>C. Five Pods total</label>
+<label>D. Six Pods total</label>
+</div>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a2">B. <code>maxSurge</code> defaults to 25%, rounded up: 25% of 3 is 0.75, which rounds up to 1 extra Pod — so 3 desired + 1 surge = 4 at most.</div>
 </div>
 
-<p>Once it's running, try the operational payoff: <code>kubectl rollout status deployment/my-nginx</code>, <code>kubectl rollout undo deployment/my-nginx</code>, <code>kubectl rollout history deployment/my-nginx</code>.</p>
+<div class="quiz">
+<p>Q3. You change only <code>spec.replicas</code> on a running Deployment, from 3 to 5. What happens?</p>
+<div class="opts">
+<label>A. A new ReplicaSet is created immediately</label>
+<label>B. The existing ReplicaSet scales up to five</label>
+<label>C. The Deployment is rejected by the API</label>
+<label>D. All existing Pods restart in place</label>
+</div>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a3">B. A rollout (new ReplicaSet) is triggered only when <code>spec.template</code> changes. Scaling <code>spec.replicas</code> alone just resizes the current ReplicaSet.</div>
+</div>
+
+<h2>Certification mapping</h2>
+<p>Directly covers <strong>Workloads &amp; Scheduling (15%)</strong> — Deployments and their rolling update/rollback behavior are named explicitly in this domain. It also feeds <strong>Troubleshooting (30%)</strong>: "my rollout won't finish" is one of the most common real-exam-style scenarios in that domain, and it's the exact skill this lesson's troubleshooting workflow builds.</p>
+
+<h2>Production challenge</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Diagnose and safely recover a genuinely broken rollout using only <code>kubectl rollout</code>/<code>get</code>/<code>describe</code> — form a hypothesis before you fix anything.</p>
+<h4>Scenario</h4>
+<p>A teammate updated <code>checkout-api</code>'s image right before standup and pinged you that "something looks off." You didn't see the change go in.</p>
+<h4>Environment assumptions</h4>
+<p>A kind/minikube cluster. Build the broken state yourself first — this simulates the teammate's change:</p>
+<pre><code>kubectl create deployment checkout-api --image=nginx:1.25 --replicas=4
+kubectl rollout status deployment/checkout-api
+kubectl set image deployment/checkout-api nginx=nginx:1.25-does-not-exist</code></pre>
+<h4>Commands</h4>
+<p>Now diagnose it the way you would in the incident above, then fix it:</p>
+<pre><code># Diagnose
+kubectl rollout status deployment/checkout-api --timeout=20s
+kubectl get rs -l app=checkout-api
+kubectl get pods -l app=checkout-api
+kubectl describe pod &lt;a-new-pod-name&gt;    # read the Events section
+kubectl rollout history deployment/checkout-api
+
+# Fix
+kubectl rollout undo deployment/checkout-api
+kubectl rollout status deployment/checkout-api</code></pre>
+<h4>Expected result</h4>
+<p>The <code>--timeout=20s</code> status command times out with an error instead of completing — that timeout is your signal, not a bug. <code>describe pod</code> shows an <code>ImagePullBackOff</code>/<code>ErrImagePull</code> event referencing the bad tag. After <code>rollout undo</code>, status reports <code>successfully rolled out</code> and all 4 Pods run <code>nginx:1.25</code>.</p>
+<h4>Verification</h4>
+<p><code>kubectl get pods -l app=checkout-api -o jsonpath='{.items[*].spec.containers[0].image}'</code> — all four entries should read <code>nginx:1.25</code>, none the bad tag. Run it twice, a minute apart, to confirm it's stable and not still converging.</p>
+<h4>Common failure</h4>
+<p>Repeatedly re-running <code>rollout status</code> and waiting, hoping the image will somehow start pulling — it won't, the tag doesn't exist. Equally wrong: <code>kubectl delete pod</code> on the broken Pods — the ReplicaSet just creates identical replacements from the same broken template.</p>
+<h4>Troubleshooting</h4>
+<p>If <code>rollout undo</code> doesn't land on the revision you expect, run <code>kubectl rollout history deployment/checkout-api</code> first to see what's available, then target one explicitly with <code>kubectl rollout undo deployment/checkout-api --to-revision=&lt;N&gt;</code>.</p>
+<h4>Cleanup / rollback</h4>
+<pre><code>kubectl delete deployment checkout-api --ignore-not-found</code></pre>
+<h4>Production lesson</h4>
+<p>The habit that separates a calm rollback from a panicked one is checking <code>kubectl describe pod</code>'s Events section before touching anything else — it tells you in one command whether you're looking at a bad image, a crashing app, or a scheduling/capacity problem, and each of those has a different correct fix.</p>
+</div>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/workloads/controllers/deployment/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/controllers/deployment</a> — the exact page you can search in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/concepts/workloads/controllers/deployment/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/controllers/deployment</a> — verified 2026-08-03. The exact page you can search in the real exam; every default and mechanic in this lesson (rolling update strategy default, <code>maxSurge</code>/<code>maxUnavailable</code> defaults and rounding, selector immutability, <code>revisionHistoryLimit</code> default, rollback command syntax) is quoted from this source.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>A Deployment = Pod template + desired replica count + a selector that finds its own Pods.</li>
-    <li><code>spec.selector.matchLabels</code> must match <code>spec.template.metadata.labels</code>.</li>
-    <li>A Deployment manages a ReplicaSet, which manages the Pods.</li>
+    <li>A Deployment is a policy layer: it manages a ReplicaSet, which manages Pods — it never touches a Pod directly.</li>
+    <li><code>spec.selector.matchLabels</code> must match <code>spec.template.metadata.labels</code> on creation, and <code>spec.selector</code> is immutable afterward — no in-place renames.</li>
+    <li>Only changes to <code>spec.template</code> trigger a new rollout (new ReplicaSet); changing <code>spec.replicas</code> alone just scales the existing one.</li>
+    <li>Default strategy is <code>RollingUpdate</code> with <code>maxUnavailable=25%</code> (rounds down) and <code>maxSurge=25%</code> (rounds up); <code>Recreate</code> kills every old Pod before creating new ones.</li>
+    <li><code>kubectl rollout undo deployment/&lt;name&gt; [--to-revision=N]</code> is the fast, safe way out of a broken rollout — up to <code>revisionHistoryLimit</code> (default 10) old ReplicaSets are kept for exactly this.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<footer class="teacher-reminder">Stuck, or got a different result than "Expected result" above? Paste the exact command and output back to your teacher — a mismatch between what you saw and what this lesson predicted is the most useful thing you can bring back.</footer>
 
 <div class="lesson-nav">
   <a href="0003-service-to-pod.html">&larr; Service &rarr; Pod</a>

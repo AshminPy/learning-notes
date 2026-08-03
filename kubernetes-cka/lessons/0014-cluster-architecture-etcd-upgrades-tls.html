@@ -11,16 +11,16 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 14 of 24</p>
 <h1>etcd backup/restore, cluster upgrades, and TLS certificates</h1>
 
-<p>On a managed cluster, Google runs etcd backups, node upgrades, and cert rotation for you — invisible. On a self-managed <code>kubeadm</code> cluster (what the exam runs), these jobs land on you. They're graded on exact command syntax — wrong flags, command fails, no partial credit.</p>
+<h2>Why this matters</h2>
+<p>Three separate ways a self-managed cluster dies, all covered in this one lesson. An etcd cluster with no <em>tested</em> restore process isn't backed up — it just has a file nobody has proven works, which is a company-ending risk the day disk failure or a bad <code>kubectl delete</code> on the wrong object takes etcd down for real. A kubeadm upgrade run out of order — workers before control plane, or a skipped minor version — can leave the whole control plane unable to talk to itself. And an expired certificate doesn't announce itself: it breaks trust between components silently, so what you see is <code>kubectl</code> hanging or a node going <code>NotReady</code>, not an error message that says "your cert expired." On a managed cluster (GKE Autopilot, EKS, AKS), the provider does all three jobs for you, invisibly. On the kubeadm cluster the CKA exam runs — and on plenty of real self-managed clusters — they land on you, and they're graded (or judged, in production) on exact execution, not partial credit.</p>
 
-<p class="callout"><strong>Simple picture:</strong> etcd is the cluster's only filing cabinet. Every object — Pods, Secrets, everything — is a piece of paper inside it. Lose the cabinet with no backup, and every record is gone, not just "some pods restart."</p>
+<p class="callout"><strong>Mental model:</strong> an etcd backup you've never restored from is a parachute you've never test-jumped. It looks fine folded in the bag. The only way to know it actually opens is to pull the cord — and by the time you genuinely need it, mid-outage, is the worst possible moment to discover it doesn't. This predicts something concrete: "we take nightly snapshots" is not a backup strategy on its own. A backup strategy is "we take nightly snapshots <em>and</em> we've restored one, on a disposable cluster, recently enough to trust the runbook still matches reality." If you can't say the second half, assume the first half is decoration.</p>
 
-<h2>etcd backup — <code>etcdctl snapshot save</code></h2>
-<p>Tool is <code>etcdctl</code>, with <code>ETCDCTL_API=3</code> set. etcd's connections use mutual TLS, so the backup command needs to authenticate like any other client.</p>
+<h2>Core concepts: etcd backup</h2>
+<p>etcd is the cluster's only real database — every object this course has covered (Pods, Secrets, RBAC bindings, all of it) is a key in etcd. The tool for talking to it directly is <code>etcdctl</code>, and on any real cluster its connections are TLS-secured, so the backup command has to authenticate like any other client.</p>
 
-<h2>Try it yourself — before reading on</h2>
-<p>Without looking anything up: what flags does <code>etcdctl snapshot save</code> need against a real, TLS-secured etcd, and why does each exist?</p>
-
+<h3>Try it yourself — before reading on</h3>
+<p>Without looking anything up: what flags does <code>etcdctl snapshot save</code> need against a real, TLS-secured etcd, and why does each one exist?</p>
 <div class="quiz">
 <p>Reveal the reference command</p>
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
@@ -30,41 +30,42 @@
   --key=&lt;key-file&gt; \
   snapshot save &lt;backup-file-location&gt;</code></pre>
 </div>
-
 <ul>
 <li><code>--endpoints</code> — which etcd member to talk to (default <code>127.0.0.1:2379</code>, the local one).</li>
-<li><code>--cacert</code> — verifies it's really talking to etcd, not an impostor.</li>
-<li><code>--cert</code> / <code>--key</code> — proves the client is authorized. Mutual TLS: both sides check each other.</li>
+<li><code>--cacert</code> — verifies you're really talking to etcd, not an impostor.</li>
+<li><code>--cert</code> / <code>--key</code> — proves the client is authorized to connect at all.</li>
 </ul>
-<p>On kubeadm those three files are usually under <code>/etc/kubernetes/pki/etcd/</code>. If unsure, <code>kubectl -n kube-system describe pod etcd-&lt;node&gt;</code> shows the exact mounted paths.</p>
-<p class="callout">Back it up on a routine, before you need it — not as a panic response.</p>
+<p>On a kubeadm cluster those three files are usually under <code>/etc/kubernetes/pki/etcd/</code>. If you're not sure, <code>kubectl -n kube-system describe pod etcd-&lt;node&gt;</code> shows the exact mounted paths the running etcd process is actually using — read them off the container, don't guess from memory.</p>
 
-<h2>etcd restore — the gotcha</h2>
-<p>Restore uses <code>etcdutl</code> (not <code>etcdctl</code> — <code>snapshot restore</code> there is deprecated).</p>
+<p class="callout"><strong>Simple example:</strong> etcd doesn't just use TLS — it uses <em>mutual</em> TLS, meaning both sides authenticate, not only the server. kubeadm turns this on with <code>--client-cert-auth=true</code> (and <code>--peer-client-cert-auth=true</code> for member-to-member replication traffic), so etcd refuses any client that can't present a cert signed by its own CA. You can see the proof of this directly in <code>kubeadm certs check-expiration</code>'s output: alongside <code>etcd-server</code> (the cert etcd presents to prove <em>its</em> identity), it separately tracks <code>etcd-peer</code>, <code>etcd-healthcheck-client</code>, and <code>apiserver-etcd-client</code> — certs that callers must present <em>to</em> etcd. One-way TLS would only ever need the first one.</p>
+
+<p class="callout">Back it up on a routine schedule, before you need it — not as a panic response once something's already gone wrong.</p>
+
+<h2>Core concepts: etcd restore — the gotcha</h2>
+<p>Restore uses <code>etcdutl</code>, not <code>etcdctl</code> — <code>etcdctl snapshot restore</code> has been deprecated since etcd v3.5 and is slated for removal in v3.6, so this is a hard requirement now, not a style preference.</p>
 
 <div class="quiz">
-<p>Q1. Does restore overwrite the live, running data directory — or something else?</p>
+<p>Q. Does restore overwrite the live, running data directory — or something else?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2">It creates a brand-new directory, never touches the running one. <code>etcdutl --data-dir &lt;new-dir&gt; snapshot restore snapshot.db</code>.</div>
+<div class="answer" id="a2">Something else: it creates a brand-new directory and never touches the running one. <code>etcdutl --data-dir &lt;new-dir&gt; snapshot restore snapshot.db</code> — the target directory is created by the restore itself, and etcdutl will refuse to run if that directory already has data in it.</div>
 </div>
 
-<p>You then have to point etcd at the new directory and restart:</p>
+<p>Because of that, you then have to point etcd at the new directory and let it restart:</p>
 <ul>
-<li><strong>New path:</strong> edit the etcd static Pod manifest (<code>/etc/kubernetes/manifests/etcd.yaml</code>), change the <code>etcd-data</code> hostPath, then delete the etcd pod or restart kubelet to recreate it.</li>
-<li><strong>Same path:</strong> stop etcd and delete the old directory first — <code>etcdutl</code> refuses to restore into a directory that already has data.</li>
+<li><strong>Restoring to a new path (the normal case):</strong> edit the etcd static Pod manifest (<code>/etc/kubernetes/manifests/etcd.yaml</code>), change the <code>etcd-data</code> hostPath to the new directory. The kubelet watches that file and recreates the Pod once it changes — same static-Pod mechanism from Lesson 13, just triggered by an edit instead of a fresh file.</li>
+<li><strong>Reusing the same path:</strong> stop etcd and delete the old directory first — <code>etcdutl</code> refuses to restore into a directory that already has data in it, by design, so a restore can never silently, partially overwrite a live store.</li>
 </ul>
-<p class="callout">Order matters: stop all API server instances &rarr; restore etcd &rarr; restart API servers. Also restart scheduler, controller-manager, kubelet after — they may hold stale state.</p>
+<p class="callout">Order matters on a real restore: stop all kube-apiserver instances &rarr; restore etcd into its new directory &rarr; point etcd at it and let it come back up &rarr; restart the API servers. Restart scheduler, controller-manager, and kubelet afterward too — otherwise they can keep relying on state they cached from before the restore, instead of the restored data.</p>
 
-<h2>Cluster upgrades with kubeadm</h2>
+<h2>Core concepts: cluster upgrades with kubeadm</h2>
 <ul>
-<li><strong>No skipping minor versions.</strong> 1.35 &rarr; 1.37 means going through 1.36 first, even on one node.</li>
-<li><strong>Control plane first, workers last, one node at a time</strong> — never all at once, so the cluster keeps serving traffic.</li>
+<li><strong>No skipping minor versions.</strong> "Skipping MINOR versions when upgrading is unsupported" is kubeadm's own wording — 1.35 &rarr; 1.37 means going through 1.36 first, on every node, even if you never intend to run a workload on 1.36 itself.</li>
+<li><strong>Control plane first, workers last, one node at a time</strong> — never all at once, so the cluster keeps serving traffic throughout.</li>
 </ul>
 
-<h2>Try it yourself — before reading on</h2>
-<p>From memory: what's the drain/uncordon pattern around each node, and why per-node rather than all-at-once?</p>
-
+<h3>Try it yourself — before reading on</h3>
+<p>From memory: what's the drain/uncordon pattern around each node, and why per-node instead of all-at-once?</p>
 <div class="quiz">
 <p>Reveal the reference sequence</p>
 <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
@@ -72,7 +73,7 @@
 kubeadm upgrade plan
 kubeadm upgrade apply v1.x.y
 kubectl drain &lt;node&gt; --ignore-daemonsets
-# upgrade kubelet + kubectl, then:
+# upgrade kubelet + kubectl packages, then:
 systemctl daemon-reload
 systemctl restart kubelet
 kubectl uncordon &lt;node&gt;
@@ -80,51 +81,230 @@ kubectl uncordon &lt;node&gt;
 # --- each additional control-plane node ---
 kubeadm upgrade node
 kubectl drain &lt;node&gt; --ignore-daemonsets
-# upgrade kubelet + kubectl, restart kubelet
+# upgrade kubelet + kubectl packages, restart kubelet
 kubectl uncordon &lt;node&gt;
 
 # --- each worker node, one at a time ---
 kubectl drain &lt;node&gt; --ignore-daemonsets
 kubeadm upgrade node
-# upgrade kubelet + kubectl, restart kubelet
+# upgrade kubelet + kubectl packages, restart kubelet
 kubectl uncordon &lt;node&gt;</code></pre>
 </div>
-<p><code>drain</code> evicts Pods so they get rescheduled elsewhere first — same rolling-upgrade idea as a Deployment, applied to nodes.</p>
+<p><code>drain</code> evicts Pods so they get rescheduled onto still-healthy nodes first — the same rolling-upgrade idea you already know from a Deployment, applied here to nodes instead of Pods.</p>
 
 <h3>Version skew — the short version</h3>
 <ul>
-<li><code>kube-apiserver</code> replicas: within 1 minor version of each other.</li>
-<li><code>kubelet</code> / <code>kube-proxy</code>: never newer than apiserver, up to 3 minors older.</li>
-<li><code>controller-manager</code> / <code>scheduler</code> / <code>cloud-controller-manager</code>: never newer than apiserver, ~1 minor older.</li>
-<li><code>kubectl</code>: within 1 minor version either side of apiserver.</li>
+<li><code>kube-apiserver</code> replicas: the newest and oldest must be within 1 minor version of each other.</li>
+<li><code>kubelet</code> / <code>kube-proxy</code>: never newer than <code>kube-apiserver</code>; may run up to 3 minor versions older.</li>
+<li><code>kube-controller-manager</code> / <code>kube-scheduler</code> / <code>cloud-controller-manager</code>: never newer than <code>kube-apiserver</code>; may be up to 1 minor version older.</li>
+<li><code>kubectl</code>: within 1 minor version either side of <code>kube-apiserver</code> — the one component allowed to be newer.</li>
 </ul>
-<p>apiserver goes first because everyone else's allowed range is defined relative to it.</p>
+<p><code>kube-apiserver</code> goes first in the upgrade order because every other component's allowed range is defined relative to it, not the other way around.</p>
 
-<h2>TLS certificates</h2>
-<p>Control-plane components trust each other only via mutual TLS. <code>kubeadm init</code> generates the whole tree under <code>/etc/kubernetes/pki</code> — certs valid 1 year, CA certs 10 years. On a long-lived cluster, expiry is a real event.</p>
+<h2>Core concepts: TLS certificates</h2>
+<p>Every control-plane component trusts every other one only through mutual TLS. <code>kubeadm init</code> generates the entire certificate tree under <code>/etc/kubernetes/pki</code> on first bootstrap: leaf certs (apiserver, etcd, kubeconfig client certs, and so on) default to 365 days' validity, CA certs default to 3650 days (10 years). On a cluster you actually keep running for more than a year, expiry stops being theoretical.</p>
 
 <div class="quiz">
 <p>Q. What command shows how much time is left before certs expire?</p>
 <input type="text" id="q2" placeholder="type your answer">
 <button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
-<div class="answer" id="a4"><code>kubeadm certs check-expiration</code> — lists every managed cert with expiry date and signing CA.</div>
+<div class="answer" id="a4"><code>kubeadm certs check-expiration</code> — lists every kubeadm-managed cert with its expiry date, residual time, and signing CA, plus a separate table for the CA certs themselves.</div>
 </div>
 
-<p>Fix: <code>kubeadm certs renew &lt;cert-name&gt;</code> or <code>renew all</code>. Re-signs with the existing CA. Doesn't hot-reload — restart the affected static Pods after (move the manifest out of <code>/etc/kubernetes/manifests/</code> and back). <code>kubelet.conf</code> is separate — kubeadm sets up automatic rotation for it already.</p>
+<p>Fix: <code>kubeadm certs renew &lt;cert-name&gt;</code> for one cert, or <code>kubeadm certs renew all</code> for everything kubeadm manages. Renewal re-signs with the existing CA — it doesn't hot-reload into the running process, so you still have to restart the affected static Pods afterward (move the manifest out of <code>/etc/kubernetes/manifests/</code>, wait, then move it back so the kubelet recreates the container). <code>kubelet.conf</code> isn't in that list — kubeadm sets kubelet up for automatic certificate rotation separately, under <code>/var/lib/kubelet/pki</code>.</p>
 
-<h2>Retrieval practice — no peeking</h2>
+<p class="callout"><strong>Simple example:</strong> you get more free cert renewal than you might expect. <code>kubeadm upgrade apply</code> (first control-plane node) and <code>kubeadm upgrade node</code> (every other node) both renew every certificate they manage on that node automatically, as part of the upgrade — <code>--certificate-renewal=false</code> is the flag if you ever need to opt out. That's a real side effect worth knowing on purpose: a cluster you upgrade on a normal cadence is quietly getting its certs refreshed for free along the way. A cluster that never gets upgraded gets neither benefit — no version updates, and no free renewal either.</p>
+
+<h2>Production example</h2>
+<p class="callout production"><strong>Production note:</strong> no real platform team relies on someone remembering to type <code>etcdctl snapshot save</code>. The standard pattern is a scheduled job — a CronJob or a systemd timer running directly on each control-plane node, since it needs the etcd PKI files — that takes the snapshot and, in the same job, immediately ships the resulting file to object storage in a different account or region than the cluster itself. A snapshot sitting on the same disk as the cluster it backs up doesn't survive the failure modes that actually destroy clusters: disk failure, an accidental <code>rm -rf</code>, or the node itself being terminated. Retention is typically a rolling window (say, 7 daily plus 4 weekly), not "keep everything forever." Separately, mature teams wire <code>kubeadm certs check-expiration</code> into monitoring — a small script parsing the RESIDUAL TIME column into a metric, alerting at a fixed threshold like 30 days out — because kubeadm itself sets no warning threshold at all. The command just reports the number back to whoever remembers to ask; treating that as a standing alert instead of a manual habit is the actual production practice.</p>
+
+<h2>Hands-on exercise</h2>
+<p>This exercise goes deep on <strong>etcd backup</strong> — the failure scenario below covers TLS certs, and the troubleshooting workflow after that covers cluster upgrades, so each of the three topics gets one full worked example instead of three shallow ones.</p>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Prove you can take a real, TLS-authenticated etcd snapshot against a live cluster — not just recite the four flags.</p>
+<h4>Scenario</h4>
+<p>Your team's runbook says "back up etcd before any risky change." You're about to find out whether you can actually execute that line yourself, without looking anything up.</p>
+<h4>Environment assumptions</h4>
+<p>Any kubeadm-created cluster — a real kubeadm cluster, or a <code>kind</code> cluster (kind bootstraps its control-plane node with kubeadm internally, so the same static Pod and PKI layout applies). You need <code>kubectl</code> access to the <code>kube-system</code> namespace. This exercise only takes a snapshot — it never touches the restore path — so there's nothing here that can damage a real cluster. Restore is destructive and belongs on a disposable cluster only; don't practice it here.</p>
+<h4>Commands</h4>
+<pre><code># find the etcd static pod's exact name (it's named etcd-&lt;node&gt;)
+kubectl -n kube-system get pods -l component=etcd
+
+# take the snapshot from inside the etcd pod itself — it already has
+# etcdctl and the PKI files mounted, so there's nothing extra to install
+kubectl -n kube-system exec etcd-&lt;node-name&gt; -- sh -c \
+  "ETCDCTL_API=3 etcdctl \
+   --endpoints=https://127.0.0.1:2379 \
+   --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+   --cert=/etc/kubernetes/pki/etcd/server.crt \
+   --key=/etc/kubernetes/pki/etcd/server.key \
+   snapshot save /tmp/etcd-snapshot-$(date +%F).db"
+
+# verify it actually exists and isn't suspiciously small
+kubectl -n kube-system exec etcd-&lt;node-name&gt; -- ls -lh /tmp/etcd-snapshot-*.db</code></pre>
+<h4>Expected result</h4>
+<p><code>snapshot save</code> prints a line confirming the snapshot and its hash; the <code>ls -lh</code> shows a real file — typically several megabytes even on a near-empty lab cluster, because etcd stores its own schema and revision history, not just the handful of objects you've created.</p>
+<h4>Verification</h4>
+<p>A file that's a few hundred bytes, or missing entirely, is not a real snapshot — that usually means the command failed partway (wrong cert path, wrong endpoint) while still exiting without an obvious error. Check the command's own stdout/stderr, not just whether a file with the right name appeared.</p>
+<h4>Common failure</h4>
+<p><code>context deadline exceeded</code> or connection refused almost always means a wrong <code>--endpoints</code> value or a mistyped cert path, not a broken etcd process.</p>
+<h4>Troubleshooting</h4>
+<p>If your cert paths aren't the defaults shown above, don't guess — run <code>kubectl -n kube-system describe pod etcd-&lt;node-name&gt;</code> and read the exact <code>--cert-file</code>, <code>--key-file</code>, and <code>--trusted-ca-file</code> arguments straight off the running container's command line.</p>
+<h4>Cleanup / rollback</h4>
+<p><code>kubectl -n kube-system exec etcd-&lt;node-name&gt; -- rm /tmp/etcd-snapshot-*.db</code> — it's sitting in the container's own filesystem, not under <code>/var/lib/etcd</code> or <code>/etc/kubernetes/pki</code>, so there's nothing else to undo.</p>
+<h4>Production lesson</h4>
+<p>You just did half the job. A snapshot file you've never restored from is a hypothesis about a backup, not a backup — the only way to know it's actually usable is to run the restore, and that has to happen on a disposable cluster you're willing to break, never for the first time during a real outage. Schedule that as its own deliberate exercise, not this one.</p>
+</div>
+
+<h2>Failure scenario: the reboot that exposed a year of neglect</h2>
+<p>This walkthrough goes deep on <strong>TLS certificates</strong> — a realistic incident built from a cluster nobody had touched since the day it was built.</p>
+<ol class="timeline">
+<li><span class="t">Day 0</span> A 3-node kubeadm cluster (1 control-plane, 2 workers) is built for a project. It ships successfully. Nobody upgrades it, renews anything on it, or sets up cert-expiration monitoring, ever again.</li>
+<li><span class="t">Month 11</span> A routine OS patching window reboots all three nodes overnight — standard infrastructure maintenance, unrelated to Kubernetes itself.</li>
+<li><span class="t">09:14</span> On-call notices <code>kubectl get nodes</code> from their workstation hangs, then fails with a TLS error instead of returning node status.</li>
+<li><span class="t">09:18</span> SSHes into the control-plane node and tries <code>kubectl get nodes</code> locally — same failure: <code>Unable to connect to the server: x509: certificate has expired or is not yet valid</code>.</li>
+<li><span class="t">09:21</span> Checks kubelet: <code>journalctl -u kubelet -n 50</code> shows repeated <code>Failed to connect to apiserver</code> and <code>x509: certificate has expired</code> errors, starting right at the reboot timestamp — not before.</li>
+<li><span class="t">09:25</span> Checks the containers directly with <code>crictl ps</code> — the apiserver, etcd, and controller-manager static Pod containers are all running. This isn't a crash; it's a trust failure between components that are otherwise fine on their own.</li>
+<li><span class="t">09:27</span> Runs <code>kubeadm certs check-expiration</code>. Several client/server certs — created 11 months ago against kubeadm's 365-day default — show 0 or negative residual time. The CA certs, on their 10-year default, are still fine.</li>
+<li><span class="t">09:30</span> Root cause: the certs expired quietly, on schedule, some weeks earlier. Nothing forced a fresh TLS handshake until the reboot restarted every process and made them reconnect from scratch — a common reason expired certs go unnoticed for a while is that long-lived connections established before expiry can keep working without renegotiating.</li>
+<li><span class="t">09:33</span> Fix applied: <code>kubeadm certs renew all</code>, then the affected static Pods are restarted by moving <code>/etc/kubernetes/manifests</code> out and back so the kubelet recreates them against the renewed certs.</li>
+<li><span class="t">09:41</span> Verified: <code>kubeadm certs check-expiration</code> shows a fresh ~365-day residual time across the board, <code>kubectl get nodes</code> succeeds, and kubelet logs are clean.</li>
+</ol>
+
+<h2>Troubleshooting workflow: a node won't come back healthy after a kubeadm upgrade</h2>
+<p>The general 10-step method, applied specifically to <strong>cluster upgrades</strong> — one node stuck after its turn in the upgrade sequence.</p>
+<ol class="troubleshooting">
+<li><strong>Confirm the symptom.</strong> Run <code>kubectl get nodes</code> yourself. Is the node <code>NotReady</code>, stuck with <code>SchedulingDisabled</code> (never uncordoned), or <code>Ready</code> but on the wrong version? Each points somewhere different — don't diagnose from what the last upgrade looked like.</li>
+<li><strong>Define scope.</strong> <code>kubectl get nodes -o wide</code> — is it only the node you just upgraded, or every node upgraded in this batch? A single bad node suggests a local mistake on that host; every node suggests a bad procedure or a bad package version.</li>
+<li><strong>Check recent changes.</strong> Compare against your own upgrade runbook: did <code>kubeadm upgrade node</code> actually complete, did the kubelet/kubectl package upgrade run, did <code>systemctl restart kubelet</code> happen, was <code>kubectl uncordon</code> run afterward? Missing any one step produces a different symptom.</li>
+<li><strong>Inspect the right state.</strong> <code>kubectl get node &lt;name&gt; -o jsonpath='{.status.nodeInfo.kubeletVersion}'</code> — does it show the version you just installed, or the old one? If it's still old, the package upgraded but the running process never restarted onto it.</li>
+<li><strong>Check logs.</strong> <code>journalctl -u kubelet -n 100</code> on the node itself — look for version-skew rejections, bad config left over from the package upgrade, or CNI plugin errors if the node's CNI wasn't upgraded alongside it.</li>
+<li><strong>Form a hypothesis.</strong> For example: "the kubelet binary upgraded, but the service was never restarted, so it's still running the old process against a newer apiserver." Write it down before touching anything else.</li>
+<li><strong>Test one variable.</strong> Confirm it directly — does the installed package version (<code>dpkg -l kubelet</code> or <code>rpm -q kubelet</code>) match the version reported in step 4? If they differ, that's confirmed, not assumed.</li>
+<li><strong>Apply the safest fix.</strong> If it's a stale process, <code>systemctl daemon-reload &amp;&amp; systemctl restart kubelet</code> — don't reinstall packages or touch other nodes while this one is still being diagnosed.</li>
+<li><strong>Verify recovery.</strong> <code>kubectl get node &lt;name&gt;</code> back to <code>Ready</code> on the correct version with no <code>SchedulingDisabled</code>; <code>kubectl get pods -o wide</code> shows workloads actually scheduling onto it again, not just the node object looking healthy.</li>
+<li><strong>Document and prevent recurrence.</strong> Add an explicit check to the runbook: assert the kubelet version matches the target immediately after the restart step, before running <code>uncordon</code> — never uncordon a node you haven't confirmed is actually upgraded.</li>
+</ol>
+
+<p class="callout security"><strong>Security note:</strong> etcd is where every cluster Secret actually lives — and by default it's exactly as unencrypted there as it is inside the API server: base64, not encryption (Lesson 6 covers why that distinction matters for who can read it). That means an etcd snapshot file isn't just a database backup, it's a complete, portable copy of every Secret in your cluster — API tokens, TLS private keys, database passwords — sitting in one file with no cryptographic protection unless you've separately configured <code>EncryptionConfiguration</code> on the API server. Treat every <code>.db</code> snapshot with the same handling rules as your most sensitive credential store: encrypt it the moment it leaves the node, restrict who can read the storage bucket it lands in, and never leave one sitting in a world-readable <code>/tmp</code> directory or attach it to a support ticket.</p>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating "we take etcd snapshots" as equivalent to "we have a backup." A snapshot nobody has ever restored from is untested — the first real restore attempt, done under incident pressure on a production cluster, is the worst possible time to discover a missing flag, a version mismatch, or a corrupted file.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> skipping a minor version to save time on an upgrade — going straight from 1.35 to 1.37 on the theory that it's just two small bumps. kubeadm's own upgrade path does not support this; every control-plane node has to pass through 1.36 first, even if nothing is ever meant to run workloads on that intermediate version.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> assuming certs are "someone else's problem" because <code>kubeadm upgrade apply</code> and <code>kubeadm upgrade node</code> renew every cert they manage by default. That's true — but only while you're actually upgrading. A cluster that goes a year without an upgrade also goes a year without that free renewal, which is exactly the trap the failure scenario above fell into.</p>
+
+<h2>Decision guide</h2>
+<table>
+<tr><th>Response</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
+<tr><td>Restart the affected static Pod (move manifest out, then back)</td><td>One component is stuck on stale config or a just-renewed cert, but its underlying data is fine</td><td>The actual problem is data loss or corruption in etcd</td><td>Fast and low-risk, but does nothing for real data loss</td></tr>
+<tr><td><code>kubeadm certs renew</code> + restart</td><td><code>check-expiration</code> shows certs expired or close to it, and that's the only symptom</td><td>Nodes are also failing on version skew or a broken upgrade</td><td>Minutes of downtime per restarted component, no data risk</td></tr>
+<tr><td>Drain, fix, uncordon one node</td><td>One node is unhealthy after an upgrade step (kubelet mismatch, bad config)</td><td>The whole control plane is already down (drain needs a working API server)</td><td>Standard, well-tested, fully reversible</td></tr>
+<tr><td>Restore etcd from snapshot</td><td>etcd's own data is corrupted or lost — disk failure, a bad manual edit, every member down — and no live copy of state exists anywhere</td><td>Any narrower fix above would resolve it instead</td><td>Cluster state rolls back to snapshot time; anything created or changed after the snapshot is gone</td></tr>
+</table>
+<p><strong>Default recommendation:</strong> restore from an etcd snapshot only when there is genuinely no less destructive path back to a healthy cluster. It's a last resort specifically because of the data-loss window it opens, not a routine fix to reach for first.</p>
+
+<h2>Knowledge check</h2>
 <div class="quiz">
 <p>Q1. What's the general node order for a kubeadm upgrade?</p>
 <input type="text" id="q3" placeholder="type your answer">
 <button onclick="document.getElementById('a5').classList.add('shown')">Reveal</button>
-<div class="answer" id="a5">First control-plane node (plan &rarr; apply) &rarr; additional control-plane nodes (upgrade node) &rarr; workers one at a time, each drained before and uncordoned after.</div>
+<div class="answer" id="a5">First control-plane node (<code>upgrade plan</code> &rarr; <code>upgrade apply</code>) &rarr; additional control-plane nodes (<code>upgrade node</code>) &rarr; worker nodes one at a time, each drained before and uncordoned after.</div>
 </div>
 
 <div class="quiz">
 <p>Q2. Why does an etcd backup need TLS flags at all?</p>
 <input type="text" id="q4" placeholder="type your answer">
 <button onclick="document.getElementById('a6').classList.add('shown')">Reveal</button>
-<div class="answer" id="a6"><code>--cacert</code> verifies the real etcd server. <code>--cert</code>/<code>--key</code> prove the client is authorized. Without mutual TLS, anyone reaching the endpoint could read or corrupt cluster state.</div>
+<div class="answer" id="a6"><code>--cacert</code> verifies you're talking to the real etcd, not an impostor. <code>--cert</code>/<code>--key</code> prove the client is authorized to connect. Without mutual TLS, anyone who could reach the endpoint could read or corrupt cluster state.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Why does <code>etcdutl snapshot restore</code> create a brand-new data directory instead of overwriting the one etcd is currently using?</p>
+<input type="text" id="q5" placeholder="type your answer">
+<button onclick="document.getElementById('a7').classList.add('shown')">Reveal</button>
+<div class="answer" id="a7">So a restore can never partially overwrite a live, running store. Writing into a fresh directory means the old data is still intact and untouched until you deliberately repoint etcd at the new one — if anything goes wrong mid-restore, the original state hasn't been damaged.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. Your <code>kube-apiserver</code> instances run v1.36. Per the version-skew policy, which <code>kubelet</code> version is NOT supported?</p>
+<div class="opts">
+<label>A. v1.35</label>
+<label>B. v1.34</label>
+<label>C. v1.33</label>
+<label>D. v1.32</label>
+</div>
+<button onclick="document.getElementById('a8').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a8">D. <code>v1.32</code> — kubelet may be up to 3 minor versions older than the apiserver, so the oldest supported kubelet against a v1.36 apiserver is v1.33. v1.32 is 4 minors older, outside the supported range.</div>
+</div>
+
+<div class="quiz">
+<p>Q5. Which certificate is NOT covered by running <code>kubeadm certs renew all</code>?</p>
+<div class="opts">
+<label>A. The API server's own serving certificate</label>
+<label>B. The scheduler's own kubeconfig certificate</label>
+<label>C. The kubelet's self-rotated client certificate</label>
+<label>D. The controller-manager's kubeconfig certificate</label>
+</div>
+<button onclick="document.getElementById('a9').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a9">C. The kubelet's client certificate under <code>/var/lib/kubelet/pki</code> is handled by kubeadm's separate automatic rotation mechanism, not by <code>kubeadm certs renew</code> — that command only touches the certs kubeadm itself manages under <code>/etc/kubernetes/pki</code> and the component kubeconfig files.</div>
+</div>
+
+<h2>Certification mapping</h2>
+<p>This lesson lives in <strong>Cluster Architecture, Installation &amp; Configuration — 25% of the CKA exam</strong>, tied with Troubleshooting as the two most heavily weighted domains. Within that domain, etcd backup/restore and kubeadm upgrades are consistently among the highest-value topics to have real muscle memory for: they're graded on exact command syntax with no partial credit, and — unlike a Deployment YAML you can often patch your way out of — a wrong flag on <code>etcdctl snapshot save</code> or a skipped drain step mid-upgrade doesn't just fail one task, it can leave the exam's practice cluster in a broken state you then have to recover from before you can even attempt the next question.</p>
+
+<h2>Production challenge</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Read a real <code>kubeadm certs check-expiration</code> output and decide, on your own, what to renew and in what order — the way a senior engineer would hand this to you, with no further hand-holding.</p>
+<h4>Scenario</h4>
+<p>You inherited a 14-month-old kubeadm cluster with no cert-monitoring in place. Ahead of your team's quarterly DR test next week, you run a health check and get this:</p>
+<pre><code>CERTIFICATE                EXPIRES                  RESIDUAL TIME   CERTIFICATE AUTHORITY   EXTERNALLY MANAGED
+admin.conf                 Oct 02, 2026 09:10 UTC   60d                                     no
+apiserver                  Aug 12, 2026 09:10 UTC   9d              ca                      no
+apiserver-etcd-client      Aug 12, 2026 09:10 UTC   9d              etcd-ca                 no
+apiserver-kubelet-client   Aug 12, 2026 09:10 UTC   9d              ca                      no
+controller-manager.conf    Oct 02, 2026 09:10 UTC   60d                                     no
+etcd-healthcheck-client    Aug 12, 2026 09:10 UTC   9d              etcd-ca                 no
+etcd-peer                  Aug 12, 2026 09:10 UTC   9d              etcd-ca                 no
+etcd-server                Aug 12, 2026 09:10 UTC   9d              etcd-ca                 no
+front-proxy-client         Aug 12, 2026 09:10 UTC   9d              front-proxy-ca          no
+scheduler.conf              Oct 02, 2026 09:10 UTC   60d                                     no
+
+CERTIFICATE AUTHORITY   EXPIRES                  RESIDUAL TIME   EXTERNALLY MANAGED
+ca                      Jul 14, 2035 09:10 UTC   9y              no
+etcd-ca                 Jul 14, 2035 09:10 UTC   9y              no
+front-proxy-ca          Jul 14, 2035 09:10 UTC   9y              no</code></pre>
+<h4>Environment assumptions</h4>
+<p>Today is August 3, 2026, per this output's own timestamps. You have root/sudo on every control-plane node and no maintenance window booked yet — decide whether this is "schedule it for next week" or "do it right now."</p>
+<h4>Commands</h4>
+<p>Work out your own answer first, then check it against this reference:</p>
+<pre><code># the 9-day-residual certs are the ones actually at risk before the DR
+# test — renew everything kubeadm manages in one pass rather than
+# cherry-picking, since it's a single safe command and won't miss one:
+kubeadm certs renew all
+
+# then force every static pod that reads a renewed cert to pick it up —
+# apiserver, controller-manager, scheduler, and etcd all qualify here:
+mv /etc/kubernetes/manifests /etc/kubernetes/manifests.bak
+sleep 20
+mv /etc/kubernetes/manifests.bak /etc/kubernetes/manifests
+
+# confirm it worked before declaring done:
+kubeadm certs check-expiration
+kubectl get nodes
+kubectl get pods -n kube-system</code></pre>
+<h4>Expected result</h4>
+<p>The reasoning matters more than the command here: the 9-day certs (<code>apiserver</code>, both etcd-signed client certs, <code>etcd-peer</code>, <code>etcd-server</code>, <code>front-proxy-client</code>, <code>apiserver-kubelet-client</code>) are the genuinely urgent ones — 9 days out with a DR test next week is too close for comfort. The <code>admin.conf</code>/<code>controller-manager.conf</code>/<code>scheduler.conf</code> kubeconfig certs at 60 days aren't on fire yet, but renewing everything in one <code>renew all</code> pass is simpler and safer than tracking two separate timelines by hand. The CA certs at 9 years need nothing at all.</p>
+<h4>Verification</h4>
+<p>Re-run <code>kubeadm certs check-expiration</code> after the restart — every managed cert should show a fresh ~365-day residual time, not just the ones that were about to expire.</p>
+<h4>Common failure</h4>
+<p>Renewing only the <code>apiserver</code> cert because it's the one you recognize, and leaving <code>etcd-server</code>/<code>etcd-peer</code> on their original 9-day clock — those failing independently a week later, mid-DR-test, is a worse outcome than doing the full <code>renew all</code> up front.</p>
+<h4>Troubleshooting</h4>
+<p>If <code>kubectl get nodes</code> still fails right after the manifest restart, give the kubelet's own file-check interval a few more seconds before assuming the renewal didn't take — moving manifests out and back only works once the kubelet actually notices the directory changed and re-reads it.</p>
+<h4>Cleanup / rollback</h4>
+<p>None needed if verification passes. Before touching a production cluster's certs for real, copy <code>/etc/kubernetes/pki</code> somewhere safe first (<code>cp -r /etc/kubernetes/pki /etc/kubernetes/pki.bak-$(date +%F)</code>) — <code>kubeadm certs renew</code> doesn't create that backup for you, and it's your fastest way back if a renewal goes wrong.</p>
+<h4>Production lesson</h4>
+<p>The senior-engineer move here isn't running <code>renew all</code> — anyone can look that command up. It's reading the RESIDUAL TIME column, deciding urgency yourself instead of waiting to be told, and acting before the DR test surfaces the gap as an outage instead of a scheduled maintenance window.</p>
 </div>
 
 <h2>Source</h2>
@@ -134,17 +314,19 @@ kubectl uncordon &lt;node&gt;</code></pre>
 <li><a href="https://kubernetes.io/releases/version-skew-policy/" target="_blank" rel="noopener">kubernetes.io/releases/version-skew-policy</a></li>
 <li><a href="https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-certs/" target="_blank" rel="noopener">kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-certs</a></li>
 </ul>
+<p>Verified 2026-08-03 — commands and version-skew numbers re-checked against the current pages above, not assumed from memory.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>etcd holds all cluster state — back it up routinely. Restore creates a new data directory, never overwrites the live one; you repoint etcd's manifest and restart.</li>
-    <li>Upgrades go control plane first, workers last, one node at a time, drain before / uncordon after. Never skip a minor version.</li>
-    <li><code>kubeadm certs check-expiration</code> reports; <code>renew all</code> re-issues — then restart the affected static Pods.</li>
+    <li>etcd holds all cluster state — including every Secret, in the same base64-not-encrypted form as everywhere else. Back it up routinely and treat the snapshot file itself as sensitive. A backup you've never restored from is untested, not proven.</li>
+    <li>Restore uses <code>etcdutl</code> (not <code>etcdctl</code> — deprecated for this) and always creates a new data directory; you repoint etcd's manifest at it and restart, never overwriting the live directory in place.</li>
+    <li>Upgrades go control plane first, workers last, one node at a time, drain before / uncordon after. Never skip a minor version. <code>kubeadm upgrade apply</code>/<code>upgrade node</code> also auto-renew managed certs — one more reason a cluster that never gets upgraded quietly accumulates risk.</li>
+    <li><code>kubeadm certs check-expiration</code> reports; <code>renew all</code> re-issues — then restart the affected static Pods (move the manifest out of <code>/etc/kubernetes/manifests</code> and back) since renewal doesn't hot-reload.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs links above — that's the habit the real exam requires anyway.</footer>
+<footer class="teacher-reminder">Stuck, or does your <code>check-expiration</code> or upgrade output look different from what this lesson predicted? Paste the exact command and output back to your teacher — a real mismatch is more useful to work through together than re-reading the docs alone.</footer>
 
 <div class="lesson-nav">
   <a href="0013-cluster-architecture-kubeadm.html">&larr; kubeadm &amp; static pods</a>
