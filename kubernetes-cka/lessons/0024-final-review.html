@@ -11,14 +11,30 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 24 of 24 (Final Review)</p>
 <h1>Final Review — Cheat Sheet</h1>
 
-<p>This is a reference page, not a new lesson — no new material, no quiz. It pulls together the commands and traps from Lessons 1–23 into one place to skim before the exam.</p>
+<p>This is a reference page, not a new lesson — no new material, no quiz. It pulls together the commands, traps, and the one repeatable troubleshooting method from Lessons 1–23 into a single page to skim before the exam.</p>
+
+<h2>Universal troubleshooting method</h2>
+<p>Every lesson in this course applies the same 10-step method to its own topic. Memorize the method once, not 23 separate command lists:</p>
+<ol class="troubleshooting">
+<li><strong>Confirm the symptom.</strong> Run the real command yourself — don't diagnose from a dashboard or from memory of what it looked like earlier.</li>
+<li><strong>Define scope.</strong> One object, one node, one namespace, or cluster-wide? Scope tells you which layer to suspect first.</li>
+<li><strong>Check recent changes.</strong> <code>kubectl get events --sort-by=.lastTimestamp</code>, plus deploy/CI history and shell history — label/patch commands don't show up as "deploys."</li>
+<li><strong>Inspect the right state.</strong> <code>kubectl describe</code>/<code>kubectl get -o yaml</code> on the object closest to the symptom, not the whole cluster at once.</li>
+<li><strong>Form a hypothesis.</strong> One sentence, specific enough to be provably wrong.</li>
+<li><strong>Test one variable.</strong> Change or inspect exactly one thing before concluding anything — never two at once.</li>
+<li><strong>Apply the safest fix.</strong> The smallest change that addresses the confirmed cause, not the first thing that might help.</li>
+<li><strong>Verify recovery.</strong> Re-run the original failing check, not just a related one that looks better.</li>
+<li><strong>Document the root cause.</strong> Name the exact field/value that was wrong — "misconfigured" isn't a root cause.</li>
+<li><strong>Prevent recurrence.</strong> A review check, an alert, or a guardrail — something that outlives this one incident.</li>
+</ol>
 
 <h2>kubectl command cheat sheet</h2>
 
 <h3>Pods, labels &amp; Deployments</h3>
 <ul>
 <li><code>kubectl get pods --show-labels</code> — show labels on every Pod</li>
-<li><code>kubectl get pods -l tier=frontend</code> — filter Pods by label</li>
+<li><code>kubectl get pods -l tier=frontend</code> / <code>-l 'env in (prod,staging)'</code> — equality- and set-based label filtering</li>
+<li><code>kubectl label pod &lt;name&gt; &lt;key&gt;=&lt;value&gt; --overwrite</code> — isolate a live Pod from its controller by relabeling it out of the selector's match, without deleting it</li>
 <li><code>kubectl get deploy</code> / <code>kubectl get rs</code> — see Deployments and the ReplicaSets they own</li>
 <li><code>kubectl rollout status deployment/&lt;name&gt;</code> — watch a rollout finish</li>
 <li><code>kubectl rollout undo deployment/&lt;name&gt;</code> — roll back to the previous ReplicaSet</li>
@@ -27,7 +43,7 @@
 
 <h3>Services &amp; networking</h3>
 <ul>
-<li><code>kubectl get endpoints &lt;service&gt;</code> — confirm a Service actually found Pods (empty = selector mismatch)</li>
+<li><code>kubectl get endpoints &lt;service&gt;</code> — confirm a Service actually found Pods (empty = selector mismatch or every backend failing readiness)</li>
 <li><code>kubectl get ingressclass</code> — which Ingress controller(s) exist in the cluster</li>
 <li><code>kubectl get networkpolicy</code> — list NetworkPolicies (existing ≠ enforced — CNI must implement it)</li>
 </ul>
@@ -93,15 +109,17 @@
 <li><code>kubectl top nodes</code> / <code>kubectl top pods --containers</code> — needs metrics-server, not installed by default on kubeadm</li>
 </ul>
 
-<h2>Top 7 exam traps</h2>
+<h2>Top 9 exam traps</h2>
 <ol>
 <li>An Ingress or NetworkPolicy object does nothing by itself — it needs a controller (Ingress) or a CNI that implements it (NetworkPolicy), or it's silently a no-op. See <a href="0008-ingress.html">Lesson 8</a> and <a href="0010-networkpolicy.html">Lesson 10</a>.</li>
 <li>A fresh cluster is default-<strong>allow</strong> for Pod-to-Pod traffic — the opposite of a firewall's default-deny. See <a href="0010-networkpolicy.html">Lesson 10</a>.</li>
-<li>A Deployment's <code>spec.selector.matchLabels</code> must exactly match <code>spec.template.metadata.labels</code>, or the Deployment is invalid. See <a href="0004-deployment.html">Lesson 4</a>.</li>
+<li>A Deployment's <code>spec.selector.matchLabels</code> must exactly match <code>spec.template.metadata.labels</code>, or the Deployment is invalid — and the selector itself is immutable after creation. See <a href="0002-pod-labels.html">Lesson 2</a> and <a href="0004-deployment.html">Lesson 4</a>.</li>
+<li>Relabeling a running Pod so it no longer matches its controller's selector doesn't delete or restart it — the Pod keeps running, orphaned, while the controller creates a replacement to restore its desired count. Real technique for isolating a Pod on purpose; real accidental-outage cause when done by mistake (e.g. a too-broad bulk <code>kubectl label</code>). See <a href="0002-pod-labels.html">Lesson 2</a>.</li>
 <li>A Kubernetes Secret is base64-<strong>encoded</strong>, not encrypted — anyone with etcd/API access reads it as plain text unless <code>EncryptionConfiguration</code> is explicitly turned on. See <a href="0006-configmap-secret.html">Lesson 6</a>.</li>
 <li>A failed readiness probe never restarts a container — it only pulls the Pod out of Service routing. Only a failed liveness probe restarts it. See <a href="0011-resource-limits-probes.html">Lesson 11</a>.</li>
 <li>A PV's <code>reclaimPolicy</code> decides whether data survives its PVC's deletion — <code>Delete</code> (default) destroys it, <code>Retain</code> keeps it but needs manual cleanup. See <a href="0007-pvc.html">Lesson 7</a>.</li>
 <li>An HPA showing <code>&lt;unknown&gt;</code> in <code>TARGETS</code>, or <code>kubectl top</code> failing outright, both trace back to the same cause — metrics-server missing or unhealthy, not a bug in either feature. See <a href="0022-workload-autoscaling.html">Lesson 22</a> and <a href="0023-resource-monitoring.html">Lesson 23</a>.</li>
+<li>RBAC permission to <code>patch</code>/<code>update</code> a Pod's labels is effectively permission to change which <code>NetworkPolicy</code> selectors apply to it — without needing any permission on the NetworkPolicy object itself. See <a href="0002-pod-labels.html">Lesson 2</a> and <a href="0009-rbac.html">Lesson 9</a>.</li>
 </ol>
 
 <h2>Domain weights (CKA exam)</h2>
@@ -114,13 +132,13 @@
 </ul>
 
 <h2>Source</h2>
-<p><a href="https://training.linuxfoundation.org/certification/certified-kubernetes-administrator-cka/" target="_blank" rel="noopener">Linux Foundation — CKA exam overview</a> (domain weights) and <a href="https://kubernetes.io/docs/" target="_blank" rel="noopener">kubernetes.io/docs</a> — the only reference allowed in the real exam.</p>
+<p><a href="https://training.linuxfoundation.org/certification/certified-kubernetes-administrator-cka/" target="_blank" rel="noopener">Linux Foundation — CKA exam overview</a> (domain weights), <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/overview/working-with-objects/labels</a>, <a href="https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/#isolating-pods-from-a-replicaset" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/controllers/replicaset (Isolating Pods from a ReplicaSet)</a>, and <a href="https://kubernetes.io/docs/" target="_blank" rel="noopener">kubernetes.io/docs</a> — the only reference allowed in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Troubleshooting is worth more than any other domain — practice the command ladders, not just the objects.</li>
-    <li>Most exam traps are "it applied with no error but does nothing" — controller/CNI missing, or a label mismatch.</li>
+    <li>Troubleshooting is worth more than any other domain — practice the 10-step method above until it's automatic, not just the command ladders.</li>
+    <li>Most exam traps are "it applied with no error but does nothing" — controller/CNI missing, a label mismatch, or a Pod quietly orphaned from its selector.</li>
     <li>When stuck, search kubernetes.io/docs directly — that's the one tool you get in the real exam.</li>
   </ul>
 </div>

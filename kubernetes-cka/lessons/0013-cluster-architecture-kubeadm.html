@@ -11,29 +11,158 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 13 of 24</p>
 <h1>Cluster Architecture: kubeadm, static Pods, and the control plane</h1>
 
-<p>New domain: <strong>Cluster Architecture, Installation &amp; Configuration</strong> — 25% of the exam. Earlier lessons were about objects. This one is about the machine that runs those objects — territory a managed cluster (like GKE Autopilot) normally hides from you.</p>
+<h2>Why this matters</h2>
+<p>This is the first lesson in a new domain — <strong>Cluster Architecture, Installation &amp; Configuration</strong>, 25% of the CKA exam — and the first time this course asks you to think about the machine that runs your objects, not just the objects themselves. Every lesson before this one quietly assumed <code>kubectl</code> and the API server were just... there. They aren't a law of nature — the apiserver is a process that something has to start, and that something can break it. When it does, <code>kubectl</code> breaks with it: <code>kubectl</code> is nothing more than an HTTP client for the apiserver, so no working apiserver means no working <code>kubectl</code>, full stop. On GKE Autopilot (or EKS, or AKS) you will likely never see this failure mode, because the provider owns and repairs the control plane before you're even paged. On a kubeadm cluster — the kind this exam tests, and the kind plenty of on-prem, edge, and homelab environments still run in production — that page is yours, and the only tools that still work when the apiserver itself is what's down are exactly the two this lesson teaches: static Pods and <code>crictl</code>.</p>
 
-<p class="callout"><strong>Simple picture:</strong> think of the control plane like a restaurant. The API server is the front counter — every order goes through it. etcd is the order ledger. The scheduler decides which table (node) an order goes to. Controllers are the manager, watching that everything still matches what was ordered.</p>
+<p class="callout"><strong>Mental model:</strong> picture the control plane as a bank. etcd is the vault — the only place account balances (cluster state) actually live. Every other control-plane process — kube-apiserver, kube-scheduler, kube-controller-manager — is a teller: replaceable, holds no money of its own, and only ever reads or writes through the vault. Fire a teller mid-transaction (kill <code>kube-scheduler</code> while it's mid-decision) and the next teller picks up exactly where the vault says things stand — zero data lost, because the teller never held the money. This predicts something concrete: you can restart kube-apiserver, kube-scheduler, or kube-controller-manager at any moment, mid-operation, and the cluster's actual state won't lose a bit. Restart etcd carelessly — wipe its data directory, restore the wrong snapshot, run it split-brain with mismatched members — and there is no vault left to reconcile against, no matter how many tellers you have running.</p>
 
 <h2>Control plane, one line each</h2>
 <ul>
-<li><strong>kube-apiserver</strong> — the front door. Every read/write goes through it. Only it talks to etcd.</li>
-<li><strong>etcd</strong> — the database. Holds every object's state. Lose it, lose the cluster's memory.</li>
-<li><strong>kube-scheduler</strong> — picks which node a new Pod runs on. Decides only, doesn't start anything.</li>
-<li><strong>kube-controller-manager</strong> — the reconciliation loops. E.g. a Pod dies under a Deployment, its ReplicaSet controller notices and creates a replacement.</li>
-<li><strong>cloud-controller-manager</strong> — talks to the cloud provider (load balancers, node tags). On GKE it exists, Google just runs it for you.</li>
+<li><strong>kube-apiserver</strong> — the front door. It's the only component with a client connection to etcd; every read and write from <code>kubectl</code>, every controller, and every kubelet goes through it first.</li>
+<li><strong>etcd</strong> — the database. A consistent, highly-available key-value store holding every object's state. It is the cluster's only durable memory — lose it with no backup, and there's nothing left to rebuild from.</li>
+<li><strong>kube-scheduler</strong> — watches for Pods that don't have a node assigned yet and picks one for them. It only decides — it never starts a container itself.</li>
+<li><strong>kube-controller-manager</strong> — runs the reconciliation loops: control loops that watch the cluster's shared state through the apiserver and drive it toward the desired state. Example: a Pod under a Deployment dies, its ReplicaSet controller notices and creates a replacement.</li>
+<li><strong>cloud-controller-manager</strong> — talks to the cloud provider's own API (load balancers, node tags, volumes). On GKE it still exists — Google just runs it for you instead of you running it yourself.</li>
 </ul>
 
 <h2>Node components, one line each</h2>
 <ul>
-<li><strong>kubelet</strong> — runs on every node. Watches for Pods assigned to it, tells the runtime to start them.</li>
-<li><strong>kube-proxy</strong> — makes Service traffic reach the right Pod (iptables/IPVS rules).</li>
-<li><strong>Container runtime</strong> — containerd or CRI-O. Kubelet talks to it via the CRI, so the runtime is swappable.</li>
+<li><strong>kubelet</strong> — runs on every node. Makes sure the containers described in the Pods assigned to that node are actually running, and reports status back up to the apiserver.</li>
+<li><strong>kube-proxy</strong> — maintains the network rules on each node (iptables/IPVS) that make Service traffic land on the right backend Pod.</li>
+<li><strong>Container runtime</strong> — containerd or CRI-O, the software that actually runs containers. The kubelet talks to it through the Container Runtime Interface (CRI), which is exactly why the runtime is swappable, and why <code>crictl</code> works the same way against either one.</li>
 </ul>
 
-<p class="callout">One sentence to keep: <strong>kube-apiserver is the only front door, etcd is the only memory, everything else is a loop watching the API server and reacting.</strong></p>
+<h2>How controllers actually know something changed: watch, not polling</h2>
+<p>When a Pod dies and its Deployment notices within roughly a second, that isn't kube-controller-manager checking <code>kubectl get pods</code> on a timer. Controllers and the kubelet find out about changes through the apiserver's <strong>watch</strong> mechanism: a client sends a normal HTTP GET request with a <code>watch</code> query parameter, the apiserver keeps that connection open, and it streams a change event down the same connection every time something relevant happens — instead of the client asking again and again. This is the API's own documented purpose for the mechanism: efficient detection of changes, as opposed to polling.</p>
+<p>The full pattern controllers use is <strong>list-watch</strong>: do one normal list to get a starting snapshot of the objects they care about, plus a <code>resourceVersion</code> — a marker for "as of this point in etcd's history" — then open a watch starting from that <code>resourceVersion</code> and apply each incoming event to an in-memory copy. If the connection drops, the client re-watches from its last known <code>resourceVersion</code>, or falls back to a fresh list if too much time has passed for etcd to still have that history. This is also the missing piece behind the mental model above: kube-controller-manager and kube-scheduler hold no authoritative state of their own — their in-memory copy is just a cache rebuilt from a list-watch against the apiserver, which is exactly why killing and restarting either one loses nothing.</p>
+<p>Don't confuse this with how the kubelet checks its own static Pod directory, covered next — that really is periodic filesystem scanning, not a watch, because there's no apiserver involved at that layer at all. The word "watch" gets used loosely for both in conversation; the mechanisms underneath are different.</p>
 
-<h2>Try it — before looking below</h2>
+<h2>kubeadm — bootstrapping a cluster</h2>
+<p><code>kubeadm init</code> runs once, on the first control-plane node: it generates the cluster's TLS certificates, starts etcd and the control-plane components on that same node, and prints a <code>kubeadm join</code> command containing a bootstrap token. <code>kubeadm join</code> runs on every other machine — worker nodes use that bootstrap token to authenticate; additional control-plane nodes in an HA setup use a separate certificate-key value so they can pull down the shared cluster certificates too.</p>
+<p>The chicken-and-egg problem: <code>kubeadm init</code> has to start etcd and kube-apiserver <em>before</em> a scheduler or API server exists to schedule anything onto a node. Static Pods are the way out of that loop — they need nothing but a kubelet and a file on disk.</p>
+<p>Concretely, <code>kubeadm init</code> writes four manifest files into <code>/etc/kubernetes/manifests/</code> on that node:</p>
+<table>
+<tr><th>Manifest file</th><th>Runs</th></tr>
+<tr><td><code>etcd.yaml</code></td><td>etcd (only for local/stacked etcd — an external etcd cluster won't have this file here)</td></tr>
+<tr><td><code>kube-apiserver.yaml</code></td><td>kube-apiserver</td></tr>
+<tr><td><code>kube-controller-manager.yaml</code></td><td>kube-controller-manager</td></tr>
+<tr><td><code>kube-scheduler.yaml</code></td><td>kube-scheduler</td></tr>
+</table>
+<p class="callout">The "aha": these four files <em>are</em> the control plane, as far as the node is concerned. There's no Deployment, no ReplicaSet, and no scheduler decision behind any of them — that's exactly how the control plane manages to start itself before it exists.</p>
+
+<h2>Static Pods — kubelet running things on its own</h2>
+<p>A normal Pod's path: you <code>kubectl apply</code> it, the apiserver stores it in etcd, the scheduler picks a node, and that node's kubelet starts it. A <strong>static Pod</strong> skips almost all of that — it's a manifest file sitting on one specific node's disk, in a directory that node's kubelet checks directly (<code>staticPodPath</code>, default <code>/etc/kubernetes/manifests</code>; a URL-based variant, <code>staticPodURL</code>, exists too). No apiserver, no scheduler, no etcd write involved in creating it.</p>
+<p>The kubelet processes every file in that directory that doesn't start with a dot — it doesn't filter by extension. Leave a backup copy named <code>kube-apiserver.yaml.bak</code> in the same directory and the kubelet will try to run that too, as its own separate Pod. Keep backups in a different directory entirely.</p>
+<p>Because static Pods exist outside the apiserver's own records, the kubelet creates a read-only <strong>mirror Pod</strong> in the API purely so <code>kubectl get pods</code> has something to show you (named <code>&lt;pod&gt;-&lt;node&gt;</code>). The mirror Pod is cosmetic: <code>kubectl</code> can't edit it, and <code>kubectl delete</code> on it only removes the API-visible copy — the kubelet notices the manifest file is still on disk and recreates the mirror right away. To actually change or remove a static Pod, you edit or delete the file on the node itself.</p>
+<p class="callout exam-tip"><strong>Exam tip:</strong> a Pod name ending in a node's hostname inside <code>kube-system</code> (like <code>kube-apiserver-controlplane</code>) is your fastest clue that it's a static Pod's mirror, not something a Deployment created — a quick way to spot which node is acting as control-plane on an unfamiliar exam cluster.</p>
+
+<h2>crictl — one layer below kubectl</h2>
+<p><code>kubectl</code> is only useful if the apiserver is reachable and healthy. If the apiserver's own static Pod is the broken thing, <code>kubectl</code> isn't a smaller or degraded tool at that point — it's a completely dead one, because every <code>kubectl</code> command is an HTTP request to the exact component that's down. <code>crictl</code> solves this by skipping the apiserver entirely and talking straight to the node's container runtime over its own socket — the same interface (CRI) the kubelet itself uses, so it works identically against containerd or CRI-O.</p>
+<ul>
+<li><code>crictl ps</code> / <code>crictl ps -a</code> — running (or all) containers on this node, at the runtime level.</li>
+<li><code>crictl pods</code> — the runtime's own view of Pods on this node.</li>
+<li><code>crictl logs &lt;container-id&gt;</code> — logs straight from the runtime, no apiserver in the path.</li>
+<li><code>crictl exec</code> / <code>crictl inspect</code> — run a command in, or inspect the low-level state of, a specific container.</li>
+</ul>
+<p>Shortcut worth memorizing: <code>kubectl</code> operates at the API level, cluster-wide, and depends on the apiserver. <code>crictl</code> operates at the runtime level, one node only, and keeps working precisely when the apiserver is the thing that's down.</p>
+
+<h2>Production example</h2>
+<p class="callout production"><strong>Production note:</strong> this is exactly why GKE Autopilot (and EKS, and AKS) exist. Google runs, patches, and upgrades your control plane — you never see a static Pod manifest, you can't <code>crictl</code> into a control-plane node because there isn't one you can reach, and a broken <code>kube-apiserver.yaml</code> edit simply isn't a failure mode you can cause, because you never get write access to that file. That's a genuinely good trade for most teams: no 3am page for etcd disk pressure, no coordinating a control-plane upgrade window, no certificate rotation to track. The cost is that this entire layer — everything in this lesson — becomes invisible to you, which is fine until the day you're handed a self-managed cluster (a vendor appliance, an edge deployment, a homelab, or exactly this exam) and none of your production instincts about "check the Pods, check the Deployment" apply, because the thing that's broken is one level below all of that.</p>
+
+<h2>Hands-on exercise</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>See the control plane's static Pods with your own eyes, and prove that every manifest file has exactly one matching mirror Pod — including one you create yourself, with no <code>kubectl apply</code> anywhere in the process.</p>
+<h4>Scenario</h4>
+<p>You want firsthand proof, not just this lesson's word, that the Pods you've been trusting <code>kubectl get pods -n kube-system</code> to show you are files on a disk, not objects a controller created.</p>
+<h4>Environment assumptions</h4>
+<p>A kubeadm-bootstrapped cluster. <code>kind</code> works — its control-plane node is a Docker container running a real kubelet, bootstrapped by real <code>kubeadm</code>, with the same manifest directory a bare-metal cluster has. This will not work on GKE Autopilot, EKS, or AKS — you have no node-level access to this layer there, which is the whole point of the production note above.</p>
+<h4>Commands</h4>
+<p>Save this as <code>static-web.yaml</code> first — same shape as any Pod manifest (Lesson 1), nothing new in the YAML itself:</p>
+<pre><code>apiVersion: v1
+kind: Pod
+metadata:
+  name: static-web
+spec:
+  containers:
+    - name: web
+      image: nginx
+</code></pre>
+<pre><code># 1. Create a lab cluster (skip if you already have a kubeadm cluster to use)
+kind create cluster --name arch-lab
+
+# 2. List the static Pod manifests the control plane bootstrapped from
+docker exec -it arch-lab-control-plane ls /etc/kubernetes/manifests/
+
+# 3. Confirm each file has a matching, already-running mirror Pod
+kubectl get pods -n kube-system -o wide
+
+# 4. Copy your own manifest onto the node -- no kubectl involved
+docker cp static-web.yaml arch-lab-control-plane:/etc/kubernetes/manifests/static-web.yaml
+
+# 5. Watch it appear on its own
+kubectl get pods -o wide --watch</code></pre>
+<h4>Expected result</h4>
+<p>Step 2 lists four files: <code>etcd.yaml</code>, <code>kube-apiserver.yaml</code>, <code>kube-controller-manager.yaml</code>, <code>kube-scheduler.yaml</code>. Step 3 shows four matching Pods already <code>Running</code> in <code>kube-system</code>, named <code>&lt;component&gt;-arch-lab-control-plane</code>. Within roughly a minute of step 4, step 5 shows a new Pod, <code>static-web-arch-lab-control-plane</code>, appear on its own.</p>
+<h4>Verification</h4>
+<p>The count must match exactly: one manifest file, one mirror Pod, every time — including your new one. If the count is off, you've found a real discrepancy worth chasing, not this lesson's expected behavior.</p>
+<h4>Common failure</h4>
+<p>Writing <code>static-web.yaml</code> into your host machine's own <code>/etc/kubernetes/manifests/</code> instead of the one inside the <code>arch-lab-control-plane</code> container. Nothing happens — the kubelet that matters is running inside that container, watching its own filesystem, not your laptop's.</p>
+<h4>Troubleshooting</h4>
+<p>If <code>static-web</code> never appears, exec into the node and run <code>crictl ps -a</code> to see whether a container attempt exists at all, then <code>journalctl -u kubelet -n 30 --no-pager</code> for the parse or validation error. This is the exact skill the Failure scenario and Production challenge below both depend on.</p>
+<h4>Cleanup / rollback</h4>
+<pre><code>kind delete cluster --name arch-lab</code></pre>
+<h4>Production lesson</h4>
+<p>Nothing above touched the API server to create a Pod. On a kubeadm cluster, "what's running in kube-system" is a statement about files on disk plus a kubelet loop, not about a Deployment or ReplicaSet — there usually isn't one at this layer.</p>
+</div>
+
+<h2>Failure scenario</h2>
+<p>A realistic incident, built from the exact gap this lesson opened with: the apiserver is the thing that's broken, so <code>kubectl</code> can't help diagnose it.</p>
+<ol class="timeline">
+<li><span class="t">02:14</span> Symptom: three separate health checks page on-call for "API unreachable." On the on-call's laptop, <code>kubectl get nodes</code> just hangs — no error, no response, eventually times out.</li>
+<li><span class="t">02:17</span> Check: on-call tries <code>kubectl</code> from a second machine on a different network, then from a terminal open directly on the control-plane node itself (single control-plane node, no HA). Same hang everywhere — rules out this laptop, its network, and its kubeconfig as the cause.</li>
+<li><span class="t">02:19</span> Check: on the control-plane node, <code>crictl ps -a</code> — talking straight to containerd, bypassing the apiserver entirely — shows no <code>kube-apiserver</code> container at all, not even a crashed one. etcd, scheduler, and controller-manager containers are all present and running.</li>
+<li><span class="t">02:22</span> Check: <code>journalctl -u kubelet -n 50</code> shows repeated errors trying to load <code>/etc/kubernetes/manifests/kube-apiserver.yaml</code> — the kubelet can't even parse the file, so it never attempts to create the container in the first place.</li>
+<li><span class="t">02:24</span> Finding: <code>cat /etc/kubernetes/manifests/kube-apiserver.yaml</code> shows a change from 40 minutes earlier — a teammate hand-added an extra <code>--audit-log-path</code> flag for a compliance request and left the new line under-indented, so it fell outside the container's <code>command:</code> list. Invalid Pod spec, and no error surfaced anywhere near the edit, because saving a file has no admission check — it isn't <code>kubectl apply</code>.</li>
+<li><span class="t">02:27</span> Fix: restore the previous working copy of the file (kept in the team's config-management repo — the only reason a good copy existed), re-add the new flag with correct indentation, save.</li>
+<li><span class="t">02:29</span> Verify: <code>crictl ps</code> on the node shows a new <code>kube-apiserver</code> container, <code>Running</code>, within the kubelet's next scan. From the original laptop, <code>kubectl get nodes</code> returns immediately.</li>
+<li><span class="t">02:31</span> Root cause recorded: an un-reviewed, un-versioned hand-edit to a static Pod manifest on a production control-plane node, with no rollback path except a config-management copy that happened to exist.</li>
+</ol>
+
+<h2>Troubleshooting workflow</h2>
+<p>The general method, applied specifically to "the apiserver — or another control-plane component — seems down," where <code>kubectl</code> itself may not be a usable tool:</p>
+<ol class="troubleshooting">
+<li><strong>Confirm the symptom.</strong> Try <code>kubectl get nodes</code> or <code>kubectl version</code> from at least two independent clients or networks. If every client hangs or times out the same way, this isn't a local kubeconfig, VPN, or single-laptop network problem.</li>
+<li><strong>Define scope.</strong> One control-plane node, or several? On an HA cluster, check whether the other control-plane nodes still answer — if so, this is a single-node problem, not a full outage, and you have room to work carefully.</li>
+<li><strong>Check recent changes.</strong> <code>ls -la /etc/kubernetes/manifests/</code> on the affected node for a recent modification time, and check your config-management/git history for that path if manifests are tracked there. Static Pod edits leave no <code>kubectl</code>-visible audit trail — the filesystem timestamp is often the only clue.</li>
+<li><strong>Inspect the right state — not kubectl.</strong> SSH or exec onto the affected control-plane node and run <code>crictl ps -a</code>. This talks straight to the container runtime and works whether or not the apiserver is alive.</li>
+<li><strong>Pull logs at the layer that's actually broken.</strong> If the suspect container is missing entirely, check <code>journalctl -u kubelet -n 50</code> — the kubelet logs why it couldn't create it. If the container exists but is crashing, <code>crictl logs &lt;container-id&gt;</code> shows its output directly, no apiserver required.</li>
+<li><strong>Form a hypothesis.</strong> For example: "the kube-apiserver static Pod manifest has a YAML or flag error from a manual edit, so the kubelet can't start it at all."</li>
+<li><strong>Test one variable.</strong> Read the live manifest file and diff it against a known-good copy (git, backup, or another control-plane node's copy on an HA cluster) before changing anything else.</li>
+<li><strong>Apply the safest fix.</strong> Restore the known-good manifest content rather than guessing at the broken line — and don't touch etcd's data directory or any other component's manifest while you're still isolating the problem.</li>
+<li><strong>Verify recovery.</strong> <code>crictl ps</code> shows the container <code>Running</code> and not restarting; only then confirm from a normal client that <code>kubectl get nodes</code> returns.</li>
+<li><strong>Document root cause and prevent recurrence.</strong> "Un-reviewed hand-edit to a static Pod manifest" is the real root cause, not "API server was down" — the prevention is treating <code>/etc/kubernetes/manifests/</code> as production code: version-controlled, reviewed, and never edited live without a rollback copy already in hand.</li>
+</ol>
+
+<h2>Security &amp; reliability considerations</h2>
+<p class="callout security"><strong>Security note:</strong> etcd being the cluster's only memory cuts both ways for security. Anyone who can reach etcd's client port and present a valid client certificate has the same effective access as full cluster-admin — direct etcd access reads and writes every object in the cluster, including every Secret, completely bypassing RBAC (RBAC is an apiserver-layer control; etcd has no concept of it). Kubernetes Secrets are stored in etcd only base64-encoded, not encrypted, unless you've explicitly turned on encryption at rest — base64 is an encoding, not a control. In practice: keep etcd on a private network segment reachable only by the control-plane nodes, require mutual TLS for every client, and never expose its port the casual way you might expose the apiserver's. Lesson 14 covers etcd backup and restore in depth — the short version here is that "only memory" also means "only copy" unless you're taking snapshots, so don't treat that as solved by this lesson.</p>
+<p class="callout production"><strong>Reliability note:</strong> treat every file under <code>/etc/kubernetes/manifests/</code> as production code, because functionally it is — a saved edit takes effect with no review, no dry-run, and no diff shown to you, unlike every change you make through <code>kubectl apply</code>. Keep a version-controlled, known-good copy of each manifest off the node before you ever hand-edit one live.</p>
+<p class="callout cost"><strong>Cost note:</strong> running your own control plane means you provision and pay for the control-plane nodes, their disks, and their operational time directly — and you're the one who gets paged to patch and upgrade them. A managed control plane (GKE Autopilot, EKS, AKS) folds that into the platform's pricing and operational responsibility instead; the trade-off is spelled out in the Decision guide below.</p>
+
+<h2>Common mistakes</h2>
+<p class="callout mistake"><strong>Common mistake:</strong> reaching for <code>kubectl</code> first when the apiserver itself seems to be the thing that's down. <code>kubectl</code> is an HTTP client for the apiserver — if that's the broken component, every <code>kubectl</code> command will hang or error no matter how correctly you type it. Drop to <code>crictl</code> and the static Pod manifest files on the affected node instead.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> assuming a static Pod edit needs <code>kubectl apply</code> to take effect. It doesn't — saving the file on disk is the deployment action, immediately, with no review step. This is exactly what makes hand-edited static Pod manifests so dangerous in production.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> running <code>kubectl delete pod</code> on a static Pod's mirror Pod, expecting it to actually stop or remove the workload. It only deletes the read-only API-side copy; the kubelet sees the manifest file is still on disk and recreates the mirror Pod right away. To really remove a static Pod, delete or move the file on the node itself.</p>
+
+<h2>Decision guide</h2>
+<table>
+<tr><th>Option</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
+<tr><td>Self-managed (kubeadm)</td><td>You need control-plane-level customization — custom admission flags, air-gapped/on-prem/edge, regulatory control over every binary, or you're studying for the CKA</td><td>Your team has no dedicated capacity to patch CVEs and upgrade etcd/apiserver on a schedule</td><td>Full control, but you own every 3am control-plane page — including the one this lesson just walked through</td></tr>
+<tr><td>Managed (GKE Autopilot / EKS / AKS)</td><td>Default choice for most teams — you want to ship product, not operate Kubernetes itself</td><td>You need node-level or control-plane-level access — custom kubelet flags, your own static Pods on a control-plane node, direct etcd tuning</td><td>No <code>crictl</code>/static-Pod-level access and none of this lesson's failure modes to debug — but also none of the levers to pull when you need one</td></tr>
+</table>
+<p><strong>Default recommendation:</strong> managed control plane for almost every team, including yours in production — the cloud provider absorbing etcd/apiserver operations is a good trade for nearly everyone. Self-managed kubeadm earns its place only when you have a specific, named reason for control-plane-level customization, or when you're deliberately building this exact skill for the exam.</p>
+
+<h2>Knowledge check</h2>
 <div class="quiz">
 <p>Q1. Which component is the only one allowed to talk directly to etcd?</p>
 <input type="text" id="q1" placeholder="type your answer">
@@ -48,61 +177,84 @@
 <div class="answer" id="a2">kube-controller-manager creates the replacement. Yes — the new Pod is unscheduled at first, so kube-scheduler assigns it a node like any other new Pod.</div>
 </div>
 
-<h2>kubeadm — bootstrapping a cluster</h2>
-<p><code>kubeadm init</code> runs once, on the first control-plane node: generates TLS certs, starts etcd + control plane there, prints a <code>kubeadm join</code> command with a token. <code>kubeadm join</code> runs on every other machine to register it with the cluster.</p>
-<p>Chicken-and-egg problem: <code>init</code> must start etcd and kube-apiserver <em>before</em> a scheduler or API server exists to schedule anything. Static Pods solve this.</p>
-
-<h2>Static Pods — kubelet running things on its own</h2>
-<p>Normal Pod: you <code>kubectl apply</code> it, API server stores it, scheduler places it, kubelet starts it. A <strong>static Pod</strong> skips almost all of that — it's a manifest file sitting on one node's disk, in a folder that node's kubelet watches directly (default <code>/etc/kubernetes/manifests</code>). No API server, no scheduler involved.</p>
-<p class="callout">The "aha": kube-apiserver, etcd, scheduler, and controller-manager on a kubeadm control-plane node are themselves usually static Pods — that's how the control plane starts itself before it exists.</p>
-<p>Because static Pods live outside the API server, kubelet creates a read-only <strong>mirror Pod</strong> so <code>kubectl get pods</code> can still show it (named <code>&lt;pod&gt;-&lt;node&gt;</code>). Deleting the mirror doesn't stop the real Pod — the file on disk is still the source of truth.</p>
-
-<h2>crictl — one layer below kubectl</h2>
-<p><code>kubectl</code> needs the API server reachable. If the API server's own static Pod is broken, that's a problem — so <code>crictl</code> talks straight to the container runtime instead.</p>
-<ul>
-<li><code>crictl ps</code> — running containers on this node, at the runtime level.</li>
-<li><code>crictl logs &lt;id&gt;</code> — logs straight from the runtime.</li>
-</ul>
-<p>Shortcut: <code>kubectl</code> = API level, cluster-wide. <code>crictl</code> = runtime level, this node only, still works when the API server is down.</p>
-
-<h2>Now build it — write a static Pod manifest, by hand</h2>
-<p>Same shape as any Pod manifest (Lesson 1) — nothing new in the YAML. What's different is placement, not content. Write a single-container <code>nginx</code> static Pod, and write down where the file must go on the node. Don't peek until you've tried both.</p>
+<div class="quiz">
+<p>Q3. Does kube-controller-manager find out a Pod was deleted by polling the API server every few seconds, or some other way?</p>
+<input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3">Neither guess — it watches. It opens a long-lived HTTP connection to the apiserver with a watch request and receives a stream of change events as they happen. Polling is what the kubelet's static Pod directory check does instead — a different mechanism, easy to conflate with this one.</div>
+</div>
 
 <div class="quiz">
-<p>Reveal the reference answer</p>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-<div class="answer" id="a3">
-<pre><code>apiVersion: v1
-kind: Pod
-metadata:
-  name: static-web
-spec:
-  containers:
-    - name: web
-      image: nginx
-</code></pre>
-<p>Save as <code>/etc/kubernetes/manifests/static-web.yaml</code> on the target node. The kubelet there watches that directory and starts it directly — no <code>kubectl apply</code>. It still shows up via <code>kubectl get pods</code> as a read-only mirror Pod, named like <code>static-web-&lt;node-name&gt;</code>.</p>
+<p>Q4. You run <code>kubectl delete pod</code> on a static Pod's mirror Pod on a kubeadm control-plane node. What actually happens?</p>
+<div class="opts">
+<label>A. It is deleted permanently and the whole component stops running.</label>
+<label>B. The kubelet sees the file is still there and recreates it.</label>
+<label>C. The scheduler quietly moves the workload onto a different node.</label>
+<label>D. The controller-manager restarts it automatically as a fresh replica Pod.</label>
 </div>
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a4">B. The mirror Pod is a read-only, API-visible copy of the real static Pod, which is defined by the file on disk — deleting the mirror doesn't touch the file, so the kubelet immediately notices the file is still present and recreates it. (A describes a bare Pod's behavior, not a static Pod's. C and D invent controllers that have no authority over static Pods — no scheduler or controller-manager involvement exists on this path.)</div>
+</div>
+
+<h2>Certification mapping</h2>
+<p>This lesson maps directly onto <strong>Cluster Architecture, Installation &amp; Configuration (25%)</strong> — the second-largest domain on the CKA exam, just behind <strong>Troubleshooting (30%)</strong>. The overlap between the two is exactly what this lesson covers: a broken control plane is a Troubleshooting-domain scenario solved with Cluster-Architecture-domain knowledge — static Pod manifests and <code>crictl</code> show up in both domains' scenario questions.</p>
+
+<h2>Production challenge</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Given a hanging <code>kubectl get nodes</code> and no working <code>kubectl</code> access assumed, find and fix which control-plane component is broken using only <code>crictl</code> and the static Pod manifest files on the node.</p>
+<h4>Scenario</h4>
+<p>You're on-call. <code>kubectl get nodes</code> hangs from every client you try. This is a single-control-plane-node kubeadm (or kind) cluster — there's no second control-plane node to fail over to.</p>
+<h4>Environment assumptions</h4>
+<p>Reuse the <code>arch-lab</code> kind cluster from the hands-on exercise above, or any kubeadm cluster you can exec or SSH into as root. You need shell access to the control-plane node itself — that's realistic; a real 2am page gives you exactly that, not a working <code>kubectl</code>.</p>
+<h4>Commands</h4>
+<pre><code># Induce the failure yourself first, so you have something real to diagnose
+docker exec -it arch-lab-control-plane cp /etc/kubernetes/manifests/kube-apiserver.yaml /root/kube-apiserver.yaml.bak
+docker exec -it arch-lab-control-plane sed -i 's/^\(\s*\)- kube-apiserver/\1  - kube-apiserver/' /etc/kubernetes/manifests/kube-apiserver.yaml
+
+# Now diagnose it as if kubectl were unusable -- crictl and files only
+docker exec -it arch-lab-control-plane crictl ps -a
+docker exec -it arch-lab-control-plane journalctl -u kubelet -n 30 --no-pager
+docker exec -it arch-lab-control-plane cat /etc/kubernetes/manifests/kube-apiserver.yaml</code></pre>
+<h4>Expected result</h4>
+<p><code>crictl ps -a</code> shows no <code>kube-apiserver</code> container attempt at all (etcd, scheduler, and controller-manager still present and running). The kubelet log shows it failing to load or unmarshal the manifest. Reading the file back shows the broken indentation you introduced.</p>
+<h4>Verification</h4>
+<p>Restore the backup copy (<code>cp /root/kube-apiserver.yaml.bak /etc/kubernetes/manifests/kube-apiserver.yaml</code> inside the node), wait for the kubelet's next scan, then confirm <code>crictl ps</code> shows a new, <code>Running</code> <code>kube-apiserver</code> container — only then check that <code>kubectl get nodes</code> from your original client returns normally again.</p>
+<h4>Common failure</h4>
+<p>Spending the first 20 minutes checking firewalls, security groups, or VPN state because "hangs" feels like a network problem. A closed port usually refuses a connection quickly; a hang more often means something on the other end is alive but not answering — which is exactly what a kubelet stuck failing to start the apiserver looks like from outside.</p>
+<h4>Troubleshooting</h4>
+<p>If the <code>sed</code> command above doesn't reproduce a real break on your setup (YAML is forgiving about some whitespace), open the file in an editor instead and move the <code>- kube-apiserver</code> line under a different, wrong parent key. Any edit that makes the container spec unparsable will do — the diagnostic method is the point, not the exact typo.</p>
+<h4>Cleanup / rollback</h4>
+<pre><code>kind delete cluster --name arch-lab</code></pre>
+<h4>Production lesson</h4>
+<p>The entire diagnostic path above never once used <code>kubectl</code>. That's not a stylistic choice — it's the only path that exists when the apiserver is the broken component. A managed control plane never asks you to know this, until the day you're on a cluster where nobody does and something breaks anyway.</p>
 </div>
 
 <h2>Source</h2>
 <ul>
 <li><a href="https://kubernetes.io/docs/concepts/overview/components/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/overview/components</a></li>
 <li><a href="https://kubernetes.io/docs/concepts/cluster-administration/static-pod/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/cluster-administration/static-pod</a></li>
-<li><a href="https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/" target="_blank" rel="noopener">kubernetes.io/docs/setup/.../create-cluster-kubeadm</a></li>
 <li><a href="https://kubernetes.io/docs/tasks/debug/debug-cluster/crictl/" target="_blank" rel="noopener">kubernetes.io/docs/tasks/debug/debug-cluster/crictl</a></li>
+<li><a href="https://kubernetes.io/docs/reference/using-api/api-concepts/" target="_blank" rel="noopener">kubernetes.io/docs/reference/using-api/api-concepts</a> (watch mechanism)</li>
+<li><a href="https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/" target="_blank" rel="noopener">kubernetes.io/docs/setup/.../create-cluster-kubeadm</a></li>
+<li><a href="https://kubernetes.io/docs/reference/setup-tools/kubeadm/implementation-details/" target="_blank" rel="noopener">kubernetes.io/docs/reference/setup-tools/kubeadm/implementation-details</a> (static Pod manifest generation)</li>
+<li><a href="https://kubernetes.io/docs/concepts/configuration/secret/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/configuration/secret</a> (Secrets-in-etcd security properties)</li>
 </ul>
+<p>Verified 2026-08-03.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Control plane: apiserver (front door), etcd (database), scheduler (placement), controller-manager (reconciliation), cloud-controller-manager (cloud integration). Node: kubelet, kube-proxy, container runtime.</li>
-    <li><code>kubeadm init</code> bootstraps the first control-plane node; <code>kubeadm join</code> adds every other node.</li>
-    <li>Static Pods are manifest files the kubelet watches directly (default <code>/etc/kubernetes/manifests</code>) — no API server or scheduler needed, which is how the control plane bootstraps itself. <code>crictl</code> debugs one layer below <code>kubectl</code>.</li>
+    <li>Control plane: apiserver (only front door to etcd), etcd (only durable state), scheduler (placement decisions only), controller-manager (reconciliation loops), cloud-controller-manager (cloud integration). Node: kubelet, kube-proxy, container runtime.</li>
+    <li>Controllers and the kubelet find out about API object changes via <strong>watch</strong> — a long-lived HTTP connection streaming events — not polling. The kubelet's own static Pod directory check, by contrast, really is periodic filesystem scanning — a different mechanism.</li>
+    <li><code>kubeadm init</code> bootstraps the first control-plane node and generates four static Pod manifests (<code>etcd.yaml</code>, <code>kube-apiserver.yaml</code>, <code>kube-controller-manager.yaml</code>, <code>kube-scheduler.yaml</code>) in <code>/etc/kubernetes/manifests/</code> — solving the chicken-and-egg problem of starting a control plane before one exists to schedule anything.</li>
+    <li>A static Pod's mirror Pod is read-only and cosmetic: <code>kubectl delete</code> on it does nothing lasting, and <code>kubectl apply</code> is never involved in changing one — editing the file on disk is the real deployment action.</li>
+    <li><code>crictl</code> talks straight to the container runtime, bypassing the apiserver entirely — it's the tool that still works when the apiserver's own static Pod is the thing that's broken.</li>
+    <li>etcd is the cluster's only copy of its state and, by default, stores Secrets unencrypted (base64 only) — treat etcd network access as equivalent to cluster-admin, and take its backup seriously (Lesson 14).</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs links above — that's the habit the real exam requires anyway.</footer>
+<footer class="teacher-reminder">Stuck, or your <code>crictl</code>/kubelet output doesn't match what this lesson predicted? Paste the exact output back to your teacher — this is one lesson on the site where "it looked different on my cluster" is genuinely likely, since kubeadm versions and container runtimes vary.</footer>
 
 <div class="lesson-nav">
   <a href="0012-statefulset-daemonset-job-cronjob.html">&larr; StatefulSet, DaemonSet, Job, CronJob</a>

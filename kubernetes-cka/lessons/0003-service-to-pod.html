@@ -11,11 +11,13 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 3 of 24</p>
 <h1>Service &rarr; Pod (ClusterIP)</h1>
 
-<p>Pods come and go — they get rescheduled, and get a new IP every time. A <strong>Service</strong> is a stable address that always finds the right Pods, by matching labels.</p>
+<h2>Why this matters</h2>
+<p>A Service that silently finds nothing is one of the most common production incidents in Kubernetes, and one of the hardest to notice, because nothing about it looks broken. <code>kubectl apply -f service.yaml</code> succeeds. <code>kubectl get svc</code> shows a healthy-looking ClusterIP. The Pods behind it show <code>Running</code>, zero restarts. And yet every single request fails, because the one field that actually connects a Service to its Pods — <code>spec.selector</code> — doesn't match a label on a single Pod. If you don't understand exactly how a Service decides who its backends are, you'll spend the first ten minutes of that incident looking everywhere except the one place the bug actually lives.</p>
 
-<p class="callout"><strong>Simple example:</strong> think of a Service like a company's front-desk phone number. Staff (Pods) come and go, move desks, change extensions — but the front-desk number always routes you to whoever currently has the job.</p>
+<p class="callout"><strong>Mental model:</strong> a Service is not a router you configure once — it's a live, continuously-recomputed roster. Think of a hospital's on-call board: the board itself doesn't treat anyone, it just lists whoever currently has their pager on and their badge scanned in. A nurse manager walks the floor every few seconds and rewrites that board the instant someone's status changes — clocks out, takes their badge off, steps out of pager range. Kubernetes works the same way: <code>spec.selector</code> is the rule ("anyone wearing this badge"), a control loop continuously re-scans Pods against that rule and keeps the roster (its <code>EndpointSlices</code>) current, and <code>kube-proxy</code> is the switchboard operator who actually routes the call using whatever the roster currently says. This predicts something you may not have seen yet: a Pod doesn't need to crash or get deleted to disappear from a Service. It just needs to stop answering its own health check — the roster updates itself within a second or two, with no <code>kubectl</code> command from you at all.</p>
 
-<h2>What's inside a Service manifest</h2>
+<h2>Core concepts: the Service manifest</h2>
+<p>The shape is the same four-part object you learned in Lesson 1, specialized for routing:</p>
 <pre><code>apiVersion: v1
 kind: Service
 metadata:
@@ -25,63 +27,244 @@ spec:
   selector:
     app: my-nginx
   ports:
-    - port: 80
+    - name: http
+      port: 80
       targetPort: 80
 </code></pre>
-<p>Key fields:</p>
-<ul>
-<li><code>spec.type</code> — <code>ClusterIP</code> is the default: reachable only inside the cluster</li>
-<li><code>spec.selector</code> — must exactly match a Pod's <code>metadata.labels</code>, or the Service finds nothing</li>
-<li><code>spec.ports</code> — the port the Service listens on, and the port to forward to on the Pod</li>
-</ul>
-<p>No selector match, no traffic — the Service exists but is silently empty. Inside the cluster, reach it by DNS: <code>&lt;service&gt;.&lt;namespace&gt;.svc.cluster.local</code>.</p>
+<table>
+<tr><th>Field</th><th>What it controls</th></tr>
+<tr><td><code>spec.type</code></td><td><code>ClusterIP</code> is the default — reachable only from inside the cluster's network</td></tr>
+<tr><td><code>spec.selector</code></td><td>Must exactly match a Pod's <code>metadata.labels</code> (same namespace only), or the Service finds nothing</td></tr>
+<tr><td><code>port</code></td><td>The port the Service itself listens on — what clients and other Services dial</td></tr>
+<tr><td><code>targetPort</code></td><td>The port on the Pod traffic is actually forwarded to; defaults to the same value as <code>port</code> if you omit it</td></tr>
+<tr><td><code>nodePort</code></td><td>Only meaningful on <code>type: NodePort</code> (or <code>LoadBalancer</code>) — a port opened on every Node's own IP, from the default range 30000&ndash;32767</td></tr>
+</table>
+<p>A single Service can expose more than one port — for example, an application port and a separate metrics port on the same backend Pods. The moment <code>spec.ports</code> has more than one entry, every entry needs its own unique <code>name</code>, because that name is what lets <code>targetPort</code> reference a named container port instead of a bare number, and it's how DNS tells one Service port apart from another (more on that below).</p>
+<p class="callout"><strong>Simple example:</strong> no selector match means no traffic, and the Service will not tell you. It's created successfully either way — an empty backend list is a valid, silent state, not an error.</p>
 
-<h2>Try it — before looking below</h2>
-<div class="quiz">
-<p>Q1. You create a Service and see no errors. What command tells you whether it actually found any Pods?</p>
-<input type="text" id="q1" placeholder="type your answer">
-<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1"><code>kubectl get endpoints &lt;service-name&gt;</code> — an empty list means the selector matched nothing.</div>
-</div>
+<h2>How kube-proxy actually routes ClusterIP traffic</h2>
+<p>Two separate mechanisms make a Service work, and troubleshooting depends on knowing which one is failing. First, an endpoint control loop keeps the roster current: "the controller for that Service continuously scans for Pods that match its selector, and then makes any necessary updates to the set of EndpointSlices for the Service." That's the part that makes a Service a living roster instead of a list you fill in once. Second, <code>kube-proxy</code> — running on every node — watches the API server for changes to Services and EndpointSlices and keeps a set of local rules on that node in sync with them.</p>
+<p>On Linux, the current default proxy mode is <code>iptables</code>. In this mode, kube-proxy "installs a series of iptables rules which redirect from the virtual IP address to more iptables rules, defined per Service. The per-Service rules link to further rules for each backend endpoint, and the per-endpoint rules redirect traffic (using destination NAT) to the backends," and "a backend is chosen (either based on session affinity or randomly) and packets are redirected to the backend without rewriting the client IP address." In plain terms: the ClusterIP isn't bound to any real network interface anywhere — it's virtual. Packets addressed to it get rewritten by the kernel's netfilter subsystem, on the node that sent them, before they ever reach the real Pod IP.</p>
+<p>An <code>IPVS</code> mode also exists — "based on netfilter hook function that is similar to iptables mode, but uses a hash table as the underlying data structure and works in the kernel space," which scales better with very large numbers of Services because lookup is closer to constant-time instead of a linear iptables chain. Current Kubernetes docs now mark IPVS mode deprecated (as of v1.35), with a newer <code>nftables</code> mode also available. None of this changes what you write in YAML — it changes what's actually happening on the node when a ClusterIP won't route, which is exactly the layer you drop to once you've ruled out selector and port mismatches.</p>
+<p>If you omit <code>spec.selector</code> entirely, Kubernetes assumes you're managing the backend list yourself and doesn't create EndpointSlices automatically — a deliberate pattern for pointing a Service at something outside the cluster, and a confusing one if it happens by accident.</p>
+<p>Endpoints don't depend on labels alone, either. A Pod can match the selector perfectly and still be missing from the roster: "if the readiness probe returns a failed state, the EndpointSlice controller removes the Pod's IP address from the EndpointSlices of all Services that match the Pod." The Pod itself stays <code>Running</code> — nothing alarming shows up in <code>kubectl get pods</code> — but it stops receiving traffic the moment it fails its own health check, and it's added back automatically the moment it starts passing again.</p>
+<p>By default (<code>sessionAffinity: None</code>), kube-proxy is free to pick a different backend Pod for every new connection. Setting <code>sessionAffinity: ClientIP</code> pins a given client IP to the same backend Pod for a configurable window (<code>sessionAffinityConfig.clientIP.timeoutSeconds</code>, three hours by default) — useful for a client that can't tolerate its session hopping between Pods mid-conversation, but it's not a substitute for making the app itself stateless, and it doesn't survive the backend Pod being replaced.</p>
 
-<h2>Now write your own</h2>
-<p>Write a ClusterIP Service for the Lesson 2 Pod — by hand. It needs:</p>
-<ul>
-<li>a <code>selector</code> matching the labels on your Lesson 2 Pod</li>
-<li>a <code>port</code> forwarding to the port your container listens on</li>
-</ul>
-<p>Apply it, then run <code>kubectl get endpoints &lt;your-service-name&gt;</code> and confirm it lists your Pod's IP. Try it before you look below.</p>
+<h2>DNS: how Pods find a Service by name</h2>
+<p>Every Service also gets a stable DNS name, which is how Pods actually reach each other in practice — not by ClusterIP directly. For a normal Service this takes the form <code>&lt;service&gt;.&lt;namespace&gt;.svc.&lt;cluster-domain&gt;</code> (for example, <code>my-nginx-svc.default.svc.cluster.local</code>), and it "resolves to the cluster IP of the Service." The default cluster domain is <code>cluster.local</code>, configurable per-cluster via the kubelet's <code>--cluster-domain</code> flag and the cluster's own DNS server.</p>
+<p>A <strong>headless Service</strong> (<code>spec.clusterIP: None</code>) gets the exact same DNS name format — but instead of resolving to one virtual IP, "unlike normal Services, this resolves to the set of IPs of all of the Pods selected by the Service." The client gets the raw Pod list back from DNS and picks one itself (or talks to all of them), which is exactly what you want when a client needs a <em>specific</em> backend instance rather than any interchangeable one — the pattern StatefulSets rely on for stable per-replica identity, covered later in this course.</p>
+<p>Multi-port, named Services also get DNS SRV records, of the form <code>_&lt;port-name&gt;._&lt;protocol&gt;.&lt;service&gt;.&lt;namespace&gt;.svc.&lt;cluster-domain&gt;</code> — for a regular Service this resolves back to the Service's own port and name; for a headless Service it returns one answer per backing Pod, each with that Pod's own hostname. Most application code just uses the plain Service name and never touches an SRV record directly, but they're worth recognizing for the exam and for the occasional client library that does DNS-based discovery.</p>
 
-<div class="quiz">
-<p>Reveal the reference answer</p>
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a2"><code>apiVersion: v1
+<h2>Production example</h2>
+<p class="callout production"><strong>Production note:</strong> a real Service almost never selects a bare Pod, for the same reason Lesson 1 covered — Pods get replaced, and a Service you'd have to manually recreate every time a Pod disappears defeats the entire point of having a stable address. In practice a Service sits in front of a Deployment or StatefulSet, and the two are written and reviewed together, in the same pull request. A realistic example: <code>checkout-api</code> exposes two ports through one Service — <code>port: 80 &rarr; targetPort: 8080</code> named <code>http</code> for application traffic, and <code>port: 9100 &rarr; targetPort: 9100</code> named <code>metrics</code> for Prometheus to scrape — both under a single stable name, <code>checkout-api.payments.svc.cluster.local</code>, instead of standing up two separate Services (and two DNS names, and two sets of firewall/NetworkPolicy rules) for one application. This is exactly why the port-naming rule from Core concepts exists: <code>targetPort: http</code> and <code>targetPort: metrics</code> only work as names because the Pod's own <code>containerPort</code> entries are named the same way.</p>
+
+<h2>Hands-on exercise</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>See a broken selector fail silently, then fix it — don't just take the lesson's word for it, reproduce it yourself.</p>
+<h4>Scenario</h4>
+<p>You're wiring up a Service for a Pod, but mistype the selector's value — a one-character difference from the Pod's real label, exactly the kind of typo that survives a quick code review.</p>
+<h4>Environment assumptions</h4>
+<p>Any cluster you can <code>kubectl</code> into, no existing resources named <code>web</code> or <code>web-svc</code> in the current namespace.</p>
+<h4>Commands</h4>
+<pre><code>kubectl run web --image=nginx:1.29 --labels=app=web
+kubectl get pods --show-labels</code></pre>
+<p>Save this as <code>web-svc.yaml</code> — the selector doesn't match the Pod's label, on purpose:</p>
+<pre><code>apiVersion: v1
 kind: Service
 metadata:
-  name: my-nginx-svc
+  name: web-svc
 spec:
   type: ClusterIP
   selector:
-    app: my-nginx
+    app: webapp
   ports:
     - port: 80
       targetPort: 80
 </code></pre>
+<pre><code>kubectl apply -f web-svc.yaml
+kubectl get svc web-svc
+kubectl get endpoints web-svc</code></pre>
+<h4>Expected result</h4>
+<p><code>kubectl get svc web-svc</code> shows a normal, healthy-looking ClusterIP — nothing about it looks wrong. <code>kubectl get endpoints web-svc</code> shows <code>&lt;none&gt;</code>. The apply succeeded, the Service exists, and it routes to nothing.</p>
+<h4>Verification</h4>
+<p>Fix the selector to match, re-apply, and confirm the endpoint appears:</p>
+<pre><code># edit web-svc.yaml: change "app: webapp" to "app: web"
+kubectl apply -f web-svc.yaml
+kubectl get endpoints web-svc</code></pre>
+<p>You should now see one entry, <code>&lt;pod-ip&gt;:80</code>. If you still see <code>&lt;none&gt;</code>, run <code>kubectl get pod web --show-labels</code> and compare the exact key and value against <code>spec.selector</code> character by character.</p>
+<h4>Common failure</h4>
+<p>Assuming that no errors from <code>kubectl apply</code> means the Service is working. Applying a Service never validates that it actually matches anything — the API server only checks that the YAML is well-formed.</p>
+<h4>Troubleshooting</h4>
+<p>Selectors only match Pods in the <em>same namespace</em> as the Service. If you applied the Service into a different namespace than the Pod (for example, by adding <code>-n</code> to one command and not the other), you'll see the exact same empty-endpoints symptom for a completely different reason.</p>
+<h4>Cleanup / rollback</h4>
+<pre><code>kubectl delete pod web --ignore-not-found
+kubectl delete svc web-svc --ignore-not-found</code></pre>
+<h4>Production lesson</h4>
+<p>Nothing in the normal "did my apply succeed" workflow catches this. <code>kubectl get endpoints</code> is the one command that actually proves a Service found its Pods — get in the habit of running it every time you create or change a Service, not only once something's already on fire.</p>
+</div>
+
+<h2>Failure scenario</h2>
+<p>A realistic incident where the Service and its selector are both already correct — the exercise above wouldn't have caught this one.</p>
+<ol class="timeline">
+<li><span class="t">09:14</span> Alert fires: the ingress controller reports a rising 502 rate for <code>checkout-api</code>. On-call checks <code>kubectl get pods -l app=checkout-api</code> — all 3 Pods <code>Running</code>, 0 restarts, <code>READY 1/1</code>.</li>
+<li><span class="t">09:16</span> <code>kubectl get endpoints checkout-api</code> shows 3 entries, all 3 Pod IPs, port <code>8080</code>. That rules out a selector mismatch — the Service found exactly the Pods it should have.</li>
+<li><span class="t">09:19</span> <code>kubectl describe pod</code> on all three shows <code>Ready: True</code> and no probe failures in Events. That rules out a readiness problem too — every matched Pod is genuinely eligible for traffic.</li>
+<li><span class="t">09:23</span> On-call runs <code>kubectl port-forward pod/checkout-api-7d9f4 8080:8080</code> and curls <code>localhost:8080</code> directly — <code>connection refused</code>. The Pod itself is unreachable on 8080, independent of the Service entirely.</li>
+<li><span class="t">09:26</span> <code>kubectl get pod checkout-api-7d9f4 -o jsonpath='{.spec.containers[0].ports}'</code> shows <code>containerPort: 8081</code>. Last night's deploy changed the app's listen port via an environment variable, but the PR never touched the Service's <code>targetPort</code>, which still reads <code>8080</code>.</li>
+<li><span class="t">09:29</span> Fix applied: <code>kubectl edit svc checkout-api</code>, change <code>targetPort</code> from <code>8080</code> to <code>8081</code>.</li>
+<li><span class="t">09:31</span> Verified: <code>kubectl get endpoints checkout-api</code> now lists all 3 Pod IPs on port <code>8081</code>; the ingress 502 rate drops to zero within a minute.</li>
+</ol>
+
+<h2>Troubleshooting workflow</h2>
+<p>The general 10-step method, applied specifically to "a Service isn't routing traffic to my Pods":</p>
+<ol class="troubleshooting">
+<li><strong>Confirm the symptom.</strong> Actually test it — <code>kubectl run debug --image=busybox --restart=Never -it --rm -- wget -qO- http://&lt;service&gt;.&lt;namespace&gt;.svc.cluster.local</code> from inside the cluster. Don't diagnose from a dashboard alone; find out whether it's a timeout, a refusal, or wrong data coming back.</li>
+<li><strong>Define scope.</strong> Is every client failing, or only some? (<code>sessionAffinity: ClientIP</code> can pin one unlucky client to one bad Pod while everyone else is fine.) Is it one Service, or every Service on this node — the latter points at kube-proxy or the node's network, not your manifest.</li>
+<li><strong>Check recent changes.</strong> <code>kubectl get events --sort-by=.lastTimestamp -n &lt;namespace&gt;</code>, and diff the Service and Deployment manifests against the last deploy. A changed label, a changed container port, and a changed <code>targetPort</code> are the three most common causes, and none of them show up as an error anywhere.</li>
+<li><strong>Inspect the right state.</strong> <code>kubectl get endpoints &lt;service&gt;</code> first — empty means selector mismatch, partial means some Pods aren't ready, full-but-still-failing means a port or app-level problem. Then <code>kubectl describe svc &lt;service&gt;</code> to see <code>Selector</code>, <code>Port</code>, and <code>TargetPort</code> side by side, and <code>kubectl get pods --show-labels -l &lt;selector&gt;</code> for the Pods' actual labels.</li>
+<li><strong>Form a hypothesis.</strong> For example: "the Service and Pod both look healthy, so this is probably a <code>targetPort</code> mismatch, not a selector problem."</li>
+<li><strong>Test one variable.</strong> <code>kubectl port-forward pod/&lt;name&gt; &lt;targetPort&gt;:&lt;targetPort&gt;</code> and connect straight to the Pod, bypassing the Service entirely — this tells you whether the fault is in the Service's config or in the Pod/app itself.</li>
+<li><strong>Apply the safest fix.</strong> Change exactly the one field the evidence points to — <code>selector</code>, <code>targetPort</code>, or the probe — not several at once, so you know which change actually fixed it.</li>
+<li><strong>Verify recovery.</strong> Re-check <code>kubectl get endpoints</code> shows the expected IPs <em>and</em> re-run the actual traffic test from step 1. A correct-looking endpoint list is not the same as working traffic.</li>
+<li><strong>Document the root cause.</strong> Write down the exact field and value that was wrong ("<code>targetPort: 8080</code>, app now listens on <code>8081</code>") — "the Service was misconfigured" isn't specific enough to prevent a repeat.</li>
+<li><strong>Prevent recurrence.</strong> Require Service and Deployment port changes to ship in the same pull request, and alert on endpoint count dropping to zero for any Service on a critical path — don't rely on Pod-level restart counts alone, since this entire failure mode never restarts anything.</li>
+</ol>
+
+<p class="callout security"><strong>Security note:</strong> <code>type: ClusterIP</code> means "not reachable from outside the cluster's network" — it does not mean "access controlled." By default, any Pod in any namespace on the same cluster can resolve and connect to any ClusterIP Service, regardless of which team owns it. ClusterIP keeps the internet out; it does nothing to keep one workload from reaching another workload it has no business talking to. That's what <code>NetworkPolicy</code> is for (Lesson 10) — don't mistake "internal-only" for "isolated."</p>
+
+<p class="callout production"><strong>Reliability note:</strong> a Service with zero endpoints doesn't fail loudly. There's no crash, no non-zero exit code, no restart counter to watch — the Service object itself reports perfectly healthy the entire time every request against it is failing. Because "endpoint count" doesn't surface in the metrics teams usually watch first (Pod restarts, CPU, memory), it's worth an explicit alert on endpoint/EndpointSlice count reaching zero for any Service on a critical path, rather than assuming Pod-level health checks would have caught it.</p>
+
+<p class="callout mistake"><strong>Common mistake:</strong> mixing up <code>port</code> and <code>targetPort</code>. <code>port</code> is what clients dial; <code>targetPort</code> is what the container actually listens on. Get them backward — or change one without the other after an app's listen port changes — and you get a Service with a full, correct-looking endpoint list that still refuses every connection, because nothing on the Pod is listening where the Service is aiming.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> a label typo in <code>spec.selector</code> that survives review because it's easy to eyeball two YAML files and miss one wrong character (<code>app: my-nginx</code> vs. <code>app: nginx</code>, or a leftover <code>env: stage</code> from a copy-pasted manifest). The match is exact-string and case-sensitive, with no partial credit — and it only checks Pods in the Service's own namespace, so a Service and its Pods living in different namespaces show the identical empty-endpoints symptom even with perfectly matching labels.</p>
+
+<h2>Decision guide</h2>
+<table>
+<tr><th>Option</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
+<tr><td>ClusterIP</td><td>Internal Pod-to-Pod or Service-to-Service traffic — most backend communication</td><td>Traffic must originate from outside the cluster</td><td>Not reachable externally without an Ingress or gateway layered on top</td></tr>
+<tr><td>NodePort</td><td>Quick manual/external access for a demo or dev cluster, or infra that can only reach node IPs</td><td>Real production external traffic, or when a proper load balancer is available</td><td>Opens a fixed port on every node, from a limited port range; not itself highly available</td></tr>
+<tr><td>LoadBalancer</td><td>Cloud-hosted cluster, need a real externally routable, health-checked IP</td><td>Bare-metal without a cloud/MetalLB integration, or traffic already fronted by a shared Ingress</td><td>Typically provisions (and bills) one cloud load balancer per Service</td></tr>
+<tr><td>Headless (<code>clusterIP: None</code>)</td><td>Client needs each Pod's own identity — peer discovery, StatefulSet members addressing each other directly</td><td>You just want ordinary, don't-care-which-backend load balancing</td><td>No built-in load balancing at all; the client has to handle the Pod list itself</td></tr>
+</table>
+<p><strong>Default recommendation:</strong> reach for <code>ClusterIP</code> unless you have a specific, stated reason to expose externally (<code>LoadBalancer</code>, or an Ingress in front of a <code>ClusterIP</code>) or need per-Pod identity (headless). Most Services in a real cluster are ClusterIP, and that should be your starting assumption too.</p>
+
+<h2>Knowledge check</h2>
+<div class="quiz">
+<p>Q1. You create a Service and see no errors. What command tells you whether it actually found any Pods?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>kubectl get endpoints &lt;service-name&gt;</code> — an empty result means the selector matched nothing.</div>
+</div>
+
+<div class="quiz">
+<p>Q2. A Service has <code>port: 80</code> and <code>targetPort: 9376</code>. Which port does a client calling the Service actually connect to?</p>
+<div class="opts">
+<label>A. Port 80, the Service's own port.</label>
+<label>B. Port 9376, the container's target port.</label>
+<label>C. Both ports, chosen randomly each time.</label>
+<label>D. Neither; only nodePort accepts clients.</label>
+</div>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a2">A. Clients always dial <code>port</code> — <code>targetPort</code> is only where kube-proxy forwards the traffic to on the Pod, invisible to the caller.</div>
+</div>
+
+<div class="quiz">
+<p>Q3. Which kube-proxy mode is the current default on Linux nodes for implementing ClusterIP routing?</p>
+<div class="opts">
+<label>A. iptables — netfilter-based rule chains.</label>
+<label>B. IPVS — kernel hash-table routing, deprecated.</label>
+<label>C. userspace — an older proxy-process mode.</label>
+<label>D. nftables — a newer nftables-based mode.</label>
+</div>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a3">A. <code>iptables</code> is the current Linux default. IPVS is now marked deprecated in the docs; <code>nftables</code> is a newer option; userspace mode is long obsolete.</div>
+</div>
+
+<div class="quiz">
+<p>Q4. A Service has <code>clusterIP: None</code> and a selector matching 3 Pods. What does its DNS name resolve to?</p>
+<div class="opts">
+<label>A. The Service's own single virtual IP.</label>
+<label>B. All three Pods' individual IP addresses.</label>
+<label>C. Only the first Pod's IP address.</label>
+<label>D. Nothing; headless Services have no DNS.</label>
+</div>
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
+<div class="answer" id="a4">B. A headless Service's DNS name resolves to the set of every matching Pod's IP directly — there's no single virtual IP to hand back.</div>
+</div>
+
+<h2>Certification mapping</h2>
+<p>Directly scored under <strong>Services &amp; Networking (20%)</strong> — one of the exam's two largest domains. Expect to write ClusterIP Service manifests from memory, use <code>kubectl expose</code>, and diagnose a broken endpoint live, under time pressure, using nothing but <code>kubectl</code> and the doc pages linked below.</p>
+
+<h2>Production challenge</h2>
+<div class="exercise">
+<h4>Objective</h4>
+<p>Diagnose and fix a Service that has the right selector, a Pod that's genuinely <code>Running</code>, and still shows zero entries in its endpoints — using the troubleshooting workflow above, not this lesson's earlier exercise.</p>
+<h4>Scenario</h4>
+<p>A teammate fronts an nginx Pod with a readiness probe (a real production habit — never skip the probe once a Service depends on the Pod). Monitoring shows the target flapping "down" even though <code>kubectl get pods</code> says <code>Running</code>, 0 restarts.</p>
+<h4>Environment assumptions</h4>
+<p>A kind/minikube cluster, no existing resources named <code>app-check</code>.</p>
+<h4>Commands</h4>
+<p>Build the broken setup first. Save this as <code>app-check.yaml</code> — the probe path is wrong on purpose, a path stock nginx doesn't serve:</p>
+<pre><code>apiVersion: v1
+kind: Pod
+metadata:
+  name: app-check
+  labels:
+    app: app-check
+spec:
+  containers:
+  - name: app-check
+    image: nginx:1.29
+    ports:
+    - containerPort: 80
+    readinessProbe:
+      httpGet:
+        path: /healthz
+        port: 80
+      periodSeconds: 5
+</code></pre>
+<pre><code>kubectl apply -f app-check.yaml
+kubectl expose pod app-check --port=80 --target-port=80 --name=app-check-svc
+# wait ~15s for a few probe cycles, then diagnose:
+kubectl get pods app-check
+kubectl get endpoints app-check-svc
+kubectl describe pod app-check</code></pre>
+<h4>Expected result</h4>
+<p><code>kubectl get pods</code> shows <code>app-check</code> <code>Running</code>, <code>READY 0/1</code>. <code>kubectl get endpoints app-check-svc</code> shows <code>&lt;none&gt;</code> — the Pod is fully matched by the selector but absent from the endpoint list. <code>kubectl describe pod</code> shows a failing <code>Readiness</code> probe against <code>/healthz</code> in its Events (nginx returns <code>404</code>, outside the probe's success range).</p>
+<h4>Verification</h4>
+<p>Pod fields like <code>readinessProbe</code> are immutable once a Pod is running — delete and recreate with the corrected path rather than trying to patch it in place:</p>
+<pre><code># edit app-check.yaml: change path: /healthz to path: /
+kubectl delete pod app-check
+kubectl apply -f app-check.yaml
+kubectl get endpoints app-check-svc --watch</code></pre>
+<p>Within a couple of probe cycles, <code>app-check-svc</code>'s endpoint list should populate with the Pod's IP on port 80.</p>
+<h4>Common failure</h4>
+<p>Assuming the Service or its selector is broken and rewriting <code>spec.selector</code> or <code>spec.ports</code> — neither is the problem here. The Service configuration was correct the whole time; the Pod was voluntarily excluding itself by failing its own health check.</p>
+<h4>Troubleshooting</h4>
+<p>If the endpoint still doesn't appear after the fix, re-check <code>kubectl describe pod app-check</code>'s Events for a <em>different</em> readiness failure (typo in the new path, wrong port number), and confirm you didn't leave the old, still-failing Pod running alongside a new one under the same selector.</p>
+<h4>Cleanup / rollback</h4>
+<pre><code>kubectl delete pod app-check --ignore-not-found
+kubectl delete service app-check-svc --ignore-not-found</code></pre>
+<h4>Production lesson</h4>
+<p>This is the failure mode that a "just check if the Pod is Running" mental model misses entirely. Endpoints depend on two independent things being true — label match <em>and</em> readiness — and a real incident review has to check both before declaring the Service itself broken.</p>
 </div>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/services-networking/service/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/service</a> — the exact page you can search in the real exam. DNS naming rules: <a href="https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/" target="_blank" rel="noopener">dns-pod-service</a>.</p>
+<p><a href="https://kubernetes.io/docs/concepts/services-networking/service/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/service</a>, <a href="https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/dns-pod-service</a>, and <a href="https://kubernetes.io/docs/reference/networking/virtual-ips/" target="_blank" rel="noopener">kubernetes.io/docs/reference/networking/virtual-ips</a> (kube-proxy modes) — verified 2026-08-03. All three are searchable in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>A Service = a stable IP + DNS name that load-balances to Pods matching its <code>selector</code>.</li>
-    <li><code>spec.selector</code> must exactly match the Pod's <code>metadata.labels</code>.</li>
-    <li><code>kubectl get endpoints &lt;service&gt;</code> checks whether it actually found Pods.</li>
+    <li>A Service is a continuously-recomputed roster, not a static pointer — a control loop re-scans Pods against <code>spec.selector</code> on an ongoing basis, and <code>kube-proxy</code> programs the node's kernel (iptables by default) to route ClusterIP traffic to whatever's currently on that roster.</li>
+    <li><code>port</code> is what clients dial; <code>targetPort</code> is what the container listens on (defaults to <code>port</code> if omitted); <code>nodePort</code> only applies to <code>NodePort</code>/<code>LoadBalancer</code> types, from the 30000&ndash;32767 range by default.</li>
+    <li>A failed readiness probe removes a Pod's IP from the Service's endpoints automatically, even though the Pod stays <code>Running</code> — endpoints depend on label match <em>and</em> readiness, not labels alone.</li>
+    <li><code>kubectl get endpoints &lt;service&gt;</code> is the one command that proves a Service actually found Pods — a clean <code>kubectl apply</code> proves nothing about that.</li>
+    <li>ClusterIP means "not reachable from outside the cluster," not "access controlled" — anything already inside the cluster can still reach it unless a <code>NetworkPolicy</code> says otherwise.</li>
+    <li>Default to <code>ClusterIP</code> unless you have a specific, stated reason to reach for <code>NodePort</code>, <code>LoadBalancer</code>, or a headless Service.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<footer class="teacher-reminder">Stuck, or got a different result than "Expected result" above? Paste the exact <code>kubectl get endpoints</code> or <code>kubectl describe svc</code> output back to your teacher — the actual endpoint list is almost always more useful than describing the symptom in words.</footer>
 
 <div class="lesson-nav">
   <a href="0002-pod-labels.html">&larr; Pod + labels</a>
