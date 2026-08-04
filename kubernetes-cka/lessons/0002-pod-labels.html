@@ -18,9 +18,17 @@
 <p class="callout"><strong>Mental model:</strong> a Pod's name is like an employee's badge number — unique, but nobody uses it in conversation. Labels are what people key off instead: "everyone with a blue lanyard." Swap the lanyard mid-shift and every rule keyed on it re-applies instantly — no one has to move. Kubernetes objects work the same way: Services and controllers never look up a Pod by name, they continuously re-match label selectors against whatever labels exist right now. That predicts something real: relabeling a running Pod can pull it out of a Service's traffic or a Deployment's management, live, with no restart.</p>
 
 <h2>Where this fits</h2>
-<p>Labels sit at the metadata layer, one level below every object that depends on grouping Pods: a Service's <code>spec.selector</code>, a Deployment/ReplicaSet's <code>spec.selector.matchLabels</code>, and a NetworkPolicy's <code>podSelector</code> (Lesson 10) all match on labels, not names or object references.</p>
+<p>Labels sit at the metadata layer, one level below every object that depends on grouping Pods. <strong>Preview (taught fully later):</strong> a Service (Lesson 3) and a Deployment (Lesson 4) both run the exact same check you're about to see below — they never look up a Pod by name, they compare their own selector against a Pod's labels. Everything in this lesson is the mechanism those two lessons will build on.</p>
 
-<h2>How it works</h2>
+<h2>How the match actually works</h2>
+<p>A selector is a small set of required key/value pairs. A Pod matches if it carries <em>all</em> of them — extra labels on the Pod don't break the match, missing ones do:</p>
+<pre><code>Selector:  app=web
+
+Pod A   labels: app=web, tier=frontend    → MATCH   (app=web present)
+Pod B   labels: app=web, tier=backend     → MATCH   (app=web present)
+Pod C   labels: app=api, tier=backend     → NO MATCH (app=web missing)</code></pre>
+<p>That's the entire mechanism. Everything else in this course — Services finding Pods, ReplicaSets counting Pods, NetworkPolicies deciding who can talk to whom — is this same table, just with a different selector and a different consumer reading the result.</p>
+
 <pre><code>apiVersion: v1
 kind: Pod
 metadata:
@@ -37,7 +45,16 @@ spec:
 <pre><code>kubectl get pods --show-labels
 kubectl get pods -l tier=frontend
 kubectl get pods -l 'env in (prod, staging)'</code></pre>
-<p>Key rule you'll actually hit: a Deployment's <code>spec.selector</code> must exactly match <code>spec.template.metadata.labels</code>, or the object is rejected outright — and the selector is immutable after creation (changing it later fails with "field is immutable").</p>
+<p>Rule you'll hit constantly from Lesson 4 onward: a Deployment's <code>spec.selector</code> must exactly match <code>spec.template.metadata.labels</code>, or the object is rejected — and normally that selector is immutable after creation (changing it later fails with "field is immutable").</p>
+
+<h2>Labels vs. annotations</h2>
+<p>Both are key/value metadata under <code>metadata</code> — the difference is whether anything selects on it:</p>
+<pre><code>metadata:
+  labels:
+    app: nginx              # selected on — kubectl -l, Service selectors, etc.
+  annotations:
+    build.number: "4521"    # never selected on — just attached info</code></pre>
+<p>If you'll ever type <code>-l key=value</code> against it, it's a label. If it's just something a human or tool reads later (a build number, a changelog note, a full commit SHA), it's an annotation — labels have a strict 63-character value limit for exactly this reason, annotations don't.</p>
 
 <h2>Try it</h2>
 <div class="quiz">
@@ -64,19 +81,33 @@ spec:
 </code></pre>
 </div>
 
-<p class="callout mistake"><strong>Common mistake:</strong> using a label for data nobody will ever select on — a full commit hash, free text. It bloats every selector match for no benefit; that's what annotations are for. Labels select, annotations don't.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> a Deployment where <code>spec.selector.matchLabels</code> doesn't exactly match the Pod template's labels — rejected as invalid, not a silent no-match like a Service.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> using a label for data nobody will ever select on — a full commit hash, free text. It bloats every selector match for no benefit; that's what annotations are for.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> assuming two Pods are grouped together because their labels "look the same" without checking exact case and spelling — <code>tier: frontend</code> and <code>tier: Frontend</code> are different values to a selector, no fuzzy matching.</p>
+
+<h2>A simple label mismatch, live</h2>
+<p>Create two Pods that are supposed to be one group, but aren't quite:</p>
+<pre><code>kubectl run web-1 --image=nginx:1.29 --labels=app=web,tier=frontend
+kubectl run web-2 --image=nginx:1.29 --labels=app=web,tier=Frontend</code></pre>
+<p><strong>Predict first:</strong> how many Pods will <code>kubectl get pods -l tier=frontend</code> return — 1 or 2? Then run it.</p>
+<pre><code>kubectl get pods -l tier=frontend</code></pre>
+<p>You'll see only <code>web-1</code>. Inspect why:</p>
+<pre><code>kubectl get pods --show-labels</code></pre>
+<p><code>web-2</code> carries <code>tier=Frontend</code>, capital F — a different value, not a typo Kubernetes forgives. Fix it live and confirm the count changes:</p>
+<pre><code>kubectl label pod web-2 tier=frontend --overwrite
+kubectl get pods -l tier=frontend</code></pre>
+<p><strong>Verification:</strong> the second command should now list both Pods. If it doesn't, re-run <code>--show-labels</code> and diff the two rows character by character — that's the whole troubleshooting method for a label mismatch, there's no deeper layer to check.</p>
+<pre><code>kubectl delete pod web-1 web-2</code></pre>
 
 <h2>Basic troubleshooting</h2>
 <ol>
-<li>Service finds nothing? Compare <code>kubectl describe svc &lt;name&gt;</code>'s <code>Selector</code> against <code>kubectl get pods --show-labels</code> character by character — case-sensitive, exact match only.</li>
-<li>Controller has the wrong Pod count? <code>kubectl get pods -A --show-labels</code> without any <code>-l</code> filter — a Pod that no longer matches the selector doesn't disappear, it just stops being counted, and a replacement gets created alongside it.</li>
+<li>Selector-driven object (Service, once you reach Lesson 3) finds fewer Pods than expected? Compare its <code>Selector</code> field against <code>kubectl get pods --show-labels</code> character by character — case-sensitive, exact match only, same check you just did above.</li>
+<li>Controller has the wrong Pod count? <code>kubectl get pods -A --show-labels</code> without any <code>-l</code> filter — a Pod that no longer matches the selector doesn't disappear, it just stops being counted, and (from Lesson 4 onward) a replacement gets created alongside it.</li>
 </ol>
 
 <p class="callout production"><strong>Production note:</strong> real fleets don't invent their own label vocabulary — Kubernetes documents a recommended shared set under <code>app.kubernetes.io/</code> (<code>name</code>, <code>instance</code>, <code>version</code>, <code>component</code>, <code>part-of</code>, <code>managed-by</code>) specifically so Helm, Prometheus, and dashboards interoperate instead of each parsing their own convention.</p>
 
 <h2>Exam &amp; interview notes</h2>
-<p>Foundational for the CKA exam — not separately weighted, but every scored domain (Workloads &amp; Scheduling 15%, Services &amp; Networking 20%, Troubleshooting 30%) leans on knowing exactly how selectors match.</p>
+<p>Foundational for the CKA exam — not separately weighted on its own, but every scored domain (Workloads &amp; Scheduling 15%, Services &amp; Networking 20%, Troubleshooting 30%) leans on knowing exactly how selectors match.</p>
 <p><strong>Interview Q:</strong> "If you relabel a running Pod so it no longer matches its Deployment's selector, what happens to the Pod?" <strong>A:</strong> Nothing happens to the Pod itself — it keeps running, now unmanaged. The ReplicaSet just stops counting it and creates a replacement to restore its desired count. (This is also a real, documented technique for isolating a Pod for debugging: <code>kubectl label pod &lt;name&gt; app=debug --overwrite</code>.)</p>
 
 <h2>Source</h2>
@@ -85,10 +116,10 @@ spec:
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Labels live under <code>metadata.labels</code>; Services and controllers find Pods by matching a selector against labels, live — never by name.</li>
+    <li>A selector matches a Pod if the Pod carries <em>all</em> the selector's key/value pairs — extra labels don't break a match, missing or different ones do.</li>
     <li>Services use equality-based selectors only; Deployment/ReplicaSet/DaemonSet/Job also support set-based, via <code>matchLabels</code>/<code>matchExpressions</code>.</li>
-    <li>A Deployment's selector is immutable after creation and must match its Pod template's labels exactly.</li>
-    <li>Relabeling a running Pod out of its selector doesn't touch the Pod — it's a real isolation technique, and a real accidental-outage cause.</li>
+    <li>Labels are selected on (<code>kubectl -l</code>, Service/controller selectors); annotations never are — that's the only real difference.</li>
+    <li>A label mismatch is silent — nothing errors, the object just finds fewer Pods than you expect. <code>--show-labels</code> next to the selector, compared character by character, is the whole fix.</li>
   </ul>
 </div>
 

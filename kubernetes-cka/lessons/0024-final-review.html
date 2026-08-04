@@ -9,11 +9,11 @@
 <body>
 
 <p class="eyebrow">Kubernetes / CKA — Lesson 24 of 24 (Final Review) · teach2 pilot</p>
-<h1>Final Review — Cheat Sheet</h1>
+<h1>Final Review — Cheat Sheet &amp; Practical Assessment</h1>
 
-<p>This is a reference page, not a new lesson — no new material, no quiz. It pulls together the commands, traps, and interview quick-fire from Lessons 1–23 into one place to skim before the exam or an interview.</p>
+<p>This page is two distinct things — don't treat the first as a substitute for the second. <strong>Part 1</strong> is a cheat sheet: no new material, no assessment, just the commands and traps from Lessons 1&ndash;23 in one place to skim. <strong>Part 2</strong> is a timed, hands-on practical assessment covering all 5 CKA domains — reading Part 1 proves you can recall; finishing Part 2 proves you can actually do it, which is what the real exam tests.</p>
 
-<h2>kubectl command cheat sheet</h2>
+<h2>Part 1 — kubectl command cheat sheet</h2>
 
 <h3>Pods, labels &amp; Deployments</h3>
 <ul>
@@ -28,7 +28,7 @@
 
 <h3>Services &amp; networking</h3>
 <ul>
-<li><code>kubectl get endpoints &lt;service&gt;</code> — confirm a Service actually found Pods (empty = selector mismatch)</li>
+<li><code>kubectl get endpoints &lt;service&gt;</code> — confirm a Service actually found Pods (empty = selector mismatch or every backend failing readiness)</li>
 <li><code>kubectl get ingressclass</code> — which Ingress controller(s) exist in the cluster</li>
 <li><code>kubectl get networkpolicy</code> — list NetworkPolicies (existing ≠ enforced — CNI must implement it)</li>
 </ul>
@@ -94,17 +94,6 @@
 <li><code>kubectl top nodes</code> / <code>kubectl top pods --containers</code> — needs metrics-server, not installed by default on kubeadm</li>
 </ul>
 
-<h2>Top 7 exam traps</h2>
-<ol>
-<li>An Ingress or NetworkPolicy object does nothing by itself — it needs a controller (Ingress) or a CNI that implements it (NetworkPolicy), or it's silently a no-op. See <a href="0008-ingress.html">Lesson 8</a> and <a href="0010-networkpolicy.html">Lesson 10</a>.</li>
-<li>A fresh cluster is default-<strong>allow</strong> for Pod-to-Pod traffic — the opposite of a firewall's default-deny. See <a href="0010-networkpolicy.html">Lesson 10</a>.</li>
-<li>A Deployment's <code>spec.selector.matchLabels</code> must exactly match <code>spec.template.metadata.labels</code>, or the Deployment is invalid. See <a href="0004-deployment.html">Lesson 4</a>.</li>
-<li>A Kubernetes Secret is base64-<strong>encoded</strong>, not encrypted — anyone with etcd/API access reads it as plain text unless <code>EncryptionConfiguration</code> is explicitly turned on. See <a href="0006-configmap-secret.html">Lesson 6</a>.</li>
-<li>A failed readiness probe never restarts a container — it only pulls the Pod out of Service routing. Only a failed liveness probe restarts it. See <a href="0011-resource-limits-probes.html">Lesson 11</a>.</li>
-<li>A PV's <code>reclaimPolicy</code> decides whether data survives its PVC's deletion — <code>Delete</code> (default) destroys it, <code>Retain</code> keeps it but needs manual cleanup. See <a href="0007-pvc.html">Lesson 7</a>.</li>
-<li>An HPA showing <code>&lt;unknown&gt;</code> in <code>TARGETS</code>, or <code>kubectl top</code> failing outright, both trace back to the same cause — metrics-server missing or unhealthy, not a bug in either feature. See <a href="0022-workload-autoscaling.html">Lesson 22</a> and <a href="0023-resource-monitoring.html">Lesson 23</a>.</li>
-</ol>
-
 <h2>Interview quick-fire</h2>
 <ul>
 <li><strong>Q: How does a Service find its Pods?</strong> A: It matches <code>spec.selector</code> against Pod labels, continuously, live — never by name. <code>kubectl get endpoints &lt;svc&gt;</code> proves it actually found any.</li>
@@ -113,6 +102,17 @@
 <li><strong>Q: Does creating a NetworkPolicy automatically restrict traffic?</strong> A: No — it's a no-op unless the cluster's CNI implements NetworkPolicy enforcement.</li>
 <li><strong>Q: You relabel a running Pod out of its Deployment's selector — what happens?</strong> A: The Pod keeps running untouched; the ReplicaSet creates a replacement to restore its desired count. Real isolation technique, real accidental-outage cause.</li>
 </ul>
+
+<h2>Top 7 exam traps</h2>
+<ol>
+<li>An Ingress or NetworkPolicy object does nothing by itself — it needs a controller (Ingress) or a CNI that implements it (NetworkPolicy), or it's silently a no-op. See <a href="0008-ingress.html">Lesson 8</a> and <a href="0010-networkpolicy.html">Lesson 10</a>.</li>
+<li>A fresh cluster is default-<strong>allow</strong> for Pod-to-Pod traffic — the opposite of a firewall's default-deny. See <a href="0010-networkpolicy.html">Lesson 10</a>.</li>
+<li>A Deployment's <code>spec.selector.matchLabels</code> must exactly match <code>spec.template.metadata.labels</code>, or the Deployment is invalid. See <a href="0002-pod-labels.html">Lesson 2</a> and <a href="0004-deployment.html">Lesson 4</a>.</li>
+<li>A Kubernetes Secret is base64-<strong>encoded</strong>, not encrypted — anyone with etcd/API access reads it as plain text unless <code>EncryptionConfiguration</code> is explicitly turned on. See <a href="0006-configmap-secret.html">Lesson 6</a>.</li>
+<li>A failed readiness probe never restarts a container — it only pulls the Pod out of Service routing. Only a failed liveness probe restarts it. See <a href="0011-resource-limits-probes.html">Lesson 11</a>.</li>
+<li>A PV's <code>reclaimPolicy</code> decides whether data survives its PVC's deletion — <code>Delete</code> (default) destroys it, <code>Retain</code> keeps it but needs manual cleanup. See <a href="0007-pvc.html">Lesson 7</a>.</li>
+<li>An HPA showing <code>&lt;unknown&gt;</code> in <code>TARGETS</code>, or <code>kubectl top</code> failing outright, both trace back to the same cause — metrics-server missing or unhealthy, not a bug in either feature. See <a href="0022-workload-autoscaling.html">Lesson 22</a> and <a href="0023-resource-monitoring.html">Lesson 23</a>.</li>
+</ol>
 
 <h2>Domain weights (CKA exam)</h2>
 <ul>
@@ -123,19 +123,116 @@
 <li>Storage — 10%</li>
 </ul>
 
+<h2>Part 2 — Practical final assessment (timed)</h2>
+<p>One task per domain, in real exam style: a goal, not a recipe. Time yourself — the targets below are a competent-candidate pace, not a hard limit. Attempt each fully before revealing its hidden answer; a cheat sheet you can read is not the same skill as a task you can finish under time pressure.</p>
+
+<div class="quiz">
+<p><strong>Task 1 — Troubleshooting (30% domain) · target 7 min</strong><br>
+A <code>web</code> Deployment (3 replicas, label <code>app=web</code>) is fronted by a Service named <code>web-svc</code> with <code>selector: app=web</code>. Traffic to it fails. Find and fix the root cause.</p>
+<p><strong>Setup:</strong></p>
+<pre><code>kubectl create deployment web --image=nginx:1.29 --replicas=3
+kubectl expose deployment web --name=web-svc --port=80
+kubectl patch service web-svc -p '{"spec":{"selector":{"app":"webapp"}}}'</code></pre>
+<p><strong>Success criteria:</strong> <code>web-svc</code> has 3 endpoints again.<br>
+<strong>Verification command:</strong> <code>kubectl get endpoints web-svc</code></p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal hidden answer</button>
+<div class="answer" id="a1">The <code>kubectl patch</code> above quietly changed the Service's selector to <code>app=webapp</code>, which matches nothing. Fix: <code>kubectl patch service web-svc -p '{"spec":{"selector":{"app":"web"}}}'</code>, then confirm with the verification command. Doc: <a href="https://kubernetes.io/docs/concepts/services-networking/service/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/service</a>.</div>
+</div>
+
+<div class="quiz">
+<p><strong>Task 2 — Cluster Architecture, Installation &amp; Configuration (25% domain) · target 10 min</strong><br>
+Take a snapshot of etcd and prove it's a valid, restorable backup — without restoring it (never test-restore onto a live cluster's data directory).</p>
+<p><strong>Success criteria:</strong> a snapshot file exists and etcdutl confirms it's structurally valid.<br>
+<strong>Verification command:</strong> <code>etcdutl snapshot status /tmp/etcd-backup.db -w table</code></p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal hidden answer</button>
+<div class="answer" id="a2">
+<pre><code>ETCDCTL_API=3 etcdctl snapshot save /tmp/etcd-backup.db \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key
+etcdutl snapshot status /tmp/etcd-backup.db -w table</code></pre>
+Exact cert paths vary by install method — <code>kubeadm</code>'s defaults are shown. The status command reads the file directly and doesn't touch the live cluster, which is why it's the safe way to prove a backup is good. Doc: <a href="https://kubernetes.io/docs/tasks/administer-cluster/configure-upgrade-etcd/#backing-up-an-etcd-cluster" target="_blank" rel="noopener">kubernetes.io/docs/tasks/administer-cluster/configure-upgrade-etcd</a>.</div>
+</div>
+
+<div class="quiz">
+<p><strong>Task 3 — Services &amp; Networking (20% domain) · target 10 min</strong><br>
+Restrict a <code>backend</code> Deployment (label <code>app=backend</code>) so only Pods labeled <code>role=frontend</code> can reach it on port 80 — everything else should be refused.</p>
+<p><strong>Success criteria:</strong> a Pod labeled <code>role=frontend</code> can curl backend on port 80; a Pod without that label cannot.<br>
+<strong>Verification command:</strong> run <code>curl</code> from both a labeled and an unlabeled test Pod and compare the result.</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal hidden answer</button>
+<div class="answer" id="a3">
+<pre><code>apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-allow-frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          role: frontend
+    ports:
+    - port: 80
+</code></pre>
+This only takes effect if the cluster's CNI implements NetworkPolicy — Lesson 10's biggest trap. If both test Pods can still reach backend after applying this, check the CNI first before assuming the YAML is wrong. Doc: <a href="https://kubernetes.io/docs/concepts/services-networking/network-policies/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/network-policies</a>.</div>
+</div>
+
+<div class="quiz">
+<p><strong>Task 4 — Workloads &amp; Scheduling (15% domain) · target 6 min</strong><br>
+Update the <code>web</code> Deployment's image to <code>nginx:1.29</code>, confirm the rollout completed, then roll it back to the previous image.</p>
+<p><strong>Success criteria:</strong> after rollback, the Deployment's Pods are running the original image again.<br>
+<strong>Verification command:</strong> <code>kubectl get deployment web -o jsonpath='{.spec.template.spec.containers[0].image}'</code></p>
+<button onclick="document.getElementById('a4').classList.add('shown')">Reveal hidden answer</button>
+<div class="answer" id="a4">
+<pre><code>kubectl set image deployment/web nginx=nginx:1.29
+kubectl rollout status deployment/web
+kubectl rollout undo deployment/web
+kubectl rollout status deployment/web</code></pre>
+<code>rollout undo</code> works because every image change created a new ReplicaSet revision — <code>kubectl rollout history deployment/web</code> lists them. Doc: <a href="https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#rolling-back-a-deployment" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/controllers/deployment</a>.</div>
+</div>
+
+<div class="quiz">
+<p><strong>Task 5 — Storage (10% domain) · target 8 min</strong><br>
+Create a PVC, write a file to it from one Pod, delete that Pod, mount the same PVC from a second Pod, and prove the file survived.</p>
+<p><strong>Success criteria:</strong> the second Pod can read the exact file the first Pod wrote.<br>
+<strong>Verification command:</strong> <code>kubectl exec pod-b -- cat /data/proof.txt</code></p>
+<button onclick="document.getElementById('a5').classList.add('shown')">Reveal hidden answer</button>
+<div class="answer" id="a5">
+<pre><code>kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: proof-pvc }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 1Gi } }
+EOF
+kubectl run pod-a --image=busybox --restart=Never --overrides='{"spec":{"containers":[{"name":"pod-a","image":"busybox","command":["sh","-c","echo hello > /data/proof.txt && sleep 5"],"volumeMounts":[{"name":"v","mountPath":"/data"}]}],"volumes":[{"name":"v","persistentVolumeClaim":{"claimName":"proof-pvc"}}]}}'
+sleep 6 && kubectl delete pod pod-a
+kubectl run pod-b --image=busybox --restart=Never --overrides='{"spec":{"containers":[{"name":"pod-b","image":"busybox","command":["sleep","3600"],"volumeMounts":[{"name":"v","mountPath":"/data"}]}],"volumes":[{"name":"v","persistentVolumeClaim":{"claimName":"proof-pvc"}}]}}'
+kubectl exec pod-b -- cat /data/proof.txt</code></pre>
+The point being proven: a PVC's data outlives the specific Pod that wrote it — data is bound to the volume, not the Pod. Requires a StorageClass capable of dynamic provisioning (default on most managed clusters and kind/minikube). Doc: <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/storage/persistent-volumes</a>.</div>
+</div>
+
 <h2>Source</h2>
-<p><a href="https://training.linuxfoundation.org/certification/certified-kubernetes-administrator-cka/" target="_blank" rel="noopener">Linux Foundation — CKA exam overview</a> (domain weights) and <a href="https://kubernetes.io/docs/" target="_blank" rel="noopener">kubernetes.io/docs</a> — the only reference allowed in the real exam.</p>
+<p><a href="https://training.linuxfoundation.org/certification/certified-kubernetes-administrator-cka/" target="_blank" rel="noopener">Linux Foundation — CKA exam overview</a> (domain weights, re-verified current 2026-08-04) and <a href="https://docs.linuxfoundation.org/tc-docs/certification/certification-resources-allowed" target="_blank" rel="noopener">Linux Foundation — CKA/CKAD Resources Allowed</a> (verified 2026-08-04): during the real exam you may use <strong>kubernetes.io/docs</strong>, <strong>kubernetes.io/blog</strong>, <strong>helm.sh/docs</strong>, <strong>gateway-api.sigs.k8s.io</strong> (CKA only), task-specific links in the exam's own Quick Reference box, and locally installed distribution docs — general web search and any other site are not allowed. It is <em>not</em> "one site only," but it is a short, fixed list — check the official page above before exam day in case it changes.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
     <li>Troubleshooting is worth more than any other domain — practice the command ladders, not just the objects.</li>
-    <li>Most exam traps are "it applied with no error but does nothing" — controller/CNI missing, or a label mismatch.</li>
-    <li>When stuck, search kubernetes.io/docs directly — that's the one tool you get in the real exam.</li>
+    <li>Most exam traps are "it applied with no error but does nothing" — controller/CNI missing, a label mismatch, or a Pod quietly orphaned from its selector.</li>
+    <li>The real exam allows a short, specific list of sites (see Source below) — not just kubernetes.io/docs alone.</li>
+    <li>Reading this cheat sheet proves recall. Finishing Part 2 under its time targets proves you can actually do the exam — do both, don't stop at Part 1.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">End of course. Re-read any linked lesson above if a trap doesn't click yet.</footer>
+<footer class="teacher-reminder">End of course. Re-read any linked lesson above if a trap doesn't click yet, and re-run any Part 2 task you didn't finish under its time target.</footer>
 
 <div class="lesson-nav">
   <a href="0023-resource-monitoring.html">&larr; Resource monitoring</a>
