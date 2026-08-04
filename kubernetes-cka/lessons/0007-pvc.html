@@ -11,18 +11,17 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 7 of 24</p>
 <h1>PersistentVolumeClaim &rarr; Pod</h1>
 
-<h2>Why this matters</h2>
-<p>Every other lesson in this course lets you undo a mistake: redeploy a bad Deployment, re-apply a Service, restart a crashed Pod. Storage is different. If a PersistentVolume's reclaim policy is <code>Delete</code> — the default for dynamically-provisioned volumes — then deleting the PersistentVolumeClaim on top of it deletes the underlying disk too, immediately, with no confirmation prompt and no trash can to recover from. This is one of the only genuinely irreversible mistakes in the entire CKA curriculum: a <code>kubectl delete pvc</code> that looks like it's removing a small Kubernetes object is actually, silently, also asking the cloud provider to destroy real data. Get this lesson wrong in production and you don't get a second attempt.</p>
+<p>A container's filesystem dies with the container. Anything that must survive a restart needs real, persistent storage. Kubernetes splits this into three layers.</p>
 
-<p class="callout"><strong>Mental model:</strong> a PersistentVolumeClaim is a coat-check ticket, not the coat. You hand your coat to storage (the PersistentVolume) and get a ticket (the PVC) — the Pod just carries the ticket around. Drop the Pod and get a new one (delete and recreate the Pod), and the new Pod hands the same ticket to the same counter — the same coat comes back, because neither the ticket nor the coat ever changed. But tear up the ticket itself (delete the PVC), and what happens next depends entirely on the counter's house policy: some counters shred the coat the instant the ticket is torn up (<code>Delete</code> — the default), others hold the coat in a back room until a manager sorts it out (<code>Retain</code>). That's the prediction this mental model makes, and the one this lesson's exercise proves: Pod churn is safe, PVC deletion is the dangerous action, and the reclaim policy — not anything about the Pod — decides whether "dangerous" means "recoverable" or "gone."</p>
+<p class="callout"><strong>Simple example:</strong> think of a PersistentVolume (PV) as an actual storage locker. A PersistentVolumeClaim (PVC) is the request form: "I need a locker this size." A Pod never touches the locker directly — it only holds the claim form.</p>
 
-<h2>Core concepts: the three-layer model</h2>
-<p>Kubernetes splits storage into three layers so the thing your Pod asks for (space) is decoupled from the thing that actually holds data (a specific disk):</p>
+<h2>The three layers</h2>
 <ul>
-<li><strong>PersistentVolume (PV)</strong> — the real storage: a cluster-scoped resource representing an actual disk, whether an admin hand-created it or a StorageClass provisioned it automatically. Not namespaced — a PV isn't "owned" by any one team's namespace.</li>
-<li><strong>PersistentVolumeClaim (PVC)</strong> — a namespaced request for storage: "I need this much space, with this access mode." The control plane binds it to a matching PV — one PVC to exactly one PV, one PV to at most one PVC at a time.</li>
-<li><strong>Pod</strong> — mounts the PVC in <code>spec.volumes</code>, never the PV directly. This indirection is what makes the mental model above true: the Pod's manifest never names a specific disk, so replacing the Pod never touches the disk.</li>
+<li><strong>PersistentVolume (PV)</strong> — the real storage. Cluster-scoped, not namespaced.</li>
+<li><strong>PersistentVolumeClaim (PVC)</strong> — a namespaced request for storage. The cluster binds it to a matching PV.</li>
+<li><strong>Pod</strong> — mounts the <strong>PVC</strong>, never the PV directly.</li>
 </ul>
+
 <pre><code>apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -35,205 +34,26 @@ spec:
     requests:
       storage: 1Gi
 </code></pre>
-<p>The Pod side of the contract:</p>
-<pre><code>apiVersion: v1
-kind: Pod
-metadata:
-  name: pvc-pod
-spec:
-  containers:
-    - name: app
-      image: nginx:1.29
-      volumeMounts:
-        - name: data
-          mountPath: /usr/share/nginx/html
-  volumes:
-    - name: data
-      persistentVolumeClaim:
-        claimName: my-pvc
-</code></pre>
-<p>Notice the Pod's <code>volumes</code> block names a PVC (<code>claimName: my-pvc</code>) — never a PV name, never a disk ID. That's not a style choice; the Pod API doesn't have a field for mounting a PV directly.</p>
 
-<h2>Dynamic provisioning and where StorageClass fits</h2>
-<p>A StorageClass is the piece that turns "I need 1Gi of storage" into an actual disk, automatically. It names a <strong>provisioner</strong> — the plugin or CSI driver that talks to the real storage backend — plus the default reclaim policy and binding behavior every PVC using it will get:</p>
-<pre><code>apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: fast-ssd
-provisioner: pd.csi.storage.gke.io
-volumeBindingMode: WaitForFirstConsumer
-reclaimPolicy: Retain
-allowVolumeExpansion: true
-</code></pre>
-<p><strong>Dynamic provisioning</strong> (the default on GKE/EKS/AKS) means a PVC just names a <code>storageClassName</code> and the StorageClass's provisioner creates a matching PV for it — no admin has to hand-create anything. <strong>Static provisioning</strong> is the older pattern: an admin creates PVs ahead of time, and a PVC binds to one of them by matching size and access mode, with no StorageClass involved at all.</p>
-<p>One field changes <em>when</em> that automatic PV actually gets created: <code>volumeBindingMode</code>. Left unset, it defaults to <code>Immediate</code> — the PV is provisioned the moment the PVC is created, before any Pod exists to use it. Set to <code>WaitForFirstConsumer</code>, provisioning is delayed until a Pod that references the PVC is actually scheduled. This matters most on multi-zone clusters: with <code>Immediate</code>, the disk can end up provisioned in a zone the eventual Pod can't be scheduled into (because of node selectors, affinity, or just where capacity happens to be), leaving the Pod permanently unschedulable. <code>WaitForFirstConsumer</code> waits until the scheduler has already picked a node, then provisions storage in that node's zone — this is why it's the field to check first when a Pod is stuck <code>Pending</code> on a multi-zone cluster.</p>
+<p>Most clusters (GKE included) auto-create the PV for you — this is <strong>dynamic provisioning</strong>, triggered by <code>storageClassName</code>. The older pattern, <strong>static provisioning</strong>, is an admin hand-creating PVs ahead of time.</p>
 
-<h2>Reclaim policies: what happens when the claim goes away</h2>
-<p>A PV's <code>persistentVolumeReclaimPolicy</code> decides what happens to the underlying storage once its PVC is deleted:</p>
-<table>
-<tr><th>Reclaim policy</th><th>What happens to the PV</th><th>What happens to the data</th></tr>
-<tr><td><code>Delete</code></td><td>The PV object is deleted</td><td>Deleted along with it — this is the default a StorageClass gives dynamically-provisioned volumes if you don't set <code>reclaimPolicy</code> yourself</td></tr>
-<tr><td><code>Retain</code></td><td>The PV stays, status moves to <code>Released</code></td><td>Untouched; won't bind to a new PVC automatically — an admin must manually reclaim or delete it</td></tr>
-<tr><td><code>Recycle</code></td><td>N/A</td><td>Deprecated by the Kubernetes docs — dynamic provisioning replaced it; don't use it in new manifests</td></tr>
-</table>
+<h2>What happens when the PVC is deleted</h2>
+<p>A PV's <code>persistentVolumeReclaimPolicy</code> decides what happens to the underlying storage once its PVC is gone:</p>
+<ul>
+<li><strong>Delete</strong> — the PV <em>and</em> the real storage behind it are deleted too. The default for dynamically-provisioned volumes.</li>
+<li><strong>Retain</strong> — the PV is kept (status <code>Released</code>), data intact, but it won't bind to a new PVC automatically. An admin has to manually reclaim or delete it. Use this for anything you can't afford to lose to a mistaken <code>kubectl delete pvc</code>.</li>
+<li><strong>Recycle</strong> — deprecated, don't use it.</li>
+</ul>
 <pre><code>kubectl get pv                                    # STATUS column: Bound / Released / Available
 kubectl patch pv &lt;name&gt; -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
 </code></pre>
-<p>Two details worth holding onto: the reclaim policy lives on the <em>PV</em>, not the PVC, and it can be changed on an existing, already-bound PV at any time with the <code>patch</code> above — you don't have to get it right only at creation time, but you do have to remember to check it.</p>
 
-<h2>Access modes</h2>
-<p>An <code>accessModes</code> entry on a PVC describes how many nodes and Pods can mount the volume, and whether they can write:</p>
-<table>
-<tr><th>Access mode</th><th>Abbreviation</th><th>What it allows</th></tr>
-<tr><td>ReadWriteOnce</td><td>RWO</td><td>Read-write, mounted by one node at a time (any number of Pods co-located on that node can share it)</td></tr>
-<tr><td>ReadOnlyMany</td><td>ROX</td><td>Read-only, mounted by many nodes at once</td></tr>
-<tr><td>ReadWriteMany</td><td>RWX</td><td>Read-write, mounted by many nodes at once — needs a backend like NFS; most cloud block storage doesn't support it</td></tr>
-<tr><td>ReadWriteOncePod</td><td>RWOP</td><td>Read-write, restricted to exactly one Pod cluster-wide (not just one node) — CSI volumes only</td></tr>
-</table>
-
-<h2>Production example</h2>
-<p class="callout production"><strong>Production note:</strong> production databases almost never run on the default <code>Delete</code> policy. The usual pattern is either <code>Retain</code> on the StorageClass (or patched onto the PV after the fact) so a mistaken PVC deletion leaves the disk recoverable, paired with an actual scheduled backup — cloud disk snapshots, or an in-cluster tool like Velero — since <code>Retain</code> alone only stops the disk from being destroyed, it doesn't back anything up. This connects directly to StatefulSets, covered in Lesson 12: a StatefulSet uses <code>volumeClaimTemplates</code> to create one PVC per replica automatically, and its <code>persistentVolumeClaimRetentionPolicy</code> field — beta since Kubernetes v1.27 — controls whether those PVCs are deleted when a replica is removed or the StatefulSet itself is deleted. Its default for both cases is <code>Retain</code>: a StatefulSet's storage survives Pod churn, scale-downs, and even StatefulSet deletion unless someone explicitly opts into <code>Delete</code>. The lesson to take from both mechanisms together: the controller managing your Pods doesn't decide your data's fate — the reclaim policy and retention policy do, and both default toward safety for exactly this reason.</p>
-
-<h2>Hands-on exercise</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Prove that deleting and recreating a Pod does not touch the data behind its PVC — the exact claim the mental model above makes.</p>
-<h4>Scenario</h4>
-<p>Write a file into a PVC-backed Pod, delete the Pod (not the PVC), recreate it, and confirm the file survived.</p>
-<h4>Environment assumptions</h4>
-<p>Any cluster with a default StorageClass (kind, minikube, or a real dev cluster) — run <code>kubectl get storageclass</code> first and confirm one is marked <code>(default)</code>. No existing <code>my-pvc</code> PVC or <code>pvc-pod</code> Pod in the current namespace.</p>
-<h4>Commands</h4>
-<pre><code>cat &lt;&lt;EOF | kubectl apply -f -
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: my-pvc
-spec:
-  accessModes: ["ReadWriteOnce"]
-  resources:
-    requests:
-      storage: 1Gi
-EOF
-
-cat &lt;&lt;EOF | kubectl apply -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: pvc-pod
-spec:
-  containers:
-    - name: app
-      image: nginx:1.29
-      volumeMounts:
-        - name: data
-          mountPath: /usr/share/nginx/html
-  volumes:
-    - name: data
-      persistentVolumeClaim:
-        claimName: my-pvc
-EOF
-
-kubectl wait --for=condition=Ready pod/pvc-pod --timeout=60s
-kubectl exec pvc-pod -- sh -c 'echo "hello from before the delete" > /usr/share/nginx/html/proof.txt'
-kubectl delete pod pvc-pod
-
-cat &lt;&lt;EOF | kubectl apply -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: pvc-pod
-spec:
-  containers:
-    - name: app
-      image: nginx:1.29
-      volumeMounts:
-        - name: data
-          mountPath: /usr/share/nginx/html
-  volumes:
-    - name: data
-      persistentVolumeClaim:
-        claimName: my-pvc
-EOF
-
-kubectl wait --for=condition=Ready pod/pvc-pod --timeout=60s
-kubectl exec pvc-pod -- cat /usr/share/nginx/html/proof.txt</code></pre>
-<h4>Expected result</h4>
-<p>The final command prints <code>hello from before the delete</code> — read back by the second Pod, which never existed when that file was written.</p>
-<h4>Verification</h4>
-<p>Don't just trust that it "looks like" a new Pod — check <code>kubectl get pod pvc-pod -o jsonpath='{.metadata.uid}'</code> before and after the delete; the UIDs should differ. Then check <code>kubectl get pvc my-pvc -o jsonpath='{.metadata.uid}'</code> — that UID should be identical throughout. Same claim, same disk, two different Pods.</p>
-<h4>Common failure</h4>
-<p>If the second Pod never reaches <code>Ready</code>, run <code>kubectl describe pod pvc-pod</code> first. On a single-node kind/minikube cluster this almost never happens, but on a multi-node cluster a PV tied to one zone can leave the new Pod stuck <code>Pending</code> if it's scheduled onto a node in a different zone — a preview of this lesson's troubleshooting section, not a bug in this exercise.</p>
-<h4>Troubleshooting</h4>
-<p>If the PVC itself hangs at <code>Pending</code> before you even get to the Pod, run <code>kubectl get storageclass</code> — no StorageClass marked <code>(default)</code> means you need to add <code>storageClassName: &lt;name&gt;</code> to the PVC explicitly rather than waiting for a default that doesn't exist.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete pod pvc-pod --ignore-not-found
-kubectl delete pvc my-pvc --ignore-not-found</code></pre>
-<h4>Production lesson</h4>
-<p>This is the boring, reassuring half of the story — Pod churn (crashes, node drains, rollouts) is safe by design. The failure scenario next covers the half that isn't boring: what happens when someone deletes the PVC instead of the Pod.</p>
-</div>
-
-<h2>Failure scenario</h2>
-<p>A realistic incident built entirely from the default this lesson keeps returning to: <code>Delete</code>.</p>
-<ol class="timeline">
-<li><span class="t">Mon 16:40</span> A platform engineer runs a "namespace cleanup" script ahead of decommissioning an old <code>staging-billing</code> environment: <code>kubectl delete pvc -n staging-billing --all</code>, to tidy up leftover claims before deleting the namespace itself.</li>
-<li><span class="t">Mon 16:41</span> The wildcard also matches <code>invoices-db-pvc</code> — a PVC that, unlike everything else in that namespace, is quietly backing a real Postgres instance someone deployed there as a "temporary" fix months ago and never moved.</li>
-<li><span class="t">Mon 16:41</span> <code>kubectl delete pvc</code> returns instantly. The bound PV's reclaim policy was the dynamic-provisioning default, <code>Delete</code> — the underlying cloud disk is destroyed as part of the same operation, not on a delay.</li>
-<li><span class="t">Tue 09:15</span> Support tickets start: the billing dashboard shows no data for the last quarter. On-call checks the Postgres Pod — it's <code>Running</code>, healthy, zero restarts... and completely empty. Its StatefulSet noticed the PVC was gone and had a fresh, empty one provisioned in its place automatically.</li>
-<li><span class="t">Tue 09:32</span> <code>kubectl get pv</code> shows no record of the old volume at all — not <code>Released</code>, not <code>Failed</code>, simply gone. <code>kubectl get events -n staging-billing --sort-by=.lastTimestamp</code> confirms the PVC delete event from Monday afternoon, 17 hours earlier.</li>
-<li><span class="t">Tue 09:40</span> Root cause confirmed: the cleanup script's <code>--all</code> flag matched a PVC it had no business touching, and the default <code>Delete</code> reclaim policy left nothing to restore — no snapshot existed for this "temporary" database either.</li>
-<li><span class="t">Tue 10:15</span> Recovery: restored from the last full database export, three weeks old. A quarter's worth of billing data between the export and the deletion is unrecoverable.</li>
-</ol>
-<p>Nothing here required a bug, an attacker, or even a missing RBAC rule. A wildcard flag and a reclaim policy default did all of the damage.</p>
-
-<h2>Troubleshooting workflow</h2>
-<p>The general method, applied to "my Pod is stuck <code>Pending</code> and I suspect its PVC":</p>
-<ol class="troubleshooting">
-<li><strong>Confirm the symptom.</strong> <code>kubectl get pod &lt;name&gt;</code> — is it genuinely <code>Pending</code>, and for how long? A few seconds of <code>Pending</code> during normal scheduling isn't this problem.</li>
-<li><strong>Define scope.</strong> <code>kubectl get pvc -n &lt;namespace&gt;</code> — is the Pod's PVC itself <code>Bound</code>, or stuck <code>Pending</code> too? If the PVC is <code>Pending</code>, the Pod was never going to schedule — fix the PVC, not the Pod.</li>
-<li><strong>Check recent changes.</strong> <code>kubectl get events -n &lt;namespace&gt; --sort-by=.lastTimestamp</code> — look for <code>FailedScheduling</code> on the Pod and a provisioning failure on the PVC.</li>
-<li><strong>Inspect the right state.</strong> <code>kubectl describe pvc &lt;name&gt;</code> for its Events section, then <code>kubectl get storageclass</code> — does the <code>storageClassName</code> the PVC asks for actually exist on this cluster? A typo'd or missing StorageClass name is the single most common cause.</li>
-<li><strong>Form a hypothesis.</strong> In rough order of likelihood: (a) no StorageClass matches the requested name, (b) a static PV exists but its <code>accessModes</code> or capacity don't satisfy the claim, (c) <code>volumeBindingMode: WaitForFirstConsumer</code> is working as designed and is simply waiting for a schedulable Pod, (d) a multi-zone cluster provisioned the disk in a zone the Pod can't be scheduled into.</li>
-<li><strong>Test one variable.</strong> Read the scheduler's own reason string in <code>kubectl describe pod &lt;name&gt;</code>'s Events section — <code>node(s) had volume node affinity conflict</code> confirms a zone mismatch specifically; don't change anything until you've distinguished that from a plain "no PV available" message.</li>
-<li><strong>Apply the safest fix.</strong> Correct the StorageClass name, or create the missing one. Don't delete and recreate the PVC to "reset" it — that risks the exact data-loss failure mode this lesson is built around if the PVC had already bound to something real.</li>
-<li><strong>Verify recovery.</strong> Confirm <code>kubectl get pvc &lt;name&gt;</code> shows <code>Bound</code>, then that <code>kubectl get pod &lt;name&gt;</code> shows <code>Running</code> — check both, since a Pod can go <code>Running</code> against the wrong PVC if you edited the wrong field.</li>
-<li><strong>Document the root cause.</strong> "PVC requested StorageClass X, which doesn't exist in this cluster" — specific enough that the next engineer doesn't re-diagnose from scratch.</li>
-<li><strong>Prevent recurrence.</strong> Add a pre-deploy check (admission policy, CI lint, or a documented list) of valid StorageClass names per cluster, since this typo only ever shows up after the manifest is applied.</li>
-</ol>
-
-<p class="callout security"><strong>Security note:</strong> RBAC controls who can run <code>kubectl delete pvc</code> — the <code>delete</code> verb on the <code>persistentvolumeclaims</code> resource. In a shared cluster, treat that permission the way you'd treat access to a production database's drop privileges, not the way you'd treat "delete a Pod." One safety net already exists for free: Kubernetes attaches a <code>kubernetes.io/pvc-protection</code> finalizer to any PVC currently mounted by a running Pod, so <code>kubectl delete pvc</code> against an in-use claim doesn't actually delete it immediately — it hangs in <code>Terminating</code> until the last Pod using it is gone. That protects against deleting a PVC a Pod is actively using; it does nothing to protect an unused-but-still-important PVC, which is exactly what the failure scenario above hit.</p>
-
-<p class="callout production"><strong>Reliability note:</strong> reclaim policy is not a backup strategy — it's a last-resort brake. <code>Retain</code> only guarantees the disk isn't destroyed; it doesn't guarantee anyone remembers it exists, and a <code>Released</code> PV with no documentation is effectively lost to the next engineer anyway. For anything that matters, pair <code>Retain</code> with an actual, scheduled backup — cloud disk snapshots, or an in-cluster tool like Velero — so recovery doesn't depend on someone having picked the right reclaim policy months before the incident that tests it.</p>
-
-<p class="callout mistake"><strong>Common mistake:</strong> trusting the default <code>Delete</code> reclaim policy for anything you'd be upset to lose. It's the right default for scratch space and CI runners — disposable by design — and the wrong default for a database, precisely because nobody has to opt into it; dynamically-provisioned volumes start there automatically, with no warning.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> assuming <code>kubectl delete pod</code> touches the data behind its PVC. It doesn't — the hands-on exercise above proves it — but the fear of it makes people avoid routine, harmless Pod restarts, while the opposite mistake (assuming everything storage-related is just as safe to delete) is what actually causes incidents.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> setting <code>storageClassName</code> to a name that looks right but doesn't exist on this particular cluster. StorageClass names aren't standardized across providers, or even across clusters on the same provider — copying a manifest from one cluster to another is one of the most common ways a PVC ends up stuck <code>Pending</code>. Worth knowing before you try to "fix" it: <code>storageClassName</code> is immutable once a PVC is created, so the actual fix is usually deleting and recreating the PVC, not patching it.</p>
-
-<h2>Decision guide</h2>
-<p><strong>Reclaim policy:</strong></p>
-<table>
-<tr><th>Policy</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
-<tr><td><code>Delete</code></td><td>Scratch space, CI/CD runners, dev/test environments, anything trivially recreated</td><td>Databases, anything holding data you can't regenerate on demand</td><td>Zero cleanup effort; zero recovery if the PVC is ever deleted by mistake</td></tr>
-<tr><td><code>Retain</code></td><td>Production databases, anything where losing data costs more than a manual cleanup step</td><td>High-churn ephemeral workloads — <code>Released</code> PVs pile up and need someone to actually clean them</td><td>Survives PVC deletion; needs a human or automation to reclaim the released PV afterward</td></tr>
-<tr><td><code>Recycle</code></td><td>Never — deprecated</td><td>Always</td><td>Superseded by dynamic provisioning; don't use it in new manifests</td></tr>
-</table>
-<p><strong>Default recommendation:</strong> if you can't answer "what's our backup strategy for this volume?" in one sentence, treat it as important and set <code>Retain</code> — reversing that decision after a <code>Delete</code> has already run isn't possible.</p>
-
-<p><strong>Access mode:</strong></p>
-<table>
-<tr><th>Mode</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
-<tr><td>ReadWriteOnce (RWO)</td><td>A single Pod, or several co-located on one node, need read-write — the common case, and what most cloud block storage supports</td><td>Pods spread across multiple nodes all need write access to the same volume</td><td>Widest storage-backend support; ties the volume to one node at a time</td></tr>
-<tr><td>ReadOnlyMany (ROX)</td><td>Many Pods across many nodes need to read the same static data — shared config, reference datasets</td><td>Anything needs to write to it</td><td>Good fan-out for reads; no write path exists at all</td></tr>
-<tr><td>ReadWriteMany (RWX)</td><td>Multiple Pods on multiple nodes must genuinely read and write the same files — a shared upload directory</td><td>A single writer would actually do — RWX backends cost more and run slower than block storage</td><td>Most flexible of the four; also the least commonly supported by cheap default backends</td></tr>
-<tr><td>ReadWriteOncePod (RWOP)</td><td>You must guarantee exactly one Pod cluster-wide has it mounted, not just one node — e.g. preventing a bad rollout from double-mounting a volume</td><td>The volume plugin isn't CSI, or the stricter single-Pod guarantee isn't needed</td><td>Strongest safety guarantee of the four; CSI-only, so not universally available</td></tr>
-</table>
-<p><strong>Default recommendation:</strong> reach for ReadWriteOnce unless you have a specific, named reason for something else — it's what almost every stateful workload actually needs, and what almost every storage backend actually supports.</p>
-
-<h2>Knowledge check</h2>
+<h2>Try it — before looking below</h2>
 <div class="quiz">
 <p>Q1. Does a Pod's <code>spec.volumes</code> reference a PV or a PVC?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">A PVC — always. The Pod API has no field for mounting a PV directly.</div>
+<div class="answer" id="a1">A PVC — always. The Pod never mounts a PV directly.</div>
 </div>
 
 <div class="quiz">
@@ -245,115 +65,53 @@ kubectl delete pvc my-pvc --ignore-not-found</code></pre>
 
 <div class="quiz">
 <p>Q3. A PVC holding a production database is accidentally deleted. Its PV's reclaim policy is <code>Retain</code>. Is the data gone?</p>
-<input type="text" id="q3" placeholder="type your answer">
+<input type="text" id="q3b" placeholder="type your answer">
+<button onclick="document.getElementById('a3b').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3b">No. The PV moves to <code>Released</code>, not deleted — the underlying disk and its data are untouched. An admin has to manually re-bind or clean it up; nothing happens automatically. If the policy had been <code>Delete</code>, the data would already be gone.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Write a Pod that mounts the PVC above.</p>
+<ul>
+<li>mounts <code>my-pvc</code> as a volume</li>
+<li>mounts it at a path in the container, e.g. <code>/usr/share/nginx/html</code></li>
+</ul>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
 <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-<div class="answer" id="a3">No. The PV moves to <code>Released</code>, not deleted — the underlying disk and its data are untouched. An admin has to manually re-bind or clean it up; nothing happens automatically. If the policy had been <code>Delete</code>, the data would already be gone.</div>
-</div>
-
-<div class="quiz">
-<p>Q4. You create a StorageClass but leave <code>reclaimPolicy</code> unset. What reclaim policy do PVs it dynamically provisions get?</p>
-<div class="opts">
-<label>A. Delete — the field defaults to Delete when omitted</label>
-<label>B. Retain — the field defaults to Retain when omitted</label>
-<label>C. Recycle — the field defaults to Recycle when omitted</label>
-<label>D. None — the field is required and provisioning fails</label>
-</div>
-<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a4">A. An omitted <code>reclaimPolicy</code> on a StorageClass defaults to <code>Delete</code> — the same default that makes this lesson's failure scenario possible. Setting it to <code>Retain</code> is an explicit, deliberate choice.</div>
-</div>
-
-<div class="quiz">
-<p>Q5. A StorageClass sets <code>volumeBindingMode: WaitForFirstConsumer</code>. When does the volume actually get provisioned?</p>
-<div class="opts">
-<label>A. As soon as the PVC object is created, before any Pod exists</label>
-<label>B. Only after a Pod that uses the PVC is scheduled</label>
-<label>C. Only after an administrator manually approves the claim</label>
-<label>D. Only after the StorageClass itself is deleted and recreated</label>
-</div>
-<button onclick="document.getElementById('a5').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a5">B. Provisioning waits until the scheduler has picked a node for a Pod using the PVC — this avoids provisioning a disk in a zone the Pod can never be scheduled into. <code>Immediate</code> (the default when unset) provisions right away instead, with no awareness of the eventual Pod's placement.</div>
-</div>
-
-<h2>Certification mapping</h2>
-<p><strong>Storage (10%)</strong> is one of the most narrowly-scoped domains on the exam, and this lesson maps to almost all of it — PV, PVC, StorageClass, reclaim policies, and access modes are close to the entire domain. It also feeds directly into <strong>Troubleshooting (30%)</strong>: "a Pod is stuck <code>Pending</code> because of storage" is a real, recurring exam scenario pattern, not a hypothetical one.</p>
-
-<h2>Production challenge</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Diagnose and fix a Pod stuck <code>Pending</code> because of a PVC/StorageClass mismatch, using only the troubleshooting method above — not this lesson's exercise as an answer key.</p>
-<h4>Scenario</h4>
-<p>A teammate's manifest requests a StorageClass named <code>fast-ssd</code> that doesn't exist on your cluster. Build the broken state yourself first, then diagnose it as if you'd inherited it cold.</p>
-<h4>Environment assumptions</h4>
-<p>A kind/minikube cluster with a default StorageClass (commonly named <code>standard</code> — check with <code>kubectl get storageclass</code> and substitute your actual default name in the fix step below).</p>
-<h4>Commands</h4>
-<pre><code># 1. Build the broken state
-cat &lt;&lt;EOF | kubectl apply -f -
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: broken-pvc
-spec:
-  accessModes: ["ReadWriteOnce"]
-  storageClassName: fast-ssd
-  resources:
-    requests:
-      storage: 1Gi
-EOF
-
-cat &lt;&lt;EOF | kubectl apply -f -
-apiVersion: v1
+<pre class="answer" id="a3"><code>apiVersion: v1
 kind: Pod
 metadata:
-  name: broken-pod
+  name: pvc-pod
 spec:
   containers:
     - name: app
-      image: nginx:1.29
+      image: nginx
       volumeMounts:
         - name: data
           mountPath: /usr/share/nginx/html
   volumes:
     - name: data
       persistentVolumeClaim:
-        claimName: broken-pvc
-EOF
-
-# 2. Diagnose — don't skip straight to a fix
-kubectl get pod broken-pod
-kubectl get pvc broken-pvc
-kubectl get storageclass
-kubectl describe pvc broken-pvc</code></pre>
-<h4>Expected result</h4>
-<p><code>broken-pod</code> stays <code>Pending</code> indefinitely; <code>broken-pvc</code> stays <code>Pending</code> too; <code>kubectl get storageclass</code> shows no <code>fast-ssd</code> entry; <code>kubectl describe pvc</code>'s Events show a provisioning failure referencing the missing StorageClass.</p>
-<h4>Verification</h4>
-<p>Confirm the diagnosis before touching anything: the PVC being <code>Pending</code>, not just the Pod, is what proves this is a storage problem rather than an unrelated scheduling issue (taints, resource requests, and so on).</p>
-<h4>Common failure</h4>
-<p>Deleting and recreating the Pod, expecting that to help. It won't — the Pod was never the broken object, and this "fix" just repeats the same failure under a new Pod name.</p>
-<h4>Troubleshooting</h4>
-<p>If <code>kubectl describe pvc</code>'s Events section looks empty, wait a few seconds and re-run it — provisioning-failure events aren't always instant. If it's still empty, confirm the cluster has a dynamic provisioner running at all; some bare-metal or kubeadm clusters have none by default, which is a cluster-level gap, not a manifest typo.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete pod broken-pod --ignore-not-found
-kubectl delete pvc broken-pvc --ignore-not-found</code></pre>
-<p>Note: <code>storageClassName</code> is immutable once a PVC exists, so the real fix is recreating the PVC with the correct name — not patching this one. Deleting it here is safe specifically because it never bound to a PV and therefore never held real data; that would not be true in production.</p>
-<h4>Production lesson</h4>
-<p>The fix, once diagnosed, is trivial. The actual skill this challenge tests is not jumping straight to "restart the Pod" before confirming which object is actually broken — and the same discipline, applied in reverse, is what would have stopped the failure scenario earlier in this lesson from ever reaching production data.</p>
+        claimName: my-pvc
+</code></pre>
 </div>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/storage/persistent-volumes</a> and <a href="https://kubernetes.io/docs/concepts/storage/storage-classes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/storage/storage-classes</a> — verified 2026-08-03. Both are searchable in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/storage/persistent-volumes</a></p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>PV = real storage, cluster-scoped. PVC = namespaced request. Pod mounts the PVC, never the PV — this indirection is why Pod deletion never touches data.</li>
-    <li>Dynamic provisioning (PVC + StorageClass) auto-creates the PV; <code>volumeBindingMode: WaitForFirstConsumer</code> delays that until a Pod is scheduled, avoiding zone-mismatch <code>Pending</code> Pods.</li>
-    <li><code>reclaimPolicy</code>: <code>Delete</code> (default — storage dies with the PVC), <code>Retain</code> (storage survives, needs manual cleanup), <code>Recycle</code> (deprecated).</li>
-    <li><code>accessModes</code>: ReadWriteOnce (one node), ReadOnlyMany (many, read-only), ReadWriteMany (many, read-write), ReadWriteOncePod (exactly one Pod cluster-wide, CSI only).</li>
-    <li>Deleting the wrong PVC under the default <code>Delete</code> policy is one of the few genuinely irreversible mistakes in this course — treat <code>kubectl delete pvc</code> with the same caution as a production database's drop privileges.</li>
+    <li>PV = real storage, cluster-scoped. PVC = namespaced request. Pod mounts the PVC, never the PV.</li>
+    <li>Dynamic provisioning (PVC + StorageClass) auto-creates the PV — the default on GKE/cloud.</li>
+    <li><code>accessModes</code>: ReadWriteOnce (one node), ReadOnlyMany (many, read-only), ReadWriteMany (many, read-write).</li>
+    <li><code>reclaimPolicy</code>: Delete (default, storage goes with the PVC) vs. Retain (storage survives, needs manual cleanup).</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck, or got a different result than "Expected result" above? Paste the exact command and output back to your teacher — a mismatch between what you saw and what this lesson predicted is the most useful thing you can bring back.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0006-configmap-secret.html">&larr; ConfigMap &amp; Secret</a>

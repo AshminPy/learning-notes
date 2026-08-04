@@ -3,210 +3,89 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lesson 2 — Pod + Labels</title>
+<title>Lesson 2 — Pod with labels</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 
 <p class="eyebrow">Kubernetes / CKA — Lesson 2 of 24</p>
-<h1>Pod + Labels</h1>
+<h1>Pod with labels</h1>
 
-<h2>Why this matters</h2>
-<p>Every object in Kubernetes that depends on another object — a Service routing to Pods, a ReplicaSet managing Pods, a NetworkPolicy deciding who can talk to whom — finds its target the same way: by matching labels, live, not by looking up a name. That's convenient right up until someone runs a bulk <code>kubectl label</code> command with a typo, or a script re-labels a Pod for an unrelated reason, and a production Pod silently drops out of a Service's routing or a ReplicaSet's management — with no error, no restart, and no obvious symptom pointing at "labels" as the cause. The exact same mechanism is also a real, documented debugging technique: pull a live Pod out from under its controller on purpose, without deleting it, just by changing what it's wearing.</p>
+<p>A Pod already has a name. A label is different — it's extra key/value metadata you stick on top, like <code>tier: frontend</code>. A Pod can carry many labels at once.</p>
 
-<p class="callout"><strong>Mental model:</strong> a Pod's name is like an employee's badge number — permanent, unique, and nobody in the building actually uses it in conversation. Labels are what people key off instead: "everyone with a blue lanyard," "anyone tagged Frontend." Swap someone's lanyard mid-shift and every rule keyed on lanyard color re-evaluates against them immediately — no one had to move them, re-badge them at the front desk, or restart their shift. Kubernetes objects work the same way: Services, ReplicaSets, and NetworkPolicies never look up a Pod by name — they continuously re-evaluate label selectors against whatever labels exist right now. This predicts something you may not expect yet: you can pull a live, healthy Pod out of a Service's traffic, or out of a Deployment's management entirely, using nothing but <code>kubectl label</code> — no delete, no apply, no downtime for the Pod itself.</p>
+<p class="callout"><strong>Simple example:</strong> think of labels like sticky notes on a box. The box has one shipping name. But you can stick many notes on it too — "fragile", "blue-team", "v2" — and other people find boxes by reading notes, not names.</p>
 
-<h2>Core concepts: label syntax</h2>
-<p>Labels live under <code>metadata.labels</code> — nothing in <code>spec</code> changes:</p>
+<h2>Labels in a manifest</h2>
 <pre><code>apiVersion: v1
 kind: Pod
 metadata:
-  name: nginx
+  name: my-nginx
   labels:
-    app: nginx
+    app: my-nginx
     tier: frontend
 spec:
   containers:
-  - name: nginx
-    image: nginx:1.29
+    - name: nginx
+      image: nginx
 </code></pre>
-<table>
-<tr><th>Part</th><th>Rule</th></tr>
-<tr><td>Key — name segment</td><td>63 characters or less; must start and end with an alphanumeric; dashes, underscores, dots allowed between</td></tr>
-<tr><td>Key — optional prefix</td><td>A DNS subdomain (253 characters max) followed by <code>/</code> — <code>kubernetes.io/</code> and <code>k8s.io/</code> are reserved for core components</td></tr>
-<tr><td>Value</td><td>63 characters or less, can be empty; if non-empty, must start and end with an alphanumeric, same allowed characters as a key's name segment</td></tr>
-</table>
-<p>A Pod can carry any number of labels at once — <code>app</code>, <code>tier</code>, <code>env</code>, <code>version</code>, whatever your team selects on. There's no ordering and no hierarchy between them; every selector match is evaluated independently.</p>
+<p>Labels live under <code>metadata.labels</code> — nothing in <code>spec</code> changes.</p>
 
-<h2>Core concepts: label selectors</h2>
-<p>A <strong>label selector</strong> is how another object says which Pods it means — "the core grouping primitive in Kubernetes," per the docs. Two selector styles exist, and which one an object supports depends on how old/new that object type is:</p>
-<table>
-<tr><th>Style</th><th>Operators</th><th>Used by</th></tr>
-<tr><td>Equality-based</td><td><code>=</code>, <code>==</code>, <code>!=</code></td><td>Service and ReplicationController's <code>spec.selector</code> — a flat key/value map, implicitly AND'ed</td></tr>
-<tr><td>Set-based</td><td><code>in</code>, <code>notin</code>, <code>exists</code> (key only)</td><td>Only <code>matchLabels</code>/<code>matchExpressions</code> on Deployment, ReplicaSet, DaemonSet, Job — <code>matchLabels</code> is equality-only, <code>matchExpressions</code> adds set-based</td></tr>
-</table>
-<p>This is why Lesson 1 and Lesson 3's Service manifest wrote <code>selector: { app: nginx }</code> as a plain map, but every controller from here on will use <code>spec.selector.matchLabels</code> instead — Services never gained set-based selector support, controllers did. On the command line, both styles work through the same flag:</p>
-<pre><code>kubectl get pods -l tier=frontend
-kubectl get pods -l tier!=frontend
-kubectl get pods -l 'environment in (production, qa)'
-kubectl get pods -l 'environment notin (dev)'
-kubectl get pods -l partition
-kubectl get pods --show-labels</code></pre>
-<p class="callout"><strong>Simple example:</strong> comma-separated conditions are always AND, never OR — <code>kubectl get pods -l 'tier=frontend,env=prod'</code> means both must be true. There's no built-in OR across different keys; if you need that, you query twice.</p>
+<h2>Why labels matter</h2>
+<p>Other objects — Services, Deployments — never point at a Pod by name. They use a <strong>selector</strong>: a set of key/value pairs matched against labels, live. Any Pod whose labels match gets picked up. Wrong or missing labels means nothing matches, silently.</p>
 
-<h2>Production example</h2>
-<p class="callout production"><strong>Production note:</strong> real fleets don't invent their own label vocabulary from scratch — Kubernetes documents a recommended shared set under the <code>app.kubernetes.io/</code> prefix specifically so tools interoperate instead of each parsing their own convention: <code>app.kubernetes.io/name</code> (e.g. <code>mysql</code>), <code>/instance</code> (a unique instance name, e.g. <code>mysql-abcxyz</code>), <code>/version</code>, <code>/component</code> (e.g. <code>database</code>), <code>/part-of</code> (the higher-level application this belongs to, e.g. <code>wordpress</code>), and <code>/managed-by</code> (e.g. <code>Helm</code>). Helm, Prometheus, and most dashboards already assume these keys exist. A real Pod fleet typically carries this shared set <em>plus</em> a handful of org-specific keys with no prefix (private to your team) — <code>team: payments</code>, <code>cost-center: 4471</code> — since unprefixed keys are explicitly reserved for that purpose and won't collide with the shared ones.</p>
+<ul>
+<li><code>kubectl get pods --show-labels</code> — show every label</li>
+<li><code>kubectl get pods -l tier=frontend</code> — filter by a label</li>
+</ul>
 
-<h2>Hands-on exercise</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Reproduce a real, documented Kubernetes technique: pull a live Pod out of a Deployment's management by relabeling it — no delete, no scale-down.</p>
-<h4>Scenario</h4>
-<p>You want to inspect one specific Pod without a ReplicaSet fighting you — as soon as you delete or drain it for debugging, the controller just replaces it. There's a cleaner way.</p>
-<h4>Environment assumptions</h4>
-<p>Any cluster you can <code>kubectl</code> into, no existing resource named <code>web</code> in the current namespace.</p>
-<h4>Commands</h4>
-<pre><code>kubectl create deployment web --image=nginx:1.29 --replicas=3
-kubectl get pods -l app=web
-# pick one Pod name from the output, then:
-kubectl label pod &lt;pod-name&gt; app=debug --overwrite
-kubectl get pods -l app=web
-kubectl get pods --show-labels</code></pre>
-<h4>Expected result</h4>
-<p>Immediately after the relabel, <code>kubectl get pods -l app=web</code> shows only 2 Pods — the one you relabeled is gone from that view, still <code>Running</code>, still fully alive. A moment later, a brand-new fourth Pod appears with <code>app=web</code>, created by the ReplicaSet to bring its matched count back to 3. Your relabeled Pod keeps running, untouched, now unmanaged.</p>
-<h4>Verification</h4>
-<p><code>kubectl get pods --show-labels</code> should show 4 Pods total: 3 with <code>app=web</code> (the original 2 plus 1 fresh replacement) and 1 with <code>app=debug</code> — same age as the others, no restarts, just no longer claimed by the ReplicaSet's selector.</p>
-<h4>Common failure</h4>
-<p>Expecting the relabeled Pod to disappear or restart. It doesn't — relabeling never touches the running container, it only changes what selectors see.</p>
-<h4>Troubleshooting</h4>
-<p>If the ReplicaSet doesn't create a replacement, check <code>kubectl get rs -l app=web</code> for its <code>DESIRED</code>/<code>CURRENT</code> counts — if <code>CURRENT</code> already reads 3 including your isolated Pod, the label change didn't take; re-run <code>kubectl get pod &lt;name&gt; --show-labels</code> to confirm <code>app=debug</code> actually landed.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete deployment web
-kubectl delete pod &lt;pod-name&gt; --ignore-not-found</code></pre>
-<h4>Production lesson</h4>
-<p>This is a genuinely useful, documented isolation technique for live debugging — and the exact same mechanism, triggered by accident instead of on purpose, is how a mislabeled Pod quietly stops being managed in production.</p>
-</div>
+<p>Labels are for <strong>selecting</strong> — that's why they're small and restricted. Info you never select on (a git commit hash, a contact) belongs in an annotation instead.</p>
 
-<h2>Failure scenario</h2>
-<p>The accidental version of the exercise above, at fleet scale instead of one Pod.</p>
-<ol class="timeline">
-<li><span class="t">11:04</span> A platform engineer runs a cleanup script meant to tag old Pods for removal: <code>kubectl label pods -l env=staging lifecycle=stale --overwrite</code>. The <code>-l env=staging</code> filter was supposed to be scoped tighter, to one team's namespace — it wasn't.</li>
-<li><span class="t">11:05</span> The script exits 0. No error, nothing in the terminal looks wrong.</li>
-<li><span class="t">11:09</span> Alerts start firing: three unrelated Deployments across two namespaces report Pods "missing" — their ReplicaSets show <code>CURRENT</code> below <code>DESIRED</code> momentarily, then climbing back up as new replacement Pods get created.</li>
-<li><span class="t">11:11</span> On-call checks <code>kubectl get pods -A --show-labels</code> and finds a growing number of Pods carrying <code>lifecycle=stale</code> that were never meant to be tagged — every one of them still <code>Running</code>, just orphaned from its ReplicaSet's selector the instant the label overwrite hit it.</li>
-<li><span class="t">11:14</span> Root cause identified: the label selector on the cleanup script (<code>env=staging</code>) matched Pods in namespaces that reused the same <code>env: staging</code> label for an unrelated purpose — the script's blast radius was defined by a label, not a namespace boundary.</li>
-<li><span class="t">11:17</span> Fix applied: remove the accidental <code>lifecycle=stale</code> label from the affected Pods so they're picked back up — but the ReplicaSets already created replacements, so the orphaned originals are deleted instead, to avoid running double capacity.</li>
-<li><span class="t">11:22</span> Verified: <code>kubectl get pods -A -l lifecycle=stale</code> returns empty; every affected Deployment's <code>CURRENT</code> matches <code>DESIRED</code> again.</li>
-</ol>
-
-<h2>Troubleshooting workflow</h2>
-<p>The general method, applied to "a controller has the wrong number of Pods, or a Pod isn't receiving traffic it should be":</p>
-<ol class="troubleshooting">
-<li><strong>Confirm the symptom.</strong> <code>kubectl get rs &lt;name&gt;</code> or <code>kubectl get deploy &lt;name&gt;</code> — compare <code>DESIRED</code> against <code>CURRENT</code>/<code>READY</code> yourself, don't trust a dashboard's cached count.</li>
-<li><strong>Define scope.</strong> One controller, or every controller sharing a label value? <code>kubectl get pods -A --show-labels</code> tells you whether this looks like one manifest change or one broad relabel operation.</li>
-<li><strong>Check recent changes.</strong> <code>kubectl get events --sort-by=.lastTimestamp -A</code> plus your own shell/CI history — <code>kubectl label</code> and <code>kubectl patch</code> commands don't show up as "deploys," so check command history, not just Git.</li>
-<li><strong>Inspect the right state.</strong> <code>kubectl describe rs &lt;name&gt;</code> to see its exact <code>Selector</code>; <code>kubectl get pods --show-labels -l &lt;that selector&gt;</code> and, separately, <code>kubectl get pods -o wide</code> without a filter, to spot Pods that exist but aren't matching anymore.</li>
-<li><strong>Form a hypothesis.</strong> For example: "extra unmanaged Pods exist with the app's old labels, minus one key that changed."</li>
-<li><strong>Test one variable.</strong> <code>kubectl get pod &lt;suspect&gt; -o jsonpath='{.metadata.labels}'</code> and diff it, field by field, against the controller's <code>spec.template.metadata.labels</code>.</li>
-<li><strong>Apply the safest fix.</strong> Relabel the orphan back if no replacement was created yet; if a replacement already exists, delete the orphan instead of relabeling it back, to avoid running extra capacity nobody asked for.</li>
-<li><strong>Verify recovery.</strong> <code>DESIRED == CURRENT == READY</code> on the controller, and no stray Pods left carrying the accidental label anywhere in the cluster (<code>-A</code>, not just one namespace).</li>
-<li><strong>Document the root cause.</strong> Name the exact selector/label that caused the blast radius mismatch — "script used <code>env=staging</code> as its filter, which wasn't unique to the intended namespace" is specific; "a labeling mistake" is not.</li>
-<li><strong>Prevent recurrence.</strong> Scope bulk-label operations by namespace (<code>-n</code>) in addition to a label selector, never a label selector alone across the whole cluster — and dry-run (<code>--dry-run=client -o yaml</code>) any bulk <code>kubectl label</code> before it runs for real.</li>
-</ol>
-
-<p class="callout security"><strong>Security note:</strong> labels aren't just a Service/Deployment concern — <code>NetworkPolicy</code>'s <code>podSelector</code> and <code>namespaceSelector</code> (Lesson 10) also match on labels. Anyone with RBAC permission to <code>patch</code>/<code>update</code> Pods can change which NetworkPolicies apply to that Pod, without touching the NetworkPolicy object itself or needing any permission on it — label-write access to a Pod is effectively network-policy-write access to that Pod too, and it's easy to grant the former without realizing you've granted the latter.</p>
-
-<p class="callout production"><strong>Reliability note:</strong> in <code>apps/v1</code>, a Deployment's <code>spec.selector</code> is immutable once created — the API server rejects an attempted change with a "field is immutable" error, precisely to stop the kind of accidental mass-orphaning this lesson describes at the controller-definition level. That protection only covers the selector field itself; it does nothing to stop someone from relabeling the Pods it selects, which is the far more common way this failure actually happens.</p>
-
-<p class="callout mistake"><strong>Common mistake:</strong> writing a Deployment where <code>spec.selector.matchLabels</code> doesn't exactly match <code>spec.template.metadata.labels</code>. For Deployment/ReplicaSet, this isn't a silent empty-match like a Service — the object is rejected outright as invalid, because the template must satisfy the controller's own selector.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> using a label for data nobody will ever select on — a full git commit SHA, a free-text description, a timestamp. It technically works up to 63 characters, but it bloats every selector index for no benefit. That's exactly what annotations exist for (see Decision guide below); labels are for querying, not storage.</p>
-
-<h2>Decision guide</h2>
-<table>
-<tr><th>Option</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
-<tr><td>Label</td><td>Anything a Service, controller, NetworkPolicy, or <code>kubectl -l</code> needs to select on</td><td>High-cardinality or unstructured data (full commit hash, free text)</td><td>Strict 63-char value limit, indexed and matched on every selector evaluation</td></tr>
-<tr><td>Annotation</td><td>Metadata tools/humans read but never select on — build info, config-as-JSON, tool directives</td><td>Anything a Service or controller needs to find objects by</td><td>Not selectable at all — "in contrast, annotations are not used to identify and select objects," per the docs</td></tr>
-<tr><td>Object name</td><td>The one stable, unique identifier for direct lookup (<code>kubectl get pod &lt;name&gt;</code>)</td><td>Grouping or querying across many objects</td><td>Must be unique per namespace; can't express "all of these" the way a label can</td></tr>
-</table>
-<p><strong>Default recommendation:</strong> if you'll ever type <code>kubectl get X -l key=value</code> or reference it in a selector, it's a label. If you'll only ever read it in <code>kubectl describe</code> or a UI, it's an annotation.</p>
-
-<h2>Knowledge check</h2>
+<h2>Try it — before looking below</h2>
 <div class="quiz">
 <p>Q1. Under which top-level field of a Pod manifest do labels live?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1"><code>metadata.labels</code> — a map of key/value pairs, separate from everything in <code>spec</code>.</div>
+<div class="answer" id="a1"><code>metadata.labels</code> — a map of key/value pairs.</div>
 </div>
+
+<h2>Now write your own</h2>
+<p>Take the Lesson 1 Pod manifest and add labels to it — by hand. Write:</p>
+<ul>
+<li>the same Pod: name <code>my-nginx</code>, container <code>nginx</code> running image <code>nginx</code></li>
+<li>two labels: <code>app: my-nginx</code> and <code>tier: frontend</code></li>
+</ul>
+<p>Apply it, then check with <code>kubectl get pods --show-labels</code>. Try it before you look below.</p>
 
 <div class="quiz">
-<p>Q2. You relabel a running Pod so it no longer matches its Deployment's selector. What happens to the Pod itself?</p>
-<div class="opts">
-<label>A. It's deleted immediately by the controller.</label>
-<label>B. It keeps running, now unmanaged by that controller.</label>
-<label>C. It restarts with the new label applied.</label>
-<label>D. The relabel is rejected by the API server.</label>
-</div>
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a2">B. The Pod keeps running exactly as it was — relabeling never touches the container. The ReplicaSet just stops counting it and creates a replacement to restore its desired count.</div>
-</div>
-
-<div class="quiz">
-<p>Q3. Which selector style — equality-based or set-based — can a plain Service's <code>spec.selector</code> use?</p>
-<input type="text" id="q3" placeholder="type your answer">
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-<div class="answer" id="a3">Equality-based only. Set-based operators (<code>in</code>/<code>notin</code>/<code>exists</code>) are only available through <code>matchLabels</code>/<code>matchExpressions</code> on newer controllers (Deployment, ReplicaSet, DaemonSet, Job) — Services never gained that.</div>
-</div>
-
-<h2>Certification mapping</h2>
-<p>Foundational — not separately weighted, but selectors are the mechanism every scored domain leans on: you cannot correctly write or debug <strong>Workloads &amp; Scheduling (15%)</strong> or <strong>Services &amp; Networking (20%)</strong> objects, and you cannot reason about <strong>Troubleshooting (30%)</strong>'s most common "silently found nothing" failure class, without knowing exactly how label selectors match.</p>
-
-<h2>Production challenge</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Diagnose and fix a ReplicaSet running more Pods than its spec says it should — without being told which Pod is the orphan.</p>
-<h4>Scenario</h4>
-<p>A teammate was debugging a Pod in the <code>checkout</code> Deployment yesterday using the isolation technique from this lesson's exercise, then went home without cleaning up.</p>
-<h4>Environment assumptions</h4>
-<p>A kind/minikube cluster. Reproduce the leftover state yourself first:</p>
-<pre><code>kubectl create deployment checkout --image=nginx:1.29 --replicas=3
-kubectl get pods -l app=checkout -o name | head -n1 | xargs -I{} kubectl label {} app=checkout-debug --overwrite</code></pre>
-<h4>Commands</h4>
-<p>Diagnose using only the troubleshooting workflow above, then fix it:</p>
-<pre><code>kubectl get deploy checkout
-kubectl get rs -l app=checkout
-kubectl get pods --show-labels | grep checkout</code></pre>
-<h4>Expected result</h4>
-<p><code>kubectl get deploy checkout</code> shows <code>3/3</code> ready — it looks completely healthy. The extra, unmanaged Pod only shows up once you list Pods without filtering by the Deployment's own selector and read every row's labels.</p>
-<h4>Verification</h4>
-<p>Once you've found the Pod carrying <code>app=checkout-debug</code>, confirm it's genuinely orphaned (no matching ReplicaSet claims it) before deleting it:</p>
-<pre><code>kubectl get pod &lt;orphan-name&gt; -o jsonpath='{.metadata.ownerReferences}'
-kubectl delete pod &lt;orphan-name&gt;</code></pre>
-<p>An orphaned Pod's <code>ownerReferences</code> still names the ReplicaSet that originally created it — but that ReplicaSet's own <code>spec.selector</code> no longer matches its current labels, which is what actually matters, not the historical owner reference.</p>
-<h4>Common failure</h4>
-<p>Deleting a Pod from the Deployment's normal 3 instead of the orphan, because <code>kubectl get pods -l app=checkout</code> only shows the managed ones and hides the very Pod you're looking for.</p>
-<h4>Troubleshooting</h4>
-<p>If nothing looks extra, double check you're not filtering by <code>-l app=checkout</code> anywhere in your inspection commands — that filter is exactly what makes the orphan invisible.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete deployment checkout --ignore-not-found</code></pre>
-<h4>Production lesson</h4>
-<p>An orphaned Pod left behind by a debugging session doesn't show up in any of the normal health checks — the Deployment reports healthy, the ReplicaSet reports the right count, and the orphan just sits there consuming node capacity (and, if it still has the old Service-matching labels underneath a different key, possibly still serving stale traffic) until someone thinks to list Pods without a label filter.</p>
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>apiVersion: v1
+kind: Pod
+metadata:
+  name: my-nginx
+  labels:
+    app: my-nginx
+    tier: frontend
+spec:
+  containers:
+    - name: nginx
+      image: nginx
+</code></pre>
 </div>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/overview/working-with-objects/labels</a>, <a href="https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/#isolating-pods-from-a-replicaset" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/controllers/replicaset (Isolating Pods from a ReplicaSet)</a>, <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/overview/working-with-objects/annotations</a>, and <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/overview/working-with-objects/common-labels</a> — verified 2026-08-03. All searchable in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/overview/working-with-objects/labels</a> — the exact page you can search in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Labels live under <code>metadata.labels</code>; every dependent object (Service, ReplicaSet, NetworkPolicy) finds its targets by continuously matching a label selector, live — never by name.</li>
-    <li>Services/ReplicationControllers support equality-based selectors only (a flat map); Deployment/ReplicaSet/DaemonSet/Job support set-based too, via <code>matchLabels</code>/<code>matchExpressions</code>.</li>
-    <li>Relabeling a running Pod so it no longer matches its controller's selector doesn't touch the Pod — it just stops being counted, and the controller creates a replacement. This is a real, documented isolation technique, and a real accidental-outage cause.</li>
-    <li>A Deployment's <code>spec.selector</code> is immutable after creation and rejected if it doesn't match the Pod template's labels — but nothing stops the Pods themselves from being relabeled after the fact.</li>
-    <li>Labels are for selecting; annotations are for everything else — high-cardinality or unstructured metadata belongs in an annotation, not a label.</li>
+    <li>Labels live under <code>metadata.labels</code> — key/value pairs, not names.</li>
+    <li>Other objects find Pods by matching a <strong>selector</strong> against labels, live.</li>
+    <li>Labels select; annotations don't — that's the difference.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck, or got a different result than "Expected result" above? Paste the exact <code>kubectl get pods --show-labels</code> output back to your teacher — seeing every Pod's actual labels side by side is usually what solves this class of bug.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0001-pod-basics.html">&larr; Pod basics</a>

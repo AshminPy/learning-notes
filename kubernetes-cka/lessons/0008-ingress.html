@@ -11,15 +11,11 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 8 of 24</p>
 <h1>Ingress &rarr; Service</h1>
 
-<h2>Why this matters</h2>
-<p>Every path so far in this course stops at the edge of the cluster. A Service gives your app a stable address, but nothing outside the cluster can reach a ClusterIP directly. Ingress is the piece that takes traffic from the internet — a browser hitting <code>https://shop.example.com</code> — and hands it to the right Service. Get it wrong and the failure mode is brutal: not a slow response, not a 500, but total silence. A perfectly correct Ingress YAML, applied to a cluster with no Ingress controller running, produces <em>no error</em> and routes zero traffic — the single most common "worked in my dev cluster, dead on arrival in prod" bug in real Kubernetes deployments, because tools like kind and Docker Desktop often ship a controller pre-installed and a bare self-managed or freshly-created cloud cluster does not.</p>
-<p>Get the TLS side wrong and it's worse, because it fails quietly in the other direction: Ingress terminates HTTPS <em>at the edge</em>, not end-to-end. If you assume "TLS on the Ingress" means your traffic is encrypted all the way to the Pod, you've shipped plaintext across your internal network without realizing it — a real production risk in any environment that doesn't treat the pod network as fully trusted.</p>
+<p>A Service gives you a stable address inside the cluster. It has no path in from outside. Ingress is that last hop — it routes outside traffic to the right Service.</p>
 
-<p class="callout"><strong>Mental model:</strong> an Ingress object is a routing table you hand to whichever controller is watching — it is not a router itself. Writing an Ingress is like filling out a request form and leaving it at an empty desk: the form only does something once a receptionist (the controller) is actually there to read it. This predicts something that trips people up constantly — the exact same Ingress YAML, byte-for-byte identical, can behave completely differently across clusters depending on which controller reads it. On a cluster running the GKE ingress controller, a rule provisions a real cloud load balancer. On a cluster running ingress-nginx, the identical rule configures an nginx reverse proxy instead. A <code>pathType: ImplementationSpecific</code> rule can even match differently on two controllers, because the Kubernetes spec explicitly leaves that path type's behavior up to whichever controller implements it. If "the same Ingress" ever behaves differently on two clusters, you didn't change the routing table — you changed who's reading it.</p>
+<p class="callout"><strong>Simple example:</strong> think of Ingress like a building receptionist. One door, one address. The receptionist reads where you want to go and sends you to the right room — the right Service — based on the hostname and path you asked for.</p>
 
-<h2>Core concepts</h2>
-
-<h3>The shape of a rule</h3>
+<h2>The shape of an Ingress</h2>
 <p>An Ingress is a list of rules. Each rule says: for this host and path, send traffic to this Service.</p>
 <pre><code>rules:
   - host: nginx.example.com
@@ -38,281 +34,71 @@
 <li><code>path</code> / <code>pathType</code> — the URL path, and how strictly it must match</li>
 <li><code>backend.service</code> — which Service, and which port, gets the traffic</li>
 </ul>
-<p>Notice: an Ingress rule only ever points at a Service, never at Pods directly — the Service still does the work of finding healthy Pods by label selector, exactly as in Lessons 3 and 5.</p>
+<p>Notice: an Ingress rule only ever points at a Service, never at Pods directly.</p>
 
-<h3>Path matching: pathType and precedence</h3>
-<table>
-<tr><th><code>pathType</code></th><th>Matching rule</th><th>Example</th></tr>
-<tr><td><code>Exact</code></td><td>Matches the URL path exactly, case-sensitive, including trailing-slash differences.</td><td><code>/api/v2</code> matches only <code>/api/v2</code> — not <code>/api/v2/</code> and not <code>/api/v2/users</code>.</td></tr>
-<tr><td><code>Prefix</code></td><td>Matches path element by element, split on <code>/</code>. Every element of the rule's path must be a full, exact match to the corresponding element of the request path — not a raw string prefix.</td><td><code>/order</code> does <strong>not</strong> match <code>/orders/5</code>, because the element <code>order</code> is not the same string as the element <code>orders</code>.</td></tr>
-<tr><td><code>ImplementationSpecific</code></td><td>Behavior is defined by your Ingress controller, not the Kubernetes API — a controller can treat it as <code>Prefix</code>, <code>Exact</code>, or something stricter.</td><td>The same rule can match different requests on nginx vs. GKE vs. Traefik.</td></tr>
-</table>
-<p>Kubernetes gives you no explicit priority field for overlapping rules — precedence is entirely positional and length-based: <strong>the longest matching path wins; if two matching paths are equally long, the one listed first in <code>spec.rules</code> wins.</strong> This exact rule is what causes the incident in the Failure scenario below, so it's worth memorizing precisely, not approximately.</p>
+<p class="callout"><strong>The trap:</strong> an Ingress is only routing rules. It does nothing by itself. Something called an <strong>Ingress controller</strong> has to run in the cluster and read those rules. Apply an Ingress with no controller installed, and nothing happens — no error, just silence.</p>
 
-<h3>TLS termination</h3>
-<p>Add a <code>tls</code> block to secure a host over HTTPS. The Ingress API supports exactly one TLS port — 443 — and terminates TLS <em>at the ingress point itself</em>: traffic from the client to the controller is encrypted, but traffic from the controller onward to your Service and Pods is plain HTTP. If you list multiple hosts under <code>tls</code>, the controller multiplexes them over that same port 443 using the hostname carried in the TLS handshake's SNI extension — provided the controller supports SNI.</p>
-<pre><code>spec:
-  tls:
-  - hosts:
-      - foo.bar.com
-    secretName: testsecret-tls
-  rules:
-  - host: foo.bar.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: Service1
-            port:
-              number: 80
-</code></pre>
-<p>The Secret named in <code>secretName</code> must be type <code>kubernetes.io/tls</code> and contain exactly two keys: <code>tls.crt</code> (the certificate) and <code>tls.key</code> (the private key). The certificate must cover the host you listed, or clients see a certificate mismatch even though the Ingress itself applied cleanly.</p>
-
-<h3>Default backend</h3>
-<p>If a request doesn't match any rule's host and path, where does it go? An Ingress with no rules at all sends everything to a single <code>spec.defaultBackend</code>. If you do specify rules but a particular request matches none of them, the real behavior is more precise than people assume: <strong>if <code>defaultBackend</code> is set, unmatched requests go there; if it isn't set, what happens to unmatched requests is left entirely to your Ingress controller</strong> — commonly a generic 404 from the controller's own default backend, but that's a controller convention, not a Kubernetes API guarantee.</p>
-<pre><code>spec:
-  defaultBackend:
-    service:
-      name: default-http-backend
-      port:
-        number: 80
-</code></pre>
-
-<h3>IngressClass: which controller reads this Ingress</h3>
-<p class="callout"><strong>The trap:</strong> an Ingress is only routing rules. It does nothing by itself. The Kubernetes docs say this outright: "You must have an Ingress controller to satisfy an Ingress. Only creating an Ingress resource has no effect." Apply an Ingress with no controller installed, and nothing happens — no error, just silence.</p>
-<p><code>spec.ingressClassName</code> tells Kubernetes which controller should read a given Ingress. It names an <code>IngressClass</code> object:</p>
-<pre><code>apiVersion: networking.k8s.io/v1
-kind: IngressClass
-metadata:
-  name: external-lb
-spec:
-  controller: example.com/ingress-controller
-</code></pre>
-<p>Each installed controller watches only for Ingresses whose <code>ingressClassName</code> matches one of "its" IngressClasses. Omit <code>ingressClassName</code> entirely and Kubernetes falls back to whichever IngressClass is marked default with the <code>ingressclass.kubernetes.io/is-default-class: "true"</code> annotation — if no class is marked default, an Ingress with no class named just sits there, unclaimed, by design. The older <code>kubernetes.io/ingress.class</code> annotation did this same job before <code>ingressClassName</code> existed; it's deprecated, but you'll still see it in older manifests.</p>
-<p>One more fact worth knowing early: the Ingress API is frozen — "no further changes or updates" per the Kubernetes docs — and the project now recommends the newer Gateway API instead. Ingress isn't going away or being removed, but it's also not where new routing features will land. Lesson 21 covers Gateway API in full; the Decision guide below only previews when you'd reach for it.</p>
-
-<h2>Production example</h2>
-<p class="callout production"><strong>Production note:</strong> real clusters standardize on exactly one Ingress controller and mark exactly one IngressClass as the cluster default, rather than letting every team pick per Ingress. A common shape: the platform team installs ingress-nginx once, cluster-wide, creates an IngressClass named <code>nginx</code>, and marks it default so application teams can omit <code>ingressClassName</code> entirely and their Ingress "just works" without anyone needing to know a controller is even involved. For TLS, most real clusters don't hand-manage <code>tls.secretName</code> Secrets manually — they run cert-manager, which watches Ingress objects (commonly via an annotation like <code>cert-manager.io/cluster-issuer</code>) and automatically requests, renews, and stores a valid certificate in the exact Secret your <code>spec.tls</code> already points at. This is a widely-used pattern, not an exam requirement — the CKA exam only expects you to know the raw Ingress, TLS, and IngressClass mechanics above.</p>
-
-<h2>Hands-on exercise</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Prove to yourself that a typo in <code>ingressClassName</code> fails silently — no error, no warning, just an Ingress that never routes anything — then fix it.</p>
-<h4>Scenario</h4>
-<p>You've installed ingress-nginx (its IngressClass is named <code>nginx</code>) and want to expose an existing app. You write the Ingress from memory and fat-finger the class name.</p>
-<h4>Environment assumptions</h4>
-<p>A kind/minikube cluster with ingress-nginx installed and an IngressClass literally named <code>nginx</code> (confirm with <code>kubectl get ingressclass</code> before starting). No existing Ingress named <code>demo-ingress</code>.</p>
-<h4>Commands</h4>
-<pre><code>kubectl create deployment demo --image=nginx:1.29
-kubectl expose deployment demo --port=80 --name=demo-service
-
-cat &lt;&lt;'EOF' | kubectl apply -f -
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: demo-ingress
-spec:
-  ingressClassName: ngnix
-  rules:
-  - host: demo.example.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: demo-service
-            port:
-              number: 80
-EOF
-
-kubectl get ingress demo-ingress</code></pre>
-<h4>Expected result</h4>
-<p><code>kubectl apply</code> succeeds with no error or warning — the API server never checks that <code>ingressClassName</code> refers to a real IngressClass. <code>kubectl get ingress demo-ingress</code> shows the CLASS column as <code>ngnix</code> (the typo, printed as literal text) and the ADDRESS column stays empty, because no controller claims a class it doesn't recognize.</p>
-<h4>Verification</h4>
-<p>Fix the typo (<code>ngnix</code> &rarr; <code>nginx</code>), reapply the same manifest, and re-run <code>kubectl get ingress demo-ingress</code>. Within a few seconds the ADDRESS column should populate with the controller's external IP or hostname — that transition from empty to populated is the actual proof the controller picked it up, not just that the object exists.</p>
-<h4>Common failure</h4>
-<p>Assuming <code>kubectl apply</code> returning success means the Ingress is live. It only means the YAML was syntactically valid — it says nothing about whether any controller is actually watching it.</p>
-<h4>Troubleshooting</h4>
-<p>Run <code>kubectl get ingressclass</code> and compare its <code>NAME</code> column, character for character, against your Ingress's <code>ingressClassName</code>. Case and spelling both matter — there's no fuzzy matching.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete ingress demo-ingress --ignore-not-found
-kubectl delete service demo-service --ignore-not-found
-kubectl delete deployment demo --ignore-not-found</code></pre>
-<h4>Production lesson</h4>
-<p>The API server will happily accept a typo as if it were valid, forever, until someone notices traffic isn't flowing. Treat "kubectl apply succeeded" as proof the YAML parsed — never as proof an Ingress is actually doing what you intended.</p>
-</div>
-
-<h2>Failure scenario</h2>
-<p>A realistic incident built on the exact precedence rule from Core concepts above.</p>
-<ol class="timeline">
-<li><span class="t">14:02</span> Marketing reports the new promo landing page at <code>https://shop.example.com/</code> shows the regular storefront homepage instead of the promo page they just launched.</li>
-<li><span class="t">14:04</span> On-call port-forwards straight to the Service — <code>kubectl port-forward svc/promo-service 8080:80</code> — and curls it directly. The promo page loads fine; the Service and its Pods are healthy.</li>
-<li><span class="t">14:07</span> On-call runs <code>kubectl get ingress shop-ingress -o yaml</code> and finds the rules list has grown: a <code>path: /checkout</code> rule, then a <code>path: /</code> rule pointing at <code>storefront-service</code> (added months ago), then a <em>second</em> <code>path: /</code> rule pointing at <code>promo-service</code> — appended to the end of the list an hour ago, in the same change that shipped the promo page, instead of replacing anything.</li>
-<li><span class="t">14:10</span> Root cause identified: per the pathType precedence rule, when two paths match a request with equal specificity, the rule that appears <em>first</em> in <code>spec.rules</code> wins. The <code>storefront-service</code> "/" rule was written first, months ago, so it wins for every request to "/" — the new <code>promo-service</code> "/" rule can never fire, no matter where it sits in the list.</li>
-<li><span class="t">14:14</span> Fix applied: reordering does nothing here, since both rules are equally specific catch-alls. The real fix is to scope the promo page to its own path, <code>/promo</code>, <code>pathType: Prefix</code> — a longer, more specific match that correctly takes precedence over the storefront catch-all regardless of list order.</li>
-<li><span class="t">14:19</span> Verified: <code>curl -H "Host: shop.example.com" http://&lt;ingress-ip&gt;/promo</code> returns the promo page; <code>curl -H "Host: shop.example.com" http://&lt;ingress-ip&gt;/</code> still returns the storefront homepage, unaffected.</li>
-</ol>
-
-<h2>Troubleshooting workflow</h2>
-<p>The general method, applied to "my Ingress isn't routing traffic":</p>
-<ol class="troubleshooting">
-<li><strong>Confirm the symptom.</strong> Curl the exact host and path from outside the cluster and note the precise failure — connection refused, timeout, wrong content, or a 404/503 from the controller. Each points to a different layer.</li>
-<li><strong>Define scope.</strong> <code>kubectl get ingress -A</code> — is this one rule on one Ingress, every rule on this Ingress, or every Ingress in the cluster? A cluster-wide failure points at the controller itself, not your YAML.</li>
-<li><strong>Check recent changes.</strong> <code>kubectl get ingress &lt;name&gt; -o yaml</code> against the last-known-good version — was a rule added, reordered, or a class name edited?</li>
-<li><strong>Confirm the controller is running.</strong> <code>kubectl get pods -n &lt;controller-namespace&gt;</code> (for example <code>ingress-nginx</code>). If it isn't <code>Running</code>, nothing downstream of this step matters.</li>
-<li><strong>Confirm the IngressClass.</strong> <code>kubectl get ingressclass</code> and compare, character for character, against <code>.spec.ingressClassName</code>. If it's omitted, confirm a class is actually marked default.</li>
-<li><strong>Inspect the Ingress's own state.</strong> <code>kubectl describe ingress &lt;name&gt;</code> — read the Events section and check <code>.status.loadBalancer</code>. An empty address usually means no controller ever claimed this Ingress.</li>
-<li><strong>Check the backend Service and its endpoints.</strong> <code>kubectl get endpoints &lt;service-name&gt;</code>. An Ingress pointing at a Service with zero endpoints (bad selector, Pods not Ready) returns a 502/503 from the controller — that's a Service-layer problem, not an Ingress routing problem.</li>
-<li><strong>Check DNS.</strong> Does the hostname in your rule actually resolve to the controller's external IP or hostname? Compare <code>dig &lt;host&gt;</code> against <code>kubectl get svc -n &lt;controller-namespace&gt;</code>'s <code>EXTERNAL-IP</code>. A stale DNS record is a very common "it was working yesterday" cause.</li>
-<li><strong>Form and test one hypothesis at a time.</strong> For example: "the new rule's path is shadowed by an earlier, equally-specific one." Isolate Ingress-layer from Service-layer by testing the Service directly (port-forward or in-cluster curl), bypassing the Ingress entirely.</li>
-<li><strong>Fix, verify from outside the cluster, then document.</strong> Confirm the real client path works, not just <code>kubectl</code> output — then record the root cause and add a review check (no duplicate catch-all paths, a lint rule for <code>ingressClassName</code>) so the same mistake doesn't recur.</li>
-</ol>
-
-<p class="callout security"><strong>Security note:</strong> TLS termination at the Ingress means the controller decrypts your HTTPS traffic and forwards it as plain HTTP to reach your Service and Pods — this is exactly how the API is documented to behave. That plaintext travels across your cluster's pod network. On most clusters that's an acceptable trust boundary, since the pod network is private — but in a regulated environment, a multi-tenant cluster, or any zero-trust network policy model, "TLS on the Ingress" is not the same claim as "encrypted end-to-end." If plaintext behind the edge is unacceptable, you need re-encryption to the backend or a service mesh — the core Ingress API has no built-in mechanism for that.</p>
-
-<p class="callout production"><strong>Reliability note:</strong> a single Ingress controller is the front door for every external request into the cluster. If you run one controller replica and it goes down — a crash, an OOM kill, a bad rollout — every Ingress-routed Service becomes unreachable from outside at once, even though every backend Pod stays perfectly healthy. This is a textbook single point of failure: run the controller with multiple replicas and a PodDisruptionBudget, and treat its health as a top-tier cluster SLO, not an implementation detail.</p>
-
-<p class="callout mistake"><strong>Common mistake:</strong> applying an Ingress and assuming it's live because <code>kubectl</code> didn't error. The API server accepts a syntactically valid Ingress even when no controller exists, or when <code>ingressClassName</code> points at a class nobody installed — check that the controller is running and that <code>.status.loadBalancer</code> actually populates, not just that <code>kubectl apply</code> succeeded.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> mismatching <code>pathType</code>. <code>Exact</code> requires a byte-for-byte match and never matches sub-paths; <code>Prefix</code> matches whole path segments, not a raw string prefix (<code>/order</code> does not match <code>/orders</code>); <code>ImplementationSpecific</code> behavior is defined by whichever controller you run, not by the Kubernetes API — the same rule can behave differently on two clusters.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> writing a second "catch-all" rule for the same host expecting the newest one to win. It won't — equally-specific paths are resolved purely by list order, first-defined wins, until someone notices and either reorders or rescopes them (see the Failure scenario above).</p>
-
-<h2>Decision guide</h2>
-<table>
-<tr><th>Option</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
-<tr><td>Ingress</td><td>Standard HTTP(S) host/path routing to many Services behind one entrypoint; broad controller support; what the CKA exam tests</td><td>You need non-HTTP protocols, or a clean split between infra-owned entrypoints and app-owned routes</td><td>The API is frozen — "no further changes or updates" — controller-specific annotations plug gaps but aren't portable</td></tr>
-<tr><td>Gateway API (Lesson 21)</td><td>Same routing needs, plus a portable, actively-developed API with a real separation between infra-managed Gateways and app-managed Routes</td><td>Your controller doesn't support it yet, or Ingress's simpler single-object model already covers your case</td><td>More objects to learn (GatewayClass / Gateway / HTTPRoute) — full detail deferred to Lesson 21</td></tr>
-<tr><td>LoadBalancer Service</td><td>One Service needs its own dedicated external IP, or a non-HTTP protocol (raw TCP, a database, a game server)</td><td>You have many HTTP Services and want one shared entrypoint with host/path routing</td><td>Costs one cloud load balancer per Service — the exact cost Ingress/Gateway API exist to avoid</td></tr>
-</table>
-<p><strong>Default recommendation:</strong> use Ingress for HTTP(S) routing today — it's what's tested on the CKA exam and what nearly every controller supports — but expect new clusters to lean increasingly on Gateway API, since the Kubernetes project has explicitly frozen the Ingress API and recommends Gateway API for anything new.</p>
-
-<h2>Knowledge check</h2>
+<h2>Try it — before looking below</h2>
 <div class="quiz">
-<p>Q1. You apply a correctly-written Ingress to a fresh cluster. No traffic gets routed, and <code>kubectl</code> showed no error. What's missing?</p>
+<p>Q1. You apply a correct Ingress. No traffic gets routed. What's missing?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">An Ingress controller. The Ingress object is only routing rules — a controller has to be running to read them and configure a real proxy or load balancer to enforce them.</div>
+<div class="answer" id="a1">An Ingress controller. The Ingress object is just rules — a controller has to be running to read them and configure a real proxy or load balancer.</div>
 </div>
 
 <div class="quiz">
-<p>Q2. Which field names the IngressClass — and therefore the controller — that should handle a given Ingress?</p>
+<p>Q2. What field says which controller should handle a given Ingress?</p>
 <input type="text" id="q2" placeholder="type your answer">
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2"><code>spec.ingressClassName</code>. If it's omitted, Kubernetes falls back to whichever IngressClass carries the <code>ingressclass.kubernetes.io/is-default-class: "true"</code> annotation.</div>
+<div class="answer" id="a2"><code>spec.ingressClassName</code> — it names an <code>IngressClass</code>, which maps to a specific controller.</div>
 </div>
+
+<h2>Now write your own</h2>
+<p>Write an Ingress by hand (no copy-paste) that routes to a Service called <code>nginx-service</code>, with:</p>
+<ul>
+<li><code>kind: Ingress</code>, API group <code>networking.k8s.io/v1</code></li>
+<li>an <code>ingressClassName</code> of your choice</li>
+<li>one rule: any <code>host</code>, path <code>/</code>, <code>pathType: Prefix</code></li>
+<li>a backend pointing at <code>nginx-service</code>, port <code>80</code></li>
+</ul>
+<p>Try it before you look at the answer below.</p>
 
 <div class="quiz">
-<p>Q3. One Ingress has two rules for the same host: <code>path: /api</code> (Prefix) and <code>path: /</code> (Prefix). A request arrives for <code>/api/users</code>. Which rule wins?</p>
-<div class="opts">
-<label>A. The /api rule, since longer paths take priority</label>
-<label>B. The / rule, since it was declared first</label>
-<label>C. Both rules together, splitting traffic between them</label>
-<label>D. Neither rule, so the request returns a 404</label>
-</div>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a3">A. The longest matching path always wins first — list order only breaks ties between paths of <em>equal</em> length, and <code>/api</code> is longer than <code>/</code>.</div>
-</div>
-
-<div class="quiz">
-<p>Q4. You set <code>pathType: Prefix</code> with <code>path: /order</code>. A request arrives for <code>/orders/5</code>. Does this rule match?</p>
-<div class="opts">
-<label>A. Yes — /orders starts with the string /order</label>
-<label>B. Yes — Prefix matching ignores segment boundaries</label>
-<label>C. No — each path segment must match completely</label>
-<label>D. No — Prefix requires the full path to match</label>
-</div>
-<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a4">C. Prefix matching is done element by element, split on <code>/</code> — the element <code>order</code> is not an exact match for the element <code>orders</code>, so the rule does not match at all.</div>
-</div>
-
-<div class="quiz">
-<p>Q5. In an Ingress <code>tls</code> block, what two keys must the referenced Secret contain?</p>
-<input type="text" id="q5" placeholder="type your answer">
-<button onclick="document.getElementById('a5').classList.add('shown')">Reveal</button>
-<div class="answer" id="a5"><code>tls.crt</code> and <code>tls.key</code> — the certificate and private key. The Secret itself must be of type <code>kubernetes.io/tls</code>.</div>
-</div>
-
-<h2>Certification mapping</h2>
-<p>Part of <strong>Services &amp; Networking (20% of the CKA exam)</strong>, alongside Lesson 3 (Service &rarr; Pod), Lesson 5 (Service &rarr; Deployment), Lesson 10 (NetworkPolicy), and Lesson 21 (CoreDNS &amp; Gateway API). Because the real exam lets you have the Kubernetes docs open, what matters most here isn't memorizing every field — it's knowing the precedence rule and the pathType semantics well enough to predict behavior before you apply anything.</p>
-
-<h2>Production challenge</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Diagnose and fix a real <code>pathType</code> precedence bug in a multi-rule Ingress, using only what this lesson covered — no extra hints.</p>
-<h4>Scenario</h4>
-<p>A teammate says: "I added a new rule so <code>/api/v2/*</code> hits the new <code>api-v2-service</code> backend, but every request under <code>/api/v2/</code> still hits the old <code>api-service</code>." Here's the Ingress they applied:</p>
-<pre><code>apiVersion: networking.k8s.io/v1
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: api-ingress
+  name: nginx-ingress
 spec:
   ingressClassName: nginx
   rules:
-  - host: api.example.com
-    http:
-      paths:
-      - path: /api
-        pathType: Prefix
-        backend:
-          service:
-            name: api-service
-            port:
-              number: 80
-      - path: /api/v2
-        pathType: Exact
-        backend:
-          service:
-            name: api-v2-service
-            port:
-              number: 80
+    - host: nginx.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx-service
+                port:
+                  number: 80
 </code></pre>
-<h4>Environment assumptions</h4>
-<p>A kind/minikube cluster with ingress-nginx installed (IngressClass <code>nginx</code> already exists). Build two backends you can tell apart:</p>
-<pre><code>kubectl create deployment api-service --image=nginx:1.29
-kubectl expose deployment api-service --port=80
-kubectl create deployment api-v2-service --image=nginx:1.29
-kubectl expose deployment api-v2-service --port=80
-kubectl exec deploy/api-service -- sh -c 'echo API-V1 > /usr/share/nginx/html/index.html'
-kubectl exec deploy/api-v2-service -- sh -c 'echo API-V2 > /usr/share/nginx/html/index.html'</code></pre>
-<p>Apply the Ingress above as <code>api-ingress</code>.</p>
-<h4>Commands</h4>
-<pre><code>curl -H "Host: api.example.com" http://&lt;ingress-ip&gt;/api/v2/users
-curl -H "Host: api.example.com" http://&lt;ingress-ip&gt;/api/v2
-kubectl describe ingress api-ingress</code></pre>
-<h4>Expected result</h4>
-<p>Both curls return <code>API-V1</code> — never <code>API-V2</code> — no matter what's under <code>/api/v2</code>, even though the second rule's backend is <code>api-v2-service</code>.</p>
-<h4>Verification</h4>
-<p>Change the second rule's <code>pathType</code> from <code>Exact</code> to <code>Prefix</code>, leaving everything else identical, reapply, and repeat both curls plus a third: <code>/api/orders</code>. <code>/api/v2</code> and <code>/api/v2/users</code> should now both return <code>API-V2</code>, and <code>/api/orders</code> should still return <code>API-V1</code>. That three-way result is the real proof — the fix didn't break the original rule.</p>
-<h4>Common failure</h4>
-<p>Concluding the bug is "rule order" and swapping the two rules instead of fixing <code>pathType</code>. Reordering does nothing here — the longest matching path always wins regardless of position; order is only a tie-breaker between equally-specific matches. The real defect is that <code>Exact</code> never matches sub-paths, so <code>/api/v2/users</code> was never a candidate for the second rule at all — it fell through to the only rule that did match: <code>/api</code>.</p>
-<h4>Troubleshooting</h4>
-<p>If <code>curl</code> hangs or refuses to connect at all, that's a Lesson-8-basics problem (no controller, wrong IngressClass, wrong external IP) — work through the Troubleshooting workflow above first, not this pathType bug.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete ingress api-ingress --ignore-not-found
-kubectl delete deployment api-service api-v2-service --ignore-not-found
-kubectl delete service api-service api-v2-service --ignore-not-found</code></pre>
-<h4>Production lesson</h4>
-<p><code>Exact</code> vs. <code>Prefix</code> looks like a one-word typo in code review, but it silently reroutes an entire class of requests to the wrong backend with no error anywhere — not from <code>kubectl apply</code>, not from the controller, not from the app. The only signal is behavioral: the new backend never receives traffic. Curl any new Ingress rule directly before trusting it, the same way you'd never merge code without running it.</p>
 </div>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/services-networking/ingress/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/ingress</a> — verified 2026-08-03. The exact page you can search in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/concepts/services-networking/ingress/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/ingress</a> — the exact page you can search in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>An Ingress is a routing table for whichever controller reads it — it does nothing without one, and the same YAML can behave differently across controllers.</li>
-    <li><code>pathType</code>: <code>Exact</code> (byte-for-byte), <code>Prefix</code> (matches full path segments, not raw substrings), <code>ImplementationSpecific</code> (controller decides).</li>
-    <li>Overlapping paths: the longest match wins; equal-length matches are resolved by list order, first-defined wins.</li>
-    <li>TLS terminates at the Ingress — traffic to your Service and Pods is plain HTTP after that point.</li>
-    <li>An unmatched request goes to <code>spec.defaultBackend</code> if set; otherwise, handling is entirely up to the controller.</li>
-    <li><code>ingressClassName</code> picks the controller; a typo or missing class fails silently, with no API-level validation.</li>
+    <li>Ingress routes outside traffic to Services by host and path — it never points at Pods directly.</li>
+    <li>An Ingress does nothing without an Ingress controller running in the cluster.</li>
+    <li><code>ingressClassName</code> picks which controller handles a given Ingress.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck, or got a different curl result than "Expected result" above? Paste the exact <code>kubectl describe ingress</code> output and the curl command back to your teacher — that mismatch is exactly the kind of evidence real Ingress debugging runs on.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0007-pvc.html">&larr; PVC &rarr; Pod</a>

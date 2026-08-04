@@ -11,211 +11,57 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 18 of 24</p>
 <h1>Extension interfaces: CNI, CSI, CRI</h1>
 
-<h2>Why this matters</h2>
-<p>"My cluster is broken" is one of the most misleading sentences in this job. Very often the cluster — the API server, etcd, the scheduler, the kubelet — is completely fine, and the thing that's actually broken is a piece of third-party software running inside it: a network plugin, a storage driver, a container runtime. Kubernetes core deliberately doesn't run containers, doesn't wire up Pod networking, and doesn't talk to a storage array — it defines three plugin interfaces and lets other vendors' software do that work instead.</p>
-<p>If you don't know where the boundary sits, you troubleshoot the wrong layer. People restart <code>kube-apiserver</code>, re-run <code>kubeadm upgrade</code>, or file a Kubernetes bug report — burning hours — when the real fix is a one-line log check on a plugin's own Pod, or a credential rotation on a storage driver that has nothing to do with Kubernetes itself. This lesson exists so you can answer, in under a minute, "is this Kubernetes, or is this the plugin?" — because that single question is exactly what the exam's Troubleshooting domain (30% of the CKA, the single largest domain) is built around.</p>
+<p>Kubernetes core doesn't run containers, doesn't wire up Pod networking, and doesn't talk to storage arrays. It defines three plugin interfaces and lets other software do that work. You've already used all three without naming them — this lesson names them, because the exam does.</p>
 
-<p class="callout"><strong>Mental model:</strong> Kubernetes is a socket, not the appliance. CRI is the socket a container runtime plugs into. CNI is the socket a network plugin plugs into. CSI is the socket a storage driver plugs into. The socket's shape doesn't change based on which appliance is plugged in — and that predicts something concrete: because the plugin is a separate piece of software from Kubernetes itself, it has its <strong>own version number and its own release cycle</strong>. Upgrading your cluster from Kubernetes 1.33 to 1.34 does not force a CNI, CSI, or CRI upgrade in lockstep — Calico, for example, ships as its own "v3.x" line, tested against a specific range of Kubernetes versions, and an old Calico release can simply stop being supported on a newer Kubernetes release without either side changing on the same day. The socket analogy also predicts the failure mode: compatibility isn't automatic just because both sides are independently versioned — you still have to check the plugin's own compatibility matrix before either side upgrades, the same way you'd check a wall socket's voltage before plugging in an appliance bought in another country.</p>
+<p class="callout"><strong>Simple example:</strong> think of Kubernetes as a socket, not the appliance. CRI is the socket a container runtime plugs into. CNI is the socket a network plugin plugs into. CSI is the socket a storage driver plugs into. Swap the plugin, the socket doesn't change.</p>
 
 <h2>CRI — Container Runtime Interface</h2>
-<p>The kubelet never runs a container directly. It's a gRPC client to a CRI-compatible runtime — containerd or CRI-O — and that gRPC protocol, not any specific runtime binary, is what "CRI" actually names. Any runtime that speaks the CRI API (v1, required since Kubernetes 1.26) can sit behind the kubelet; Kubernetes doesn't care which one.</p>
-<p>This is the one interface with no cluster Pod at all — clarify this precisely, because it trips people up. CRI isn't a Deployment, a DaemonSet, or anything you'll ever see in <code>kubectl get pods</code>. It's a service running directly on the node's operating system (a systemd unit, typically), underneath the kubelet, underneath Kubernetes as a whole. If a container runtime is unhealthy, no kubectl command reaches it — you have to look at the node itself.</p>
-<p><code>crictl</code> is the tool for that: it talks to the same CRI socket the kubelet does, which is why it keeps working even when the API server is unreachable (Lesson 15).</p>
-<pre><code>crictl ps -a          # containers, straight from the runtime, no API server involved
-crictl images         # images already pulled on this node
+<p>The kubelet doesn't run containers itself — it calls a CRI-compatible runtime (containerd, CRI-O) over a gRPC socket. <code>crictl</code> talks to that same socket directly, which is why it works even when the API server is unreachable (Lesson 15).</p>
+<pre><code>crictl ps -a          # containers, straight from the runtime
+crictl images         # images pulled on this node
 crictl logs &lt;id&gt;      # same idea as kubectl logs, one layer lower
-crictl pods           # the runtime's view of Pod sandboxes on this node
 </code></pre>
 
 <h2>CNI — Container Network Interface</h2>
-<p>A CNI plugin (Calico, Cilium, Flannel...) is what actually gives every Pod an IP and routes traffic between nodes. Kubernetes defines <em>that</em> a Pod gets an IP; the plugin defines <em>how</em>.</p>
-<p>Go one level deeper on what "CNI-compliant" means, because the exam and real production both assume you know this: CNI is not a Kubernetes-specific technology. It's a CNCF specification — a plugin contract for adding and removing network interfaces from a Linux network namespace — maintained independently of Kubernetes and consumed by several other platforms (Cloud Foundry and Apache Mesos both use it too). A "CNI-compliant plugin" just means it implements that generic add/remove contract; nothing about the contract itself is aware Kubernetes exists. Kubernetes requires a plugin compatible with CNI spec v0.4.0 or later, and recommends v1.0.0.</p>
-<p>One more internals detail worth knowing precisely: since Kubernetes 1.24 removed dockershim, the kubelet no longer invokes CNI plugins itself — the <strong>container runtime</strong> does, as part of setting up a Pod sandbox. That's the one point where CRI and CNI actually touch, even though you should keep reasoning about them as two separate sockets for everything else. Plugin binaries live at <code>/opt/cni/bin</code>; config lives at <code>/etc/cni/net.d</code> by default.</p>
-<p>This is also why a <code>NetworkPolicy</code> object can exist and do nothing (Lesson 10): the API server will happily store the object regardless of whether anything enforces it. Enforcement is a capability of the specific CNI plugin installed, not something Kubernetes core provides — and not every plugin has it (see the Common mistakes callout below for a concrete case).</p>
-<p>Don't confuse this with <code>kube-proxy</code>. It runs as a DaemonSet in every cluster too, but it's a core Kubernetes networking component, not a CNI plugin — its job is Service virtual IPs (writing the iptables/IPVS/nftables rules that redirect ClusterIP traffic to real Pod IPs). Some CNI plugins, Cilium among them, can fully replace kube-proxy's job with their own eBPF dataplane — but that's an optional integration a specific plugin offers, not evidence that kube-proxy itself is part of CNI.</p>
-<pre><code>ls /etc/cni/net.d/                                  # CNI plugin config, on the node
-kubectl get pods -A -o wide | grep -Ei 'calico|cilium|flannel|weave'   # example plugin Pods
+<p>A CNI plugin (Calico, Cilium, Flannel...) is what actually gives every Pod an IP and routes traffic between nodes. Kubernetes defines <em>that a Pod gets an IP</em>; the CNI plugin defines <em>how</em>. This is why a <code>NetworkPolicy</code> object can exist and do nothing (Lesson 10) — creating the object doesn't enforce it, only a CNI plugin that implements NetworkPolicy does.</p>
+<pre><code>ls /etc/cni/net.d/            # CNI plugin config, on the node
+kubectl get pods -n kube-system -l k8s-app=calico-node   # example: Calico's own Pods
 </code></pre>
 
 <h2>CSI — Container Storage Interface</h2>
-<p>You already met this in Lesson 7 without the name: a <code>StorageClass</code>'s <code>provisioner</code> field (for example <code>pd.csi.storage.gke.io</code>) names a CSI driver. When a PVC requests dynamic storage, Kubernetes core hands the request to that driver — the driver, not Kubernetes, actually creates the disk.</p>
-<p>Same pattern as CNI: CSI is also a cross-platform standard, not a Kubernetes invention — it's defined as a standard for exposing block and file storage systems to containerized workloads across multiple container orchestration systems, Kubernetes being one of them. A real CSI driver typically ships as two separate deployments: a controller component (talks to the cloud provider's API to create/attach/detach the actual disk — this is the piece that usually needs cloud credentials) and a node plugin, usually a DaemonSet, that mounts and formats the volume on whichever node needs it. Both are ordinary Pods, visible with kubectl, running in <code>kube-system</code> or a driver-specific namespace depending on how it was installed.</p>
-<pre><code>kubectl get storageclass                      # which provisioner (CSI driver) is default
-kubectl get csidrivers                        # CSI drivers registered with the cluster
-kubectl get pods -A | grep -i csi             # the driver's own controller + node Pods
+<p>You already met this in Lesson 7 without the name: a <code>StorageClass</code>'s <code>provisioner</code> field (e.g. <code>pd.csi.storage.gke.io</code>) names a CSI driver. When a PVC requests dynamic storage, Kubernetes core hands the request to that driver — it's the driver, not Kubernetes, that actually creates the disk.</p>
+<pre><code>kubectl get storageclass                 # which provisioner (CSI driver) is default
+kubectl get pods -n kube-system | grep csi   # the driver's own Pods, running in-cluster
 </code></pre>
 
-<p class="callout production"><strong>Production note:</strong> a platform team's choice of CNI plugin — Calico vs. Cilium vs. Flannel — is exactly the kind of decision you make once and live with for years, not something you casually swap later. It isn't just "which one is popular": Flannel by itself doesn't enforce <code>NetworkPolicy</code> at all (this is well-known enough that Calico ships an official "Canal" install path — Flannel for networking, Calico bolted on purely for policy enforcement); Cilium's eBPF dataplane and built-in WireGuard encryption are real capabilities Flannel doesn't have; Calico's BGP-based routing behaves differently at scale than Cilium's or Flannel's overlay approach. Migrating a live fleet from one CNI plugin to another later means re-networking every node — a genuinely painful, multi-week project with real outage risk, not a config change. The same logic applies to picking a CSI driver: the cloud-native driver (GCE PD, EBS, Azure Disk) vs. a third-party one (Portworx, OpenEBS) locks in your snapshot/backup tooling and IAM footprint for the life of the cluster.</p>
-
-<h2>Hands-on exercise</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Prove to yourself which running Pods in your cluster are CNI, which are CSI, and confirm that CRI genuinely has no Pod at all.</p>
-<h4>Scenario</h4>
-<p>You've been told "check the CNI Pods" and "check the CSI Pods" in a runbook before, but you've never actually confirmed you can tell them apart from core Kubernetes components on a real cluster — or confirmed the CRI claim that it isn't a Pod.</p>
-<h4>Environment assumptions</h4>
-<p>Any cluster you can <code>kubectl</code> into (kind, minikube, or a real dev cluster) with a CNI plugin and a CSI driver installed. Namespace layout varies by install method — a manifest-based Calico install commonly lands in <code>kube-system</code>, but the Tigera operator install puts Calico's own Pods in a separate <code>calico-system</code> namespace, and modern Flannel installs use their own <code>kube-flannel</code> namespace. Don't assume <code>kube-system</code> is the only place to look.</p>
-<h4>Commands</h4>
-<pre><code>kubectl get pods -A -o wide
-kubectl get pods -A | grep -Ei 'calico|cilium|flannel|weave|antrea'
-kubectl get pods -A | grep -i csi
-kubectl get csidrivers
-kubectl get pods -A | grep -i kube-proxy</code></pre>
-<h4>Expected result</h4>
-<p>The first grep returns your cluster's CNI plugin Pods (a DaemonSet, one per node). The second returns CSI controller and node Pods. The third lists registered CSI drivers by name. The fourth returns kube-proxy — present, but not a CNI plugin, a separate core component. None of the four commands return anything for "CRI" or your container runtime by name, because it isn't a scheduled workload.</p>
-<h4>Verification</h4>
-<p>The absence in that last point <em>is</em> the proof, not a gap in the exercise. If you want to see CRI directly, you have to leave kubectl entirely and either SSH to a node and run <code>crictl info</code>, or check the container runtime's own service status (for example <code>systemctl status containerd</code>) — it lives one layer below anything the API server can see.</p>
-<h4>Common failure</h4>
-<p>Assuming <code>kube-proxy</code> is "part of CNI" because it's networking-related and also runs as a DaemonSet. It isn't — it's core Kubernetes, implementing Service virtual IPs, independent of whichever CNI plugin you've installed.</p>
-<h4>Troubleshooting</h4>
-<p>If the CNI/CSI greps return nothing in any namespace, check <code>kubectl get pods -A</code> unfiltered first — you may be grepping for the wrong plugin name, or the plugin genuinely isn't installed (some managed clusters, like a stock kind cluster, ship a minimal default you might not expect).</p>
-<h4>Cleanup / rollback</h4>
-<p>Nothing to clean up — every command here is read-only.</p>
-<h4>Production lesson</h4>
-<p>This exact five-command sequence is how you scope "is this Kubernetes or is this a plugin" in under two minutes on a cluster you've never seen before. Knowing it cold, without having to think about it mid-incident, is the actual skill this lesson is teaching.</p>
-</div>
-
-<h2>Failure scenario</h2>
-<p>A realistic incident showing the specific pattern that makes CNI failures confusing: existing traffic keeps working while new Pods silently fail.</p>
-<ol class="timeline">
-<li><span class="t">02:58</span> Worker node <code>ip-10-0-4-17</code> reboots for a routine, automated OS security patch.</li>
-<li><span class="t">03:01</span> The node rejoins the cluster within three minutes — <code>kubectl get nodes</code> shows it <code>Ready</code>. The kubelet and containerd both came back cleanly.</li>
-<li><span class="t">03:03</span> The node's CNI plugin Pod, <code>calico-node-x7k2p</code>, restarts along with everything else on the node — but it doesn't come up clean. <code>kubectl describe pod</code> shows repeated readiness-probe failures; it settles into <code>CrashLoopBackOff</code>.</li>
-<li><span class="t">03:07</span> On-call notices something odd: three <code>payment-api</code> replicas that were already running on this node before the reboot show <code>Running</code>, healthy, serving traffic normally. A rollout five minutes later schedules a fourth replica onto the same node — it goes <code>Running</code>, but <code>.status.podIP</code> stays empty and nothing can reach it.</li>
-<li><span class="t">03:12</span> <code>kubectl logs calico-node-x7k2p --previous -n calico-system</code> shows it failing to reach its datastore fast enough during startup — a known class of startup-ordering issue after a quick reboot, not a scheduler or API server problem. Existing Pods keep working because their network namespace, veth pair, and routes were already programmed into the kernel before the crash — the CNI plugin's job for <em>them</em> is already done. New Pods fail because bringing up a brand-new Pod's networking requires the plugin's control process to be alive and reachable, and it isn't.</li>
-<li><span class="t">03:15</span> Fix applied: delete the crashing Pod so its DaemonSet replaces it — <code>kubectl delete pod calico-node-x7k2p -n calico-system</code>. The replacement starts after the node has had more time to settle, reaches the datastore, and passes its readiness probe.</li>
-<li><span class="t">03:18</span> Verified: the fourth replica is deleted and rescheduled; this time <code>.status.podIP</code> populates immediately and it goes healthy. The three original replicas were unaffected for the entire incident.</li>
-</ol>
-
-<h2>Troubleshooting workflow</h2>
-<p>The general 10-step method, applied specifically to "is this Kubernetes core or a CNI/CSI/CRI plugin":</p>
-<ol class="troubleshooting">
-<li><strong>Confirm the symptom.</strong> Run the actual command yourself — <code>kubectl get pod -o wide</code> for a missing IP, <code>kubectl get pvc</code> for storage, <code>kubectl describe pod</code> for a stuck container. Don't diagnose from a Slack message describing what someone thinks happened.</li>
-<li><strong>Define scope.</strong> <code>kubectl get pods -A -o wide</code> — is this one Pod, one node, or cluster-wide? A single-node symptom points hard at that node's plugin instance, not core Kubernetes, which is cluster-wide by nature.</li>
-<li><strong>Identify which interface is implicated.</strong> Use the decision table below: no IP or cross-node traffic issue → CNI. PVC/PV/provisioning issue → CSI. Container stuck with a runtime-level error string (shim, sandbox, image pull at the runtime layer) → CRI. This step alone resolves most "which team owns this" questions.</li>
-<li><strong>Check recent changes.</strong> <code>kubectl get events --sort-by=.lastTimestamp</code> — was the plugin just upgraded, did its DaemonSet just roll, was the node just rebooted or drained?</li>
-<li><strong>Inspect the plugin's own state.</strong> <code>kubectl get pods -n &lt;plugin namespace&gt; -o wide</code> for its DaemonSet/Deployment, <code>kubectl logs &lt;pod&gt; --previous</code> if it restarted. For CRI there's no Pod to inspect — go to the node itself: <code>crictl info</code>, or the runtime's own service logs (<code>journalctl -u containerd</code>).</li>
-<li><strong>Check the plugin's own docs and issue tracker before assuming Kubernetes is broken.</strong> Search the exact error string in the plugin's own GitHub repo — CNI/CSI/CRI projects all have public issue trackers, and this exact symptom has usually been reported before. In parallel, rule out a genuine core problem independently: <code>journalctl -u kubelet</code> on the node, and the kube-apiserver's own logs. If those are clean and only the plugin's Pod is unhealthy, it isn't a Kubernetes bug.</li>
-<li><strong>Form a hypothesis.</strong> For example: "the CNI plugin's control process can't reach its datastore after a fast reboot — this is a plugin startup issue, not a scheduler bug."</li>
-<li><strong>Test one variable.</strong> Schedule an equivalent test Pod on a different, healthy node. If it works there, you've isolated the failure to this node's plugin instance, not a cluster-wide Kubernetes misconfiguration.</li>
-<li><strong>Apply the fix at the layer that owns it.</strong> Restart or roll back the plugin's own Pod, fix the CSI driver's cloud credentials, or restart the container runtime service on the node — never restart <code>kube-apiserver</code> or run a control-plane upgrade to fix a plugin-owned problem.</li>
-<li><strong>Verify, document, and prevent recurrence.</strong> Confirm new Pods get IPs, PVCs bind, or containers start — then write down which of the three interfaces actually owned the root cause, so the next on-call doesn't spend an hour looking at Kubernetes core again for the same symptom.</li>
-</ol>
-
-<p class="callout security"><strong>Security note:</strong> installing a CNI plugin is a real trust decision, not a routine install. Most CNI plugins run as a privileged, host-network DaemonSet on every single node — Calico's own docs are explicit that <code>calico-node</code> needs the <code>CAP_SYS_ADMIN</code> capability and runs as a privileged container to get it. That means every node in your cluster is granting this third-party software root-equivalent access to its network stack. Vet the source, pin exact versions, and don't apply a random CNI manifest you found in a blog post. CSI drivers carry a different but equally serious trust requirement: their controller component frequently needs real cloud credentials to do its job — the GCE persistent disk CSI driver's controller, for example, depends on a GCP service account to call the Compute Engine API and typically needs a role like <code>roles/compute.storageAdmin</code>. That's a credential capable of creating, attaching, and deleting real cloud disks — scope it to exactly what the driver needs, never a project-owner-level account.</p>
-
-<p class="callout production"><strong>Reliability note:</strong> because every node depends on the same CNI or CSI plugin, a bad plugin upgrade has cluster-wide blast radius even though Kubernetes core is untouched. Treat a CNI/CSI/CRI upgrade with the same care as any other risky production change — canary it on a subset of nodes first, watch, then proceed — rather than as a routine "just apply the new manifest" afterthought.</p>
-
-<p class="callout mistake"><strong>Common mistake:</strong> filing a "Kubernetes bug" — or telling your team "Kubernetes is broken" — for what's actually a CNI or CSI plugin issue. This wastes hours going down the wrong path (core component logs, control-plane restarts) and, if you do report it, you've filed it in the wrong place: the fix has to come from the plugin's own project, not from Kubernetes.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> assuming a fresh <code>kind</code> or <code>minikube</code> cluster gives you full <code>NetworkPolicy</code> enforcement to practice against. Kind's default CNI, <code>kindnetd</code>, is documented by the kind project itself as not enforcing default-deny NetworkPolicy — you can apply a policy, see it accepted, and still see traffic flow right through it. If you want to actually test NetworkPolicy behavior, install a policy-enforcing CNI (Calico, Cilium) via kind's <code>disableDefaultCNI</code> option first.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> treating <code>kube-proxy</code> as a CNI component because it's networking-related and ships as a DaemonSet too. It's core Kubernetes — Service virtual IPs — independent of whichever CNI plugin is installed, even though some CNI plugins can optionally replace it.</p>
-
-<h2>Decision guide</h2>
-<table>
-<tr><th>Symptom</th><th>Owning interface</th><th>First command to check</th></tr>
-<tr><td>Pod stuck without an IP, can't reach or be reached by anything</td><td>CNI</td><td><code>kubectl get pods -A -o wide</code> — find the CNI plugin's Pod on that node</td></tr>
-<tr><td>NetworkPolicy applied but traffic isn't actually being isolated</td><td>CNI</td><td>Confirm the installed CNI plugin's docs list NetworkPolicy enforcement support</td></tr>
-<tr><td>PVC stuck Pending, no PV ever bound</td><td>CSI</td><td><code>kubectl describe pvc &lt;name&gt;</code> — read the Events for a provisioning error</td></tr>
-<tr><td>Container stuck in <code>ContainerCreating</code> with a runtime-level error (shim, sandbox)</td><td>CRI</td><td><code>crictl ps -a</code> on the node, or the runtime's own service logs</td></tr>
-</table>
-<p><strong>Default recommendation:</strong> when a symptom doesn't obviously match one of the rows above, start with <code>kubectl get pods -A</code> and look for the plugin's own Pods before you touch <code>kube-apiserver</code>, etcd, or the scheduler — those three are almost never the actual cause of a plugin-owned symptom.</p>
-
-<h2>Knowledge check</h2>
+<h2>Try it — before looking below</h2>
 <div class="quiz">
 <p>Q1. A Pod is stuck <code>Pending</code>, and <code>describe</code> shows no scheduling error — it's scheduled, but has no IP and never goes Running. Which interface's plugin would you check first?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">CNI. Assigning the Pod an IP and wiring its network is the CNI plugin's job — check its Pods/DaemonSet are Running on that node, and check <code>/etc/cni/net.d</code> has valid config.</div>
+<div class="answer" id="a1">CNI. Assigning the Pod an IP and wiring its network is the CNI plugin's job — check its Pods/DaemonSet in <code>kube-system</code> are Running on that node, and check <code>/etc/cni/net.d</code> has valid config.</div>
 </div>
 
 <div class="quiz">
 <p>Q2. A PVC stays <code>Pending</code> forever with no PV bound. What's the most likely missing piece, and which interface does it belong to?</p>
 <input type="text" id="q2" placeholder="type your answer">
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2">The CSI driver named in the StorageClass's <code>provisioner</code> field either isn't installed or isn't running — check <code>kubectl get pods -A</code> for it. That's CSI, storage's plugin interface.</div>
-</div>
-
-<div class="quiz">
-<p>Q3. A container is stuck in <code>ContainerCreating</code>, and the event text reads "failed to create containerd task: failed to create shim". Which interface should you check first?</p>
-<div class="opts">
-<label>A. CNI — the network plugin's own DaemonSet Pods</label>
-<label>B. CSI — the storage driver's own controller Pods</label>
-<label>C. CRI — the container runtime's own node-level logs</label>
-<label>D. RBAC — the ServiceAccount's own bound permissions</label>
-</div>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a3">C. The error string names <code>containerd</code> directly — that's the container runtime, CRI's job. There's no Pod for it; go to the node with <code>crictl</code> or check the runtime's own service logs.</div>
-</div>
-
-<div class="quiz">
-<p>Q4. You upgrade your cluster's control plane by one Kubernetes minor version. What does this imply about your installed CNI plugin?</p>
-<div class="opts">
-<label>A. It must be upgraded to the exact same version number as Kubernetes</label>
-<label>B. It never needs any version compatibility check at all</label>
-<label>C. It has its own release cycle, but compatibility should be checked</label>
-<label>D. It gets automatically upgraded together with the control plane</label>
-</div>
-<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a4">C. CNI plugins are versioned and released independently of Kubernetes — Calico, for example, publishes its own tested range of compatible Kubernetes versions per release. Independent versioning means you check compatibility, you don't assume it.</div>
-</div>
-
-<h2>Certification mapping</h2>
-<p>This lesson sits under <strong>Cluster Architecture, Installation &amp; Configuration (25%)</strong> — knowing what CNI, CSI, and CRI are and how they plug into the cluster is core architecture knowledge. But the skill it actually builds — correctly attributing a symptom to Kubernetes core vs. a plugin before you start fixing anything — is exactly what <strong>Troubleshooting (30%)</strong>, the exam's single largest domain, tests. Expect this distinction to show up disguised as an ordinary-looking broken-Pod or broken-storage scenario, not as a question that names "CNI" or "CSI" directly.</p>
-
-<h2>Production challenge</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Given only symptom descriptions — no logs yet — correctly attribute each incident to CNI, CSI, or CRI, and name the exact first command you'd run, before you're allowed to look anything up.</p>
-<h4>Scenario</h4>
-<p>Three tickets land in the same on-call shift:</p>
-<p><strong>Ticket A:</strong> "New Pods scheduled onto node <code>worker-7</code> stay Pending or come up with no IP; Pods already running on that node are fine."<br>
-<strong>Ticket B:</strong> "The PVC for our new Postgres StatefulSet has been Pending for 20 minutes; no PV has bound."<br>
-<strong>Ticket C:</strong> "A Pod is stuck in <code>ContainerCreating</code>; the event reads: 'failed to create containerd task: failed to create shim: OCI runtime create failed'."</p>
-<h4>Environment assumptions</h4>
-<p>A real or kind/minikube cluster with a CNI plugin, a CSI driver, and containerd installed. You have <code>kubectl</code> access, and node access (SSH or a debug Pod) if a ticket turns out to need <code>crictl</code>.</p>
-<h4>Commands</h4>
-<p>Write down, for each ticket, the owning interface and the first command — then confirm with these:</p>
-<pre><code># Ticket A — CNI
-kubectl get pods -A -o wide --field-selector spec.nodeName=worker-7
-
-# Ticket B — CSI
-kubectl describe pvc &lt;pvc-name&gt;
-kubectl get pods -A | grep -i csi
-
-# Ticket C — CRI
-crictl ps -a          # run on worker node hosting the Pod
-</code></pre>
-<h4>Expected result</h4>
-<p>Ticket A → CNI (the error is about IP assignment on one node while others are fine — a plugin instance problem, not the scheduler). Ticket B → CSI (a provisioning failure belongs to the driver named in the StorageClass). Ticket C → CRI (the error string names <code>containerd</code> and an OCI runtime failure directly — that's the runtime, not Kubernetes objects at all).</p>
-<h4>Verification</h4>
-<p><code>kubectl describe pod</code> on Ticket A's Pod should show it was scheduled successfully with no networking error at the API level — confirming this isn't a scheduler problem. <code>kubectl describe pvc</code> on Ticket B should show a provisioning-failure Event naming the CSI driver. Ticket C's event text already names the runtime — no further kubectl digging will explain it; only node-level runtime logs will.</p>
-<h4>Common failure</h4>
-<p>Treating Ticket C as "the Pod is broken" and spending time on <code>kubectl describe pod</code>, YAML, or RBAC. The error string is telling you exactly where to look — the container runtime — and no amount of API-level inspection fixes a node-level runtime problem.</p>
-<h4>Troubleshooting</h4>
-<p>If you're unsure which namespace a ticket's plugin Pods live in on this specific cluster, run <code>kubectl get pods -A</code> unfiltered and look for name patterns (calico/cilium/flannel for CNI, csi for CSI) instead of guessing <code>kube-system</code> — install method changes the namespace.</p>
-<h4>Cleanup / rollback</h4>
-<p>None — this is a read-only triage exercise.</p>
-<h4>Production lesson</h4>
-<p>This exact triage — three tickets, three different owning components, in one shift — is a normal on-call hour. The senior engineer on the team isn't the one who already knows the fix for all three; it's the one who routes each ticket to the right owner in under two minutes instead of debugging all three as "Kubernetes is down."</p>
+<div class="answer" id="a2">The CSI driver named in the StorageClass's <code>provisioner</code> field either isn't installed or isn't running — check <code>kubectl get pods -n kube-system</code> for it. That's CSI, storage's plugin interface.</div>
 </div>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/extend-kubernetes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/extend-kubernetes</a>, <a href="https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/network-plugins/" target="_blank" rel="noopener">.../network-plugins</a>, <a href="https://kubernetes.io/docs/concepts/architecture/cri/" target="_blank" rel="noopener">.../concepts/architecture/cri</a>, and <a href="https://kubernetes.io/docs/tasks/debug/debug-cluster/crictl/" target="_blank" rel="noopener">.../debug-cluster/crictl</a> — verified 2026-08-03. CSI as a cross-platform standard: <a href="https://kubernetes-csi.github.io/docs/" target="_blank" rel="noopener">kubernetes-csi.github.io/docs</a>. CNI as a spec used beyond Kubernetes: <a href="https://github.com/containernetworking/cni" target="_blank" rel="noopener">github.com/containernetworking/cni</a>. Plugin privilege requirement and independent versioning example: <a href="https://docs.tigera.io/calico/latest/getting-started/kubernetes/requirements" target="_blank" rel="noopener">docs.tigera.io/calico — requirements</a>. All exam-allowed pages except the Calico and CNI-spec docs, which are cited here for background only.</p>
+<p><a href="https://kubernetes.io/docs/concepts/extend-kubernetes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/extend-kubernetes</a> — exam-allowed page.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Kubernetes defines three plugin sockets and implements none of them: CRI (runtime), CNI (networking), CSI (storage). All three are open specs, not Kubernetes-specific technology — CNI and CSI are both used by other platforms too.</li>
-    <li>CRI has no Pod — it's a node-level service underneath the kubelet. <code>crictl</code> talks straight to it, working even when the API server is down.</li>
-    <li>Since Kubernetes 1.24, the container runtime — not the kubelet — is what invokes the CNI plugin. That's the one point CRI and CNI actually touch.</li>
-    <li>Plugins are versioned and released independently of Kubernetes — upgrading one doesn't force upgrading the other, but compatibility still has to be checked.</li>
-    <li>A crashed CNI plugin Pod stops new Pods from getting networking on that node, while already-running Pods keep working — their routes were already programmed before the crash.</li>
-    <li>CNI plugins typically run privileged, host-network DaemonSets on every node; CSI driver controllers often hold real cloud credentials. Both are real trust decisions, not routine installs.</li>
-    <li>"Kubernetes is broken" is very often actually "the plugin is broken" — check the plugin's own Pods, logs, and issue tracker before assuming a core Kubernetes bug.</li>
+    <li>Kubernetes defines three plugin sockets, doesn't implement them: CRI (runtime), CNI (networking), CSI (storage).</li>
+    <li><code>crictl</code> talks straight to CRI — works even if the API server is down.</li>
+    <li>A CNI plugin gives Pods IPs and enforces NetworkPolicy; a CSI driver actually creates the disk behind a StorageClass.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck, or seeing a Pod/PVC/container symptom that doesn't fit neatly into CNI, CSI, or CRI? Paste the exact <code>kubectl describe</code> or event text back to your teacher — figuring out which of the three owns a weird symptom is exactly the skill this lesson is building.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0017-helm-kustomize.html">&larr; Helm &amp; Kustomize</a>

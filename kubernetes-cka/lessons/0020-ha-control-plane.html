@@ -11,115 +11,35 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 20 of 24</p>
 <h1>Highly-available control plane</h1>
 
-<h2>Why this matters</h2>
-<p>Lesson 13 built a cluster with exactly one control-plane node. That's the most common shape for a self-managed cluster outside of production, and it's also one of the most common real outage causes: the node running <code>kube-apiserver</code> reboots for a kernel patch, a disk fills up, someone runs <code>kubectl drain</code> against it by mistake — and for as long as it's down, nothing can be scheduled, healed, or changed, even though every existing Pod keeps running just fine (kubelets don't need the API server minute to minute). A highly-available (HA) control plane exists to remove that single point of failure by running multiple control-plane nodes behind a load balancer.</p>
-<p>But HA isn't something you get automatically just by having three control-plane nodes. It's entirely possible to build a cluster that <em>looks</em> highly available — three API servers, three etcd members — while a single point of failure is still hiding in it. If <code>--control-plane-endpoint</code> (or any kubelet's server address, or any kubeconfig) is pointed at one specific control-plane node's IP instead of the load balancer's DNS name, every client in the cluster is quietly depending on that one machine. The mistake is invisible on day one — it works perfectly. It only surfaces the day that one node is rebooted, drained, or decommissioned, and by then it can take the whole cluster down at once, exactly like a single-node setup would.</p>
+<p>Lesson 13 built a cluster with one control-plane node. If that node dies, the cluster can't be changed — existing Pods keep running (kubelets don't need the API server minute to minute), but nothing can be scheduled, healed, or modified until it's back. A highly-available (HA) control plane runs multiple control-plane nodes so no single machine is that critical.</p>
 
-<p class="callout"><strong>Mental model:</strong> <code>kube-apiserver</code> is a bank with three teller windows, all reading and writing the same ledger (etcd) — walk up to any window and get the same answer, and the bank can close any one window for maintenance without the queue even noticing. <code>kube-scheduler</code> and <code>kube-controller-manager</code> are the opposite: three on-call engineers sharing one pager, under a strict rule that only whoever is currently holding the pager may act — the other two just watch. This model makes a specific, testable prediction: you can restart or replace any <code>kube-apiserver</code> instance whenever you like, with zero coordination and zero gap, because none of them is "more in charge" than another. But restarting the CURRENT scheduler or controller-manager leader does cause a real, bounded gap — not zero — while a standby notices the pager went quiet and picks it up. If your idea of "HA" says every component fails over instantly with no gap at all, that's true for the apiserver and false for the other two — and this lesson tells you how long that gap actually is, and how to check it yourself.</p>
+<p class="callout"><strong>Simple example:</strong> <code>kube-apiserver</code> is stateless — run three copies behind a load balancer and any of them can answer any request, same answer either way. <code>kube-scheduler</code> and <code>kube-controller-manager</code> are the opposite — running two copies acting at once would double-schedule Pods, so exactly one is elected leader at a time; the rest sit idle, watching.</p>
 
 <h2>Setting it up with kubeadm</h2>
 <pre><code>kubeadm init --control-plane-endpoint "LB_DNS_NAME:6443" --upload-certs
 </code></pre>
-<p><code>--control-plane-endpoint</code> points every node at the load balancer, not at one specific control-plane node's IP — this is what makes the other control-plane nodes replaceable later. kubeadm's own docs are direct about this: the load balancer's real address must always match whatever you set here, or joins and certificate validation start failing in confusing ways. <code>--upload-certs</code> stores the cluster's certs in a Secret so the next control-plane node can fetch them automatically — but only for a limited window. kubeadm treats this as sensitive enough to delete the uploaded certs automatically after two hours as a safeguard, and if you need to add another control-plane node after that window, you re-run <code>kubeadm init phase upload-certs</code> to reload them.</p>
+<p><code>--control-plane-endpoint</code> points every node at the load balancer, not at one specific control-plane node's IP — this is what makes the other control-plane nodes replaceable later. <code>--upload-certs</code> stores the cluster's certs in a Secret so the next control-plane node can fetch them automatically.</p>
 <p>The command prints two different <code>kubeadm join</code> commands:</p>
 <ul>
 <li>A plain one, for worker nodes.</li>
 <li>One with <code>--control-plane --certificate-key &lt;key&gt;</code>, for adding another control-plane node.</li>
 </ul>
-<p>The load balancer itself isn't a Kubernetes object — it's infrastructure you provide. For a cloud environment, the docs recommend a TCP forwarding load balancer whose health check is a plain TCP probe against port 6443 (the apiserver's port), and specifically advise against pointing <code>--control-plane-endpoint</code> at a bare IP address in the cloud — use the load balancer's DNS name instead. Outside the cloud, a software load balancer (the documented pattern pairs keepalived with HAProxy) plays the same role. Either way, the load balancer's only job is: know about every healthy control-plane node, and stop sending traffic to one that stops answering on 6443.</p>
 
 <h2>etcd: stacked vs. external</h2>
-<p>kubeadm defaults to <strong>stacked etcd</strong> — each control-plane node runs its own etcd member locally, alongside its API server. Simpler to operate, and what the exam expects unless told otherwise. <strong>External etcd</strong> runs etcd as a separate cluster the API servers all connect to — more moving parts, used when etcd needs to scale or fail independently of the control plane. The docs describe the stacked topology's real risk plainly: losing one node in that setup costs you an etcd member and a control-plane instance at the same moment — a coupled failure, not two independent ones. The Decision guide further down formalizes when each is the right call.</p>
+<p>kubeadm defaults to <strong>stacked etcd</strong> — each control-plane node runs its own etcd member locally, alongside its API server. Simpler to operate, and what the exam expects unless told otherwise. <strong>External etcd</strong> runs etcd as a separate cluster the API servers all connect to — more moving parts, used when etcd needs to scale or fail independently of the control plane.</p>
 
 <h2>Who's actually in charge right now</h2>
 <p>Every <code>kube-apiserver</code> is active simultaneously. <code>kube-scheduler</code> and <code>kube-controller-manager</code> use a <code>Lease</code> object to elect one leader each — check who's holding it:</p>
 <pre><code>kubectl get lease -n kube-system kube-scheduler -o jsonpath='{.spec.holderIdentity}'
 kubectl get lease -n kube-system kube-controller-manager -o jsonpath='{.spec.holderIdentity}'
 </code></pre>
-<p>What actually happens during a handover is governed by three flags both components ship with, each with a documented default: <code>--leader-elect-lease-duration</code> (15s), <code>--leader-elect-renew-deadline</code> (10s), and <code>--leader-elect-retry-period</code> (2s). In plain terms: the current leader must successfully renew its Lease within 10 seconds of its last renewal, retrying every 2 seconds if a renewal attempt fails. A standby doesn't get pushed a signal that the leader is gone — it watches the Lease's <code>renewTime</code>, and once 15 seconds have passed since the last observed renewal, it's allowed to force-acquire the Lease and become the new leader. So the honest answer to "is scheduling actually paused during handover?" is: yes, briefly. New Pods that need a placement decision wait for a new leader to acquire the Lease — bounded by that ~15-second window on kubeadm's defaults, not instant and not indefinite. Pods that are already scheduled and running are completely unaffected; the gap only touches new scheduling decisions and new reconciliation actions.</p>
-<p>The Lease object itself carries evidence of this history: <code>.spec.leaseTransitions</code> counts how many times leadership has changed hands, and <code>.spec.renewTime</code> / <code>.spec.acquireTime</code> tell you how fresh the current leadership claim is. You'll use these in the exercise below.</p>
 
-<h2>Production example</h2>
-<p class="callout production"><strong>Production note:</strong> the load balancer in front of your control plane needs to sit outside the control plane's own failure domain, or you've just relocated the single point of failure instead of removing it. A team running self-managed kubeadm on three bare-metal nodes in one rack doesn't put HAProxy on one of those same three nodes with no redundancy of its own — that just moves the SPOF from "one control-plane node" to "one load-balancer VM." The two realistic patterns: in a cloud environment, use the provider's own managed load balancer (an AWS NLB, a GCP TCP load balancer) — it's already redundant across zones and isn't running on any machine you also count as a control-plane node; on bare metal, run the software load balancer on at least two dedicated nodes with a floating VIP between them, separate from the control-plane machines. Either way, the test is simple: if the load balancer has a single instance with no failover of its own, ask what happens to every kubelet and every <code>kubectl</code> config in the cluster the day that one VM dies. The answer should never be "the cluster loses its control plane" — that's the exact failure this whole lesson exists to prevent.</p>
-
-<h2>Hands-on exercise</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Find out, on a real cluster, exactly which node is currently acting as leader for <code>kube-scheduler</code> and for <code>kube-controller-manager</code> — and reason about what happens if that node is taken out of service.</p>
-<h4>Scenario</h4>
-<p>Before you trust "one of the standbys just takes over" in an actual incident, look at the Lease objects yourself and know what a healthy one looks like.</p>
-<h4>Environment assumptions</h4>
-<p>Ideally a real multi-control-plane kubeadm cluster (3 control-plane nodes). <strong>Honest constraint:</strong> most learners won't have one handy — kind and minikube both default to a single control-plane node, and standing up 3 real (or 3 VM) control-plane nodes just for this exercise is a meaningful chunk of infrastructure. If you don't have one, treat this as a thought exercise against your single-node dev cluster instead — the commands are identical, you'll just always see the same holder, since there's only one candidate.</p>
-<h4>Commands</h4>
-<pre><code>kubectl get lease -n kube-system kube-scheduler -o yaml
-kubectl get lease -n kube-system kube-controller-manager -o yaml
-kubectl get lease -n kube-system kube-scheduler -o jsonpath='{.spec.holderIdentity}{"\n"}'
-kubectl get lease -n kube-system kube-controller-manager -o jsonpath='{.spec.holderIdentity}{"\n"}'</code></pre>
-<h4>Expected result</h4>
-<p>Each <code>-o yaml</code> shows a <code>spec.holderIdentity</code> (a string like <code>node-1_&lt;random-id&gt;</code>), a recent <code>renewTime</code> (within the last few seconds), and a <code>leaseTransitions</code> count. On a healthy, stable cluster that's been running a while, <code>leaseTransitions</code> is usually small — it only increments on an actual handover.</p>
-<h4>Verification</h4>
-<p>Run the two <code>jsonpath</code> commands a few seconds apart. <code>holderIdentity</code> should stay identical between runs if nothing has failed over — that stability, not just a non-empty answer, is what proves the current leader is healthy and still renewing.</p>
-<h4>Common failure</h4>
-<p>Assuming a non-empty <code>holderIdentity</code> means "everything is fine." A stale <code>renewTime</code> (well over 15 seconds old) with an unchanged <code>holderIdentity</code> can also mean the leader is stuck and hasn't been forcibly replaced yet — non-empty isn't the same as healthy.</p>
-<h4>Troubleshooting</h4>
-<p>If either command 404s, you're not looking at a kubeadm-managed control plane with these components exposed the normal way (a managed cluster like GKE Autopilot hides this layer) — confirm with <code>kubectl get pods -n kube-system | grep -E "scheduler|controller-manager"</code> first.</p>
-<h4>Cleanup / rollback</h4>
-<p>Read-only exercise — nothing to clean up.</p>
-<h4>Production lesson</h4>
-<p>Now reason it through: if <code>node-1</code> is the holder for both Leases and you run <code>kubectl cordon node-1 &amp;&amp; kubectl drain node-1 --ignore-daemonsets</code>, its scheduler and controller-manager static Pods get evicted along with everything else on that node. Both Leases go stale within the ~15-second window from the Core concepts section above, and standbys on the other two nodes take over — not necessarily the same node for both. That's the exact behavior "HA" is buying you. If you only have one control-plane node, this same drain takes your whole control plane down — which is precisely why a production control plane is never just one node.</p>
-</div>
-
-<h2>Failure scenario</h2>
-<p>A realistic incident, built from the exact mistake named in "Why this matters" — a "3-node HA cluster" with a hidden single point of failure.</p>
-<ol class="timeline">
-<li><span class="t">Day 1, 09:15</span> A platform engineer bootstraps a new 3-node control-plane cluster. In a hurry, they run <code>kubeadm init --control-plane-endpoint "10.0.1.11:6443" --upload-certs</code> — <code>10.0.1.11</code> is <code>node-1</code>'s own IP, not a load balancer's DNS name, because the load balancer hadn't been provisioned yet and "we'll fix it later."</li>
-<li><span class="t">Day 1, 09:40</span> The other two control-plane nodes join successfully with <code>--control-plane --certificate-key</code>. Every worker node's kubelet joins pointing at <code>10.0.1.11:6443</code> too, since that's the endpoint kubeadm printed. The cluster works. Nobody circles back to "fix it later."</li>
-<li><span class="t">Month 4, 11:02</span> <code>node-1</code> is scheduled for decommissioning as part of a routine hardware refresh — it's just one of three control-plane nodes, so this looks routine. It's cordoned, drained, and powered off.</li>
-<li><span class="t">Month 4, 11:03</span> Every kubelet in the cluster — on every worker node, and on the two remaining control-plane nodes — loses contact with the API server at the same moment. <code>kubectl</code> from any workstation configured against <code>10.0.1.11:6443</code> times out too. <code>node-2</code> and <code>node-3</code>'s own <code>kube-apiserver</code> static Pods are still running and healthy; nothing is actually wrong with the control plane itself.</li>
-<li><span class="t">Month 4, 11:07</span> On-call checks <code>node-2</code> directly: <code>crictl ps</code> shows <code>kube-apiserver</code> running. <code>curl -k https://127.0.0.1:6443/healthz</code> from <code>node-2</code> returns <code>ok</code>. The individual API servers were never the problem.</li>
-<li><span class="t">Month 4, 11:12</span> Root cause identified: <code>--control-plane-endpoint</code> was set to <code>node-1</code>'s IP at cluster creation, not a load balancer. Every client in the cluster — kubelets, other control-plane nodes, kubeconfig files — had that one IP baked into its config. Decommissioning <code>node-1</code> removed the only address anything was actually configured to talk to.</li>
-<li><span class="t">Month 4, 11:20</span> Immediate fix: power <code>node-1</code> back on to restore service while a real fix is planned. There's no fast way to repoint every kubelet's server address and every dependent config cluster-wide.</li>
-<li><span class="t">Month 4, 15:00</span> Real fix scheduled as planned, disruptive maintenance: stand up an actual load balancer, then migrate every node's configuration to point at it — effectively redoing the HA setup that should have existed from day one.</li>
-</ol>
-
-<h2>Troubleshooting workflow</h2>
-<p>The general method, applied to: "nothing new is being scheduled or reconciled, but Pods that were already running are fine."</p>
-<ol class="troubleshooting">
-<li><strong>Confirm the symptom.</strong> Try something that requires the API server and a controller to actually act — <code>kubectl create deployment probe --image=nginx:1.29 --replicas=1</code> — and watch whether it gets scheduled at all, versus sitting in <code>Pending</code> forever.</li>
-<li><strong>Define scope.</strong> Is the API server reachable at all (<code>kubectl get nodes</code> works, full stop), or is it specifically scheduling/reconciling that's stuck while reads work fine? Check the apiserver first, since it's stateless and should always answer — if <code>kubectl</code> itself is timing out, this isn't a leader-election problem, it's a reachability or load-balancer problem (see the Failure scenario above).</li>
-<li><strong>Check recent changes.</strong> <code>kubectl get events -n kube-system --sort-by=.lastTimestamp</code> — was a control-plane node just drained, rebooted, or upgraded? Cross-check against any recent maintenance window.</li>
-<li><strong>Inspect the right state — the Lease holders specifically.</strong> This is the concept this lesson is built on: <code>kubectl get lease -n kube-system kube-scheduler -o yaml</code> and the same for <code>kube-controller-manager</code>. Look at <code>holderIdentity</code> (who claims to be leader) and <code>renewTime</code> (how fresh that claim is).</li>
-<li><strong>Form a hypothesis.</strong> For example: "the node holding the <code>kube-scheduler</code> Lease was just drained, and no standby has taken over — which shouldn't be possible if the standbys are healthy."</li>
-<li><strong>Test one variable.</strong> Check whether standby instances are actually running: <code>kubectl get pods -n kube-system -o wide | grep kube-scheduler</code> across all control-plane nodes. If only one <code>kube-scheduler</code> Pod exists cluster-wide, there's no standby to take over — that's a static-Pod-manifest problem, not a Lease problem.</li>
-<li><strong>Apply the safest fix.</strong> If a standby exists but isn't renewing, check its logs (<code>kubectl logs -n kube-system kube-scheduler-&lt;node&gt;</code>) for connectivity errors to the API server — often the same root cause as the Failure scenario above (still pointed at a decommissioned endpoint). Don't manually delete the Lease as a first move; that forces an election but doesn't fix why the previous leader stalled.</li>
-<li><strong>Verify recovery.</strong> Re-run the probe Deployment from step 1 and confirm it actually gets scheduled and reaches <code>Running</code> — a fresh <code>holderIdentity</code> alone isn't proof the underlying cause is fixed.</li>
-<li><strong>Document the root cause.</strong> Write down exactly which component stalled, on which node, and why — "scheduler leader lost API server connectivity because it was still configured against a decommissioned node's IP" is a very different root cause from "scheduler crashed," and points to a different fix.</li>
-<li><strong>Prevent recurrence.</strong> If the root cause traces back to a hardcoded node IP anywhere (a kubelet, a kubeconfig, a manifest), that's the Common mistakes section below — fix the endpoint, not just the symptom.</li>
-</ol>
-
-<h2>Security &amp; reliability considerations</h2>
-<p class="callout production"><strong>Reliability note:</strong> reliability is this entire lesson's subject, not a footnote, so state it plainly. In a 1-node control plane, losing that one node is a 100% outage of the cluster's ability to schedule, heal, or change anything. In a healthy 3-node stacked control plane, losing one node cleanly (not the endpoint-pointed-at-one-node mistake above) costs you exactly one API server instance out of three and, briefly, a Lease handover for whichever of the two elected components it happened to be leading — existing workloads and the remaining two-thirds of the control plane are unaffected. That's the actual, measurable blast-radius reduction HA buys you.</p>
-<p class="callout security"><strong>Security note:</strong> <code>--upload-certs</code> is security-adjacent, not just an operational convenience — it temporarily stores the cluster's CA and other sensitive certificates in a Secret in <code>kube-system</code> so a joining control-plane node can fetch them. kubeadm treats this as sensitive enough to auto-delete it after two hours, and expects you to explicitly reload it (<code>kubeadm init phase upload-certs</code>) if you need to add a control-plane node after that window — it's not a "run once, valid forever" credential drop. Re-uploading certs well before you actually need them, out of habit, just extends the window that cluster secrets sit in that Secret for no operational benefit.</p>
-
-<h2>Common mistakes</h2>
-<p class="callout mistake"><strong>Common mistake:</strong> setting <code>--control-plane-endpoint</code> (or any kubelet/kubeconfig server address) to one specific control-plane node's IP instead of the load balancer's DNS name. It works perfectly on day one — that's exactly what makes it dangerous. The failure only shows up later, when that specific node is rebooted, drained, or decommissioned, and by then the person who set it up may not even be on the team anymore.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> running an even number of control-plane nodes (2 or 4) instead of an odd number (3 or 5). kubeadm's docs give the reasoning directly: an odd count helps leader selection survive a machine or zone failure without a tie, and for an external etcd cluster, an odd member count is a documented requirement for optimal voting quorum. A 4-node control plane doesn't buy you anything a healthy 3-node one doesn't — it just adds a fourth machine that still only splits into a majority/minority the same way 3 does, at extra cost.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> treating the load balancer in front of the control plane as an afterthought — a single, unmonitored VM with no failover of its own. See the Production example above: this doesn't add HA, it just moves the single point of failure one hop over.</p>
-
-<h2>Decision guide</h2>
-<table>
-<tr><th>Topology</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
-<tr><td>Stacked etcd (kubeadm default)</td><td>Standard self-managed HA cluster; you want the simplest thing that removes the single-node SPOF; the CKA exam, unless told otherwise</td><td>etcd needs to scale, be tuned, or fail independently from the control plane</td><td>Simpler to set up and replicate, but losing one node costs you an etcd member and a control-plane instance at the same time — a coupled failure</td></tr>
-<tr><td>External etcd</td><td>etcd has different hardware/scaling needs than the control plane; losing a control-plane node should never also touch etcd redundancy</td><td>The team can't justify double the host count for the extra isolation</td><td>Better failure isolation — losing a control-plane instance or an etcd member matters less on its own — but needs roughly twice the hosts (a minimum of 3 control-plane + 3 etcd machines, not 3 total)</td></tr>
-</table>
-<p><strong>This course's recommendation:</strong> stacked etcd, matching kubeadm's own default and what the CKA exam expects unless a question states otherwise. Reach for external etcd only when you have a specific, named reason to scale or isolate etcd independently — not as a default "more HA is always better" choice, since it doubles your infrastructure for a failure mode a healthy odd-numbered stacked cluster already tolerates.</p>
-
-<h2>Knowledge check</h2>
+<h2>Try it — before looking below</h2>
 <div class="quiz">
-<p>Q1. In a 3-control-plane-node cluster, the node currently holding the <code>kube-scheduler</code> Lease goes down. What happens to scheduling?</p>
+<p>Q1. In a 3-control-plane-node cluster, the node currently holding the <code>kube-scheduler</code> lease goes down. What happens to scheduling?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">Briefly, nothing new gets scheduled. A standby doesn't get an instant signal — it waits until the Lease's <code>renewTime</code> is older than the lease duration (15s by default) before force-acquiring it. After that, one of the two remaining <code>kube-scheduler</code> instances (already running, just idle) becomes the new leader. No manual action needed — that's the point of running more than one.</div>
+<div class="answer" id="a1">Briefly nothing new gets scheduled, then one of the two remaining <code>kube-scheduler</code> instances acquires the Lease (it was already running, just idle) and becomes the new leader. No manual action needed — that's the point of running more than one.</div>
 </div>
 
 <div class="quiz">
@@ -129,69 +49,19 @@ kubectl get lease -n kube-system kube-controller-manager -o jsonpath='{.spec.hol
 <div class="answer" id="a2"><code>kube-apiserver</code> is stateless — it just reads/writes etcd, so any number of copies can serve requests at once with no conflict. <code>kube-scheduler</code> makes decisions (which node gets this Pod) — two copies deciding independently could schedule the same Pod twice, so only one may act at a time.</div>
 </div>
 
-<div class="quiz">
-<p>Q3. Your cluster has 3 control-plane nodes. Which single kubeadm setting, if pointed at the wrong thing, can make one of those three a hidden single point of failure even though the other two exist?</p>
-<input type="text" id="q3" placeholder="type your answer">
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-<div class="answer" id="a3"><code>--control-plane-endpoint</code>. If it's set to one node's IP instead of a load balancer's DNS name, every kubelet and kubeconfig ends up depending on that one machine, no matter how many control-plane nodes actually exist.</div>
-</div>
-
-<div class="quiz">
-<p>Q4. Why does kubeadm's documentation recommend an odd number of control-plane nodes rather than an even number?</p>
-<div class="opts">
-<label>A. An odd count still splits into a clear majority after one failure</label>
-<label>B. An even count always costs more than an odd count</label>
-<label>C. Odd counts make etcd snapshots faster to save and load</label>
-<label>D. Even counts stop kube-apiserver from accepting new client connections</label>
-</div>
-<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a4">A. An odd number of control-plane nodes helps leader/quorum-style selection survive a machine or zone failure without a tie, and for external etcd, an odd member count is a documented requirement for optimal voting quorum. B, C, and D aren't documented behaviors — cost, snapshot speed, and connection handling aren't affected by node parity.</div>
-</div>
-
-<h2>Certification mapping</h2>
-<p>Directly maps to <strong>Cluster Architecture, Installation &amp; Configuration (25% of the exam)</strong> — the single largest domain on the CKA exam guide. HA control-plane setup, <code>--control-plane-endpoint</code>, stacked vs. external etcd, and reasoning about leader election are all named territory in that domain; expect at least one scenario question built around a broken or misconfigured HA setup where you have to find the mistake.</p>
-
-<h2>Production challenge</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Given only a <code>kubectl get lease</code> observation, reason through whether it indicates a real problem — without being told the answer first.</p>
-<h4>Scenario</h4>
-<p>You're doing a routine health check on a 3-control-plane-node cluster. <code>kubectl get lease -n kube-system</code> shows that <code>node-2</code> has held both the <code>kube-scheduler</code> and <code>kube-controller-manager</code> Leases continuously for the last 40 days — the cluster's entire uptime since its last full restart. <code>leaseTransitions</code> is <code>0</code> for both.</p>
-<h4>Environment assumptions</h4>
-<p>No cluster required for this one — it's a reasoning exercise. If you do have a long-running multi-control-plane cluster available, run the real commands below and compare against your own numbers.</p>
-<h4>Commands</h4>
-<pre><code>kubectl get lease -n kube-system kube-scheduler -o yaml
-kubectl get lease -n kube-system kube-controller-manager -o yaml
-kubectl get pods -n kube-system -o wide | grep -E "kube-scheduler|kube-controller-manager"</code></pre>
-<h4>Expected result</h4>
-<p>Work out your own answer before reading on: is one node holding both Leases for 40 days straight, with zero transitions, a problem by itself?</p>
-<h4>Verification</h4>
-<p>No — by itself, this is exactly what a healthy, stable cluster looks like. Nothing in the leader-election mechanism forces periodic handovers; a leader keeps the Lease for as long as it keeps successfully renewing it, which a healthy <code>node-2</code> will do indefinitely. <code>leaseTransitions: 0</code> means there has never been a failover, which is good news, not a warning sign — as long as the standby scheduler and controller-manager Pods on <code>node-1</code> and <code>node-3</code> are also confirmed <code>Running</code> and healthy (that's what the third command checks). The real risk isn't "one node has been leader too long" — it's "are the other two nodes' standbys actually capable of taking over if <code>node-2</code> fails right now," which you can only confirm by checking they're running, not by looking at the Lease alone.</p>
-<h4>Common failure</h4>
-<p>Concluding "this looks unbalanced, let's force a failover to spread the load" by deleting the Lease or restarting <code>node-2</code>'s components on a schedule. There's no load-balancing reason to rotate leadership — <code>kube-scheduler</code> and <code>kube-controller-manager</code> don't share work between leader and standbys the way a stateless service would; only one is ever doing anything. Forcing rotation adds a real, if brief, scheduling gap for zero benefit.</p>
-<h4>Troubleshooting</h4>
-<p>The one pattern that would be worth investigating: <code>leaseTransitions</code> climbing steadily — many handovers in a short time suggests the current leader keeps failing to renew before the 10-second renew deadline, which points to real instability (resource pressure, network flakiness to that node, or a crash-looping Pod) worth root-causing, not a cosmetic quirk.</p>
-<h4>Cleanup / rollback</h4>
-<p>Nothing to clean up — this challenge is observational.</p>
-<h4>Production lesson</h4>
-<p>Long, stable leadership on one node is the expected, healthy shape of leader election, not evidence against it. The habit to build is checking whether the standbys are healthy, not whether the current leader has "been in charge too long."</p>
-</div>
-
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/high-availability/" target="_blank" rel="noopener">kubernetes.io/docs — kubeadm: Creating Highly Available Clusters</a>, <a href="https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/ha-topology/" target="_blank" rel="noopener">kubernetes.io/docs — Options for Highly Available Topology</a>, <a href="https://kubernetes.io/docs/reference/command-line-tools-reference/kube-scheduler/" target="_blank" rel="noopener">kubernetes.io/docs — kube-scheduler reference</a>, <a href="https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/" target="_blank" rel="noopener">kubernetes.io/docs — kube-controller-manager reference</a>, and <a href="https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/lease-v1/" target="_blank" rel="noopener">kubernetes.io/docs — Lease v1 API reference</a> — verified 2026-08-03. All exam-allowed pages.</p>
+<p><a href="https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/high-availability/" target="_blank" rel="noopener">kubernetes.io/docs — kubeadm: Creating Highly Available Clusters</a> — exam-allowed page.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li><code>--control-plane-endpoint</code> must point at a load balancer, never at one control-plane node's IP — that's the one setting that makes control-plane nodes actually replaceable, and getting it wrong silently defeats HA until the day that node disappears.</li>
-    <li><code>kube-apiserver</code> is stateless and active on every instance at once; <code>kube-scheduler</code> and <code>kube-controller-manager</code> elect one leader each via a <code>Lease</code>, governed by documented 15s/10s/2s lease-duration/renew-deadline/retry-period defaults — a leader failing produces a real, bounded gap in new scheduling and reconciliation, not zero and not indefinite.</li>
-    <li>kubeadm defaults to stacked etcd (simpler, but couples an etcd member's failure to a control-plane instance's failure); external etcd trades roughly double the hosts for better failure isolation.</li>
-    <li>Use an odd number of control-plane nodes (3, not 2 or 4) — that's what the docs specify for clean leader selection and etcd quorum.</li>
-    <li><code>--upload-certs</code> certs auto-delete after two hours as a safeguard — reload them with <code>kubeadm init phase upload-certs</code> if you need to add a control-plane node later.</li>
+    <li><code>--control-plane-endpoint</code> points at a load balancer, not one node — that's what makes control-plane nodes replaceable.</li>
+    <li>kubeadm defaults to stacked etcd (one member per control-plane node).</li>
+    <li>API servers are all active at once; scheduler and controller-manager elect one leader via a <code>Lease</code> object.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck, or does your cluster's Lease output not match what this lesson predicted? Paste the exact <code>kubectl get lease -n kube-system ... -o yaml</code> output back to your teacher — a real mismatch here is usually more instructive than the lesson itself.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0019-crds-operators.html">&larr; CRDs &amp; Operators</a>
