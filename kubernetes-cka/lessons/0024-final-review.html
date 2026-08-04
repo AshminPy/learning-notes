@@ -8,10 +8,10 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 24 of 24 (Final Review)</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 24 of 24 (Final Review) · teach2 pilot</p>
 <h1>Final Review — Cheat Sheet</h1>
 
-<p>This is a reference page, not a new lesson — no new material, no quiz. It pulls together the commands and traps from Lessons 1–23 into one place to skim before the exam.</p>
+<p>This is a reference page, not a new lesson — no new material, no quiz. It pulls together the commands, traps, and interview quick-fire from Lessons 1–23 into one place to skim before the exam or an interview.</p>
 
 <h2>kubectl command cheat sheet</h2>
 
@@ -19,6 +19,7 @@
 <ul>
 <li><code>kubectl get pods --show-labels</code> — show labels on every Pod</li>
 <li><code>kubectl get pods -l tier=frontend</code> — filter Pods by label</li>
+<li><code>kubectl label pod &lt;name&gt; &lt;key&gt;=&lt;value&gt; --overwrite</code> — isolate a live Pod from its controller by relabeling it out of the selector, without deleting it</li>
 <li><code>kubectl get deploy</code> / <code>kubectl get rs</code> — see Deployments and the ReplicaSets they own</li>
 <li><code>kubectl rollout status deployment/&lt;name&gt;</code> — watch a rollout finish</li>
 <li><code>kubectl rollout undo deployment/&lt;name&gt;</code> — roll back to the previous ReplicaSet</li>
@@ -103,6 +104,15 @@
 <li>A PV's <code>reclaimPolicy</code> decides whether data survives its PVC's deletion — <code>Delete</code> (default) destroys it, <code>Retain</code> keeps it but needs manual cleanup. See <a href="0007-pvc.html">Lesson 7</a>.</li>
 <li>An HPA showing <code>&lt;unknown&gt;</code> in <code>TARGETS</code>, or <code>kubectl top</code> failing outright, both trace back to the same cause — metrics-server missing or unhealthy, not a bug in either feature. See <a href="0022-workload-autoscaling.html">Lesson 22</a> and <a href="0023-resource-monitoring.html">Lesson 23</a>.</li>
 </ol>
+
+<h2>Interview quick-fire</h2>
+<ul>
+<li><strong>Q: How does a Service find its Pods?</strong> A: It matches <code>spec.selector</code> against Pod labels, continuously, live — never by name. <code>kubectl get endpoints &lt;svc&gt;</code> proves it actually found any.</li>
+<li><strong>Q: What restarts a crashed container?</strong> A: A failed <em>liveness</em> probe, via the kubelet's <code>restartPolicy</code> — a failed <em>readiness</em> probe never restarts anything, it only pulls the Pod out of Service routing.</li>
+<li><strong>Q: Is a Kubernetes Secret encrypted?</strong> A: No — base64-encoded only. Plain text to anyone with etcd/API access unless <code>EncryptionConfiguration</code> is explicitly turned on.</li>
+<li><strong>Q: Does creating a NetworkPolicy automatically restrict traffic?</strong> A: No — it's a no-op unless the cluster's CNI implements NetworkPolicy enforcement.</li>
+<li><strong>Q: You relabel a running Pod out of its Deployment's selector — what happens?</strong> A: The Pod keeps running untouched; the ReplicaSet creates a replacement to restore its desired count. Real isolation technique, real accidental-outage cause.</li>
+</ul>
 
 <h2>Domain weights (CKA exam)</h2>
 <ul>
