@@ -11,12 +11,11 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 22 of 24</p>
 <h1>Workload autoscaling</h1>
 
-<h2>Why this matters</h2>
-<p>An HPA that's silently stuck is one of the most dangerous failure modes in this entire course, because nothing about it looks broken. Pods are <code>Running</code>. No <code>CrashLoopBackOff</code>, no failed probes, no red text anywhere. The only thing wrong is a number that quietly stopped updating — and that number happens to be the one thing supposed to save you when real traffic shows up. If <code>metrics-server</code> dies quietly at 6am and nothing alerts on it directly, your HPA is technically still "running": its control loop still fires every 15 seconds, it's just working from the last data it ever received. Then a real spike hits at 2pm, replica count never moves, and by the time anyone realizes the problem is autoscaling and not the application, you've eaten an incident that a 10-second <code>kubectl top pods</code> would have caught immediately.</p>
+<p>Lesson 4's Deployment holds replica count fixed until you edit it by hand. A <strong>HorizontalPodAutoscaler (HPA)</strong> edits that number for you, based on real load — more Pods when busy, fewer when idle.</p>
 
-<p class="callout"><strong>Mental model:</strong> an HPA is a thermostat, not a temperature sensor — sharpen that one step further. A thermostat with a broken sensor doesn't detect a freezing room; it just keeps trusting the last reading it ever got, forever, with total confidence. Two things follow directly from this, and both are testable, not just poetic: first, <strong>an HPA can never fix a problem the metrics pipeline itself has</strong> — if metrics-server is down, the HPA doesn't estimate or guess, it just stops making new decisions and holds whatever replica count already existed. Second, <strong>every HPA decision lags real load by design</strong>, even when metrics are perfectly healthy — it only re-checks every 15 seconds, and its scale-down logic deliberately looks backward over several minutes before it trusts that a drop is real (the "why" is below). The HPA is exactly as good as the data feeding it, and never faster than its own reconcile loop. If you remember one sentence from this lesson, remember that one.</p>
+<p class="callout"><strong>Simple example:</strong> the HPA is a thermostat, not a temperature sensor. It doesn't measure CPU itself — it reads numbers from metrics-server (Lesson 23) and adjusts <code>spec.replicas</code> on your Deployment to hit a target. Same reconcile-loop idea as everything else in this course: watch, compare, adjust.</p>
 
-<h2>Creating and reading an HPA</h2>
+<h2>Creating one</h2>
 <pre><code>kubectl autoscale deployment my-app --cpu-percent=50 --min=1 --max=10
 </code></pre>
 <p>Or the manifest form, which is what the exam usually expects you to write:</p>
@@ -29,7 +28,7 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: my-app
-  minReplicas: 2
+  minReplicas: 1
   maxReplicas: 10
   metrics:
     - type: Resource
@@ -39,154 +38,21 @@ spec:
           type: Utilization
           averageUtilization: 50
 </code></pre>
-<p><code>scaleTargetRef</code> is the only part that points at your Deployment — everything else describes the target and the bounds. This only ever changes <em>replica count</em> (horizontal) — it never changes a single Pod's CPU/memory requests. Resizing an individual Pod's own resources is a different, separate feature (Vertical Pod Autoscaler), not covered in this lesson.</p>
+<p><code>scaleTargetRef</code> is the only part that points at your Deployment — everything else describes the target and the bounds. This only ever changes <em>replica count</em> (horizontal) — it never changes a single Pod's CPU/memory requests. Resizing an individual Pod's resources is a different, separate feature (Vertical Pod Autoscaler), not part of this lesson.</p>
 
-<p>Reading it:</p>
+<h2>Reading it</h2>
 <pre><code>kubectl get hpa
 NAME     REFERENCE          TARGETS   MINPODS   MAXPODS   REPLICAS
 my-app   Deployment/my-app  35%/50%   1         10        2
 </code></pre>
-<p>If <code>TARGETS</code> shows <code>&lt;unknown&gt;/50%</code> instead of a real number, the HPA has nothing to read from. That's the single most common HPA failure, and it looks nothing like an error — no red text, no restart count, just a number that quietly refuses to update. There are two distinct root causes, and you should rule out both before assuming which one you have:</p>
-<ul>
-<li><strong>metrics-server is missing or unhealthy</strong> (Lesson 23) — the whole cluster's metrics pipeline is down. <code>kubectl top pods</code> will also fail, for the same underlying reason, in every namespace.</li>
-<li><strong>The target Pods have no CPU (or memory) resource request set</strong> (Lesson 11). A <code>Utilization</code>-type target is a percentage <em>of the request</em> — with nothing to divide by, the percentage is undefined, and the docs are explicit that the autoscaler "will not take any action for that metric" when this happens. metrics-server can be completely healthy and you'll still see <code>&lt;unknown&gt;</code>.</li>
-</ul>
-<p>Same symptom, two different failure domains — one is a cluster-wide infrastructure problem, the other is a one-Deployment YAML mistake. <code>kubectl top pods</code> tells you which one you have: if it returns real numbers for other workloads, metrics-server is fine, and the problem is the missing request on this specific Deployment.</p>
+<p>If <code>TARGETS</code> shows <code>&lt;unknown&gt;/50%</code> instead of a real number, the HPA has nothing to read from — metrics-server (Lesson 23) isn't installed or isn't reporting yet. That's the single most common HPA failure, and it looks nothing like an error.</p>
 
-<h2>Scale-up vs. scale-down: deliberately asymmetric</h2>
-<p>Kubernetes does not treat growing and shrinking replica count the same way — and once you know the actual default numbers, "why is it scaling down so slowly" stops being a mystery. This is the implicit <code>behavior</code> block applied automatically even if you never write one yourself, verified against the current docs:</p>
-<pre><code>behavior:
-  scaleUp:
-    stabilizationWindowSeconds: 0
-    policies:
-    - type: Percent
-      value: 100
-      periodSeconds: 15
-    - type: Pods
-      value: 4
-      periodSeconds: 15
-    selectPolicy: Max
-  scaleDown:
-    stabilizationWindowSeconds: 300
-    policies:
-    - type: Percent
-      value: 100
-      periodSeconds: 15
-</code></pre>
-<ul>
-<li><strong>Scale-up has no stabilization window</strong> (<code>0</code> seconds) — the controller acts on the very first metric reading that says "scale up." It can add up to 100% of current replicas or 4 Pods, whichever is larger, every 15 seconds (<code>selectPolicy: Max</code> always takes the more aggressive of the two policies). This is deliberately fast: the cost of scaling up a little too eagerly is a few extra Pods for a few minutes; the cost of scaling up too slowly is dropped requests.</li>
-<li><strong>Scale-down has a 300-second (5-minute) stabilization window</strong> — and it isn't a simple delay timer. The controller keeps every desired-replica-count recommendation computed over the last 5 minutes and scales down to the <em>highest</em> (most conservative) of them, not the most recent one. This "rolling maximum" is what actually stops flapping — without it, a metric that dips for 20 seconds and recovers would trigger a scale-down and then an almost-immediate scale-up right after, tearing down a Pod only to reschedule a near-identical one moments later.</li>
-</ul>
-<p>The asymmetry is the design, not an oversight: Kubernetes would rather run a few extra Pods for five minutes than tear down capacity on a metric blip and get caught understaffed if load comes right back.</p>
-<p>Two more verified defaults worth knowing: the controller re-evaluates every HPA on a fixed sync period — <code>--horizontal-pod-autoscaler-sync-period</code>, 15 seconds by default — so "reacts immediately" never means sub-second; and it applies a default <strong>tolerance of 0.1</strong> (10%), meaning if the desired replica count is within 10% of the current one, it does nothing at all, to avoid churn on statistical noise.</p>
-
-<h2>Metric sources: what an HPA can actually watch</h2>
-<p>CPU utilization is the default everyone learns first, but the HPA API supports four distinct metric source types, each backed by a different API and a different piece of infrastructure:</p>
-<table>
-<tr><th>Metric type</th><th>Backing API</th><th>What it measures</th></tr>
-<tr><td><code>Resource</code></td><td><code>metrics.k8s.io</code> (metrics-server)</td><td>Per-Pod CPU or memory — a Utilization percentage of the request, or a raw value</td></tr>
-<tr><td><code>Pods</code></td><td><code>custom.metrics.k8s.io</code></td><td>A custom per-Pod metric with a raw value, e.g. requests-per-second per Pod</td></tr>
-<tr><td><code>Object</code></td><td><code>custom.metrics.k8s.io</code></td><td>A single metric describing another object in the cluster, e.g. requests queued on an Ingress</td></tr>
-<tr><td><code>External</code></td><td><code>external.metrics.k8s.io</code></td><td>A single metric from outside the cluster entirely, e.g. queue depth on a managed message queue</td></tr>
-</table>
-<p><code>Pods</code>, <code>Object</code>, and <code>External</code> all require a metrics adapter you install and operate yourself (Prometheus Adapter and KEDA are the two you'll most often run into) — metrics-server alone only ever serves <code>Resource</code> metrics. "Just use custom metrics" is a real, documented HPA capability, but it's infrastructure you now own, not a checkbox — the decision guide below treats it that way.</p>
-
-<h2>Production example</h2>
-<p class="callout production"><strong>Production note:</strong> a real team running a user-facing <code>checkout-api</code> Deployment does not ship the tutorial defaults. A realistic HPA for that service looks like: <code>minReplicas: 3</code> (never 1 — see the reliability note below), <code>maxReplicas: 40</code> deliberately kept below what the node pool could technically schedule, a 60% CPU target with headroom for burst traffic before new Pods finish starting, and <code>behavior.scaleDown.stabilizationWindowSeconds</code> raised from the 300-second default to 600 (10 minutes) — because this specific team had a real incident where a 3-4 minute internal batch job periodically paused outbound calls, tripping a scale-down that reversed itself minutes later. Tuning the stabilization window was a one-line change once they had the graph proving the pattern; nobody guessed the number, they measured it first.</p>
-
-<h2>Hands-on exercise</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Watch replica count actually change in response to real CPU load — not just read about it — using Kubernetes' own official HPA example workload.</p>
-<h4>Scenario</h4>
-<p>Deploy a small Apache/PHP app that deliberately burns CPU per request, put an HPA in front of it, generate real load from inside the cluster, and watch <code>kubectl get hpa -w</code> react.</p>
-<h4>Environment assumptions</h4>
-<p>A cluster with metrics-server installed and healthy — confirm with <code>kubectl top nodes</code> before starting. If that command errors, fix that first (Lesson 23); otherwise this exercise "fails" for a reason that has nothing to do with the HPA itself, which is exactly the trap this lesson is about.</p>
-<h4>Commands</h4>
-<pre><code># 1. Deploy the official example app (sets requests.cpu: 200m, limits.cpu: 500m)
-kubectl apply -f https://k8s.io/examples/application/php-apache.yaml
-
-# 2. Create the HPA: scale 1-10 replicas, target 50% CPU
-kubectl autoscale deployment php-apache --cpu-percent=50 --min=1 --max=10
-
-# 3. In one terminal, watch it live
-kubectl get hpa php-apache -w
-
-# 4. In a second terminal, generate load
-kubectl run -i --tty load-generator --rm --image=busybox:1.28 --restart=Never -- \
-  /bin/sh -c "while sleep 0.01; do wget -q -O- http://php-apache; done"</code></pre>
-<h4>Expected result</h4>
-<p>Within the first minute, <code>TARGETS</code> climbs well past 50%. Within 1-3 minutes, <code>REPLICAS</code> starts climbing from 1 toward higher numbers as the scale-up policy (100%, or +4 Pods, per 15 seconds — whichever is more) kicks in.</p>
-<h4>Verification</h4>
-<p>Stop the load generator (Ctrl+C — <code>--rm</code> deletes the Pod automatically) and keep watching. <code>TARGETS</code> drops back toward 0% quickly, but <code>REPLICAS</code> should hold near its peak for close to 5 minutes before it starts dropping — that pause is the 300-second scale-down stabilization window you just read about, not a stuck HPA.</p>
-<h4>Common failure</h4>
-<p><code>TARGETS</code> stays at <code>&lt;unknown&gt;</code> the whole time. That's not this exercise being broken — it's Lesson 23's failure mode, live: either metrics-server isn't actually healthy despite the earlier check, or (less likely here, since the example manifest sets requests explicitly) a resource request is missing somewhere.</p>
-<h4>Troubleshooting</h4>
-<p><code>kubectl top pods</code> — if this also fails, it's metrics-server, not the HPA. <code>kubectl describe hpa php-apache</code> — check the <code>Conditions</code> section for <code>ScalingActive: False</code>, which states the exact failure reason in plain text instead of leaving you to guess.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete hpa php-apache
-kubectl delete deployment php-apache
-kubectl delete service php-apache</code></pre>
-<h4>Production lesson</h4>
-<p>Doing this once, and actually watching the 5-minute pause on scale-down happen in real time, is what turns "the HPA seems slow" from a red flag into a calibrated expectation during a real incident.</p>
-</div>
-
-<h2>Failure scenario</h2>
-<p>A realistic incident — the actual failure is hours old before anyone notices, because nothing ever alerted on it directly.</p>
-<ol class="timeline">
-<li><span class="t">06:14</span> <code>metrics-server</code>'s Pod is OOMKilled during a routine node patch cycle and comes back in <code>CrashLoopBackOff</code> — its memory limit was sized for a smaller cluster months ago and never revisited. No alert exists on metrics-server itself, only on application-level symptoms, so nobody notices.</li>
-<li><span class="t">14:02</span> A marketing push drives traffic to <code>checkout-api</code> to roughly 5x normal. Latency alerts fire.</li>
-<li><span class="t">14:05</span> On-call runs <code>kubectl get pods</code> — every <code>checkout-api</code> Pod is <code>Running</code>, zero restarts, no failed probes. Nothing here looks broken.</li>
-<li><span class="t">14:09</span> Assuming an application bug, on-call reads <code>checkout-api</code> logs and manually restarts two Pods. Latency doesn't improve — restarting healthy Pods that are simply overloaded never helps.</li>
-<li><span class="t">14:18</span> On-call finally checks <code>kubectl get hpa</code>: <code>TARGETS</code> reads <code>&lt;unknown&gt;/70%</code>, and <code>REPLICAS</code> has been stuck at <code>4</code> (the configured minimum) since before the spike even started.</li>
-<li><span class="t">14:20</span> <code>kubectl top pods</code> returns <code>error: Metrics API not available</code> — the first hard evidence this was never an application problem.</li>
-<li><span class="t">14:22</span> <code>kubectl get pods -n kube-system | grep metrics-server</code> shows <code>CrashLoopBackOff</code>, restart count in the hundreds, running since <code>06:14</code>.</li>
-<li><span class="t">14:25</span> <code>kubectl describe pod</code> on the metrics-server Pod shows <code>OOMKilled</code> as the last termination reason. Its memory limit is raised and reapplied.</li>
-<li><span class="t">14:28</span> metrics-server comes up <code>Running</code> and stable. <code>kubectl get hpa</code> shows a real <code>TARGETS</code> percentage again within about a minute.</li>
-<li><span class="t">14:34</span> Replicas climb from 4 to 19 over the next few minutes; latency recovers.</li>
-</ol>
-<p>Total time to the real root cause: 24 minutes, roughly 16 of which were spent investigating the application — because every one of the on-call's first checks (Pod status, restarts, logs) looked completely healthy. <code>kubectl top pods</code> would have surfaced the real problem in under 10 seconds, at 14:05, if it had been the first check instead of the fifth.</p>
-
-<h2>Troubleshooting workflow</h2>
-<p>The general 10-step method, applied specifically to "my HPA isn't scaling":</p>
-<ol class="troubleshooting">
-<li><strong>Confirm the symptom.</strong> <code>kubectl get hpa &lt;name&gt;</code> — is <code>TARGETS</code> a real number that just hasn't crossed your threshold yet, or is it stuck at <code>&lt;unknown&gt;</code>? Those are two completely different problems; don't diagnose from a stale mental picture of what it showed an hour ago.</li>
-<li><strong>Define scope.</strong> <code>kubectl get hpa -A</code> — is every HPA in the cluster showing <code>&lt;unknown&gt;</code> (cluster-wide: metrics-server), or just this one (Deployment-specific: missing resource requests, or a wrong <code>scaleTargetRef</code>)?</li>
-<li><strong>Check recent changes.</strong> <code>kubectl get events --sort-by=.lastTimestamp -A</code> — was metrics-server recently restarted or OOMKilled? Was the target Deployment recently edited (renamed, requests removed, replaced)?</li>
-<li><strong>Inspect the right state.</strong> Three checks, in order: <code>kubectl top pods</code> (does the metrics pipeline work at all, independent of any HPA object); <code>kubectl describe hpa &lt;name&gt;</code> (read the <code>Conditions</code> section — <code>AbleToScale</code>, <code>ScalingActive</code>, <code>ScalingLimited</code> — and the Events at the bottom, which name the exact failure); <code>kubectl get deployment &lt;name&gt;</code> to confirm <code>scaleTargetRef</code> actually names a Deployment that exists, with the right <code>kind</code> and <code>apiVersion</code> — a typo here silently points the HPA at nothing.</li>
-<li><strong>Form a hypothesis.</strong> Narrow to one of: metrics-server down, missing resource requests, wrong <code>scaleTargetRef</code>, or — genuinely healthy — already pinned at <code>maxReplicas</code>/<code>minReplicas</code>.</li>
-<li><strong>Test one variable.</strong> <code>kubectl get hpa &lt;name&gt; -o yaml</code> and read <code>.status.conditions</code> directly: <code>ScalingLimited: True</code> with reason <code>TooManyReplicas</code> means you're not stuck — you're correctly capped at <code>maxReplicas</code>, and the real question becomes "is the ceiling too low," not "why won't it scale."</li>
-<li><strong>Apply the safest fix.</strong> Restart or resource-fix metrics-server if it's unhealthy; add the missing <code>resources.requests</code> if that's the cause; correct <code>scaleTargetRef</code> if it's a typo. Don't raise <code>maxReplicas</code> as a reflex before confirming the cluster's nodes can actually schedule that many more Pods.</li>
-<li><strong>Verify recovery.</strong> <code>kubectl get hpa &lt;name&gt; -w</code> — confirm <code>TARGETS</code> shows a real, updating number and <code>REPLICAS</code> moves in the direction the metric predicts, not just that the object "looks" healthy in one snapshot.</li>
-<li><strong>Document the root cause.</strong> Write down which of the four categories it actually was — "metrics-server OOMKilled at 06:14, no alert existed on it" is a useful sentence; "HPA was broken, now it's fixed" is not.</li>
-<li><strong>Prevent recurrence.</strong> Alert directly on metrics-server health (Pod restarts, <code>kubectl top</code> success), not only on downstream symptoms like latency — and alert on <code>ScalingLimited: True</code> persisting for a sustained period as an early warning that <code>maxReplicas</code> is now too low for real traffic.</li>
-</ol>
-
-<h2>Security &amp; reliability considerations</h2>
-<p class="callout production"><strong>Production note:</strong> <code>minReplicas: 1</code> is a genuine availability risk for anything user-facing, and it's easy to land there by accident — <code>minReplicas</code> defaults to <code>1</code> if you omit it entirely. One replica means a single node failure, a single rolling update, or a single crash takes the service fully down while a replacement gets scheduled. For anything user-facing, set <code>minReplicas</code> to at least 2, and ideally 3 spread across nodes, so the service survives routine disruption, not just quiet periods.</p>
-<p class="callout cost"><strong>Cost note:</strong> <code>maxReplicas</code> is a required field with no default — Kubernetes forces you to pick a number, but not a sane one. An overly generous ceiling turns a runaway load event — a retry storm from a buggy downstream client, a cache stampede, a genuine volumetric spike — into a real bill event, not just a performance one, once the HPA is free to keep adding Pods. Treat <code>maxReplicas</code> as a capacity-planning number tied to what your node pool and your budget can actually absorb, not a round number picked to "leave headroom."</p>
-<p class="callout security"><strong>Security note:</strong> an HPA has no concept of "is this legitimate traffic" — it reacts to whatever the configured metric says, full stop. If an attacker (or a misbehaving internal client) can drive up the metric an HPA watches — request volume, CPU load, queue depth — they can indirectly drive your replica count and your cloud spend, independent of whether the load was ever real demand. This isn't a credentials-and-access-control issue; it's a reason <code>maxReplicas</code> and upstream rate limiting (Lesson 8's Ingress, or a dedicated rate limiter) matter together — the HPA alone can't tell a flash sale from an attack.</p>
-
-<h2>Common mistakes</h2>
-<p class="callout mistake"><strong>Common mistake:</strong> leaving <code>minReplicas</code> at its default of <code>1</code> for a user-facing Deployment because nobody explicitly typed a number. At that point it isn't a deliberate choice, it's an accident — and it's the exact setup that turns a routine node drain into a full outage instead of a non-event.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> setting <code>maxReplicas</code> generously "to be safe," without checking node capacity or cost, then discovering during a genuine traffic anomaly or a retry-storm bug that the HPA did exactly what it was told and scaled far past what anyone expected. <code>maxReplicas</code> protects you from under-scaling; nothing protects you from an unreasonable <code>maxReplicas</code> except setting a reasonable one.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> writing a <code>Utilization</code>-type CPU or memory target on a Deployment with no <code>resources.requests</code> set (Lesson 11), then spending an hour debugging "why is metrics-server broken" — metrics-server was never the problem, the percentage the HPA needed was undefined from the start.</p>
-
-<h2>Decision guide</h2>
-<table>
-<tr><th>Metric type</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
-<tr><td>CPU (<code>Resource</code>)</td><td>Load is genuinely compute-bound — a typical stateless API or web frontend</td><td>CPU stays flat under real load (I/O-bound or memory-bound workloads)</td><td>Simplest option, needs only metrics-server — but a poor signal if CPU isn't your real bottleneck</td></tr>
-<tr><td>Memory (<code>Resource</code>)</td><td>Working-set size genuinely tracks load, e.g. per-request caching that grows with traffic</td><td>Most other workloads — memory often doesn't fall back down after a spike, which breaks scale-down and risks OOMKill before the HPA reacts</td><td>Same metrics-server dependency as CPU, but a far less reliable signal in both directions</td></tr>
-<tr><td>Custom / external (<code>Pods</code>, <code>Object</code>, <code>External</code>)</td><td>A real business signal exists — queue depth, requests-per-second, active connections — that predicts load better than CPU can</td><td>You don't already run a metrics adapter (e.g. Prometheus Adapter, KEDA) — this is real infrastructure to operate, not a config flag</td><td>The most accurate scaling signal available, at the cost of owning another moving part in production</td></tr>
-</table>
-<p><strong>Default recommendation:</strong> start with CPU for stateless HTTP/worker workloads — it needs nothing beyond metrics-server and covers most real cases. Move to a custom or external metric only once you can point at a specific, measured mismatch between CPU and actual load. Don't reach for memory as your primary signal unless you've verified memory usage tracks load and genuinely falls back down once load drops.</p>
-
-<h2>Knowledge check</h2>
+<h2>Try it — before looking below</h2>
 <div class="quiz">
 <p>Q1. You create an HPA and traffic spikes hard, but <code>kubectl get hpa</code> shows <code>&lt;unknown&gt;/50%</code> and replica count never moves. What's actually broken?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">Nothing about the HPA object itself — it's waiting on metrics it never receives. Check <code>kubectl top pods</code> first: if it fails cluster-wide, metrics-server is missing or unhealthy; if it works fine elsewhere, the target Deployment is likely missing a CPU resource request.</div>
+<div class="answer" id="a1">Nothing about the HPA object itself — it's waiting on metrics it never receives. Check <code>kubectl top pods</code> works at all; if it doesn't, metrics-server isn't installed or isn't healthy, and the HPA has no data to act on.</div>
 </div>
 
 <div class="quiz">
@@ -213,91 +79,19 @@ spec:
 </code></pre>
 </div>
 
-<div class="quiz">
-<p>Q3. By default, how long does the HPA controller wait before scaling down, once metrics indicate fewer replicas are needed?</p>
-<div class="opts">
-<label>A. 0 seconds — it scales down immediately</label>
-<label>B. 15 seconds — one sync-period cycle</label>
-<label>C. 300 seconds — a five-minute window</label>
-<label>D. 600 seconds — a ten-minute window</label>
-</div>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a3">C. The default <code>scaleDown.stabilizationWindowSeconds</code> is 300. Scale-up, by contrast, has a stabilization window of 0 — it reacts immediately. (15 seconds is the sync period, how often the controller checks at all, not how long it waits before acting. 600 seconds is a value some teams tune to deliberately, not the shipped default.)</div>
-</div>
-
-<div class="quiz">
-<p>Q4. Which of these is <strong>not</strong> one of the four real HPA metric source types?</p>
-<div class="opts">
-<label>A. Resource — CPU or memory from metrics-server</label>
-<label>B. Pods — a custom per-Pod metric value</label>
-<label>C. Object — a metric describing another cluster object</label>
-<label>D. Volume — a metric describing disk usage directly</label>
-</div>
-<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a4">D. The real four types are Resource, Pods, Object, and External. "Volume" isn't an HPA metric type at all — disk usage isn't something the HPA API watches.</div>
-</div>
-
-<div class="quiz">
-<p>Q5. If you omit <code>minReplicas</code> entirely from an HPA spec, what value does it default to?</p>
-<div class="opts">
-<label>A. 0 replicas — scaling can reach zero</label>
-<label>B. 1 replica — the field's real default</label>
-<label>C. 2 replicas — a safer built-in minimum</label>
-<label>D. It is required — omitting it is invalid</label>
-</div>
-<button onclick="document.getElementById('a5').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a5">B. <code>minReplicas</code> defaults to 1 if omitted — which is exactly why it's easy to accidentally ship a user-facing service with no redundancy at all. (0 is only reachable with an explicit alpha feature gate plus an Object/External metric; it's never the default.)</div>
-</div>
-
-<h2>Certification mapping</h2>
-<p><strong>Workloads &amp; Scheduling (15%)</strong> of the CKA exam, per this course's <a href="../objectives.html">objectives tracker</a> — the same domain covering Deployments, ConfigMaps/Secrets, resource limits and probes, and the StatefulSet/DaemonSet/Job/CronJob family. The exam expects you to write an HPA manifest by hand and to reason about why one isn't scaling, not just to run <code>kubectl autoscale</code> once and move on.</p>
-
-<h2>Production challenge</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Diagnose a "the HPA is maxed out and we're still overloaded" incident using only what this lesson covered — decide what to check, and in what order, before touching any config.</p>
-<h4>Scenario</h4>
-<p>Your team's <code>api-gateway</code> Deployment has an HPA with <code>minReplicas: 4</code>, <code>maxReplicas: 30</code>. During a real incident, <code>kubectl get hpa</code> shows <code>REPLICAS: 30</code> (fully maxed) and <code>TARGETS: 145%/60%</code> — CPU is still far above target, but the HPA cannot add a single Pod more. Latency is degraded and getting worse.</p>
-<h4>Environment assumptions</h4>
-<p>This is a diagnostic exercise, not a hands-on cluster task — reason through it the way you would a CKA scenario question, or a real page at 2am. Write down your own answer before reading further.</p>
-<h4>Commands</h4>
-<pre><code># Confirm the HPA really is capped by maxReplicas, not something else
-kubectl get hpa api-gateway -o yaml   # check .status.conditions for ScalingLimited: True
-
-# Confirm whether the cluster even has room for more Pods than 30
-kubectl get nodes
-kubectl describe nodes | grep -A5 "Allocated resources"
-kubectl get pods -o wide | grep api-gateway | wc -l   # cross-check against REPLICAS</code></pre>
-<h4>Expected result</h4>
-<p><code>ScalingLimited: True</code>, reason <code>TooManyReplicas</code> — confirming the HPA is doing exactly what it's configured to do: refusing to exceed <code>maxReplicas: 30</code> even though the metric says it needs more. That's not a bug. The real question is whether 30 was ever the right ceiling, and whether the nodes could even hold more Pods if you raised it.</p>
-<h4>Verification</h4>
-<p>Two independent findings decide the fix, not a guess: (1) is <code>maxReplicas</code> genuinely too conservative for this traffic level, and (2) does the node pool have allocatable CPU/memory left to schedule beyond 30 Pods at all. If the nodes are already near full allocation, raising <code>maxReplicas</code> alone changes nothing — the new Pods would just sit <code>Pending</code>.</p>
-<h4>Common failure</h4>
-<p>Reflexively bumping <code>maxReplicas</code> to some large number without checking node capacity first. If the cluster can't schedule the extra Pods, you've edited a number and fixed nothing — the incident continues, now with a confusing "Pods stuck Pending" symptom layered on top of the original one.</p>
-<h4>Troubleshooting</h4>
-<p>This is exactly where the Horizontal Pod Autoscaler and the separate Cluster Autoscaler intersect, and the boundary is worth being precise about: the HPA only ever changes a Deployment's replica count — it has no concept of nodes at all. If your cluster runs a Cluster Autoscaler, that's the component watching for Pods stuck <code>Pending</code> due to insufficient node resources, and it adds nodes in response — a genuinely separate control loop, reacting to a different signal (unschedulable Pods, not CPU/memory percentages) on a different timescale. Raising <code>maxReplicas</code> without a Cluster Autoscaler — or without spare headroom in a fixed node pool — just trades one bottleneck for a more confusing one.</p>
-<h4>Cleanup / rollback</h4>
-<p>Not applicable — this is a diagnostic exercise; no cluster changes were made.</p>
-<h4>Production lesson</h4>
-<p>"The HPA is maxed out" is never the end of an investigation by itself — it's a pointer to one of two follow-up questions: is the ceiling wrong, or is the cluster itself out of room. Confusing the two wastes exactly the kind of time Lessons 15 and 16's troubleshooting method exists to prevent.</p>
-</div>
-
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/" target="_blank" rel="noopener">kubernetes.io/docs — Horizontal Pod Autoscaling</a> (scaling behavior, default stabilization windows, metric types, status conditions) and <a href="https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/" target="_blank" rel="noopener">kubernetes.io/docs — HorizontalPodAutoscaler Walkthrough</a> (the exercise commands in this lesson) — verified 2026-08-03. Both are searchable in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/" target="_blank" rel="noopener">kubernetes.io/docs — Horizontal Pod Autoscaling</a> — exam-allowed page.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>An HPA only adjusts replica count — it reads metrics, it never produces them, and it never touches a single Pod's own CPU/memory requests.</li>
-    <li><code>TARGETS</code> showing <code>&lt;unknown&gt;</code> has two distinct causes: metrics-server missing/unhealthy, or the target Pods have no resource request set for a Utilization-type metric. <code>kubectl top pods</code> tells you which.</li>
-    <li>Scale-up and scale-down are deliberately asymmetric: scale-up has a 0-second stabilization window and can add 100% of replicas or 4 Pods (whichever is more) every 15 seconds; scale-down waits 300 seconds and scales to the highest recommendation seen in that window, to prevent flapping.</li>
-    <li>HPA metrics come in four types — Resource, Pods, Object, External — but only Resource (CPU/memory via metrics-server) works with no extra infrastructure to run.</li>
-    <li><code>minReplicas</code> defaults to 1 if you omit it — a real availability risk for anything user-facing. <code>maxReplicas</code> is required with no default; an unbounded one is a cost risk, not just a safety net.</li>
-    <li>An HPA maxed out at <code>maxReplicas</code> is working correctly, not broken — check node capacity and the separate Cluster Autoscaler before assuming you just need a bigger number.</li>
+    <li>An HPA only adjusts replica count — it reads metrics, it doesn't produce them.</li>
+    <li><code>scaleTargetRef</code> points at the Deployment; <code>metrics</code> defines what to watch and the target.</li>
+    <li><code>TARGETS</code> showing <code>&lt;unknown&gt;</code> means metrics-server is missing or unhealthy — not a bug in the HPA.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck, or seeing a different <code>TARGETS</code> or <code>REPLICAS</code> number than this lesson predicted? Paste the exact <code>kubectl get hpa</code> and <code>kubectl describe hpa</code> output back to your teacher — that mismatch is usually more informative than the lesson itself.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0021-coredns-gateway-api.html">&larr; CoreDNS &amp; Gateway API</a>

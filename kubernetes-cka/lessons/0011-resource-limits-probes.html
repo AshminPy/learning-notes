@@ -11,13 +11,12 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 11 of 24</p>
 <h1>Resource limits + probes</h1>
 
-<h2>Why this matters</h2>
-<p>A missing memory limit is not a small oversight — it's an open invitation for one container to consume every byte of memory on a node, starving every other Pod scheduled there, Guaranteed or not, until the kernel starts killing things more or less at random. A missing or misconfigured readiness probe is just as costly in the opposite direction: Kubernetes will happily route real user traffic to a Pod the instant its container process starts, whether or not the app inside has actually finished loading its config, warmed its cache, or opened a database connection — and the first users to hit it get errors, not a graceful wait. Both failure modes look identical from the outside ("the app is broken") but have completely different root causes and completely different fixes, which is exactly why the CKA exam — and real on-call rotations — test them together.</p>
+<p>Two topics that always show up together: how much CPU/memory a container may use, and how Kubernetes checks if a container is healthy.</p>
 
-<p class="callout"><strong>Mental model:</strong> <code>requests</code> is a promise <em>to the scheduler</em> — "reserve this much space for me before you place me on a node." <code>limits</code> is a promise <em>enforced by the kernel and the kubelet</em> — "never let me use more than this, once I'm running." These are two separate guarantees, checked at two separate moments, by two separate enforcers. That single fact predicts something that looks like a contradiction the first time you see it: a Pod can be scheduled perfectly fine — its requests fit comfortably on the node — and then get OOMKilled ten minutes later, because its <em>limit</em> was exceeded. The scheduler only ever looks at requests. It never re-checks limits, and it has no idea your container is about to blow past its memory ceiling. If you remember nothing else from this lesson, remember that "scheduled successfully" and "will run forever without being killed" are two unrelated claims.</p>
+<p class="callout"><strong>Simple example:</strong> requests are what you tell the scheduler you need — like reserving a seat. Limits are the hard ceiling you can't cross once seated. Requests get you placed. Limits cap you.</p>
 
-<h2>Requests vs. limits — two different guarantees, two different enforcers</h2>
-<p><code>requests</code> is what the <strong>scheduler</strong> reads to pick a node — it never looks at <code>limits</code> when placing a Pod. <code>limits</code> is what the <strong>kubelet</strong> (and, underneath it, the Linux kernel via cgroups) enforces once the Pod is actually running.</p>
+<h2>Requests vs limits</h2>
+<p><code>requests</code> is what the <strong>scheduler</strong> uses to pick a node — a promise, not a cap. <code>limits</code> is what the <strong>kubelet</strong> enforces once the Pod is running — a hard ceiling.</p>
 <pre><code>resources:
   requests:
     cpu: "100m"
@@ -26,300 +25,118 @@
     cpu: "250m"
     memory: "256Mi"
 </code></pre>
-<p><strong>The exam trap:</strong> exceeding the two limits does not do the same thing, and the difference is verified straight from the Kubernetes docs.</p>
+<p><strong>The exam trap:</strong> exceeding the two limits does not do the same thing.</p>
 <ul>
-<li><strong>Memory limit exceeded &rarr; OOMKilled.</strong> Memory limits are enforced by the kernel via out-of-memory kills, and that enforcement is <em>reactive, not immediate</em> — the docs are explicit that "a container that over allocates memory may not be immediately killed," because the kill only happens once the kernel actually detects memory pressure. So a container can briefly spike over its memory limit and survive; it's not a hard, instant wall. When the kill does land, the container restarts according to the Pod's <code>restartPolicy</code> (<code>Always</code> by default).</li>
-<li><strong>CPU limit exceeded &rarr; throttled, never killed.</strong> CPU limits are enforced by the kernel restricting CPU time via cgroups — a genuinely hard limit, but one that just slows the container down. There is no CPU-limit equivalent of OOMKill. The container keeps running, forever, just capped.</li>
+<li>Memory limit exceeded &rarr; kernel <strong>OOMKills</strong> the container. It dies and restarts (per <code>restartPolicy</code>).</li>
+<li>CPU limit exceeded &rarr; container is <strong>throttled</strong>, not killed. It keeps running, just slower.</li>
 </ul>
-<p>Two more facts that matter and are easy to get backwards:</p>
-<ul>
-<li><strong>If you set <code>limits</code> but skip <code>requests</code></strong>, Kubernetes copies your limit and uses it as the request — you end up with <code>requests == limits</code> whether you meant to or not.</li>
-<li><strong>If you set <code>requests</code> but skip <code>limits</code> entirely</strong>, nothing caps the container. As long as the node has spare capacity, "it's possible (and allowed) for a container to use more resource than its request" — all the way up to whatever the node has free. This is the single most dangerous combination in this lesson, because it looks safe (you set <em>something</em>) while leaving the door fully open.</li>
-</ul>
-
-<h2>QoS classes — what the kubelet decides for you</h2>
-<p>Kubernetes computes a Quality-of-Service class for every Pod automatically, from the requests/limits you set (you never set it directly), and that class decides eviction order when a node runs low on resources.</p>
-<table>
-<tr><th>QoS class</th><th>How it's assigned</th><th>Eviction priority</th></tr>
-<tr><td><strong>Guaranteed</strong></td><td>Every container in the Pod sets <code>requests</code> <em>and</em> <code>limits</code> for <em>both</em> CPU and memory, and for every container <code>requests == limits</code> on both.</td><td>Last to be evicted — the kubelet only touches these if system daemons themselves are starved.</td></tr>
-<tr><td><strong>Burstable</strong></td><td>Doesn't qualify for Guaranteed, but at least one container has a CPU or memory request or limit set.</td><td>Middle. Among Burstable Pods, the kubelet evicts the ones using more than they requested before the ones that aren't.</td></tr>
-<tr><td><strong>BestEffort</strong></td><td>No container in the Pod sets any CPU or memory request or limit at all.</td><td>First to be evicted, with no ceremony — Kubernetes made zero resource promises to this Pod, so it owes it nothing.</td></tr>
-</table>
-<p class="callout"><strong>Simple example:</strong> a Pod with <code>requests.memory: 256Mi</code> and <code>limits.memory: 512Mi</code>, but no CPU request or limit at all, is <strong>Burstable</strong> — not Guaranteed and not BestEffort. QoS is computed across every container and every resource; setting one resource carefully doesn't buy you Guaranteed if you left another one unset or unequal.</p>
 
 <h2>The three probes</h2>
-<p>A probe is the kubelet asking a container a yes/no health question, on a repeating timer, using <code>httpGet</code>, <code>tcpSocket</code>, <code>exec</code>, or <code>grpc</code>. Unless you override them, probes default to checking every 10 seconds (<code>periodSeconds: 10</code>), waiting up to 1 second for a response (<code>timeoutSeconds: 1</code>), and acting after 3 consecutive failures (<code>failureThreshold: 3</code>).</p>
+<p>A probe is the kubelet asking a container a yes/no question, on a timer.</p>
 <ul>
-<li><strong>livenessProbe</strong> — "is this container alive, or stuck?" Fails &rarr; kubelet <strong>kills and restarts</strong> the container, per <code>restartPolicy</code>. This is for genuine deadlocks — an app that's technically still running but will never recover on its own.</li>
-<li><strong>readinessProbe</strong> — "is this container ready for traffic right now?" Fails &rarr; the Pod is <strong>removed from every Service's endpoint list</strong>. No restart, no kill — the process keeps running, it just stops receiving new requests until it passes again.</li>
-<li><strong>startupProbe</strong> — "has this container finished its (possibly slow) startup?" While a startupProbe is configured and hasn't yet succeeded once, <strong>liveness and readiness probes are disabled entirely</strong> — the kubelet won't even run them. The moment the startup probe succeeds, it hands off and liveness/readiness take over for the rest of the container's life. This exists for one reason: to stop a slow-starting app (a JVM warming up, a legacy monolith loading a large cache) from being killed by an impatient liveness probe before it ever got a fair chance to start.</li>
+<li><strong>livenessProbe</strong> — "alive?" Fails &rarr; kubelet <strong>restarts</strong> the container.</li>
+<li><strong>readinessProbe</strong> — "ready for traffic?" Fails &rarr; Pod is <strong>removed from Service endpoints</strong>. No restart.</li>
+<li><strong>startupProbe</strong> — "finished starting?" While it hasn't succeeded, liveness and readiness are disabled. For slow-starting apps.</li>
 </ul>
-<p class="callout">Most confused pair: readiness failing never restarts anything — it only pulls the Pod out of load balancing. Liveness failing is the one that kills the container. Mixing these two up in an incident is how "traffic loss, zero restarts" gets misdiagnosed as "the app crashed."</p>
-<p>Putting requests/limits and a probe on the same container looks like this in practice:</p>
-<pre><code>containers:
-  - name: nginx
-    image: nginx:1.29
-    resources:
-      requests:
-        cpu: "100m"
-        memory: "128Mi"
-      limits:
-        cpu: "250m"
-        memory: "256Mi"
-    readinessProbe:
-      httpGet:
-        path: /
-        port: 80
-      initialDelaySeconds: 5
-      periodSeconds: 10
-</code></pre>
+<p class="callout">Most confused pair: readiness failing never restarts anything — it only stops traffic. Liveness failing is the one that restarts.</p>
 
-<h2>Scheduling constraints: node affinity</h2>
-<p>Requests/limits constrain <em>how much</em> of a node's resources a Pod may use. Node affinity constrains <em>which</em> nodes it's even allowed to land on, by matching node labels via <code>spec.affinity.nodeAffinity</code>.</p>
+<h2>Pod admission and scheduling constraints</h2>
+<p>Requests/limits (above) constrain <em>resources</em>. Two more mechanisms constrain <em>where</em> a Pod runs and <em>whether it's allowed to exist at all</em>:</p>
 <ul>
-<li><code>requiredDuringSchedulingIgnoredDuringExecution</code> — a hard requirement. No matching node, no scheduling; the Pod stays <code>Pending</code>.</li>
-<li><code>preferredDuringSchedulingIgnoredDuringExecution</code> — a soft preference, with a weight. The scheduler tries to honor it, but will place the Pod elsewhere rather than leave it unscheduled.</li>
+<li><strong>Pod Security Admission</strong> — a built-in admission controller that rejects (or just warns about) Pods violating a security standard, enforced per-namespace via a label: <code>pod-security.kubernetes.io/enforce: restricted</code>. The three standards are <code>privileged</code>, <code>baseline</code>, and <code>restricted</code> (least permissive). This replaced the older, now-removed PodSecurityPolicy.</li>
+<li><strong>Node affinity</strong> — <code>spec.affinity.nodeAffinity</code> constrains which nodes a Pod can land on, by matching node labels. <code>requiredDuringSchedulingIgnoredDuringExecution</code> is a hard requirement (won't schedule without a match); <code>preferredDuringSchedulingIgnoredDuringExecution</code> is a soft preference (schedules elsewhere if no match).</li>
 </ul>
-<pre><code>affinity:
-  nodeAffinity:
-    requiredDuringSchedulingIgnoredDuringExecution:
-      nodeSelectorTerms:
-        - matchExpressions:
-            - key: disktype
-              operator: In
-              values: ["ssd"]
-</code></pre>
-<p>Both words end in "<code>IgnoredDuringExecution</code>" for a reason worth remembering: neither form re-evaluates once the Pod is already running. Relabel the node out from under a running Pod and nothing evicts it — affinity is a scheduling-time decision only.</p>
-
-<p class="callout production"><strong>Production note:</strong> real clusters don't leave requests/limits to individual engineers' discretion, because a single unbounded Pod has taken down shared multi-tenant nodes in real incidents — a memory-leaking service with no limit climbing for hours until the node itself hits pressure and the kubelet starts evicting unrelated, innocent workloads to make room. The standard defense is a namespace-scoped <a href="https://kubernetes.io/docs/concepts/policy/limit-range/" target="_blank" rel="noopener">LimitRange</a> object that sets a default request/limit for any container that omits one, plus a hard min/max any container must fall within — LimitRange rejects (HTTP 403) a Pod that violates it, the same admission-time "nothing gets created" behavior you'll see again below for Pod Security Admission. Some orgs go further with a policy engine (OPA Gatekeeper, Kyverno) that flat-out refuses to admit any Pod that omits <code>resources.requests</code>/<code>resources.limits</code> at all. Either way, the point is the same: don't rely on every engineer remembering to set this by hand.</p>
-
-<h2>Hands-on exercise — trigger and observe a real OOMKill</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Stop taking "memory limit exceeded means OOMKilled" on faith — force it to happen and read the exact evidence the kubelet leaves behind.</p>
-<h4>Scenario</h4>
-<p>You're using the same deliberately-oversized-allocation pattern from the official Kubernetes memory-management tutorial: a container that requests 50Mi, is limited to 100Mi, and then tries to allocate 250Mi — well past its ceiling.</p>
-<h4>Environment assumptions</h4>
-<p>Any cluster you can <code>kubectl</code> into (kind, minikube, or a real dev cluster). No existing namespace called <code>mem-example</code>.</p>
-<h4>Commands</h4>
-<pre><code>kubectl create namespace mem-example
-
-cat &lt;&lt;EOF | kubectl apply -f - --namespace=mem-example
-apiVersion: v1
-kind: Pod
-metadata:
-  name: memory-demo-2
-spec:
-  containers:
-  - name: memory-demo-2-ctr
-    image: polinux/stress
-    resources:
-      requests:
-        memory: "50Mi"
-      limits:
-        memory: "100Mi"
-    command: ["stress"]
-    args: ["--vm", "1", "--vm-bytes", "250M", "--vm-hang", "1"]
-EOF
-
-kubectl get pod memory-demo-2 --namespace=mem-example
-kubectl describe pod memory-demo-2 --namespace=mem-example</code></pre>
-<h4>Expected result</h4>
-<p>The first <code>get</code> call shows <code>STATUS</code> flip to <code>OOMKilled</code> with <code>RESTARTS</code> climbing, because the container immediately tries to hold 250Mi against a 100Mi limit. <code>kubectl describe</code>'s "Last State" block shows <code>Terminated</code>, <code>Reason: OOMKilled</code>, and <code>Exit Code: 137</code> — 137 is the kernel's SIGKILL signature (128 + signal 9), the same number you'll see in any OOMKill, in any container, on any platform.</p>
-<h4>Verification</h4>
-<p>Run <code>kubectl get pod memory-demo-2 --namespace=mem-example -o jsonpath='{.status.containerStatuses[0].lastState.terminated.reason}'</code> — it should print exactly <code>OOMKilled</code>. Watch <code>RESTARTS</code> over 30–60 seconds; it should keep climbing as the kubelet restarts the container and it immediately re-triggers the same allocation and dies again.</p>
-<h4>Common failure</h4>
-<p>Expecting a graceful error message from the app. There isn't one — the kernel kills the process outright before the container gets a chance to log anything useful. This is exactly why "app just disappeared, no error in logs" is a strong OOMKill signal, not a mystery.</p>
-<h4>Troubleshooting</h4>
-<p>If the Pod shows <code>Running</code> instead of <code>OOMKilled</code>, check you didn't typo the <code>--vm-bytes</code> value below the limit — the allocation genuinely has to exceed <code>limits.memory</code> to trigger this. If <code>kubectl describe</code> shows no <code>lastState</code> at all, the container hasn't restarted yet; wait a few seconds and re-run.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete namespace mem-example</code></pre>
-<h4>Production lesson</h4>
-<p>Exit code 137 with no restart-triggering application log is the fingerprint of an OOMKill, not a crash bug in your code. The very first thing to check on any Pod stuck in a restart loop is <code>kubectl describe pod</code>'s "Last State" section — it tells you in one line whether you're chasing a memory-limit problem or an actual application defect, and those two require completely different fixes.</p>
-</div>
-
-<h2>Failure scenario</h2>
-<p>A realistic incident where nothing crashes, nothing restarts, and the rollout still fails — caused by the other probe.</p>
-<ol class="timeline">
-<li><span class="t">09:41</span> A teammate ships a routine change to the <code>checkout-api</code> Deployment (5 replicas) and renames the health endpoint from <code>/health</code> to <code>/healthz</code> in the app code — but doesn't update the Deployment's <code>readinessProbe.httpGet.path</code>, which still points at <code>/health</code>.</li>
-<li><span class="t">09:42</span> CI runs <code>kubectl rollout status deployment/checkout-api</code> as its deploy gate. The command doesn't return — it just hangs, printing "Waiting for deployment... 2 out of 5 new replicas have been updated."</li>
-<li><span class="t">09:47</span> CI's step times out after five minutes and marks the deploy "failed," but the rolling update has already replaced 2 of the 5 old Pods with new ones. On-call is paged: "deploy failed, service partially degraded."</li>
-<li><span class="t">09:49</span> On-call runs <code>kubectl get pods -l app=checkout-api</code> — the 2 new Pods are <code>Running</code> with <strong>0/1 READY</strong>, not <code>CrashLoopBackOff</code> and not <code>Pending</code>. No restarts on either one. The 3 old Pods are still up and still serving traffic, untouched.</li>
-<li><span class="t">09:52</span> <code>kubectl describe pod &lt;new-pod&gt;</code> shows an Events line repeating every 10 seconds: <code>Readiness probe failed: HTTP probe failed with statuscode: 404</code>. The container itself never restarted — this was never a liveness problem.</li>
-<li><span class="t">09:55</span> On-call checks the new image's actual routes and confirms the endpoint is now <code>/healthz</code>, not <code>/health</code> — the probe path is stale, not the app.</li>
-<li><span class="t">09:58</span> Fix applied: update <code>readinessProbe.httpGet.path</code> to <code>/healthz</code> in the Deployment manifest and re-apply. The rolling update, which had been stalled the whole time (the Deployment's rolling-update strategy won't scale down old Pods until enough new ones report Ready), resumes on its own.</li>
-<li><span class="t">10:01</span> All 5 new Pods reach <code>1/1 READY</code>; the 3 old Pods are terminated by the rollout; <code>kubectl rollout status</code> returns <code>successfully rolled out</code>.</li>
-</ol>
-<p>Notice what didn't happen anywhere in this timeline: no container crashed, no restart count went up, and "the deploy failed" was technically wrong — the rollout wasn't failing, it was correctly refusing to finish an unsafe rollout. That distinction is the entire lesson.</p>
-
-<h2>Troubleshooting workflow</h2>
-<p>The general method, applied specifically to "my Pod keeps restarting" and "my Pod isn't Ready" — two symptoms that get confused constantly, and need to be told apart in step 1, not step 10.</p>
-<ol class="troubleshooting">
-<li><strong>Confirm the symptom.</strong> <code>kubectl get pods</code> — read the <code>READY</code> column (<code>0/1</code> vs <code>1/1</code>) and <code>RESTARTS</code> separately. Rising restarts = something is killing the container. <code>0/1</code> with restarts <em>not</em> rising = a readiness problem, not a crash.</li>
-<li><strong>Define scope.</strong> One Pod, one Deployment's Pods, or every Pod on a node? <code>kubectl get pods -o wide</code> across the namespace tells you if this is app-specific or node-wide (which would point at node memory pressure, not this one probe/limit).</li>
-<li><strong>Check recent changes.</strong> <code>kubectl rollout history deployment/&lt;name&gt;</code> and <code>kubectl get events --sort-by=.lastTimestamp</code> — did a probe path, a resource limit, or an image change in the last rollout?</li>
-<li><strong>Inspect the right state.</strong> <code>kubectl describe pod &lt;name&gt;</code> — read <em>both</em> the "Last State" block (Terminated / OOMKilled / exit code — proves a kill happened and why) and the live Events feed (repeating "Readiness probe failed" or "Liveness probe failed" lines — proves which probe, and how often).</li>
-<li><strong>Form a hypothesis, matched to the exact evidence.</strong> <code>Reason: OOMKilled</code> in Last State &rarr; memory-limit hypothesis. Restarting with <code>Reason: Error</code> and a liveness-probe-failed Event right before each restart &rarr; liveness hypothesis. <code>0/1</code>, zero restarts, repeating readiness-failed Events &rarr; readiness hypothesis — the container itself is fine.</li>
-<li><strong>Test one variable.</strong> For a suspected OOMKill: <code>kubectl top pod &lt;name&gt;</code> against its configured limit. For a suspected bad probe: run the exact same check manually — <code>kubectl exec &lt;name&gt; -- curl -sf http://localhost:&lt;port&gt;&lt;path&gt;</code> — using the literal path/port from the manifest, not what you assume it should be.</li>
-<li><strong>Apply the safest fix.</strong> OOMKill &rarr; raise the memory limit only after confirming the usage is legitimate, not a leak. Bad liveness probe &rarr; loosen <code>timeoutSeconds</code>/<code>failureThreshold</code> or add a <code>startupProbe</code>, don't just delete the probe. Bad readiness probe &rarr; fix the path/port to match the app, don't remove it — removing it means the Pod gets traffic immediately on container start, the exact problem readiness probes exist to prevent.</li>
-<li><strong>Verify recovery.</strong> <code>READY</code> reaches <code>1/1</code>, <code>RESTARTS</code> stops climbing, and — for the readiness case specifically — confirm the Pod is actually back in the Service's endpoint list: <code>kubectl get endpoints &lt;service&gt;</code>.</li>
-<li><strong>Document the root cause.</strong> Name the exact mechanism: "readinessProbe path was stale after an app route rename" is useful; "probes were misconfigured" is not — the next person needs to know which probe and why.</li>
-<li><strong>Prevent recurrence.</strong> Add a CI check that the probe path in the manifest actually exists in the built image, and treat probe-path changes as part of the same PR as the route rename that causes them — not an afterthought.</li>
-</ol>
-
-<h2>Security &amp; reliability considerations</h2>
-<p>Two more mechanisms constrain <em>whether a Pod is even allowed to exist</em>, and treating resource limits purely as a performance knob misses their reliability role entirely.</p>
-<p class="callout security"><strong>Security note:</strong> Pod Security Admission is a built-in admission controller that checks every Pod against one of three Pod Security Standards, applied per-namespace via labels — no separate policy object, no RBAC bindings to get wrong (the problem that made its predecessor, PodSecurityPolicy, hard to operate; PSP was deprecated in 1.21 and fully removed in 1.25, with Pod Security Admission as its stable replacement since 1.25). The three standards, each stricter than the last: <strong>privileged</strong> (effectively unrestricted), <strong>baseline</strong> (blocks known privilege-escalation paths — privileged containers, host namespaces, host ports), and <strong>restricted</strong> (baseline plus a locked-down capability set, a mandatory non-root user, a required seccomp profile, and no privilege escalation at all). Three independent modes control what happens on a violation, and only one of them blocks anything: <code>enforce</code> rejects the Pod outright at admission time; <code>audit</code> allows it but records the violation in the audit log; <code>warn</code> allows it but returns a warning message to whoever ran <code>kubectl apply</code>. All three can be set simultaneously, each at its own level, each independently version-pinned:</p>
 <pre><code>apiVersion: v1
 kind: Namespace
 metadata:
   name: secure-ns
   labels:
     pod-security.kubernetes.io/enforce: restricted
-    pod-security.kubernetes.io/audit: restricted
-    pod-security.kubernetes.io/warn: restricted
 </code></pre>
-<div class="trap"><strong>Exam trap:</strong> a Pod rejected by an <code>enforce</code> label never shows up in <code>kubectl get pods</code> at all — the create request itself is denied, full stop. If <code>kubectl apply</code> errors immediately with an admission message and nothing gets created, that's Pod Security Admission (or another admission controller, like a LimitRange), not a scheduling failure — a scheduling failure still creates the Pod object, just stuck in <code>Pending</code>.</div>
-<p class="callout production"><strong>Reliability note:</strong> resource limits are a security control too, in a specific and easy-to-forget sense — they're your defense against "noisy neighbor" incidents. On a shared node, one container with no memory limit doesn't just risk itself; it can push actual memory pressure onto every other Pod scheduled on that node, regardless of how carefully those teams sized their own limits, until the kubelet starts evicting BestEffort and Burstable Pods to relieve it. A resource limit isn't only about protecting the container that has one — it's about protecting everything else sharing that node from the one that doesn't.</p>
+<div class="trap"><strong>Exam trap:</strong> a Pod rejected by Pod Security Admission never shows up in <code>kubectl get pods</code> at all — the create request itself is denied. If <code>kubectl apply</code> errors immediately with an admission message and nothing gets created, that's this, not a scheduling failure (which would create the Pod in a <code>Pending</code> state instead).</div>
 
-<h2>Common mistakes</h2>
-<p class="callout mistake"><strong>Common mistake:</strong> setting <code>requests</code> without ever setting <code>limits</code>, assuming a request is "close enough" to a cap. It isn't — with no limit, the container can consume memory or CPU all the way up to whatever the node has free. Worse, the Pod won't even qualify as Guaranteed (it needs matching requests <em>and</em> limits on every resource), so it lands in Burstable — meaning it's also higher up the eviction list than a Pod that took the two extra lines to set a limit.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> tuning a <code>livenessProbe</code> to be "fast and strict" (short <code>timeoutSeconds</code>, low <code>failureThreshold</code>) without accounting for normal slowness — a JVM garbage-collection pause, a brief spike in request load. The app is genuinely healthy; it's just slow for two seconds. An overly aggressive liveness probe reads that as "dead," kills the container, and the restart itself adds cold-start latency right when the app was already under load — manufacturing a restart loop out of a health check, not an actual bug.</p>
-
-<h2>Decision guide</h2>
-<table>
-<tr><th>Probe</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
-<tr><td>livenessProbe</td><td>App can enter a real stuck/deadlocked state only a restart fixes</td><td>Slowness is normal and transient (GC pause, cold cache)</td><td>Catches real hangs fast, but too strict causes restart loops on healthy apps</td></tr>
-<tr><td>readinessProbe</td><td>App needs warm-up time or depends on another service before serving traffic</td><td>Almost never — nearly every real workload benefits from one</td><td>Safer rollouts, but a wrong path silently blocks all traffic with no crash to alert on</td></tr>
-<tr><td>startupProbe</td><td>Startup time is long and variable (legacy app, big in-memory cache load)</td><td>Startup is fast and consistent already</td><td>One more field to tune, but stops false liveness-kills during a slow boot</td></tr>
-</table>
-<table>
-<tr><th>Sizing choice</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
-<tr><td>requests == limits (Guaranteed)</td><td>Stable, predictable usage; critical stateful workload that must survive eviction storms</td><td>Usage is bursty — you'd reserve peak capacity around the clock</td><td>Safest under node pressure; costs you the headroom you reserve but rarely use</td></tr>
-<tr><td>requests &lt; limits (Burstable)</td><td>Usage is bursty and average load sits well below peak</td><td>Workload can't tolerate being throttled at its limit or evicted before Guaranteed Pods</td><td>Efficient bin-packing across the cluster; more exposed to eviction and OOMKill if requests are undersized</td></tr>
-<tr><td>No requests/limits (BestEffort)</td><td>Genuinely disposable scratch work only</td><td>Anything you'd be paged for</td><td>Zero protection — first evicted, first OOMKilled, no exceptions</td></tr>
-</table>
-<p><strong>Default recommendation:</strong> set both <code>requests</code> and <code>limits</code> on every production container, every time. Reach for Guaranteed (<code>requests == limits</code>) for stateful or business-critical workloads where eviction is unacceptable; reach for Burstable for bursty stateless services where efficient packing matters more than eviction safety. Never ship BestEffort to a shared cluster on purpose.</p>
-
-<h2>Knowledge check</h2>
+<h2>Try it — before looking below</h2>
 <div class="quiz">
 <p>Q1. A Pod's readiness probe starts failing. Does the container restart?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">No. It's pulled from every Service's endpoint list. The container itself keeps running untouched.</div>
+<div class="answer" id="a1">No. It's pulled from the Service's endpoint list. The container keeps running.</div>
 </div>
 
 <div class="quiz">
 <p>Q2. A container hits its memory limit. A different container hits its CPU limit. What happens to each?</p>
 <input type="text" id="q2" placeholder="type your answer">
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2">Memory: the kernel OOMKills it (exit code 137), then it restarts per <code>restartPolicy</code>. CPU: it's throttled by the kernel via cgroups — never killed, just slower.</div>
+<div class="answer" id="a2">Memory: OOMKilled, then restarted. CPU: throttled, keeps running slower — never killed.</div>
 </div>
 
 <div class="quiz">
 <p>Q3. <code>kubectl apply</code> on a Pod manifest fails instantly with an admission error, and <code>kubectl get pods</code> shows nothing was created. Is this a scheduling problem?</p>
 <input type="text" id="q3" placeholder="type your answer">
+<button onclick="document.getElementById('a3q').classList.add('shown')">Reveal</button>
+<div class="answer" id="a3q">No — a scheduling failure still creates the Pod object, just stuck <code>Pending</code>. Nothing being created at all, with an immediate admission error, points to Pod Security Admission (or another admission controller) rejecting the request outright.</div>
+</div>
+
+<h2>Now write your own</h2>
+<p>Take a Deployment's Pod template (no copy-paste) and add to the container:</p>
+<ul>
+<li><code>resources.requests</code> — a CPU and memory value</li>
+<li><code>resources.limits</code> — a CPU and memory value, at or above your requests</li>
+<li><code>readinessProbe</code> — an HTTP GET on the container's port, with <code>initialDelaySeconds</code> and <code>periodSeconds</code></li>
+</ul>
+<p>Apply it. Run <code>kubectl describe pod &lt;name&gt;</code> and check the <code>Requests</code>/<code>Limits</code> and <code>Readiness</code> lines.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
 <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-<div class="answer" id="a3">No — a scheduling failure still creates the Pod object, just stuck <code>Pending</code>. Nothing being created at all, with an immediate admission error, points to Pod Security Admission's <code>enforce</code> mode (or a LimitRange) rejecting the request outright.</div>
-</div>
-
-<div class="quiz">
-<p>Q4. A container sets <code>requests.cpu: 200m</code>, <code>limits.cpu: 200m</code>, <code>requests.memory: 256Mi</code>, <code>limits.memory: 512Mi</code>. What QoS class is this Pod?</p>
-<div class="opts">
-<label>A. Guaranteed, because the CPU values are exactly equal</label>
-<label>B. Burstable, because the memory values are not equal</label>
-<label>C. BestEffort, because no resource values were ever set</label>
-<label>D. Guaranteed, because every container resource field is set</label>
-</div>
-<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a4">B. Guaranteed requires requests == limits on <em>every</em> resource, not just one. CPU matches, but memory doesn't (256Mi vs 512Mi), so the Pod is Burstable overall.</div>
-</div>
-
-<div class="quiz">
-<p>Q5. Your app takes up to 4 minutes to finish loading a large in-memory cache before it can serve traffic reliably, but once loaded, it's snappy and stable. Which change fixes this without weakening ongoing health checks?</p>
-<div class="opts">
-<label>A. Increase livenessProbe's failureThreshold to a very high number</label>
-<label>B. Add a startupProbe that covers the full four minutes</label>
-<label>C. Remove the livenessProbe entirely for this one container</label>
-<label>D. Increase readinessProbe's periodSeconds to four minutes long</label>
-</div>
-<button onclick="document.getElementById('a5').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a5">B. A startupProbe sized for the full warm-up window disables liveness and readiness only until it succeeds once — giving the slow boot room without permanently loosening the checks that matter for the rest of the container's life.</div>
-</div>
-
-<div class="quiz">
-<p>Q6. A namespace has <code>pod-security.kubernetes.io/warn: restricted</code> set, with no <code>enforce</code> label present at all. A Pod violating the restricted standard is submitted. What happens?</p>
-<div class="opts">
-<label>A. The Pod is created, and a warning is shown</label>
-<label>B. The Pod is rejected, and nothing is created</label>
-<label>C. The Pod is created, but it stays Pending</label>
-<label>D. The Pod is queued until an admin approves it</label>
-</div>
-<button onclick="document.getElementById('a6').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a6">A. Only <code>enforce</code> blocks Pod creation. <code>warn</code> (like <code>audit</code>) still creates the Pod — it just surfaces a warning message to whoever ran <code>kubectl apply</code>.</div>
-</div>
-
-<h2>Certification mapping</h2>
-<p>This lesson spans two exam domains. Resource requests/limits and the three probe types fall under <strong>Workloads &amp; Scheduling (15%)</strong>. Pod Security Admission — the namespace-label mechanism covered in "Security &amp; reliability considerations" above — falls under <strong>Cluster Architecture, Installation &amp; Configuration (25%)</strong>, since it's a cluster-level admission control policy, not a workload spec field. Know both domains' worth of material before treating this lesson as done.</p>
-
-<h2>Production challenge</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Diagnose a Pod stuck <code>0/1 Not Ready</code> with zero restarts, using only the troubleshooting method above — no shortcuts, no being told the answer up front.</p>
-<h4>Scenario</h4>
-<p>A teammate deploys an app and says "it's stuck, I think it's crashing." Your job is to find out whether that's even true before touching anything.</p>
-<h4>Environment assumptions</h4>
-<p>A kind/minikube cluster. Build the broken scenario yourself first — don't peek at the fix below before you've tried step 1 of the troubleshooting method on it:</p>
-<pre><code>cat &lt;&lt;EOF | kubectl apply -f -
-apiVersion: v1
-kind: Pod
+<pre class="answer" id="a3"><code>apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: broken-readiness
+  name: my-nginx
 spec:
-  containers:
-  - name: web
-    image: nginx:1.29
-    ports:
-    - containerPort: 80
-    readinessProbe:
-      httpGet:
-        path: /this-path-does-not-exist
-        port: 80
-      periodSeconds: 5
-      failureThreshold: 2
-EOF</code></pre>
-<h4>Commands</h4>
-<p>Apply the troubleshooting workflow yourself: run <code>kubectl get pod broken-readiness</code>, note <code>READY</code> and <code>RESTARTS</code>, then <code>kubectl describe pod broken-readiness</code> and read the Events feed before forming a hypothesis. Only after that, fix the manifest and re-apply.</p>
-<h4>Expected result</h4>
-<p>Before the fix: <code>READY 0/1</code>, <code>RESTARTS 0</code>, and repeating <code>Readiness probe failed: HTTP probe failed with statuscode: 404</code> Events. After correcting <code>path</code> to <code>/</code> and re-applying, <code>READY</code> reaches <code>1/1</code> within a couple of probe periods, with <code>RESTARTS</code> still at 0 the entire time.</p>
-<h4>Verification</h4>
-<p><code>kubectl get pod broken-readiness -o jsonpath='{.status.containerStatuses[0].restartCount}'</code> should read <code>0</code> both before and after the fix — proving this was never a crash, only a routing problem in the probe itself.</p>
-<h4>Common failure</h4>
-<p>"Fixing" it by deleting the <code>readinessProbe</code> block instead of correcting the path. That makes the symptom disappear (the Pod immediately shows Ready) without proving anything about whether the app can actually serve real traffic — you've removed the safety check, not restored it.</p>
-<h4>Troubleshooting</h4>
-<p>If you still see <code>RESTARTS</code> climbing, you've built a different failure than intended — check whether you accidentally pointed a <code>livenessProbe</code> (not <code>readinessProbe</code>) at the bad path; that would explain restarts, and would mean you're now debugging this lesson's other failure mode instead.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete pod broken-readiness --ignore-not-found</code></pre>
-<h4>Production lesson</h4>
-<p>"It's stuck" and "it's crashing" are not the same claim, and confusing them wastes real incident time — the first thing <code>kubectl get pods</code> tells you is which one you're actually looking at, before you touch a single line of application code.</p>
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-nginx
+  template:
+    metadata:
+      labels:
+        app: my-nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+</code></pre>
 </div>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/" target="_blank" rel="noopener">manage-resources-containers</a>, <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-qos/" target="_blank" rel="noopener">pod-qos-classes</a>, <a href="https://kubernetes.io/docs/tasks/configure-pod-container/assign-memory-resource/" target="_blank" rel="noopener">assign-memory-resource</a> (the OOMKill exercise), <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/" target="_blank" rel="noopener">pod-lifecycle</a> (probes), <a href="https://kubernetes.io/docs/concepts/policy/limit-range/" target="_blank" rel="noopener">limit-range</a>, and <a href="https://kubernetes.io/docs/concepts/security/pod-security-admission/" target="_blank" rel="noopener">Pod Security Admission</a> — verified 2026-08-03, all searchable in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/" target="_blank" rel="noopener">manage-resources-containers</a>, <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/" target="_blank" rel="noopener">pod-lifecycle</a> (probes), and <a href="https://kubernetes.io/docs/concepts/security/pod-security-admission/" target="_blank" rel="noopener">Pod Security Admission</a> — exact pages you can search in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li><code>requests</code> places the Pod (scheduler, checked once). <code>limits</code> caps it once running (kubelet/kernel, enforced continuously) — two separate guarantees, which is why a scheduled Pod can still be OOMKilled later.</li>
-    <li>Memory limit exceeded &rarr; kernel OOMKills reactively (exit code 137), then restarts per <code>restartPolicy</code>. CPU limit exceeded &rarr; throttled by cgroups, never killed.</li>
-    <li>QoS class is computed automatically: Guaranteed needs requests == limits on <em>every</em> resource in <em>every</em> container; Burstable is anything in between; BestEffort has no requests/limits at all. Eviction order under pressure: BestEffort first, Burstable next, Guaranteed last.</li>
-    <li>Liveness fails &rarr; restart. Readiness fails &rarr; removed from Service endpoints, no restart. startupProbe disables both until it succeeds once — for slow-starting apps.</li>
-    <li>Pod Security Admission's <code>enforce</code> mode rejects non-compliant Pods at creation (nothing gets created); <code>audit</code> and <code>warn</code> allow creation and only log or display a message. PSP is gone since 1.25 — this is the only supported replacement.</li>
-    <li>Node affinity constrains which nodes a Pod can land on at scheduling time only (<code>...IgnoredDuringExecution</code>) — <code>required...</code> is a hard rule, <code>preferred...</code> is a soft one.</li>
+    <li><code>requests</code> places the Pod (scheduler). <code>limits</code> caps it once running (kubelet).</li>
+    <li>Memory limit exceeded &rarr; OOMKilled + restart. CPU limit exceeded &rarr; throttled, no restart.</li>
+    <li>Liveness fails &rarr; restart. Readiness fails &rarr; removed from Service, no restart. startupProbe delays both for slow-starting apps.</li>
+    <li>Pod Security Admission rejects non-compliant Pods at creation time (per-namespace label) — nothing gets created, unlike a scheduling failure which creates a <code>Pending</code> Pod.</li>
+    <li>Node affinity constrains which nodes a Pod can land on — <code>required...</code> is a hard rule, <code>preferred...</code> is a soft one.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck, or got a different result than "Expected result" above? Paste the exact <code>kubectl describe</code> output back to your teacher — the Last State block and the Events feed are the two most useful things you can bring back from a real probe/limit incident.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0010-networkpolicy.html">&larr; NetworkPolicy</a>

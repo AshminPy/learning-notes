@@ -11,212 +11,50 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 23 of 24</p>
 <h1>Resource monitoring</h1>
 
-<h2>Why this matters</h2>
-<p>The hardest production incidents to catch are the ones with no error to grep for. Lessons 15 and 16 gave you a ladder for the case where something is visibly broken — a <code>CrashLoopBackOff</code>, a Pod stuck <code>Pending</code>, a failing probe with an Events line spelling out exactly why. This lesson is for the opposite case: every Pod is <code>Running</code>, every container is <code>Ready</code>, restart counts are all zero, and a user is still telling you the checkout page takes eight seconds to load. There is nothing to <code>grep</code> for, because nothing failed — the app is just slow, and "slow" doesn't show up in <code>describe</code> or <code>logs</code> unless you already know to look at resource usage. On a cluster with no full observability stack installed — most kubeadm clusters, and plenty of real production ones too — <code>kubectl top</code> and metrics-server are often the <strong>only</strong> tool available that can surface this entire class of problem at all.</p>
+<p>Lessons 15 and 16 diagnosed Pods and nodes that were visibly broken — CrashLoopBackOff, Pending, failed probes. This lesson is for the case with no error at all: the cluster is technically healthy, but something is slow, and you need real numbers, not a guess.</p>
 
-<p class="callout"><strong>Mental model:</strong> metrics-server is a gauge, not a data logger. Walk up to a gauge right now and it tells you the truth: this Pod is using 340Mi of memory, this node is at 78% CPU, <em>this instant</em>. But it keeps no needle marks from an hour ago — ask it "was this Pod slow at 2pm" and it has nothing to give you, because it was never built to remember. That's not a limitation to work around, it's the design: metrics-server exists to answer one question fast — what's happening right now, for the scheduler, the HPA, or you to react to — and a completely different tool, a real time-series store like Prometheus, exists to answer the other question — what happened over time, so you can alert on a trend or investigate after the fact. If you can predict that metrics-server can <strong>never</strong> answer a "when did this start" question, no matter how you phrase the <code>kubectl</code> command, you've internalized the model. If you catch yourself looking for a <code>--since</code> or a history flag on <code>kubectl top</code>, you haven't yet.</p>
+<p class="callout"><strong>Simple example:</strong> <code>metrics-server</code> is a light gauge, not a data logger. It asks every kubelet "what's your CPU/memory right now" and keeps the answer in memory for a short time — nothing is stored, nothing has history. For real dashboards and alerting over time, that's Prometheus's job, not this.</p>
 
-<h2>Core concepts</h2>
-<p>metrics-server is a single cluster-wide component — usually one or two Pods in <code>kube-system</code> — that does exactly one job: on a roughly 15-second interval, it asks every kubelet in the cluster for its current CPU and memory usage, over the kubelet's resource metrics endpoint. Underneath, those numbers come from <strong>cAdvisor</strong>, the container-metrics collector built into the kubelet (or an equivalent the container runtime exposes) — metrics-server itself doesn't measure anything; it collects and re-exposes what the kubelet already knows. It keeps only the newest reading for each Pod and node, in memory, and discards the previous one the moment a fresher one arrives. There is no database, no disk write, no query language — ask it for last hour's numbers and there is nothing to return, because nothing was ever kept.</p>
-
-<p>Those numbers are exposed through the Kubernetes <strong>Metrics API</strong> (API group <code>metrics.k8s.io</code>), registered with the API server via the aggregation layer — the same mechanism that lets extension APIs sit alongside the built-in ones. Two consumers read from it: <code>kubectl top</code>, for a human to look at, and the <strong>HorizontalPodAutoscaler</strong> (Lesson 22), which polls it on its own reconcile loop to decide whether to scale. The Vertical Pod Autoscaler reads the same API for its resize recommendations, though VPA itself is outside this course's scope.</p>
-
-<table>
-<tr><th>Fact</th><th>Detail</th></tr>
-<tr><td>Data source</td><td>Each kubelet's resource metrics endpoint (cAdvisor-derived CPU/memory usage)</td></tr>
-<tr><td>Collection interval</td><td>~15 seconds</td></tr>
-<tr><td>Storage</td><td>None — latest in-memory snapshot only; the previous reading is discarded</td></tr>
-<tr><td>Exposed via</td><td>Kubernetes Metrics API, group <code>metrics.k8s.io</code>, via the API aggregation layer</td></tr>
-<tr><td>Consumed by</td><td><code>kubectl top</code>, HorizontalPodAutoscaler, Vertical Pod Autoscaler</td></tr>
-<tr><td>Installed by default on kubeadm?</td><td>No — a separate install step, unlike many managed platforms</td></tr>
-</table>
-
+<h2>kubectl top</h2>
 <pre><code>kubectl top nodes
 kubectl top pods
-kubectl top pods --containers            # per-container, not just per-Pod totals
-kubectl top pods -A                      # every namespace, ignores current context
-kubectl top pods --sort-by=cpu           # or --sort-by=memory — no other field is valid
-kubectl top pods -l app=checkout         # filter by label selector
+kubectl top pods --containers          # per-container, not just per-Pod totals
+kubectl top pods -n kube-system        # any namespace, same as kubectl get
 </code></pre>
-<p>Every flag above is real and documented, not improvised: <code>--sort-by</code> only accepts <code>cpu</code> or <code>memory</code>; <code>-A</code>/<code>--all-namespaces</code> ignores whatever namespace your current context is set to; and <code>--containers</code> is the one people forget, which matters the moment a Pod runs more than one container and you need to know which specific one is heavy, not just the Pod's total.</p>
+<p>This is only possible because <code>metrics-server</code> is running in the cluster, scraping each kubelet's Summary API and exposing it through the Kubernetes Metrics API. On a kubeadm cluster, unlike most managed platforms, it isn't installed by default — you have to add it.</p>
 
-<p>Getting a number out of any of this depends on a working chain: the kube-apiserver's aggregation layer must be enabled, metrics-server needs network access to every kubelet on port 10250, and it has to trust the kubelet's serving certificate. On a self-managed kubeadm cluster, that last link is the one that most often breaks — kubelets frequently serve a certificate metrics-server won't verify out of the box, and its Pod CrashLoops on a TLS error. The narrow, lab-only fix is adding <code>--kubelet-insecure-tls</code> to its container args, which skips that verification — worth recognizing on sight, not something to reach for in production without understanding you've just turned off a certificate check.</p>
+<h2>When it doesn't work</h2>
+<p>If <code>metrics-server</code> isn't installed or isn't healthy, <code>kubectl top</code> fails outright — no numbers, an error about the metrics API being unavailable. This is also exactly why an HPA (Lesson 22) shows <code>&lt;unknown&gt;</code> instead of a percentage: same missing data source, two different symptoms.</p>
+<p>A well-known kubeadm-specific gotcha: <code>metrics-server</code>'s Pod can CrashLoop because it can't verify kubelets' self-signed certs. The (deliberately narrow, lab-only) fix is adding <code>--kubelet-insecure-tls</code> to its args — worth recognizing, not something you'd do in production without understanding the trade-off you're making.</p>
 
-<p class="callout"><strong>Simple example:</strong> this exact missing dependency explains two symptoms that look unrelated. <code>kubectl top pods</code> failing outright with a "metrics API not available" error, and an HPA (Lesson 22) stuck showing <code>TARGETS &lt;unknown&gt;/50%</code> forever, are the same problem wearing two different costumes — metrics-server is missing or unhealthy, full stop. Fix metrics-server and both symptoms disappear together, because both were only ever reading its output.</p>
-
-<h2>Production example</h2>
-<p class="callout production"><strong>Production note:</strong> a real production cluster runs both metrics-server and a full Prometheus stack, not one instead of the other, because they answer different questions. A 60-node cluster's HPA needs a fast, cheap "what's CPU right now" answer every 15 seconds to decide whether to add a Pod — metrics-server, with its in-memory snapshot, is built for exactly that and nothing else. The same cluster's platform team also runs Prometheus scraping every Pod on a similar interval, but writing every sample to a time-series store with weeks of retention, feeding Grafana dashboards ("show checkout-api's CPU for the last 7 days") and Alertmanager rules ("page someone if memory stays above 90% of its limit for 10 minutes straight"). Neither tool can do the other's job: metrics-server has no alerting and no history to draw a dashboard from, and Prometheus is too heavy and too slow — by design, since it's built for depth, not speed — to be the 15-second data source an HPA polls directly. (An HPA can scale on Prometheus-sourced custom metrics, but only through an adapter bridging it back into the Metrics API shape the HPA expects — it never talks to Prometheus directly.) Ripping out metrics-server because "we already have Prometheus" is a real mistake teams make, and it silently breaks every HPA in the cluster the moment it happens.</p>
-
-<h2>Hands-on exercise</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Find the single heaviest container running in your cluster right now, using nothing but <code>kubectl top</code> — no guessing, no opening an application to check.</p>
-<h4>Scenario</h4>
-<p>You've just joined on-call for a cluster you don't know well. Before anything breaks, you want a fast baseline of what's actually consuming CPU and memory.</p>
-<h4>Environment assumptions</h4>
-<p>Any cluster with metrics-server installed and healthy — confirm first with <code>kubectl top nodes</code>; if that errors, install metrics-server before continuing (on kind/minikube you'll likely need the lab-only <code>--kubelet-insecure-tls</code> flag from Core concepts above). At least a couple of namespaces with running Pods.</p>
-<h4>Commands</h4>
-<pre><code>kubectl top nodes
-kubectl top pods --containers -A
-kubectl top pods --containers -A --sort-by=cpu
-kubectl top pods --containers -A --sort-by=memory</code></pre>
-<h4>Expected result</h4>
-<p>The first command shows every node's current usage against its allocatable capacity. The next three list every container in every namespace — unsorted, then ranked by CPU descending, then ranked by memory descending. Note the container at the very top of each sorted list; it may not be the same one both times.</p>
-<h4>Verification</h4>
-<p>Take the Pod name from the top of the CPU-sorted list and run <code>kubectl describe pod &lt;name&gt; -n &lt;namespace&gt;</code>. Compare the usage number <code>kubectl top</code> just showed you against that container's <code>resources.limits.cpu</code> in the describe output (Lesson 11) — is it nowhere close to its limit, or pinned right at it? That comparison is the actual point of the exercise, not the ranking by itself.</p>
-<h4>Common failure</h4>
-<p>Running <code>kubectl top pods</code> without <code>--containers</code> and concluding a multi-container Pod is "using 400m CPU total" without knowing which of its containers is responsible. The Pod-level total is real, but it hides the one number you usually need during an incident.</p>
-<h4>Troubleshooting</h4>
-<p>If any command returns an error about the metrics API being unavailable, metrics-server itself is the problem, not your workloads — check <code>kubectl get apiservices | grep metrics</code> for its registration status, and <code>kubectl get pods -n kube-system | grep metrics-server</code> for a CrashLoop, then its logs.</p>
-<h4>Cleanup / rollback</h4>
-<p>Nothing to clean up — every command here is read-only.</p>
-<h4>Production lesson</h4>
-<p>"Ranked by CPU, ranked by memory, cross-checked against the manifest's limit" is a three-command habit, not a research project. Building it now, before an incident, is the difference between a 30-second check and the 20-minute dead end in the next section.</p>
-</div>
-
-<h2>Failure scenario</h2>
-<p>A realistic incident: the right troubleshooting ladder, run in the right order, still costs real time before the actual tool for this job gets used.</p>
-<ol class="timeline">
-<li><span class="t">11:03</span> Symptom: support escalates a ticket — "the checkout page takes 8-10 seconds to load, it used to be under a second." No alert has fired; there's no dashboard for this cluster showing anything red.</li>
-<li><span class="t">11:05</span> On-call runs <code>kubectl get pods -n checkout</code> — every Pod is <code>Running</code>, <code>1/1 Ready</code>, <code>RESTARTS</code> at 0 across the board. Nothing obviously wrong.</li>
-<li><span class="t">11:08</span> Following Lesson 16's ladder, checks <code>kubectl describe pod checkout-api-7f9c8-x8z2</code> — the Events section is empty except for a routine image pull and scheduling event from three days ago. No probe failures, no OOMKilled entries, nothing recent.</li>
-<li><span class="t">11:12</span> Checks <code>kubectl logs checkout-api-7f9c8-x8z2</code> — clean access logs, every response code is 200, requests are just taking longer than usual to complete. Nothing to <code>grep</code> for.</li>
-<li><span class="t">11:19</span> Widens the search: the payment gateway's own status page is green, and the NetworkPolicy (Lesson 10) governing the namespace hasn't changed in two weeks. Twenty minutes gone, still no lead.</li>
-<li><span class="t">11:24</span> Finally runs <code>kubectl top pods --containers -n checkout</code>: <code>checkout-api</code>'s one container shows <code>248m/250m</code> CPU — pinned right against its configured limit, and very likely has been there for a while, since CPU throttling causes no restart, no crash, and nothing for <code>describe</code> or <code>logs</code> to ever show.</li>
-<li><span class="t">11:27</span> Confirms against the manifest: <code>kubectl describe pod</code>'s resources section shows <code>limits: cpu: 250m</code>, an exact match. The container isn't broken — the kernel is throttling it every cycle it tries to exceed that number (Lesson 11).</li>
-<li><span class="t">11:33</span> Fix applied: after checking the traffic dashboard shows a genuine, sustained rise in checkout volume this week (not a code regression or a leak), raises the Deployment's CPU limit to 500m and rolls it out.</li>
-<li><span class="t">11:38</span> Verified: <code>kubectl top pods --containers -n checkout</code> now shows <code>310m/500m</code>, comfortably under the new limit. Page load time is back under a second, confirmed with the same user who filed the ticket.</li>
-</ol>
-<p>Twenty-one minutes were spent doing the right thing — the describe/logs/events ladder from Lesson 16 is correct, and skipping it isn't the lesson here. The lesson is what comes after it finds nothing: reach for <code>kubectl top</code> next, not deeper into application code.</p>
-
-<h2>Troubleshooting workflow</h2>
-<p>The general method, sequenced specifically for "the app is slow and nothing is failing":</p>
-<ol class="troubleshooting">
-<li><strong>Confirm the symptom precisely.</strong> "Feels slow" isn't testable — get a number (response time, from where, for which endpoint) and a comparison baseline before doing anything else.</li>
-<li><strong>Define scope.</strong> One Pod, one Deployment, one node, or the whole cluster? <code>kubectl get pods -o wide -A</code> shows whether this is isolated to one workload or spread across a node — which would point at node-level pressure, not this one container.</li>
-<li><strong>Check recent changes.</strong> <code>kubectl rollout history deployment/&lt;name&gt;</code> and <code>kubectl get events --sort-by=.lastTimestamp</code> — did a traffic pattern, a resource limit, or a deploy change recently?</li>
-<li><strong>Run Lesson 16's ladder first.</strong> <code>kubectl describe pod</code> (Events) then <code>kubectl logs</code>. If either explains it — a probe failure, an error in the logs — stop here. Most slowness complaints do have a visible cause; don't skip straight to metrics out of habit.</li>
-<li><strong>If that ladder comes up clean, reach for <code>kubectl top</code>.</strong> <code>kubectl top pods --containers -n &lt;namespace&gt;</code> for the specific workload. This is the tool for exactly the case where nothing failed but something is still wrong.</li>
-<li><strong>Form a hypothesis matched to the number.</strong> Usage sitting at or above a container's configured limit (Lesson 11) points at CPU throttling or a looming OOMKill, not an application defect — that's a resourcing hypothesis, not a code hypothesis.</li>
-<li><strong>Test one variable.</strong> Confirm the exact <code>resources.limits</code> value in the manifest against what <code>kubectl top</code> is showing — don't eyeball it, read both numbers side by side.</li>
-<li><strong>Apply the safest fix.</strong> Raise the limit only after confirming the usage reflects legitimate load growth, not a leak or a regression from a recent deploy — check the traffic trend, not just the CPU number, before resizing anything.</li>
-<li><strong>Verify recovery.</strong> Re-run <code>kubectl top</code> and confirm usage now sits comfortably under the new limit, and confirm the user-facing symptom actually improved — a lower CPU number alone doesn't prove the page got faster.</li>
-<li><strong>Document and prevent recurrence.</strong> Record the exact limit that was too low and why traffic grew past it; consider whether an HPA (Lesson 22) would have absorbed this automatically, or whether a Prometheus alert on sustained near-limit usage would have caught it before a user did.</li>
-</ol>
-
-<h2>Security &amp; reliability considerations</h2>
-<p class="callout security"><strong>Security note:</strong> <code>kubectl top</code> only works end to end if the Metrics API (<code>metrics.k8s.io</code>) is registered and reachable, and reading it is governed by ordinary RBAC like any other API resource — a user needs <code>get</code>/<code>list</code>/<code>watch</code> on <code>pods</code> and <code>nodes</code> in the <code>metrics.k8s.io</code> API group. metrics-server's own manifests ship a <code>system:aggregated-metrics-reader</code> ClusterRole specifically for granting this to ordinary users; if <code>kubectl top</code> works for you but fails with a permissions error for a teammate on the same cluster, that binding — not metrics-server itself — is the first thing to check with <code>kubectl auth can-i get pods.metrics.k8s.io</code>.</p>
-<p class="callout production"><strong>Reliability note:</strong> treat this as an availability problem, not just a performance one. A container silently pinned at its CPU or memory limit produces zero alertable signal on its own — no failed probe, no restart, no error log — which means "slow with nothing visibly broken" is a real outage from the user's point of view that alerting built only around crashes and probe failures will never catch. <code>kubectl top</code> closes part of that gap reactively, during an incident; a Prometheus alert on sustained near-limit usage (see the decision guide below) is what closes it proactively, before a user notices.</p>
-
-<h2>Common mistakes</h2>
-<p class="callout mistake"><strong>Common mistake:</strong> reaching for <code>kubectl exec</code> and deep application-level debugging — profilers, <code>strace</code>, adding log statements — before checking basic resource usage. If the container is simply throttled at its CPU limit, no amount of application-level investigation will find that; the answer is one <code>kubectl top</code> command away, and skipping it is how a 30-second check turns into an hour spent in the wrong layer.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> assuming metrics-server can answer "was it slow an hour ago." It can't — there is no history anywhere in metrics-server, by design (see the Mental model above). Asking <code>kubectl top</code> for anything but the current instant won't fail loudly; it will just show you the current instant again, and mistaking that for historical data leads to wrong conclusions about when a problem actually started.</p>
-
-<h2>Decision guide</h2>
-<table>
-<tr><th>Option</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
-<tr><td>metrics-server + <code>kubectl top</code></td><td>Fast point-in-time check during an incident; feeding the HPA's scaling decisions</td><td>You need "what happened at 2am last night" or any trend over time</td><td>Lightweight, always-on, near-zero setup cost; zero memory of anything past the last ~15 seconds</td></tr>
-<tr><td>Prometheus + Grafana + Alertmanager</td><td>Dashboards, historical trends, alerting before a user notices, capacity planning</td><td>You need a fast, cheap signal for the HPA to poll every 15 seconds directly</td><td>Full history and alerting; real infrastructure to run, scrape, store, and maintain</td></tr>
-</table>
-<p><strong>Default recommendation:</strong> run metrics-server on every cluster, always — it's small, it's what the HPA needs, and it's your fastest incident-response tool. Add Prometheus (or a managed equivalent) the moment you need history, dashboards, or alerting on trends rather than current state; the two aren't competing choices, they're complementary layers, and most real production clusters run both.</p>
-
-<h2>Knowledge check</h2>
+<h2>Try it — before looking below</h2>
 <div class="quiz">
-<p>Q1. <code>kubectl top pods</code> returns an error instead of numbers, but every Pod is <code>Running</code> and <code>Ready</code>. What's actually wrong?</p>
+<p>Q1. <code>kubectl top pods</code> returns an error instead of numbers, but every Pod is Running and Ready. What's actually wrong?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">Nothing wrong with the Pods — metrics-server is missing or unhealthy. Check <code>kubectl get pods -n kube-system | grep metrics-server</code> (or wherever it's installed) and its logs, the same ladder as any other workload.</div>
+<div class="answer" id="a1">Nothing wrong with the Pods — <code>metrics-server</code> is missing or unhealthy. Check <code>kubectl get pods -n kube-system | grep metrics-server</code> (or wherever it's installed) and its logs, the same ladder as any other workload.</div>
 </div>
 
 <div class="quiz">
-<p>Q2. You've run <code>kubectl describe pod</code> and <code>kubectl logs</code> and both are clean — no unusual events, no errors. What's your next command, and what result would confirm a resource problem specifically?</p>
+<p>Q2. A user reports the app "feels slow" but there are no failed probes, no restarts, no events. What's your first command, and what would make you suspect a resource problem specifically?</p>
 <input type="text" id="q2" placeholder="type your answer">
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2"><code>kubectl top pods --containers</code> for that workload. A container sitting at or above its configured CPU or memory limit (Lesson 11), with no crashes or restarts, is the fingerprint of silent resource starvation — <code>describe</code>/<code>logs</code> looked clean because nothing actually failed, the container is just throttled or near its ceiling.</div>
-</div>
-
-<div class="quiz">
-<p>Q3. Which tool can tell you whether a Pod's memory usage was high three hours ago, before the current outage?</p>
-<div class="opts">
-<label>A. metrics-server, because it retains a rolling three-hour window</label>
-<label>B. kubectl top, since it recalculates history live</label>
-<label>C. Prometheus, if it was already scraping that Pod</label>
-<label>D. kubectl describe, from the Pod's stored resource events</label>
-</div>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a3">C. Only a tool that was already storing history before the outage can answer this — that's Prometheus's entire job. metrics-server (A) and <code>kubectl top</code> (B) only ever show the current instant, by design, never the past. <code>kubectl describe</code> (D) shows Events like scheduling and probe failures, never a resource-usage time series.</div>
-</div>
-
-<h2>Certification mapping</h2>
-<p><strong>Troubleshooting (30%)</strong> — the single largest domain on the CKA exam, per this course's <a href="../objectives.html">objectives tracker</a>. This lesson sits there alongside Lessons 15 and 16 because resource-usage numbers are the third leg of the same troubleshooting stool: <code>describe</code>/<code>logs</code>/events for what already happened, <code>kubectl top</code> for what's happening right now that produced no event at all.</p>
-
-<h2>Production challenge</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Decide what to check next when a container is near its memory limit but hasn't been OOMKilled yet — before it becomes a real incident — using only what Lessons 11 and 23 have covered.</p>
-<h4>Scenario</h4>
-<p>You run <code>kubectl top pods --containers -n payments</code> as a routine check and see <code>worker</code> at <code>480Mi / 512Mi</code> memory — 94% of its configured limit. <code>kubectl get pods -n payments</code> shows it <code>Running</code>, <code>1/1 Ready</code>, zero restarts. Nothing has failed. Yet.</p>
-<h4>Environment assumptions</h4>
-<p>A kind/minikube cluster with metrics-server installed. Build a comparable scenario yourself first — don't skip straight to the fix:</p>
-<pre><code>kubectl create namespace payments
-
-cat &lt;&lt;EOF | kubectl apply -f - --namespace=payments
-apiVersion: v1
-kind: Pod
-metadata:
-  name: worker
-spec:
-  containers:
-  - name: worker
-    image: polinux/stress
-    resources:
-      requests:
-        memory: "256Mi"
-      limits:
-        memory: "512Mi"
-    command: ["stress"]
-    args: ["--vm", "1", "--vm-bytes", "480M", "--vm-hang", "0"]
-EOF
-
-kubectl top pod worker -n payments --containers</code></pre>
-<h4>Commands</h4>
-<p>Work through the decision yourself before reading further: is 480Mi/512Mi an emergency, a trend to watch, or nothing? What would change your answer? Then check your reasoning against this:</p>
-<pre><code># Is this stable, or trending up? metrics-server has no history (this lesson's mental
-# model) — repeated manual checks over a couple of minutes are the closest substitute:
-kubectl top pod worker -n payments --containers
-sleep 30 && kubectl top pod worker -n payments --containers
-
-# What's the container's actual configured limit and QoS class? (Lesson 11)
-kubectl describe pod worker -n payments | grep -A4 "Limits\|QoS"</code></pre>
-<h4>Expected result</h4>
-<p>Usage holds steady around 480Mi across repeated checks in this synthetic example — in a real incident, a number that keeps climbing across repeated checks is the difference between "stable, worth a ticket" and "about to OOMKill, act now." <code>describe</code> confirms <code>limits.memory: 512Mi</code> and a Burstable QoS class (Lesson 11), since only a memory limit was set here, not a matching request.</p>
-<h4>Verification</h4>
-<p>Confirm your read is right by pushing it over the edge on purpose: edit <code>--vm-bytes</code> up to <code>600M</code> and re-apply. <code>kubectl get pod worker -n payments</code> should flip to <code>OOMKilled</code> within seconds, with <code>kubectl describe</code>'s Last State block showing <code>Reason: OOMKilled</code>, <code>Exit Code: 137</code> — proving 480Mi/512Mi genuinely was one step from exactly what happens next.</p>
-<h4>Common failure</h4>
-<p>Treating "not yet OOMKilled" as "not a problem." A container sitting at 94% of its limit is a near-miss, not a clean bill of health — the only reason it hasn't been killed yet is that it hasn't crossed the line, and metrics-server gives you no way to know how close it's been cutting it historically.</p>
-<h4>Troubleshooting</h4>
-<p>If <code>kubectl top</code> shows no data immediately after creating the Pod, metrics-server's ~15-second collection interval hasn't caught up yet — wait and re-run rather than assuming something is broken.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete namespace payments</code></pre>
-<h4>Production lesson</h4>
-<p>The right response to "near its limit, not yet killed" isn't panic or dismissal — it's exactly the Lesson 11 question: is this container's limit sized for its real, legitimate usage, or is requests/limits due for a resize? Raising the limit blindly just moves the ceiling; understanding whether the usage is a leak, genuine load growth, or a limit that was always too tight is the actual decision, and metrics-server alone can't make it for you — it can only tell you where the line is right now.</p>
+<div class="answer" id="a2"><code>kubectl top pods --containers</code> for that app first. A container pinned near its CPU limit (Lesson 11) with no crashes or restarts is a classic silent slowdown — the Pod looks perfectly healthy in <code>describe</code>/<code>get events</code> because nothing failed, it's just starved.</div>
 </div>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes-sigs.github.io/metrics-server/" target="_blank" rel="noopener">kubernetes-sigs.github.io/metrics-server</a>, its <a href="https://github.com/kubernetes-sigs/metrics-server" target="_blank" rel="noopener">GitHub repository and FAQ</a>, and <a href="https://kubernetes.io/docs/reference/kubectl/generated/kubectl_top/" target="_blank" rel="noopener">kubectl top reference</a> — verified 2026-08-03. All exam-allowed pages.</p>
+<p><a href="https://kubernetes-sigs.github.io/metrics-server/" target="_blank" rel="noopener">kubernetes-sigs.github.io/metrics-server</a> and <a href="https://kubernetes.io/docs/reference/kubectl/generated/kubectl_top/" target="_blank" rel="noopener">kubectl top reference</a> — exam-allowed pages.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>metrics-server collects CPU/memory from every kubelet's resource metrics endpoint (cAdvisor-derived) roughly every 15 seconds, keeps only the latest snapshot in memory, and exposes it via the Kubernetes Metrics API (<code>metrics.k8s.io</code>) that <code>kubectl top</code> and the HPA both read.</li>
-    <li>It has no memory of anything before "right now" — "was it slow an hour ago" is a question only a real time-series store like Prometheus can answer, never metrics-server.</li>
-    <li>Not installed by default on kubeadm clusters; <code>kubectl top</code> failing outright, and an HPA stuck at <code>&lt;unknown&gt;</code>, are usually the same missing dependency, not two different bugs.</li>
-    <li>A container silently pinned at its CPU or memory limit (Lesson 11) produces zero restarts, zero failed probes, and zero events — it will not show up anywhere in Lesson 16's ladder. <code>kubectl top pods --containers</code> is what finds it.</li>
-    <li>Run metrics-server and Prometheus together on real clusters — they solve different problems (fast point-in-time vs. history/alerting), and dropping either one leaves a real gap.</li>
+    <li><code>metrics-server</code> gives point-in-time numbers only — no history, that's a separate tool's job.</li>
+    <li>Not installed by default on kubeadm clusters — <code>kubectl top</code> failing outright usually means this, not a Pod problem.</li>
+    <li>Same missing dependency explains both a failing <code>kubectl top</code> and an HPA stuck at <code>&lt;unknown&gt;</code>.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck, or got a different result than "Expected result" above? Paste the exact <code>kubectl top</code> output back to your teacher — the actual numbers, next to what the manifest says the limit is, are the most useful thing you can bring back from a real slow-app investigation.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0022-workload-autoscaling.html">&larr; Workload autoscaling</a>

@@ -11,72 +11,35 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 21 of 24</p>
 <h1>CoreDNS &amp; Gateway API</h1>
 
-<h2>Why this matters</h2>
-<p>This lesson covers two topics because they share a theme: both are infrastructure everyone depends on and almost nobody looks at until it breaks. Since Lesson 3, every Service name you've written into a manifest has resolved silently — that only happens because CoreDNS is running in every cluster, answering millions of lookups a day, invisibly. When CoreDNS breaks, it doesn't look like a normal outage: every individual Pod is <code>Running</code>, every node is <code>Ready</code>, every app's own health check can even pass — and yet nothing in the cluster can reach anything else by name. That mismatch between "everything I'd normally check looks fine" and "nothing works" is what makes a CoreDNS incident one of the most disorienting failures in Kubernetes.</p>
-<p>Gateway API's stakes are different but just as real. Since Lesson 8, Ingress has been the only built-in way to expose HTTP traffic — and Ingress packs "where does traffic enter" and "where does it go" into one object. That's fine for one team. It's a real permission problem the moment two teams share a cluster: whoever can edit the Ingress can affect every route through it, so either everyone gets broad access (unsafe) or one team becomes a routing-change bottleneck for everyone else (slow). Gateway API exists specifically to remove that trade-off.</p>
+<p>Since Lesson 3, you've written Service names into other objects and they just resolved. That only works because CoreDNS is silently running in every cluster. And since Lesson 8, Ingress has been the only way in — Gateway API is the newer, more expressive alternative the curriculum now expects you to know.</p>
 
-<p class="callout"><strong>Mental model:</strong> CoreDNS is a phone book every caller in the building shares. If the phone book itself becomes unreachable, every call fails at once — not because any phone, wire, or person is broken, but because the one thing everyone depends on to look each other up is gone. That's why a CoreDNS outage is so disorienting: none of the places you'd normally look for a broken workload (Pod status, node health, app logs) show anything wrong, because the failure sits one layer beneath all of them.</p>
-<p class="callout"><strong>Mental model:</strong> Gateway API is Ingress split into two jobs with two separate owners: infra teams manage <em>where traffic enters</em> (<code>Gateway</code>), app teams manage <em>where it goes from there</em> (<code>HTTPRoute</code>). This model makes a specific, testable prediction: if an app team ships a broken <code>HTTPRoute</code> — a typo'd backend name, a path rule that matches nothing — the blast radius stops at their own route. They cannot touch the shared listener, other teams' routes, or the <code>Gateway</code> object itself, because their permissions (assuming someone designed them correctly — see the Common mistakes section) only ever grant them an <code>HTTPRoute</code> in their own namespace, never write access to the <code>Gateway</code>. A single shared Ingress object can't make that promise — anyone with edit access to it can affect every route funnelled through it.</p>
+<p class="callout"><strong>Simple example:</strong> CoreDNS is the cluster's phone book — every Service gets an entry the moment it's created, no action needed from you. Gateway API is Ingress split into two jobs: infra teams manage <em>where traffic enters</em> (Gateway), app teams manage <em>where it goes</em> (HTTPRoute) — separate permissions, separate blast radius.</p>
 
-<h2>CoreDNS — how the phone book actually works</h2>
-<p>CoreDNS runs as a Deployment in <code>kube-system</code>, fronted by a Service traditionally named <code>kube-dns</code> (kept for backward compatibility even though it now points at CoreDNS, not the old kube-dns binary). Every Pod's <code>/etc/resolv.conf</code> points at that Service's ClusterIP by default (<code>dnsPolicy: ClusterFirst</code>) — that one fact is the entire mechanism behind every Service name you've used since Lesson 3 resolving:</p>
-<pre><code>search default.svc.cluster.local svc.cluster.local cluster.local
-nameserver 10.0.0.10
-options ndots:5
+<h2>CoreDNS — the phone book</h2>
+<p>CoreDNS runs as a Deployment in <code>kube-system</code>, fronted by the <code>kube-dns</code> Service. Every Pod's <code>/etc/resolv.conf</code> points at that Service's ClusterIP by default (<code>dnsPolicy: ClusterFirst</code>) — that's the entire mechanism behind every Service name you've used so far resolving.</p>
+<pre><code>&lt;service&gt;.&lt;namespace&gt;.svc.cluster.local
 </code></pre>
-<p>The query path: your Pod asks the nameserver in its own <code>resolv.conf</code> (the <code>kube-dns</code> Service ClusterIP) &rarr; the Service load-balances that query to one of the CoreDNS replica Pods behind it &rarr; CoreDNS decides how to answer based on its <strong>Corefile</strong> — a chain of plugins, each handling one piece of the job, in order:</p>
-<pre><code>.:53 {
-    errors
-    health
-    kubernetes cluster.local in-addr.arpa ip6.arpa {
-      pods insecure
-      upstream
-      fallthrough in-addr.arpa ip6.arpa
-    }
-    prometheus :9153
-    forward . /etc/resolv.conf
-    cache 30
-    loop
-    reload
-    loadbalance
-}
+<p>Its config lives in a ConfigMap, not a file on disk — edit it live, no redeploy needed:</p>
+<pre><code>kubectl -n kube-system get configmap coredns -o yaml   # see the Corefile
+kubectl -n kube-system get pods -l k8s-app=kube-dns     # is it even running
+kubectl run -it --rm dnsutils --image=registry.k8s.io/e2e-test-images/jessie-dnsutils:1.3 -- nslookup kubernetes.default
 </code></pre>
-<table>
-<tr><th>Plugin</th><th>Its one job</th></tr>
-<tr><td><code>errors</code></td><td>Log query errors to stdout</td></tr>
-<tr><td><code>health</code></td><td>Expose CoreDNS's own health endpoint, used by its liveness probe</td></tr>
-<tr><td><code>kubernetes</code></td><td>Answer <code>cluster.local</code> queries from the Kubernetes API's Service/Endpoint data — this is why CoreDNS needs <code>watch</code> on <code>services</code>, <code>endpointslices</code>, <code>pods</code>, and <code>namespaces</code> (see the Security section)</td></tr>
-<tr><td><code>forward</code></td><td>Send anything outside <code>cluster.local</code> upstream, using the node's own <code>/etc/resolv.conf</code> as the address list</td></tr>
-<tr><td><code>cache</code></td><td>Cache answers (30s here) so repeat lookups don't re-hit <code>kubernetes</code>/<code>forward</code> every time</td></tr>
-<tr><td><code>loop</code></td><td>Detect and break accidental forwarding loops</td></tr>
-<tr><td><code>reload</code></td><td>Poll the Corefile for edits and hot-reload — no Pod restart needed</td></tr>
-<tr><td><code>loadbalance</code></td><td>Randomize returned record order for simple client-side load spreading</td></tr>
-</table>
-<p>You don't need to memorize one exact plugin list — the chain varies slightly by install method (kubeadm, EKS, GKE all ship close-but-not-identical Corefiles). What matters for troubleshooting is knowing the chain exists and roughly what each stage does, so a symptom points you at a plugin instead of at guesswork.</p>
-<p>The config lives in a ConfigMap, not a file baked into the image — you can edit it live:</p>
-<pre><code>kubectl -n kube-system get configmap coredns -o yaml   # read the Corefile
-kubectl -n kube-system edit configmap coredns           # edit it live
-kubectl -n kube-system get pods -l k8s-app=kube-dns      # is it even running
-</code></pre>
-<p class="callout"><strong>Simple example:</strong> "no redeploy needed" isn't hand-waving — it's the <code>reload</code> plugin. It polls the Corefile every 30 seconds (plus up to 15 seconds of random jitter, so many replicas don't all reload at the exact same instant) and applies changes automatically once the kubelet has synced the updated ConfigMap into the Pod's mounted volume. Edit the ConfigMap, wait roughly a minute, and the new config is live — no rollout, no restart.</p>
+<p>If Service names stop resolving cluster-wide, check CoreDNS's own Pods first (Lesson 16's ladder: <code>describe</code> → <code>logs</code>) before assuming the app is broken.</p>
 
-<h2>Gateway API — the role-separation model, precisely</h2>
-<p>Three kinds, three owners, three scopes — this is the part worth knowing exactly, not approximately:</p>
-<table>
-<tr><th>Kind</th><th>Owned by</th><th>Scope</th><th>Job</th></tr>
-<tr><td><code>GatewayClass</code></td><td>Infrastructure provider</td><td>Cluster-scoped</td><td>Which load-balancer implementation exists (e.g. <code>nginx</code>, <code>cilium</code>, a cloud LB controller)</td></tr>
-<tr><td><code>Gateway</code></td><td>Cluster/platform operator</td><td>Namespace-scoped</td><td>One real listener: an IP, a port, a protocol. References a <code>GatewayClass</code></td></tr>
-<tr><td><code>HTTPRoute</code></td><td>Application developer</td><td>Namespace-scoped</td><td>Routing rules, attached to a <code>Gateway</code> via <code>parentRefs</code> — app teams own these in their own namespace, without needing write access to the <code>Gateway</code> itself</td></tr>
-</table>
+<h2>Gateway API — Ingress, with role separation</h2>
+<p>Three kinds, three owners:</p>
+<ul>
+<li><strong><code>GatewayClass</code></strong> (cluster-scoped) — which load-balancer implementation exists (e.g. <code>nginx</code>, <code>cilium</code>). Managed by infra admins.</li>
+<li><strong><code>Gateway</code></strong> — one actual listener: an IP, a port, a protocol. References a <code>GatewayClass</code>. Also infra-owned.</li>
+<li><strong><code>HTTPRoute</code></strong> (namespace-scoped) — routing rules, attached to a <code>Gateway</code> via <code>parentRefs</code>. App teams own these in their own namespace, without needing access to the Gateway itself.</li>
+</ul>
 <pre><code>apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: my-app
-  namespace: team-a
 spec:
   parentRefs:
     - name: shared-gateway
-      namespace: platform
   rules:
     - matches:
         - path: { type: PathPrefix, value: /my-app }
@@ -84,110 +47,14 @@ spec:
         - name: my-app-service
           port: 80
 </code></pre>
-<p>Notice <code>parentRefs</code> points at a <code>Gateway</code> in a <em>different</em> namespace (<code>platform</code>) from the <code>HTTPRoute</code> itself (<code>team-a</code>). That cross-namespace attachment is exactly the non-obvious mechanic worth understanding precisely, because it's controlled by two <em>separate</em> permission boundaries that are easy to mix up:</p>
-<table>
-<tr><th>Cross-namespace reference</th><th>Controlled by</th><th>Configured by</th><th>Default if unset</th></tr>
-<tr><td><code>HTTPRoute</code> attaching to a <code>Gateway</code> in another namespace</td><td><code>allowedRoutes.namespaces</code> on the Gateway's listener</td><td>The <code>Gateway</code> owner (platform/cluster operator)</td><td><code>Same</code> — only Routes in the Gateway's own namespace may attach</td></tr>
-<tr><td><code>HTTPRoute</code>'s <code>backendRef</code> pointing at a Service in another namespace</td><td>A <code>ReferenceGrant</code> object</td><td>The owner of the <em>target</em> namespace (the Service's namespace)</td><td>Not allowed at all until a <code>ReferenceGrant</code> exists there</td></tr>
-<tr><td><code>Gateway</code>'s TLS <code>certificateRefs</code> pointing at a Secret in another namespace</td><td>A <code>ReferenceGrant</code> object</td><td>The owner of the <em>target</em> namespace (the Secret's namespace)</td><td>Not allowed at all until a <code>ReferenceGrant</code> exists there</td></tr>
-</table>
-<p><code>allowedRoutes</code> governs the Route-to-Gateway attachment edge — the Gateway owner opts in via <code>Same</code>, <code>Selector</code> (specific namespaces by label), or <code>All</code>. <code>ReferenceGrant</code> governs a completely different edge — a Route (or Gateway) reaching <em>into</em> another namespace to point at one of its objects — and it's a real, separate Gateway API resource (<code>apiVersion: gateway.networking.k8s.io/v1</code>, GA as of Gateway API v1.5), created inside the namespace being referenced <em>into</em>:</p>
-<pre><code>apiVersion: gateway.networking.k8s.io/v1
-kind: ReferenceGrant
-metadata:
-  name: allow-team-a-route
-  namespace: billing            # the target namespace — where the Service lives
-spec:
-  from:
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      namespace: team-a          # the namespace allowed to reference in
-  to:
-    - kind: Service
-</code></pre>
-<p>None of Gateway API is built into core Kubernetes — it's a CRD group (Lesson 19) plus a controller that implements it. <code>kubectl get gatewayclass,gateway,httproute -A</code> shows what's installed and where.</p>
+<p>Unlike Ingress, none of this is built into core Kubernetes — it's a CRD group (Lesson 19) plus a controller that implements it. <code>kubectl get gatewayclass,gateway,httproute -A</code> shows what's installed.</p>
 
-<h2>Production example</h2>
-<p class="callout production"><strong>Production note:</strong> real platform teams treat CoreDNS as tier-0 infrastructure, not "just another Deployment." That means dedicated alerting on CoreDNS Pod readiness and on the <code>kube-dns</code> Service's live endpoint count — not folded into generic app-down alerting, because a CoreDNS incident isn't an app incident, it's a cluster incident. It means resource requests/limits sized deliberately: an under-provisioned CoreDNS Pod that gets OOMKilled under query load takes down name resolution for every workload in the cluster at once, not just itself. And it usually means more replicas than a small default, plus a PodDisruptionBudget, so a routine node drain can't take out every CoreDNS Pod in the same maintenance window.</p>
-<p class="callout production"><strong>Production note:</strong> namespace-scoped <code>HTTPRoute</code> is the actual mechanism, not just the intent, behind a platform team safely self-serving routing to many app teams. A platform team stands up one shared <code>Gateway</code>, grants <code>allowedRoutes</code> to the namespaces that should attach, and from that point on, thirty app teams can ship their own routing changes through their normal CI/CD — each one scoped to an <code>HTTPRoute</code> in their own namespace — without ever filing a ticket against the platform team or getting write access to the shared listener. That's the entire value proposition in one sentence: routing changes become self-service without becoming a shared blast radius.</p>
-
-<h2>Hands-on exercise</h2>
-<p>This exercise covers <strong>CoreDNS</strong> — proving the mechanism above actually works on a real cluster instead of taking the lesson's word for it.</p>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Confirm CoreDNS is actually answering queries correctly, and see a real Corefile with your own eyes instead of trusting the example above.</p>
-<h4>Scenario</h4>
-<p>You want proof — not just "no error appeared" — that name resolution is working today, before you ever need to troubleshoot it under pressure.</p>
-<h4>Environment assumptions</h4>
-<p>Any cluster you can <code>kubectl</code> into (kind, minikube, or a real dev cluster), with at least read access to <code>kube-system</code>. No existing Pod named <code>dnsutils</code> in the current namespace.</p>
-<h4>Commands</h4>
-<pre><code>kubectl get pods -n kube-system -l k8s-app=kube-dns
-kubectl run -it --rm dnsutils --image=registry.k8s.io/e2e-test-images/agnhost:2.39 --restart=Never -- nslookup kubernetes.default
-kubectl get svc kubernetes -o jsonpath='{.spec.clusterIP}'
-kubectl -n kube-system get configmap coredns -o yaml</code></pre>
-<h4>Expected result</h4>
-<p>The first command shows one or more CoreDNS Pods <code>Running</code>. The <code>nslookup</code> returns a <code>Server</code> line (the <code>kube-dns</code> ClusterIP) and an <code>Address</code> line for <code>kubernetes.default</code>. The ConfigMap dump shows the Corefile text under <code>data.Corefile</code>, in the plugin-chain shape from this lesson.</p>
-<h4>Verification</h4>
-<p>Don't stop at "nslookup didn't error." Compare the address it returned for <code>kubernetes.default</code> against the third command's output — they must be identical. That match is the actual proof CoreDNS answered correctly; a lookup that merely "succeeded" with the wrong address would be a worse bug than an outright failure, because nothing would look broken.</p>
-<h4>Common failure</h4>
-<p><code>nslookup: can't resolve 'kubernetes.default'</code> — this almost always means the CoreDNS Pods aren't <code>Running</code>/<code>Ready</code>, or the <code>kube-dns</code> Service has no live endpoints behind it. It is rarely the debug Pod's own fault.</p>
-<h4>Troubleshooting</h4>
-<p>If the ConfigMap read comes back <code>Forbidden</code>, that's namespace RBAC working as designed, not a bug in this exercise — most namespaced developer roles have no legitimate reason to read <code>kube-system</code> ConfigMaps. Ask a cluster-admin to run the command or share the output rather than widening your own RBAC just to finish this exercise.</p>
-<h4>Cleanup / rollback</h4>
-<p><code>--rm</code> already deletes the debug Pod for you. Nothing else was created — the ConfigMap commands were read-only.</p>
-<h4>Production lesson</h4>
-<p>The cross-check against <code>kubernetes.get svc</code>'s ClusterIP is the same discipline Lesson 1's exercise used with a Pod UID: "did what I expected actually happen" needs one more command that proves it, not a glance that looks right.</p>
-</div>
-
-<h2>Failure scenario</h2>
-<p>This scenario covers <strong>Gateway API</strong> — a routing conflict between two app teams sharing one <code>Gateway</code>. (CoreDNS's troubleshooting method is covered in its own section next, since a full 10-step walkthrough for each topic would double-cover the same ground.)</p>
-<ol class="timeline">
-<li><span class="t">Mon 10:00</span> The <code>checkout</code> team creates <code>HTTPRoute checkout-status</code> in namespace <code>checkout</code>, an exact-path match on <code>/status</code> routing to <code>checkout-service</code>, attached to the shared <code>edge-gateway</code> in namespace <code>platform</code>. It works fine — nobody else is using that path yet.</li>
-<li><span class="t">Thu 14:00</span> The <code>search</code> team ships <code>HTTPRoute search-status</code> in namespace <code>search</code> — also an exact-path match on <code>/status</code>, routing to <code>search-service</code>, also attached to <code>edge-gateway</code>. <code>kubectl apply</code> succeeds with no warning or error.</li>
-<li><span class="t">Thu 14:05</span> Search's on-call curls the shared Gateway's <code>/status</code> path expecting <code>search-service</code>'s response. They get <code>checkout-service</code>'s response body instead.</li>
-<li><span class="t">Thu 14:09</span> They check their own object: <code>kubectl get httproute search-status -n search -o yaml</code> shows <code>status.parents[].conditions</code> with both <code>Accepted: True</code> and <code>ResolvedRefs: True</code>. From <code>search-status</code>'s own point of view, everything is healthy — there is no error anywhere on this object.</li>
-<li><span class="t">Thu 14:14</span> They widen the search: list every <code>HTTPRoute</code> across all namespaces whose <code>parentRefs</code> names <code>edge-gateway</code>, and compare match rules. <code>checkout-status</code> has an identical exact-path match on <code>/status</code>, created four days earlier.</li>
-<li><span class="t">Thu 14:18</span> Root cause identified: the two routes tie exactly on match specificity (both are an identical exact-path match on the same string). Per Gateway API's documented precedence rules, a tie is broken first by the oldest Route's creation timestamp, then by alphabetical order of <code>{namespace}/{name}</code>. <code>checkout-status</code> is older, so it wins every time — <code>search-status</code> is valid, accepted, and permanently starved of traffic on that path.</li>
-<li><span class="t">Thu 14:24</span> Fix applied: the <code>search</code> team changes their match to a path that doesn't collide — <code>/search/status</code> instead of the shared <code>/status</code> — coordinating through the <code>platform</code> team, who own <code>edge-gateway</code> and can see every Route attached to it.</li>
-<li><span class="t">Thu 14:30</span> Verified: a curl to the new path reaches <code>search-service</code>; <code>checkout-status</code>'s original <code>/status</code> path is untouched.</li>
-</ol>
-
-<h2>Troubleshooting workflow</h2>
-<p>This is <strong>CoreDNS's</strong> troubleshooting method — the generic 10-step approach, applied specifically to "Service names aren't resolving cluster-wide":</p>
-<ol class="troubleshooting">
-<li><strong>Confirm the symptom.</strong> Reproduce the exact failing lookup yourself from a fresh debug Pod — <code>kubectl run -it --rm dnsutils --image=registry.k8s.io/e2e-test-images/agnhost:2.39 --restart=Never -- nslookup &lt;the-name-that-failed&gt;</code>. Don't diagnose from a secondhand report of "DNS is down."</li>
-<li><strong>Define scope.</strong> Test from Pods in more than one namespace. Also test an external name (<code>nslookup google.com</code>) alongside an internal one (<code>nslookup kubernetes.default</code>) — external-only failure points at the <code>forward</code> plugin/upstream resolver; internal-only failure points at the <code>kubernetes</code> plugin or the API server watch behind it.</li>
-<li><strong>Check recent changes.</strong> <code>kubectl get events -n kube-system --sort-by=.lastTimestamp</code> — was the <code>coredns</code> ConfigMap edited, the Deployment scaled, or was there a node drain that took out CoreDNS Pods recently?</li>
-<li><strong>Inspect the right state.</strong> <code>kubectl get pods -n kube-system -l k8s-app=kube-dns</code> (are any Pods actually Running/Ready?); <code>kubectl get svc kube-dns -n kube-system</code> and <code>kubectl get endpointslice -l kubernetes.io/service-name=kube-dns -n kube-system</code> (does the Service have live endpoints behind it at all?); <code>kubectl logs -n kube-system -l k8s-app=kube-dns</code> for plugin errors.</li>
-<li><strong>Form a hypothesis.</strong> For example: "the <code>kube-dns</code> Service has zero endpoints because every CoreDNS Pod is failing its readiness probe."</li>
-<li><strong>Test one variable.</strong> Query a CoreDNS Pod's IP directly instead of the <code>kube-dns</code> Service ClusterIP, to isolate "CoreDNS itself is broken" from "the Service routing to it is broken."</li>
-<li><strong>Apply the safest fix.</strong> For a stuck rollout, <code>kubectl rollout restart deployment coredns -n kube-system</code> is safer than deleting Pods by hand. For a bad ConfigMap edit, revert the Corefile change rather than guessing a new one under pressure.</li>
-<li><strong>Verify recovery.</strong> Repeat the exact <code>nslookup</code> from step 1, from more than one namespace, and confirm the endpoint list is non-empty again.</li>
-<li><strong>Document the root cause.</strong> Write down the specific finding — "CoreDNS had 0/2 Ready Pods after a memory limit set too low caused repeated OOMKills" — not "DNS was flaky."</li>
-<li><strong>Prevent recurrence.</strong> This is where the tier-0 framing pays off: alert specifically on CoreDNS Pod readiness and <code>kube-dns</code> endpoint count, and revisit CoreDNS's resource requests/limits so it isn't the most fragile thing in a cluster everything else silently depends on.</li>
-</ol>
-
-<p class="callout security"><strong>Security note:</strong> the two cross-namespace mechanisms from the Core concepts section are a real access-control boundary, not a formality — and conflating them is the actual security risk. <code>allowedRoutes</code> decides which namespaces' <code>HTTPRoute</code>s may attach to a shared <code>Gateway</code> at all (default: same namespace only). A separate <code>ReferenceGrant</code>, created by the owner of the <em>target</em> namespace, decides whether a Route (or a Gateway's TLS config) may reach into that namespace to reference a specific Service or Secret. Getting the first one right says nothing about the second — a Gateway that happily accepts Routes from every namespace (<code>allowedRoutes: All</code>) still can't let any of them read a Secret in another namespace without an explicit <code>ReferenceGrant</code> there.</p>
-<p class="callout production"><strong>Reliability note:</strong> CoreDNS is a textbook single point of failure — every Service-name lookup in the cluster funnels through however many replicas exist, so its reliability ceiling is the cluster's reliability ceiling for anything that resolves a name before connecting. The <code>cache</code> plugin (30s default here) buys you a short grace window during a CoreDNS blip for names queried recently, but it is not a substitute for redundancy — once the cache entries expire during an outage, every lookup fails at once, cluster-wide, regardless of how healthy every other workload is.</p>
-
-<p class="callout mistake"><strong>Common mistake:</strong> escalating on a specific app being "broken" — restarting it, checking its code, rolling back its last deploy — when the real fault is CoreDNS and every other Service lookup in the cluster is equally broken. If more than one unrelated app starts failing to reach its dependencies at the same moment, check CoreDNS before you check any of them individually.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> assuming Gateway API's role separation is automatic. Installing the CRDs and creating a <code>Gateway</code> doesn't create any permission boundary by itself — someone still has to design which namespaces may attach Routes (<code>allowedRoutes</code>) and which cross-namespace backend references are trusted (<code>ReferenceGrant</code>). Skip that design work and Gateway API is just Ingress with more YAML and the same shared blast radius.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> treating <code>allowedRoutes</code> and <code>ReferenceGrant</code> as the same permission. They guard two different edges of the same diagram — one controls whether a Route may attach to a Gateway at all, the other controls whether it may reference an object in another namespace once attached. Configuring one correctly tells you nothing about the other.</p>
-
-<h2>Decision guide</h2>
-<table>
-<tr><th>Option</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
-<tr><td>Ingress</td><td>Single-team cluster, simple host/path routing, existing tooling already targets it</td><td>Multiple teams need to change routing independently and safely</td><td>One object mixes infra and app concerns — anyone who can edit it can affect every route through it</td></tr>
-<tr><td>Gateway API</td><td>Multiple app teams share a cluster/Gateway and need self-service routing without infra access; need typed protocol support (HTTP/gRPC/TLS) beyond Ingress's HTTP-shaped model</td><td>Single small team with simple needs, where the extra CRDs and controller add complexity with no permission problem to solve yet</td><td>More moving parts (<code>GatewayClass</code>/<code>Gateway</code>/<code>HTTPRoute</code>/<code>ReferenceGrant</code>) and feature support varies by controller — not every implementation supports every Gateway API feature yet</td></tr>
-</table>
-<p><strong>Default recommendation:</strong> reach for Gateway API when a cluster is genuinely multi-tenant and the permission split is worth the extra objects. Keep Ingress for a single-team cluster where that split buys nothing yet — the CRD and controller overhead isn't free.</p>
-
-<h2>Knowledge check</h2>
+<h2>Try it — before looking below</h2>
 <div class="quiz">
-<p>Q1. Every Pod in a namespace suddenly can't resolve any Service name — the Pods themselves are Running and Ready. What do you check first?</p>
+<p>Q1. Every Pod in a namespace suddenly can't resolve any Service name — Pods themselves are Running and Ready. What do you check first?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">CoreDNS's own Pods in <code>kube-system</code> — <code>kubectl get pods -n kube-system -l k8s-app=kube-dns</code>, then the <code>kube-dns</code> Service's endpoints. If the phone book is down, nothing in the cluster can look anything up, even though every individual app is healthy.</div>
+<div class="answer" id="a1">CoreDNS's own Pods in <code>kube-system</code> — <code>kubectl get pods -n kube-system -l k8s-app=kube-dns</code>, then <code>describe</code>/<code>logs</code>. If the phone book is down, nothing in the cluster can look anything up, even though every individual app is healthy.</div>
 </div>
 
 <div class="quiz">
@@ -197,80 +64,19 @@ kubectl -n kube-system get configmap coredns -o yaml</code></pre>
 <div class="answer" id="a2">Gateway API — <code>HTTPRoute</code> is namespace-scoped and owned by the app team, while <code>Gateway</code>/<code>GatewayClass</code> stay with infra. Ingress mixes both concerns in one object, so splitting permissions cleanly is harder.</div>
 </div>
 
-<div class="quiz">
-<p>Q3. In the default Corefile, which plugin sends queries CoreDNS can't answer from <code>cluster.local</code> out to an upstream resolver?</p>
-<div class="opts">
-<label>A. cache — stores upstream answers for reuse</label>
-<label>B. loop — detects forwarding loops safely</label>
-<label>C. forward — sends the query upstream instead</label>
-<label>D. reload — watches the Corefile for changes</label>
-</div>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a3">C. <code>forward</code> — it sends unresolved queries to the address in <code>/etc/resolv.conf</code> on the node. <code>cache</code> stores answers after the fact, <code>loop</code> detects forwarding loops, and <code>reload</code> watches for Corefile edits — none of them do the actual forwarding.</div>
-</div>
-
-<div class="quiz">
-<p>Q4. An <code>HTTPRoute</code> in namespace <code>search</code> needs its <code>backendRef</code> to point at a Service in namespace <code>billing</code>. What has to exist for that reference to be allowed?</p>
-<div class="opts">
-<label>A. A ReferenceGrant created in the billing namespace</label>
-<label>B. A ReferenceGrant created in the search namespace</label>
-<label>C. An allowedRoutes entry on the shared Gateway</label>
-<label>D. A NetworkPolicy allowing search to billing</label>
-</div>
-<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a4">A. The <code>ReferenceGrant</code> must live in the namespace being referenced <em>into</em> — <code>billing</code> — naming <code>HTTPRoute</code> in <code>search</code> as a trusted referrer. <code>allowedRoutes</code> controls whether a Route may attach to a Gateway at all, a different boundary entirely; a NetworkPolicy controls packet-level reachability, not Gateway API's own reference permissions.</div>
-</div>
-
-<h2>Certification mapping</h2>
-<p>Services &amp; Networking — 20% of the CKA exam, per the official CNCF curriculum (this course's own <a href="../objectives.html">objectives tracker</a> places CoreDNS, Ingress, and Gateway API here). CoreDNS has been a stable objective in this domain for a long time. Gateway API is a newer addition to the curriculum: several current CKA study guides describe it being added in a recent exam refresh with installing a Gateway and attaching an HTTPRoute as a tested skill, but the official CNCF curriculum document only publishes domain-level weights, not a public per-topic sub-weight — so treat "Gateway API is examinable under this domain" as solid and "exactly how many points it's worth" as unconfirmed rather than guess at a number.</p>
-
-<h2>Production challenge</h2>
-<p>This challenge covers <strong>Gateway API</strong> — diagnosing a routing conflict with less hand-holding than the failure scenario above.</p>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Diagnose a routing conflict between two app teams sharing one Gateway, using only the reasoning this lesson gave you — not a script to follow line by line.</p>
-<h4>Scenario</h4>
-<p>The platform team runs one <code>Gateway</code> named <code>edge-gateway</code> in namespace <code>platform-ingress</code>, configured to accept <code>HTTPRoute</code>s from any namespace labeled <code>gateway-access: allowed</code>. Two teams, <code>billing</code> and <code>reporting</code>, both attach routes to it. The reporting team reports: "our nightly export callback under <code>/reports/export</code> stopped receiving traffic sometime this week — no errors show up anywhere on our own route."</p>
-<h4>Environment assumptions</h4>
-<p>A kind/minikube cluster with a working Gateway API implementation installed (any <code>GatewayClass</code> backed by a real controller). You may not have cluster-wide read access to every namespace's <code>HTTPRoute</code>s by default — if not, that gap is itself part of what this challenge is testing.</p>
-<h4>Commands</h4>
-<pre><code># Start broad, then narrow to the shared Gateway
-kubectl get httproute -A -o wide
-kubectl get gateway edge-gateway -n platform-ingress -o yaml   # check status.listeners[].attachedRoutes
-kubectl get httproute -n billing -o yaml
-kubectl get httproute -n reporting -o yaml
-# Compare every route whose parentRefs names edge-gateway: matches, and metadata.creationTimestamp</code></pre>
-<h4>Expected result</h4>
-<p>You find a second <code>HTTPRoute</code> (in <code>billing</code>) with a match that ties or beats <code>reporting</code>'s on specificity for the <code>/reports/export</code> path, and you can name <em>which</em> precedence rule explains the winner — match specificity, oldest creation timestamp, or alphabetical <code>{namespace}/{name}</code> — not just "these two routes look similar."</p>
-<h4>Verification</h4>
-<p>State the winning rule out loud (or in writing) before proposing a fix. "billing's route is older" or "billing's match is more specific" are different root causes with different correct fixes — confusing them means you might ship a fix that doesn't actually change the outcome.</p>
-<h4>Common failure</h4>
-<p>Assuming the Gateway controller itself is broken and asking the platform team to restart it. A precedence conflict produces zero errors anywhere — every object involved is healthy and <code>Accepted: True</code> — so there is nothing for a restart to fix.</p>
-<h4>Troubleshooting</h4>
-<p>If you can't list <code>HTTPRoute</code>s across namespaces yourself, that's the exact cross-namespace-visibility gap this lesson's mental model predicts. Ask the platform team — who own the shared Gateway and can see every attached Route — to run the cross-namespace comparison with you, rather than requesting broad read access across every namespace just to debug one incident.</p>
-<h4>Cleanup / rollback</h4>
-<p>If you built this scenario yourself to practice, delete the test <code>HTTPRoute</code>s and <code>Gateway</code> when done. If you're diagnosing a real shared Gateway, don't delete anything that isn't yours — propose the path change to the route's owning team instead.</p>
-<h4>Production lesson</h4>
-<p>A shared Gateway needs an owner who can see every Route attached to it, across every team. Without that cross-namespace view, "my route looks completely fine" (reporting) and "the cluster is broken" (also reporting, to whoever's on call) are both truthful statements from two different vantage points at once — and nobody without the wider view can reconcile them.</p>
-</div>
-
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/" target="_blank" rel="noopener">kubernetes.io/docs — DNS Debugging Resolution</a>, <a href="https://gateway-api.sigs.k8s.io/concepts/security-model/" target="_blank" rel="noopener">gateway-api.sigs.k8s.io — Security Model (cross-namespace references, ReferenceGrant)</a>, <a href="https://gateway-api.sigs.k8s.io/reference/api-spec/main/spec/" target="_blank" rel="noopener">gateway-api.sigs.k8s.io — API Reference (HTTPRoute matching precedence)</a>, and <a href="https://gateway-api.sigs.k8s.io/docs/introduction/" target="_blank" rel="noopener">gateway-api.sigs.k8s.io — Introduction (role-oriented design)</a> — verified 2026-08-03.</p>
+<p><a href="https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/" target="_blank" rel="noopener">kubernetes.io/docs — DNS debugging</a> and <a href="https://gateway-api.sigs.k8s.io/" target="_blank" rel="noopener">gateway-api.sigs.k8s.io</a> — exam-allowed pages.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>CoreDNS answers every Service name via the <code>kube-dns</code> Service plus a Corefile plugin chain (<code>kubernetes</code>, <code>forward</code>, <code>cache</code>, <code>loop</code>, <code>reload</code>, <code>loadbalance</code>, ...); it's a live-editable ConfigMap — the <code>reload</code> plugin picks up changes in about a minute, no redeploy.</li>
-    <li>Service names failing cluster-wide while every Pod looks healthy is CoreDNS's signature symptom — check its Pods/Service/endpoints before any individual app.</li>
-    <li>CoreDNS is a single point of failure for name resolution across the whole cluster — real platform teams treat it as tier-0 infra: dedicated alerting, deliberate resource limits, a PodDisruptionBudget.</li>
-    <li>Gateway API splits Ingress into <code>GatewayClass</code> (infra provider, cluster-scoped), <code>Gateway</code> (cluster operator), and <code>HTTPRoute</code> (app developer, namespace-scoped) — three owners instead of one shared object.</li>
-    <li>Two separate cross-namespace boundaries exist and are easy to conflate: <code>allowedRoutes</code> controls which namespaces' Routes may attach to a Gateway (default: same namespace only); <code>ReferenceGrant</code> controls which namespaces' backend objects a Route may reference.</li>
-    <li>When two HTTPRoutes tie on match specificity, Gateway API breaks the tie by oldest creation timestamp, then alphabetical <code>{namespace}/{name}</code> — both routes can show <code>Accepted: True</code> while one silently never receives traffic.</li>
-    <li>Default to Gateway API for genuinely multi-tenant clusters that need the permission split; Ingress is still fine for a single-team cluster where that split buys nothing yet.</li>
+    <li>CoreDNS gives every Service a name automatically; if names stop resolving cluster-wide, check CoreDNS itself first.</li>
+    <li>Gateway API splits Ingress into <code>GatewayClass</code>/<code>Gateway</code> (infra) and <code>HTTPRoute</code> (app team) for cleaner permission boundaries.</li>
+    <li>Neither Gateway API kind is built in — it's CRDs plus a controller, same pattern as Lesson 19.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck, or got a different result than "Expected result" above? Paste the exact command and output back to your teacher — a mismatch between what you saw and what this lesson predicted is the most useful thing you can bring back.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0020-ha-control-plane.html">&larr; Highly-available control plane</a>

@@ -11,233 +11,83 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 12 of 24</p>
 <h1>StatefulSet, DaemonSet, Job, CronJob</h1>
 
-<h2>Why this matters</h2>
-<p>The most expensive mistake in this lesson is running a database as a Deployment because a Deployment is what you already know. It looks fine in a demo — three replicas, all <code>Running</code>, a Service load-balancing across them. Then a node drains for a routine upgrade, or someone does a rolling restart to pick up a config change, and Kubernetes recreates the Pods in whatever order it feels like, each with a fresh name, a fresh PVC binding (or none at all if you didn't template one per replica), and no guarantee the old primary comes back before the replicas do. For a stateless API that's a non-event. For Postgres, Elasticsearch, Kafka, or anything that elects a leader or tracks per-node data, that's a quorum loss or a split-brain incident — and it happens precisely because a Deployment was never designed to answer the question "which replica is this, and does it matter." StatefulSet, DaemonSet, Job, and CronJob each exist because a Deployment's two core assumptions — Pods are interchangeable, and Pods run forever — are wrong for a specific class of workload. Knowing which one you're in front of, before you write the manifest, is the actual skill this lesson teaches.</p>
+<p>Four controllers, each breaking one assumption a Deployment makes: that Pods are interchangeable, disposable, and meant to run forever.</p>
 
-<p class="callout"><strong>Mental model:</strong> a Deployment answers "how many copies of this do I want running?" The other four controllers each override that question with a more specific one. StatefulSet asks: <em>does each replica need its own name, and does order matter?</em> — yes, so Pods get numbered (<code>web-0</code>, <code>web-1</code>...) and are created, scaled, and terminated one at a time, in order. DaemonSet asks: <em>does every node need exactly one?</em> — so there's no <code>replicas</code> field at all; the fleet size is however many nodes match. Job asks: <em>does this run once and then stop?</em> — success ends it, not a restart. CronJob asks: <em>does this run once, but on a schedule?</em> — it's a Job factory, not a long-running Pod. Test this model against a case you haven't seen: if someone asks "what happens if I scale a DaemonSet to <code>replicas: 5</code>," the answer falls out immediately — there's no such field, because the question a DaemonSet answers was never "how many," it was "which nodes."</p>
+<p class="callout"><strong>Simple example:</strong> Deployment Pods are identical workers — any one can do the job. StatefulSet workers wear name tags. DaemonSet posts exactly one guard per building. Job and CronJob run an errand, then stop.</p>
 
-<h2>Core concepts</h2>
-
-<h3>StatefulSet — ordered identity, ordered lifecycle</h3>
-<p>A StatefulSet's Pods get predictable names — <code>$(statefulset name)-$(ordinal)</code>, so a StatefulSet named <code>web</code> with three replicas produces <code>web-0</code>, <code>web-1</code>, <code>web-2</code>. That naming is only half the mechanism; the other half is <strong>ordering</strong>, controlled by <code>.spec.podManagementPolicy</code>:</p>
+<h3>StatefulSet — stable identity</h3>
+<p>Kill a Deployment Pod, its replacement gets a random name. StatefulSet Pods keep a <strong>stable identity</strong> instead.</p>
 <ul>
-<li><code>OrderedReady</code> — the default. The controller launches Pods in ascending order (0, 1, 2...), and waits for each Pod to be <code>Running</code> and <code>Ready</code> before launching the next one. Scaling down or deleting the set terminates Pods in <strong>reverse</strong> ordinal order (N, N-1, ..., 0), waiting for each to fully terminate before touching the next.</li>
-<li><code>Parallel</code> — launches and terminates all Pods at once, no ordering or readiness gating between them. You opt into this when replicas genuinely don't depend on each other's startup order.</li>
+<li>Predictable names: <code>web-0</code>, <code>web-1</code>, <code>web-2</code> — pattern is <code>$(name)-$(ordinal)</code>.</li>
+<li>Stable DNS per Pod, but only if you also write a <strong>headless Service</strong> (<code>clusterIP: None</code>).</li>
+<li><code>volumeClaimTemplates</code> gives each replica its own storage that follows it — <code>web-0</code> always gets its volume back.</li>
 </ul>
-<p>Rolling updates follow the same ordering logic, controlled separately by <code>.spec.updateStrategy</code>: the default is <code>RollingUpdate</code>, and it updates Pods from <strong>highest ordinal to lowest</strong> — <code>web-2</code> first, then <code>web-1</code>, then <code>web-0</code> last. You can further restrict this with <code>.spec.updateStrategy.rollingUpdate.partition</code>: set it to <code>2</code> and only Pods with ordinal &ge; 2 get the new template on update; anything below the partition is left alone, and even if you delete one of those lower-ordinal Pods, it comes back running the <em>old</em> template. That's the mechanism behind a manual canary rollout on a StatefulSet — update one replica, watch it, then lower the partition to roll further.</p>
-<p>None of this identity is useful without stable network addressing, which is why a StatefulSet requires you to create a <strong>headless Service</strong> yourself (<code>clusterIP: None</code>, referenced by <code>.spec.serviceName</code>) — the docs are explicit that "you are responsible for creating this Service," it is not generated for you. Combine the Service's domain (<code>$(service name).$(namespace).svc.cluster.local</code>) with a Pod's hostname (<code>$(statefulset name)-$(ordinal)</code>) and each replica gets its own resolvable, stable DNS name — for the docs' own example, <code>web-0.nginx.default.svc.cluster.local</code> always means the same replica, no matter how many times that Pod has been rescheduled.</p>
-<p>Storage follows the same stability contract. <code>volumeClaimTemplates</code> creates one PersistentVolumeClaim per replica (named <code>$(template name)-$(statefulset name)-$(ordinal)</code>, e.g. <code>www-web-0</code>), and that PVC is bound to that ordinal for the life of the StatefulSet — delete <code>web-0</code> and its replacement mounts the same PVC, not a new empty one. Deleting or scaling down the StatefulSet does <strong>not</strong> delete these PVCs either; Kubernetes treats data safety as more important than automatic cleanup, so orphaned PVCs from old replicas are a real, verified cost/cleanup item, not a hypothetical.</p>
+<p><strong>Use for:</strong> databases, anything where "which replica" matters.</p>
 
-<h3>DaemonSet — one Pod per matching node, no replica count</h3>
-<p>A DaemonSet has no <code>replicas</code> field. Instead it uses a node selector or affinity rule (or none, meaning "every node"), and the controller's job is to converge the cluster to exactly one matching Pod per matching node — add a node, it gets a Pod automatically; remove a node, its Pod goes with it.</p>
-<p>Updates default to <code>.spec.updateStrategy.type: RollingUpdate</code>, throttled by <code>maxUnavailable</code>, which defaults to <code>1</code> — meaning by default only one node's DaemonSet Pod is down for update at any given moment, and the controller proceeds to the next node only after that one comes back. This matters directly for blast radius: a bad DaemonSet image doesn't hit every node simultaneously during a rollout — it's gated one node (or whatever percentage you set) at a time, same mechanism as a Deployment's rolling update, just node-scoped instead of replica-scoped.</p>
-<p>The DaemonSet controller also automatically adds a specific, narrow set of tolerations to every DaemonSet Pod so it can run on nodes a normal Pod would be evicted from or excluded from: <code>node.kubernetes.io/not-ready</code> and <code>node.kubernetes.io/unreachable</code> (both <code>NoExecute</code> — so DaemonSet Pods aren't evicted when a node goes unhealthy), and <code>node.kubernetes.io/unschedulable</code> (<code>NoSchedule</code>). What it does <strong>not</strong> add automatically is a toleration for the control-plane taint (<code>node-role.kubernetes.io/control-plane:NoSchedule</code>). If you want a DaemonSet's Pods running on control-plane nodes too, you add that toleration to the Pod template yourself — the official example manifest even carries a comment saying exactly that: these tolerations are there to make the DaemonSet run on control-plane nodes, remove them if you don't want that.</p>
+<h3>DaemonSet — one Pod per node</h3>
+<p>No <code>replicas</code> field. Keeps one matching Pod on every node (or every node matching a selector), automatically.</p>
+<p><strong>Use for:</strong> node-level agents — log collectors, monitoring agents, CNI components.</p>
 
-<h3>Job — run to completion, not forever</h3>
-<p>A Job tracks successful completions, not liveness. Three fields do the real work: <code>completions</code> (how many successful Pod completions the Job needs before it's done), <code>parallelism</code> (how many Pods may run at once while working toward that count), and <code>.spec.backoffLimit</code>, which defaults to <code>6</code> — the number of retries allowed before the Job is marked failed. Job Pods must use a <code>restartPolicy</code> of <code>Never</code> or <code>OnFailure</code>; <code>Always</code> (the Pod default) is not allowed, because a Job pod that always restarts in place could never report a completion or a countable failure back to the Job controller.</p>
-<p><code>.spec.activeDeadlineSeconds</code> is a separate, independent ceiling: the duration, in seconds relative to the Job's start time, that it may stay continuously active before the system tries to terminate it — regardless of how many retries <code>backoffLimit</code> has left. A Job with a generous <code>backoffLimit</code> but no <code>activeDeadlineSeconds</code> can retry quietly for hours against a hung dependency; setting a deadline is how you put a hard wall-clock cap on that, independent of the retry count.</p>
-
-<h3>CronJob — a Job factory on a schedule</h3>
-<p>A CronJob creates a new Job object at each scheduled time from standard 5-field cron syntax in <code>.spec.schedule</code> (minute, hour, day-of-month, month, day-of-week — e.g. <code>0 3 * * *</code> is daily at 3 AM; macros like <code>@daily</code> and <code>@hourly</code> are also accepted). <code>.spec.concurrencyPolicy</code> decides what happens if the previous run's Job is still active when the next scheduled time arrives:</p>
+<h3>Job — run to completion</h3>
+<p>A Deployment treats a dead Pod as a failure. A Job runs Pods until they <strong>succeed</strong>, then stops.</p>
 <ul>
-<li><code>Allow</code> (default) — the CronJob allows concurrently running Jobs. Nothing stops a second, third, or fourth overlapping run from starting.</li>
-<li><code>Forbid</code> — the CronJob skips the new run if the previous one hasn't finished. When the previous run does finish, <code>startingDeadlineSeconds</code> is still honored and may still trigger a fresh run.</li>
-<li><code>Replace</code> — the still-running Job is replaced by a new one at the next scheduled time.</li>
+<li><code>completions</code> — successful Pod completions needed.</li>
+<li><code>parallelism</code> — how many Pods run at once.</li>
+<li><code>backoffLimit</code> — retries before giving up. Defaults to 6.</li>
 </ul>
-<p><code>.spec.startingDeadlineSeconds</code> is a separate safety valve: if a Job misses its scheduled start time by more than this many seconds (a control-plane outage, for example), the CronJob controller counts it as missed and skips that occurrence rather than trying to catch up. The docs are explicit that CronJob scheduling is only <em>approximate</em> — "in certain circumstances, a single CronJob can create multiple concurrent Jobs" even outside of a deliberate <code>Allow</code> policy — so treat exact once-per-schedule execution as a best effort, not a guarantee, and design the job itself to tolerate being run more than once.</p>
+<p><strong>Use for:</strong> migrations, batch exports, one-off scripts.</p>
 
-<h2>Production example</h2>
-<p class="callout production"><strong>Production note:</strong> a 3-node Postgres cluster (one primary, two streaming replicas) is a textbook StatefulSet: <code>pg-0</code> is always the same identity, always the same PVC, and the team wires up <code>pg-0</code> specifically as the primary via an init script that checks the Pod's own ordinal. The headless Service gives every replica a stable DNS name the replication config can reference directly, instead of chasing Pod IPs. The reason this has to be a StatefulSet and not a Deployment isn't storage alone — a Deployment can use one PVC per replica too, with enough care — it's the <strong>ordering guarantee</strong>. When the team rolls out a Postgres minor-version bump, <code>RollingUpdate</code>'s default highest-to-lowest ordinal order means the replicas (<code>pg-2</code>, <code>pg-1</code>) get updated and verified healthy first, and the primary (<code>pg-0</code>) only goes last — so if the new image is bad, it's caught on a replica, not the primary, and quorum is never at risk mid-rollout. A Deployment's rolling update has no concept of "which one is the primary" to protect — that's the entire gap StatefulSet closes.</p>
+<h3>CronJob — a Job on a schedule</h3>
+<p>Creates a new Job at each scheduled time, using cron syntax in <code>.spec.schedule</code> (e.g. <code>0 3 * * *</code> = daily at 3 AM).</p>
+<p><code>concurrencyPolicy</code> decides what happens if the previous run hasn't finished:</p>
+<ul>
+<li><code>Allow</code> (default) — both run.</li>
+<li><code>Forbid</code> — skip the new run.</li>
+<li><code>Replace</code> — kill the old run, start the new one.</li>
+</ul>
 
-<h2>Hands-on exercise — StatefulSet</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Prove that a StatefulSet Pod's replacement keeps the same name <em>and</em> reattaches to the same PVC — don't take the lesson's word for it.</p>
-<h4>Scenario</h4>
-<p>You're about to depend on "stable storage per replica" for a real workload. Confirm it actually behaves that way before you trust it in production.</p>
-<h4>Environment assumptions</h4>
-<p>Any cluster you can <code>kubectl</code> into (kind/minikube is fine) with a default StorageClass available, no existing objects named <code>web</code> or <code>nginx</code> in the current namespace.</p>
-<h4>Commands</h4>
-<pre><code>cat &lt;&lt;'EOF' | kubectl apply -f -
-apiVersion: v1
-kind: Service
-metadata:
-  name: nginx
-  labels:
-    app: nginx
-spec:
-  ports:
-  - port: 80
-    name: web
-  clusterIP: None
-  selector:
-    app: nginx
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: web
-spec:
-  serviceName: "nginx"
-  replicas: 3
-  selector:
-    matchLabels:
-      app: nginx
-  template:
-    metadata:
-      labels:
-        app: nginx
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:1.29
-        ports:
-        - containerPort: 80
-          name: web
-        volumeMounts:
-        - name: www
-          mountPath: /usr/share/nginx/html
-  volumeClaimTemplates:
-  - metadata:
-      name: www
-    spec:
-      accessModes: [ "ReadWriteOnce" ]
-      resources:
-        requests:
-          storage: 1Gi
-EOF
-
-kubectl get pods -l app=nginx -w
-# Ctrl-C once you see web-0, web-1, web-2 all Running — note they came up in that order
-
-kubectl get pvc -l app=nginx
-kubectl get pod web-0 -o jsonpath='{.metadata.uid}{"\n"}'
-echo "hello from web-0" > /tmp/marker.txt
-kubectl cp /tmp/marker.txt web-0:/usr/share/nginx/html/marker.txt
-
-kubectl delete pod web-0
-kubectl get pods -l app=nginx -w
-# Ctrl-C once web-0 is Running again
-
-kubectl get pod web-0 -o jsonpath='{.metadata.uid}{"\n"}'
-kubectl get pvc -l app=nginx
-kubectl exec web-0 -- cat /usr/share/nginx/html/marker.txt</code></pre>
-<h4>Expected result</h4>
-<p>Pod names came up in strict order — <code>web-0</code> reaches <code>Running</code> before <code>web-1</code> is created, <code>web-1</code> before <code>web-2</code>. The PVC list shows three claims named <code>www-web-0</code>, <code>www-web-1</code>, <code>www-web-2</code>. After deleting <code>web-0</code>, the replacement Pod is named <code>web-0</code> again — same name, but a <strong>different UID</strong> (it's a new Pod object) — and <code>cat marker.txt</code> still prints <code>hello from web-0</code>, proving the new Pod mounted the same PVC rather than a fresh empty one.</p>
-<h4>Verification</h4>
-<p>The UID change plus the surviving file is the actual proof — a same name with different UID confirms this is a genuinely new Pod object, not something that failed to terminate, and the surviving marker file confirms the PVC (not just the name) followed the ordinal.</p>
-<h4>Common failure</h4>
-<p>Watching only the Pod name and concluding "nothing happened" — the name staying <code>web-0</code> is expected and not itself proof of anything; the UID change and the marker file are what actually demonstrate replacement-with-reattachment versus an in-place restart.</p>
-<h4>Troubleshooting</h4>
-<p>If the new <code>web-0</code> Pod sticks in <code>Pending</code> instead of <code>Running</code>, check <code>kubectl describe pod web-0</code> for a scheduling failure — a common cause in kind/minikube is the PVC being bound to a node-local volume from a node the scheduler didn't pick for the replacement Pod. That's a real, verified limitation of node-local default StorageClasses, not a StatefulSet bug.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete statefulset web
-kubectl delete pvc -l app=nginx
-kubectl delete service nginx</code></pre>
-<h4>Production lesson</h4>
-<p>This is the exact guarantee the Postgres example above depends on: replica identity and its storage survive Pod replacement. If you had run the same experiment against a Deployment with one shared PVC (<code>ReadWriteOnce</code>, no <code>volumeClaimTemplates</code>), a second replica couldn't even mount it — this exercise is why "just use a Deployment with a volume" doesn't scale past one replica for stateful workloads.</p>
-</div>
-
-<h2>Failure scenario — CronJob</h2>
-<p>A realistic incident built directly from <code>concurrencyPolicy: Allow</code> being the default — nobody set it deliberately, it's just what happens when nobody thinks about it.</p>
-<ol class="timeline">
-<li><span class="t">02:00</span> A CronJob named <code>nightly-report</code> fires on schedule (<code>0 2 * * *</code>), querying the reporting database and writing a summary table. It normally finishes in about 12 minutes. <code>concurrencyPolicy</code> was never set, so it's <code>Allow</code>.</li>
-<li><span class="t">02:00</span> Unnoticed change from last week: the reporting database grew 4x, and the query the Job runs now takes over an hour instead of 12 minutes. Nobody updated the CronJob when the data grew.</li>
-<li><span class="t">03:00</span> The next scheduled run fires. The 02:00 run is still active. Because <code>concurrencyPolicy</code> is <code>Allow</code>, a second Job starts anyway, running the same expensive query against the same database at the same time.</li>
-<li><span class="t">03:41</span> Database connection pool alerts start firing — both Jobs are holding long-running connections and competing for the same rows, and now application traffic is being starved of connections too. On-call is paged for "API returning 503s," not "CronJob."</li>
-<li><span class="t">04:00</span> A third overlapping run fires. Three concurrent copies of the same expensive query are now active. The database's CPU is pegged; the original nightly report still hasn't finished from any of the three runs.</li>
-<li><span class="t">04:12</span> On-call runs <code>kubectl get jobs -l app=nightly-report</code> and finds three Jobs, all still <code>Active</code>, all created by the same CronJob. The actual root cause surfaces: not a database problem, a scheduling-overlap problem.</li>
-<li><span class="t">04:15</span> Immediate fix: <code>kubectl delete job</code> on the two newer runs to free the connection pool, letting the original run finish.</li>
-<li><span class="t">04:30</span> Real fix applied: <code>concurrencyPolicy: Forbid</code> added to the CronJob spec, plus an <code>activeDeadlineSeconds</code> on the underlying Job template so a genuinely stuck run gets killed instead of accumulating forever.</li>
-</ol>
-<p>The CronJob itself never failed — every individual run would have succeeded eventually. The outage was caused entirely by the <em>schedule interval becoming shorter than the job's real runtime</em>, and <code>Allow</code> not being a decision anyone made on purpose.</p>
-
-<h2>Troubleshooting workflow — Job</h2>
-<p>The general ten-step method, applied to "my Job's Pods keep failing and it's not retrying or succeeding the way I expected":</p>
-<ol class="troubleshooting">
-<li><strong>Confirm the symptom.</strong> <code>kubectl get job &lt;name&gt;</code> — read the actual <code>COMPLETIONS</code> column (e.g. <code>0/1</code>) rather than assuming from the Pod list alone; a Job can show several failed Pods while still technically retrying.</li>
-<li><strong>Define scope.</strong> <code>kubectl get pods -l job-name=&lt;name&gt;</code> — is every attempt failing the same way, or did it succeed once and the Job still isn't marked complete (a sign of a <code>completions</code> misconfiguration, not a Pod failure)?</li>
-<li><strong>Check recent changes.</strong> <code>kubectl get events --field-selector involvedObject.name=&lt;job-name&gt; --sort-by=.lastTimestamp</code> — did someone change the image, the command, or the resource requests right before this started failing?</li>
-<li><strong>Inspect the right state.</strong> <code>kubectl describe job &lt;name&gt;</code> — read the <code>Conditions</code> section for a <code>Reason</code> like <code>BackoffLimitExceeded</code>, and cross-check <code>.spec.backoffLimit</code> against how many failed Pods you actually see; also confirm <code>restartPolicy</code> in the Pod template is <code>Never</code> or <code>OnFailure</code> — <code>Always</code> is invalid for a Job and will be rejected at creation, so if the Job exists at all this is usually already fine, but double check a copy-pasted template.</li>
-<li><strong>Form a hypothesis.</strong> For example: "the container is exiting non-zero every time because of a bad argument, and it's about to hit <code>backoffLimit</code> (default 6) and stop retrying for good."</li>
-<li><strong>Test one variable.</strong> <code>kubectl logs -l job-name=&lt;name&gt; --previous --tail=50</code> on the most recent failed Pod — read the actual exit reason before changing anything. Don't edit the Job spec yet.</li>
-<li><strong>Apply the safest fix.</strong> If <code>backoffLimit</code> is already exhausted, the Job is done retrying — delete it and re-create with the fix rather than editing a dead Job in place (most fields are immutable on an existing Job). If the real issue is a hung dependency, add or lower <code>activeDeadlineSeconds</code> so it fails fast next time instead of quietly retrying for hours.</li>
-<li><strong>Verify recovery.</strong> <code>kubectl get job &lt;name&gt; -w</code> and confirm <code>COMPLETIONS</code> reaches the value you set, not just that a Pod reached <code>Running</code>.</li>
-<li><strong>Document the root cause.</strong> Write down the actual <code>Reason</code> string from <code>describe job</code> (e.g. <code>BackoffLimitExceeded</code>) and the underlying cause (bad argument, missing secret, wrong image tag) — "it failed" isn't a root cause.</li>
-<li><strong>Prevent recurrence.</strong> Set an explicit <code>activeDeadlineSeconds</code> and a deliberate <code>backoffLimit</code> on every Job template going forward instead of relying on the default 6 — a default that's fine for a flaky network call is far too many retries for a Job with a genuinely broken argument.</li>
-</ol>
-
-<h2>Security &amp; reliability considerations</h2>
-<p class="callout production"><strong>Reliability note — StatefulSet:</strong> the ordering guarantee (<code>OrderedReady</code> creation/termination, highest-to-lowest rolling updates) is itself the reliability feature, not a side effect. It's also a documented sharp edge: using <code>RollingUpdate</code> with the default <code>OrderedReady</code> Pod management policy can leave the StatefulSet in a broken state that needs manual repair if a Pod update fails mid-rollout and the controller can't safely proceed past it — know that this manual-intervention path exists before you hit it at 3 AM.</p>
-<p class="callout production"><strong>Reliability note — DaemonSet:</strong> the cluster-wide blast radius people worry about is real but not instant — the default <code>maxUnavailable: 1</code> throttles a rolling update to one node at a time, so a bad image is normally caught after breaking one node's Pod, not all of them. That protection disappears if someone raises <code>maxUnavailable</code> to speed up a rollout, or if the DaemonSet is being created fresh (not updated) — a first-time rollout of a bad image goes to every matching node immediately, because there's no "previous good version" to roll from.</p>
-<p class="callout production"><strong>Reliability note — CronJob:</strong> overlap risk (the Failure scenario above) is the main one, but it's compounded by the docs' own caution that scheduling is approximate — "in certain circumstances, a single CronJob can create multiple concurrent Jobs" even without <code>Allow</code> being a deliberate choice. Design every CronJob's workload to be safe to run more than once (idempotent), not just fast — you can reduce overlap with <code>Forbid</code>, but you can't rely on the schedule to guarantee exactly-once execution.</p>
-<p class="callout security"><strong>Security note:</strong> DaemonSets are the most common legitimate reason to request <code>hostNetwork</code>, <code>hostPath</code> mounts, or a privileged security context in a cluster — log shippers and CNI/monitoring agents genuinely need node-level access. That's exactly why a DaemonSet's Pod spec deserves more RBAC and admission-policy scrutiny than an ordinary Deployment, not less: a compromised DaemonSet Pod potentially has a foothold on every node in the cluster at once, simply because that's what the controller is designed to guarantee.</p>
-
-<p class="callout mistake"><strong>Common mistake:</strong> defaulting to a Deployment for a workload that needs stable per-replica identity (a database, a message broker with per-broker state, anything doing leader election by Pod name) because Deployment is the first controller people learn. The failure doesn't show up in normal operation — it shows up the first time a Pod gets rescheduled, which is exactly the worst time to discover it.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> writing a StatefulSet without its headless Service. The StatefulSet still creates Pods fine — <code>web-0</code>, <code>web-1</code> come up — but per-Pod DNS resolution silently doesn't exist, and anything relying on <code>web-0.&lt;service&gt;...</code> for peer discovery fails at the exact moment you scale or fail over, not at deploy time.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> shipping a Job with no <code>activeDeadlineSeconds</code>. A Job with a generous or default <code>backoffLimit</code> and a container that hangs (rather than exits non-zero) can sit "retrying" indefinitely against a dead dependency, consuming a node's resources and never surfacing as a clear failure in monitoring built around exit codes.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> assuming a DaemonSet automatically runs on control-plane nodes. It doesn't — the automatic tolerations DaemonSet Pods get cover unhealthy/unreachable/unschedulable nodes, not the control-plane taint. If a node-level agent is missing from your control-plane nodes specifically, check the toleration list before assuming a scheduling bug.</p>
-
-<h2>Decision guide</h2>
 <table>
-<tr><th>Workload</th><th>Replica identity?</th><th>Use when</th><th>Avoid when</th><th>Default update strategy</th><th>Trade-off</th></tr>
-<tr><td>Deployment</td><td>No — interchangeable</td><td>Stateless apps, any replica is equivalent</td><td>Order or stable per-replica identity matters</td><td><code>RollingUpdate</code></td><td>Simplest model, but zero identity guarantees</td></tr>
-<tr><td>StatefulSet</td><td><strong>Yes</strong> — stable name + storage</td><td>Databases, per-replica state, ordered rollout/quorum needs</td><td>Stateless workload — the ordering overhead buys you nothing</td><td><code>RollingUpdate</code> (highest&rarr;lowest ordinal; supports <code>partition</code> for canary)</td><td>Slower, sequential rollouts and scaling by design; requires a headless Service you must write yourself</td></tr>
-<tr><td>DaemonSet</td><td>No — one per node</td><td>Node-level agents: log shippers, monitoring, CNI</td><td>App doesn't need to run on every node</td><td><code>RollingUpdate</code> (<code>maxUnavailable: 1</code> by default)</td><td>Fleet size tracks node count, not traffic; often needs elevated node-level permissions</td></tr>
-<tr><td>Job</td><td>No — tracked by completion count</td><td>Run-to-completion tasks: migrations, batch exports, one-off scripts</td><td>Anything meant to run indefinitely</td><td>n/a — Pods aren't updated in place, you re-create the Job</td><td>No built-in ceiling on hung retries unless you set <code>activeDeadlineSeconds</code> yourself</td></tr>
-<tr><td>CronJob</td><td>No — same as Job</td><td>A Job that needs to repeat on a schedule</td><td>Anything needing exactly-once, precisely-timed execution</td><td>n/a — governed by <code>concurrencyPolicy</code>, not a rollout strategy</td><td>Scheduling is approximate; overlap is the default (<code>Allow</code>), not the exception</td></tr>
+  <thead>
+    <tr><th>Workload</th><th>Replica identity?</th><th>When to use</th><th>Key field</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Deployment</td><td>No — interchangeable</td><td>Stateless apps</td><td><code>replicas</code></td></tr>
+    <tr><td>StatefulSet</td><td><strong>Yes</strong> — stable name + storage</td><td>Databases, per-replica state</td><td><code>volumeClaimTemplates</code></td></tr>
+    <tr><td>DaemonSet</td><td>No — one per node</td><td>Node-level agents</td><td>no <code>replicas</code> — selector/affinity</td></tr>
+    <tr><td>Job</td><td>No — tracked by completion</td><td>Run-to-completion tasks</td><td><code>backoffLimit</code></td></tr>
+    <tr><td>CronJob</td><td>No — same as Job</td><td>A Job that repeats</td><td><code>schedule</code></td></tr>
+  </tbody>
 </table>
-<p><strong>Default recommendation:</strong> reach for StatefulSet only when you can name the specific thing that breaks if replica identity isn't stable (leader election, per-replica storage, ordered bootstrap) — otherwise a Deployment is simpler and correct. For CronJob, set <code>concurrencyPolicy: Forbid</code> unless you've deliberately verified the job is safe to run concurrently; <code>Allow</code> should be an informed choice, not the thing you get by leaving the field blank.</p>
 
-<h2>Knowledge check</h2>
+<h2>Try it — before looking below</h2>
 <div class="quiz">
 <p>Q1. Which controller gives each replica a stable name and its own storage that follows it across rescheduling?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">StatefulSet — names follow <code>$(name)-$(ordinal)</code>, and <code>volumeClaimTemplates</code> gives each ordinal its own PVC that survives Pod replacement.</div>
+<div class="answer" id="a1">StatefulSet — names follow <code>$(name)-$(ordinal)</code>, and <code>volumeClaimTemplates</code> gives each one its own storage.</div>
 </div>
 
 <div class="quiz">
 <p>Q2. A CronJob's previous run is still going when the next scheduled time hits. Name the three <code>concurrencyPolicy</code> values and what each does.</p>
 <input type="text" id="q2" placeholder="type your answer">
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2"><code>Allow</code> (default) — both run concurrently. <code>Forbid</code> — the new run is skipped. <code>Replace</code> — the old run is killed and the new one starts.</div>
+<div class="answer" id="a2"><code>Allow</code> (default) — both run. <code>Forbid</code> — new run skipped. <code>Replace</code> — old run killed, new one starts.</div>
 </div>
 
-<div class="quiz">
-<p>Q3. A StatefulSet's default <code>podManagementPolicy</code> is <code>OrderedReady</code>. In what order are Pods terminated when you scale down?</p>
-<div class="opts">
-<label>A. Lowest ordinal first, then upward</label>
-<label>B. Highest ordinal first, then downward</label>
-<label>C. All ordinals terminate at the same time</label>
-<label>D. Whichever Pod is least recently ready</label>
-</div>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a3">B. Highest ordinal first — termination runs in reverse order (N, N-1, ... 0), the mirror of the ascending creation order. (Option C describes <code>Parallel</code> mode, not the default <code>OrderedReady</code>.)</div>
-</div>
-
-<div class="quiz">
-<p>Q4. A Job's Pods keep exiting non-zero and <code>kubectl describe job</code> shows <code>BackoffLimitExceeded</code>. What does this tell you, and what field controls it?</p>
-<input type="text" id="q4" placeholder="type your answer">
-<button onclick="document.getElementById('a4').classList.add('shown')">Reveal</button>
-<div class="answer" id="a4">The Job retried until it hit <code>.spec.backoffLimit</code> (default 6) and then stopped and marked itself failed — it isn't going to retry again on its own. Fix the underlying cause and re-create the Job rather than waiting for it.</div>
-</div>
-
-<h3>Try it — write a Job by hand</h3>
-<div class="tryit">
-<p class="eyebrow">Hands-on</p>
-<p>Write a Job manifest by hand (no copy-paste) that runs one task to completion:</p>
+<h2>Now write your own</h2>
+<p>Write a Job by hand (no copy-paste) that runs one task to completion:</p>
 <ul>
 <li><code>kind: Job</code>, with a name</li>
 <li>one container, any image that exits on its own (e.g. <code>busybox</code> with a short <code>command</code>)</li>
 <li><code>restartPolicy</code> set to a value Job allows (not <code>Always</code>)</li>
 <li>an explicit <code>backoffLimit</code></li>
 </ul>
-<p>Apply it. Run <code>kubectl get jobs</code> and <code>kubectl get pods</code> — watch the Pod go <code>Running</code> &rarr; <code>Completed</code>, and the Job show <code>1/1</code> under <code>COMPLETIONS</code>.</p>
+<p>Apply it. Run <code>kubectl get jobs</code> and <code>kubectl get pods</code> — watch the Pod go <code>Running</code> &rarr; <code>Completed</code>, and the Job show <code>1/1</code>.</p>
+
 <div class="quiz">
 <p>Reveal the reference answer</p>
-<button onclick="document.getElementById('a5').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a5"><code>apiVersion: batch/v1
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>apiVersion: batch/v1
 kind: Job
 metadata:
   name: one-off-task
@@ -252,81 +102,25 @@ spec:
       restartPolicy: Never
 </code></pre>
 </div>
-</div>
-
-<h2>Certification mapping</h2>
-<p>These four controllers fall under <strong>Workloads &amp; Scheduling (15%)</strong> of the CKA exam — the same domain as Pods, Deployments, and resource limits/probes from the last two lessons. Expect the exam to test whether you can write a working StatefulSet with its headless Service and a Job with the right <code>restartPolicy</code> from a blank manifest, not just recognize the concepts.</p>
-
-<h2>Production challenge — DaemonSet</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Diagnose, don't just fix by guessing: a DaemonSet is missing a Pod on one specific node, and you need to find out why using the same method you'd use on a real cluster.</p>
-<h4>Scenario</h4>
-<p>A teammate reports: "our log-shipper DaemonSet shows Pods on every worker node, but not on the control-plane node — is that a bug?" You don't yet know if it's expected behavior or a real scheduling failure.</p>
-<h4>Environment assumptions</h4>
-<p>A kind/minikube cluster with at least one control-plane node and one worker node. Reproduce the setup first:</p>
-<pre><code>cat &lt;&lt;'EOF' | kubectl apply -f -
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: log-shipper
-spec:
-  selector:
-    matchLabels:
-      app: log-shipper
-  template:
-    metadata:
-      labels:
-        app: log-shipper
-    spec:
-      containers:
-      - name: shipper
-        image: busybox
-        command: ["sh", "-c", "sleep 3600"]
-EOF</code></pre>
-<h4>Commands</h4>
-<pre><code>kubectl get pods -l app=log-shipper -o wide
-kubectl get nodes
-kubectl describe node &lt;control-plane-node-name&gt; | grep -A2 Taints
-kubectl get daemonset log-shipper -o jsonpath='{.spec.template.spec.tolerations}'</code></pre>
-<h4>Expected result</h4>
-<p>The Pod list shows one Pod per worker node but none on the control-plane node. <code>describe node</code> on the control-plane node shows a taint like <code>node-role.kubernetes.io/control-plane:NoSchedule</code>. The DaemonSet's toleration list is empty (or missing that specific key) — it only has whatever the controller adds automatically (not-ready, unreachable, unschedulable), none of which match the control-plane taint.</p>
-<h4>Verification</h4>
-<p>Add the matching toleration to the DaemonSet's Pod template and re-apply; a new Pod should appear on the control-plane node within seconds, confirming the taint/toleration mismatch — not a selector, resource, or image problem — was the root cause.</p>
-<pre><code>kubectl patch daemonset log-shipper --type='json' -p='[{"op":"add","path":"/spec/template/spec/tolerations","value":[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"}]}]'
-kubectl get pods -l app=log-shipper -o wide</code></pre>
-<h4>Common failure</h4>
-<p>Assuming this is a bug in the DaemonSet controller, or that DaemonSets get a free pass onto every node including control-plane nodes by default. They don't — the automatic tolerations are narrowly scoped to node-health states, not role-based taints.</p>
-<h4>Troubleshooting</h4>
-<p>If adding the toleration still doesn't produce a Pod, check for a second blocker stacked on the same node — a <code>nodeSelector</code>/affinity rule that explicitly excludes control-plane nodes, or resource requests the control-plane node can't satisfy. A taint/toleration match is necessary but not sufficient if something else in the spec also excludes that node.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete daemonset log-shipper</code></pre>
-<h4>Production lesson</h4>
-<p>This exact scenario is why "our monitoring agent isn't running on the control plane" tickets exist — it's almost never a controller bug, it's a taint the DaemonSet's Pod template was never given a toleration for. Check <code>describe node</code>'s Taints line and the DaemonSet's tolerations side by side before assuming anything more exotic is wrong.</p>
-</div>
 
 <h2>Source</h2>
 <ul>
-<li><a href="https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/controllers/statefulset</a></li>
-<li><a href="https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/controllers/daemonset</a></li>
-<li><a href="https://kubernetes.io/docs/concepts/workloads/controllers/job/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/controllers/job</a></li>
-<li><a href="https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/controllers/cron-jobs</a></li>
-<li><a href="https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/job-v1/" target="_blank" rel="noopener">kubernetes.io — Job v1 API reference</a> (field defaults for <code>backoffLimit</code> and <code>activeDeadlineSeconds</code>)</li>
-<li><a href="https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/daemon-set-v1/" target="_blank" rel="noopener">kubernetes.io — DaemonSet v1 API reference</a> (default <code>maxUnavailable</code>/<code>maxSurge</code>)</li>
+<li><a href="https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/" target="_blank" rel="noopener">statefulset</a></li>
+<li><a href="https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/" target="_blank" rel="noopener">daemonset</a></li>
+<li><a href="https://kubernetes.io/docs/concepts/workloads/controllers/job/" target="_blank" rel="noopener">job</a></li>
+<li><a href="https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/" target="_blank" rel="noopener">cron-jobs</a></li>
 </ul>
-<p>Verified 2026-08-03. All searchable in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>StatefulSet: <code>OrderedReady</code> (default) creates 0&rarr;N in order, terminates N&rarr;0 in reverse; <code>RollingUpdate</code> (default) updates highest&rarr;lowest ordinal, with <code>partition</code> for canary rollouts. Requires a headless Service you write yourself. <code>volumeClaimTemplates</code> gives each ordinal its own PVC that survives Pod replacement.</li>
-    <li>DaemonSet: no <code>replicas</code> field — one Pod per matching node. Default update strategy <code>RollingUpdate</code> with <code>maxUnavailable: 1</code>, throttling blast radius during updates. Automatic tolerations cover unhealthy/unreachable/unschedulable nodes only — control-plane taints need an explicit toleration.</li>
-    <li>Job runs to completion, tracked by <code>completions</code>/<code>parallelism</code>; <code>backoffLimit</code> (default 6) caps retries, <code>activeDeadlineSeconds</code> caps wall-clock time independent of retries. <code>restartPolicy</code> must be <code>Never</code> or <code>OnFailure</code>.</li>
-    <li>CronJob is a Job factory on a cron schedule. <code>concurrencyPolicy</code> (<code>Allow</code> default, <code>Forbid</code>, <code>Replace</code>) governs overlap; scheduling is approximate, so design every CronJob's workload to be safe to run more than once.</li>
+    <li>StatefulSet: stable name + DNS (via headless Service) + storage that follows the replica.</li>
+    <li>DaemonSet: no <code>replicas</code> — one Pod per matching node.</li>
+    <li>Job runs to completion (<code>backoffLimit</code>, default 6). CronJob is a Job on a schedule (<code>concurrencyPolicy</code>).</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck, or did your cluster behave differently from what this lesson predicted — a Pod that didn't come back with the same PVC, a DaemonSet that wouldn't schedule, a Job that wouldn't stop retrying? Paste the exact command and output back to your teacher; that gap is more useful than the lesson itself.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0011-resource-limits-probes.html">&larr; Resource limits &amp; probes</a>

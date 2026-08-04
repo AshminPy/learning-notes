@@ -11,283 +11,86 @@
 <p class="eyebrow">Kubernetes / CKA — Lesson 5 of 24</p>
 <h1>Service &rarr; Deployment</h1>
 
-<h2>Why this matters</h2>
-<p>A Service in front of a Deployment "just working" through a rolling update looks automatic — you run one command to update the image, and users never notice a blip. That behavior isn't built into Deployments, and it isn't magic. It's the direct, mechanical result of two independent things lining up correctly: Pod labels matching a Service's selector, and each new Pod passing its readiness probe before it's added to that Service's traffic. Nothing in the Kubernetes API ties a Service to "the Deployment I created it for" — there is no such field. If you assume that link exists anyway, two real incidents stay invisible until they hit production: a Service can silently start routing to Pods from a completely unrelated Deployment that happens to share one label, and a Service can just as easily send live traffic to a half-started Pod if nobody bothered to define a readiness probe at all.</p>
+<p>You already wired a Service to a bare Pod. Now do the same for a Deployment. Same mechanism, one layer up.</p>
 
-<p class="callout"><strong>Mental model:</strong> a Service is a saved search, re-run continuously — not a fixed guest list. Picture a smart playlist labeled "workout" that auto-adds every song tagged <code>workout=true</code>, from any album, by any artist, forever, with zero regard for which app or person added the tag. A Service behaves the same way: it doesn't hold a list of "the Pods from my Deployment" — it re-evaluates <code>spec.selector</code> against every Pod's current labels, and any Pod that matches right now is in, and any Pod that stops matching (label changed, Pod deleted, Pod fails its readiness probe) is out, automatically. Test that against a case you haven't seen yet: if you create a second, totally unrelated Deployment tomorrow and one of its Pods happens to carry the exact label your Service selects on, the Service includes that Pod immediately. There's no field, no annotation, nothing that says "only Pods from Deployment X." That's exactly the failure mode this lesson's exercise reproduces.</p>
+<p class="callout"><strong>Simple example:</strong> a Service is like a receptionist who only reads name tags. It doesn't care who hired the person wearing the tag — Pod, Deployment, whatever. It just matches tags (labels) to send calls (traffic).</p>
 
-<h2>Core concepts</h2>
-<p>Lesson 3 showed a Service matching a bare Pod's labels. Lesson 4 showed a Deployment's real Pod labels living inside <code>spec.template.metadata.labels</code>, not the Deployment's own <code>metadata.labels</code> or <code>spec.selector.matchLabels</code>. Put those two facts together and the mechanism is simple: a Service's <code>spec.selector</code> is compared against exactly one thing — the labels on whatever Pod objects currently exist in the namespace, wherever those Pods came from.</p>
+<h2>Where the labels live</h2>
+<p>A Service matches <code>spec.selector</code> against <strong>Pod labels</strong>. Nothing else. In a Deployment, those Pod labels sit inside the template, not at the top:</p>
 
 <pre><code>apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: web
+  name: nginx-deployment
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: web
+      app: nginx
   template:
     metadata:
       labels:
-        app: web        # &lt;- a Service selector matches THIS, not anything above it
+        app: nginx      # <- this is what a Service selector matches
     spec:
       containers:
-        - name: web
-          image: nginx:1.29
+        - name: nginx
+          image: nginx:1.14.2
 </code></pre>
 
-<p>Three separate label fields exist in this one manifest, and a Service only ever reads the third:</p>
-<ul>
-<li><code>metadata.labels</code> on the Deployment itself — cosmetic bookkeeping; a Service never reads this</li>
-<li><code>spec.selector.matchLabels</code> — how the Deployment finds its <em>own</em> Pods, via its ReplicaSet</li>
-<li><code>spec.template.metadata.labels</code> — the actual Pod labels, and the only one a Service selector can see</li>
-</ul>
+<p>The Service selector points at <code>spec.template.metadata.labels</code> — not the Deployment's own <code>metadata.labels</code>, and not <code>spec.selector.matchLabels</code>.</p>
 
-<p>A Service is not a static list, and it doesn't need to be told when Pods change. Per the Kubernetes docs, "the controller for that Service continuously scans for Pods that match its selector, and then makes any necessary updates to the set of EndpointSlices for the Service." Every time a Pod is created, deleted, relabeled, or changes readiness state, that scan runs again — no caching, no manual refresh, and nothing anywhere that remembers which controller originally created a given Pod.</p>
-
-<p>Readiness probes are the second half of the mechanism, and the part most people miss. A new Pod matching a Service's selector does not receive traffic the instant it starts <code>Running</code> — it has to pass its readiness probe first. The docs state the failure direction plainly: "If the readiness probe returns a failed state, the EndpointSlice controller removes the Pod's IP address from the EndpointSlices of all Services that match the Pod." The same mechanism runs in reverse on the way up — a Pod's IP is only added to a matching Service's EndpointSlices once its containers report Ready. And if you never define a <code>readinessProbe</code> at all, the kubelet just treats the container as an automatic success: the Pod is considered Ready — and gets traffic — the moment it's running, warmed up or not.</p>
-
-<p>Put both mechanisms on the same timeline and this is what a rolling update actually looks like from the Service's point of view:</p>
-
-<table>
-<tr><th>Moment</th><th>Old ReplicaSet (v1)</th><th>New ReplicaSet (v2)</th><th>Service endpoints</th></tr>
-<tr><td>Before rollout</td><td>3 Pods, Ready</td><td>none</td><td>3&times; v1 IPs — 100% v1</td></tr>
-<tr><td>Rollout starts (<code>maxSurge</code>)</td><td>3 Pods, Ready</td><td>1 Pod created, not yet Ready</td><td>still 3&times; v1 IPs — the new Pod isn't in yet</td></tr>
-<tr><td>New Pod passes readiness probe</td><td>3 Pods, Ready</td><td>1 Pod, Ready</td><td>4 IPs — v1 and v2 both receiving traffic</td></tr>
-<tr><td>Old Pod terminated (<code>maxUnavailable</code>)</td><td>2 Pods, Ready</td><td>1 Pod, Ready</td><td>3 IPs — mix continues</td></tr>
-<tr><td>Rollout complete</td><td>0 Pods</td><td>3 Pods, Ready</td><td>3&times; v2 IPs — 100% v2</td></tr>
-</table>
-
-<p>By default a Deployment's rolling update allows <code>maxSurge: 25%</code> and <code>maxUnavailable: 25%</code>, so old and new Pods genuinely both serve traffic for most of the rollout, not just for an instant — which version answers any single request during that window isn't something a Service selector controls at all.</p>
-
-<p class="callout"><strong>Simple example:</strong> this is also why a Service can send traffic to a broken new version mid-rollout even when the deployer swears "only 1 replica out of 10 has updated so far." If that one Pod reports Ready — because its readiness probe only checks "is the process listening on the port," not "can it actually serve correct responses" — the Service sends it a real share of requests. A readiness probe that's too shallow is a bug that hides inside a rollout that otherwise looks perfectly healthy.</p>
-
-<h2>Production example</h2>
-<p class="callout production"><strong>Production note:</strong> teams running canary or blue-green rollouts learn this the hard way exactly once, then adopt a rule permanently: every Deployment gets a shared label for "what this is" (<code>app: checkout</code>) and a separate, unique label for "which specific rollout this is" (<code>track: stable</code> or <code>track: canary</code>) — and every Service selector must include both. A payments team running <code>checkout</code> (12 replicas, <code>track: stable</code>) behind <code>checkout-svc</code>, then adding <code>checkout-canary</code> (2 replicas, <code>track: canary</code>) for a new payment-provider integration, keeps <code>checkout-svc</code>'s selector as <code>app: checkout, track: stable</code> specifically so the canary Deployment's Pods — which also carry <code>app: checkout</code> by convention — never qualify. The unique <code>track</code> label isn't decoration; it's the only thing stopping the two Deployments from sharing a Service by accident. A separate, deliberately scoped Service (<code>checkout-canary-svc</code>, selector <code>app: checkout, track: canary</code>) is what the canary's own test traffic hits instead.</p>
-
-<h2>Hands-on exercise</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Prove — don't take the lesson's word for it — that a Service will silently span two unrelated Deployments if their Pods share a label the Service selects on.</p>
-<h4>Scenario</h4>
-<p>You're standing in for two teams that both used <code>app: web</code> as a base label — team A's stable <code>web</code> Deployment, and team B's <code>web-canary</code> Deployment — behind a Service that was written before team B's Deployment existed.</p>
-<h4>Environment assumptions</h4>
-<p>Any cluster you can <code>kubectl</code> into (kind, minikube, or a real dev cluster), no existing resources named <code>web</code>, <code>web-canary</code>, or <code>web-svc</code> in the current namespace.</p>
-<h4>Commands</h4>
-<pre><code># 1. The "stable" Deployment — 3 replicas, its own valid, non-overlapping selector
-cat &lt;&lt;'EOF' | kubectl apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: web
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: web
-      track: stable
-  template:
-    metadata:
-      labels:
-        app: web
-        track: stable
-    spec:
-      containers:
-        - name: web
-          image: nginx:1.29
-EOF
-
-# 2. A Service written to select only the SHARED label — the mistake
-cat &lt;&lt;'EOF' | kubectl apply -f -
-apiVersion: v1
-kind: Service
-metadata:
-  name: web-svc
-spec:
-  selector:
-    app: web
-  ports:
-    - port: 80
-      targetPort: 80
-EOF
-
-# 3. A second, unrelated Deployment that also happens to carry app: web
-cat &lt;&lt;'EOF' | kubectl apply -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: web-canary
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: web
-      track: canary
-  template:
-    metadata:
-      labels:
-        app: web
-        track: canary
-    spec:
-      containers:
-        - name: web
-          image: httpd:2.4
-EOF
-
-# 4. Check who the Service actually targets
-kubectl get endpoints web-svc
-kubectl get pods -l app=web --show-labels</code></pre>
-<h4>Expected result</h4>
-<p><code>kubectl get endpoints web-svc</code> lists 5 IP addresses, not 3 — three from <code>web</code> and two from <code>web-canary</code>. <code>--show-labels</code> confirms all 5 Pods carry <code>app=web</code>, but only 3 also carry <code>track=stable</code>.</p>
-<h4>Verification</h4>
-<p>Run <code>kubectl run debugger --image=curlimages/curl --restart=Never -it --rm -- sh -c 'for i in $(seq 1 10); do curl -s http://web-svc; echo ---; done'</code> from inside the cluster. <code>nginx</code> and <code>httpd</code> ship visibly different default pages — across the 10 requests you'll see both show up, mixed together, which is the proof that one Service is quietly serving traffic for two different applications.</p>
-<h4>Common failure</h4>
-<p>Assuming the Service picked up <code>web-canary</code>'s Pods because the canary Deployment did something wrong. It didn't — <code>web-canary</code>'s own selector (<code>app: web, track: canary</code>) is perfectly valid and doesn't overlap with <code>web</code>'s own selector (<code>app: web, track: stable</code>). The bug is entirely in <code>web-svc</code>'s selector being narrower than it should be.</p>
-<h4>Troubleshooting</h4>
-<p>If <code>get endpoints</code> shows fewer than 5 IPs, check that both Deployments actually reached <code>Running</code>/Ready with <code>kubectl get pods -l app=web -o wide</code> — a slow image pull for <code>httpd:2.4</code> is the most likely reason the canary Pods aren't in the list yet, not a selector problem.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete deployment web web-canary
-kubectl delete service web-svc</code></pre>
-<h4>Production lesson</h4>
-<p>The fix is one field: change <code>web-svc</code>'s selector to <code>app: web, track: stable</code> and re-apply, then re-run <code>kubectl get endpoints web-svc</code> — it drops back to exactly 3 IPs. The lesson isn't "remember to fix this Service" — it's that this bug is invisible in <code>kubectl get deployments</code>, <code>kubectl get services</code>, and even a casual <code>kubectl describe service</code>. The only place it's visible is <code>kubectl get endpoints</code>, which is why that command belongs in your troubleshooting muscle memory, not just your setup checklist.</p>
-</div>
-
-<h2>Failure scenario</h2>
-<p>A realistic incident built on exactly the mechanism above — except this time nobody set up the bug on purpose.</p>
-<ol class="timeline">
-<li><span class="t">09:14</span> The checkout team merges a Helm values change to deploy <code>checkout-canary</code> — a new payment-provider integration — at 2 replicas, meant to only receive traffic from an internal test tool.</li>
-<li><span class="t">09:16</span> The canary chart was copy-pasted from the stable chart months ago and was never updated to set a <code>track</code> label. Its Pods come up carrying only <code>app: checkout</code> — the same shared label the stable Pods carry.</li>
-<li><span class="t">09:17</span> <code>checkout-svc</code> — the production Service, selector <code>app: checkout</code> only, written before the <code>track</code> convention existed — picks up both canary Pods the moment they pass their readiness probes. No one touched <code>checkout-svc</code>; it just re-evaluated its selector, as it always does.</li>
-<li><span class="t">09:21</span> Support tickets start: a small percentage of checkout attempts fail against the new, untested payment provider. Error rate on the dashboard rises from 0.1% to 4% — consistent with roughly 2 bad Pods out of 50 total.</li>
-<li><span class="t">09:26</span> On-call runs <code>kubectl get pods -l app=checkout -o wide</code> and sees more Pods than the known stable replica count. <code>kubectl get pods -l app=checkout --show-labels</code> reveals two Pods with no <code>track</code> label at all.</li>
-<li><span class="t">09:29</span> Root cause confirmed: <code>kubectl get endpoints checkout-svc</code> lists both canary Pod IPs alongside the stable ones.</li>
-<li><span class="t">09:31</span> Immediate fix: scale <code>checkout-canary</code> to 0 replicas, stopping the bleeding without touching the production Service.</li>
-<li><span class="t">09:40</span> Permanent fix: add <code>track: stable</code> / <code>track: canary</code> labels to both Deployments' Pod templates, update <code>checkout-svc</code>'s selector to require <code>track: stable</code>, and scale <code>checkout-canary</code> back up behind its own, separately scoped Service.</li>
-<li><span class="t">09:45</span> Verified: <code>kubectl get endpoints checkout-svc</code> shows exactly the stable replica count; error rate returns to 0.1%.</li>
-</ol>
-
-<h2>Troubleshooting workflow</h2>
-<p>The general method, applied specifically to "my Service is sending traffic to Pods I didn't expect":</p>
-<ol class="troubleshooting">
-<li><strong>Confirm the symptom.</strong> Don't trust a hunch from error rates alone — run <code>kubectl get endpoints &lt;service&gt;</code> and count the IPs against the replica count you actually expect.</li>
-<li><strong>Define scope.</strong> Is every request affected, or only some? A mixed-response symptom (some requests correct, some wrong) points at multiple backends behind one Service, not one broken Pod.</li>
-<li><strong>Check recent changes.</strong> <code>kubectl get deployments --sort-by=.metadata.creationTimestamp</code> — was a new Deployment created recently in this namespace? New Deployments are the most common source of an unexpected label collision.</li>
-<li><strong>Inspect the right state.</strong> <code>kubectl describe service &lt;service&gt;</code> for its exact selector, then <code>kubectl get pods -l &lt;that exact selector&gt; --show-labels</code> to see every Pod it matches and every label each one carries.</li>
-<li><strong>Form a hypothesis.</strong> For example: "the Service selector is missing a label that would normally distinguish this Deployment's Pods from another one's."</li>
-<li><strong>Test one variable.</strong> Compare the Service's selector field-by-field against the suspect Deployment's <code>spec.template.metadata.labels</code> — don't eyeball the YAML, diff the actual values (<code>kubectl get svc &lt;service&gt; -o jsonpath='{.spec.selector}'</code> against <code>kubectl get deploy &lt;deploy&gt; -o jsonpath='{.spec.template.metadata.labels}'</code>).</li>
-<li><strong>Apply the safest fix.</strong> Fix it at the Service — narrow <code>spec.selector</code> to include the missing distinguishing label. Don't "fix" it by relabeling the Pods you don't want matched: those Pods are owned by their own Deployment's ReplicaSet, and hand-editing their labels fights that controller instead of fixing the actual bug, which is in the Service.</li>
-<li><strong>Verify recovery.</strong> Re-run <code>kubectl get endpoints &lt;service&gt;</code> and confirm the IP count now matches only the intended Deployment's replica count — not just that error rates went down, which could be coincidental.</li>
-<li><strong>Document the root cause.</strong> "Service selector narrower than the intended Deployment's unique labels; a second Deployment's Pods qualified by accident" — record the exact selector and label values involved, not just "labels were wrong."</li>
-<li><strong>Prevent recurrence.</strong> Adopt a standing convention: every Deployment gets a unique <code>track</code>/<code>version</code> label in addition to its shared <code>app</code> label, and every Service selector must include both.</li>
-</ol>
-
-<p class="callout production"><strong>Reliability note:</strong> a label collision like this is a pure availability/correctness risk, not a Kubernetes bug — the platform is doing exactly what its selector-matching model promises. The blast radius scales with how broad the shared label is: a Service selecting on one common label like <code>app: web</code> in a busy shared namespace can pick up Pods from any Deployment, ReplicaSet, StatefulSet, or even a bare debug Pod someone spun up, as long as the label matches. The more Deployments that share a namespace and a naming convention, the higher the odds two of them eventually collide on a label by accident — this is a namespace-hygiene problem that gets worse as a team or cluster grows, not a one-off typo you fix once and forget.</p>
-
-<p class="callout security"><strong>Security note:</strong> the security angle here is real but secondary to reliability. In a genuinely multi-tenant namespace (multiple teams or customers sharing one namespace, which is itself against best practice), a label collision doesn't just misroute HTTP traffic — <code>NetworkPolicy</code> objects also select Pods by label (Lesson 10), so the same kind of overlap can accidentally widen a policy's scope to cover Pods it was never meant to include, exposing one tenant's Pods to another's traffic. The mitigation is the same one namespace isolation and RBAC already push you toward: don't share namespaces across trust boundaries, and don't rely on labels alone as an access boundary within a shared one.</p>
-
-<p class="callout mistake"><strong>Common mistake:</strong> treating a Service as if it were "bound" to the Deployment you created it for. There is no such binding anywhere in the API — no owner reference, no name reference, nothing. A Service is a standing query against Pod labels, full stop. If you want it scoped to one Deployment, the selector has to say so explicitly, and stay unique to that Deployment forever, including every future Deployment anyone adds to the namespace.</p>
-<p class="callout mistake"><strong>Common mistake:</strong> confusing this with the separate, also-real, also-documented risk of two Deployments overlapping their own <code>selector.matchLabels</code>. Kubernetes' own docs warn: "Kubernetes doesn't stop you from overlapping, and if multiple controllers have overlapping selectors those controllers might conflict and behave unexpectedly" — but that's a Deployment/ReplicaSet-vs-Deployment/ReplicaSet fight over owning the same Pods. The scenario in this lesson is different, and arguably easier to cause by accident: the two Deployments in the exercise above have perfectly valid, non-overlapping selectors of their own. It's only the <em>Service's</em> selector that's too broad.</p>
-
-<h2>Decision guide</h2>
-<table>
-<tr><th>Labeling convention</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
-<tr><td>Shared <code>app</code> label only</td><td>Exactly one Deployment will ever exist for this app, no canary/blue-green plans</td><td>You expect a second Deployment for the same app, ever (canary, blue-green, migration)</td><td>Simplest to write, but one future Deployment away from an accidental Service overlap</td></tr>
-<tr><td>Shared <code>app</code> + unique <code>track</code>/<code>version</code>, Service selects both</td><td>Canary or blue-green rollouts, multiple Deployments intentionally serving one logical app</td><td>Rare — this costs almost nothing even for a single-Deployment app</td><td>One extra label to keep consistent across every manifest, Helm chart, or Kustomize overlay</td></tr>
-<tr><td>Fully unique selector per Deployment, no shared label at all</td><td>You want the strongest possible isolation between adjacent but unrelated workloads in one namespace</td><td>You actually want one Service to intentionally span multiple Deployments (gradual migration)</td><td>Safest against accidents, but shifting traffic requires an explicit Service selector change — nothing blends automatically</td></tr>
-<tr><td>Separate namespace per team/tenant</td><td>Multiple teams or customers share a cluster</td><td>Small team, single app, low operational budget for extra namespaces/RBAC/quotas</td><td>Strongest isolation — Service selectors can't cross namespaces at all — at the cost of more objects to manage</td></tr>
-</table>
-<p><strong>Default recommendation:</strong> shared <code>app</code> label plus a unique <code>track</code> or <code>version</code> label, with every Service selector including both, from the very first Deployment — not added later once a second one shows up. Retrofitting this convention under incident pressure, as in the Failure scenario above, is strictly harder than starting with it.</p>
-
-<h2>Knowledge check</h2>
+<h2>Try it — before looking below</h2>
 <div class="quiz">
-<p>Q1. Does a Service care whether the Pods it selects came from a Deployment, a ReplicaSet, a StatefulSet, or were created bare?</p>
+<p>Q1. Does a Service care whether Pods came from a Deployment, a ReplicaSet, or were created bare?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">No. A Service selector only matches Pod labels — there's no field anywhere in the Service spec that references who or what created a Pod.</div>
+<div class="answer" id="a1">No. It only matches labels — it has no field that references who created the Pod.</div>
 </div>
 
 <div class="quiz">
-<p>Q2. During a rolling update, which Pods can a Service send traffic to?</p>
+<p>Q2. During a rolling update, which Pods does a Service send traffic to?</p>
 <input type="text" id="q2" placeholder="type your answer">
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2">Any Pod — old ReplicaSet or new — that currently matches the selector <strong>and</strong> reports Ready. Old and new Pods commonly serve traffic at the same time mid-rollout, not just for an instant.</div>
+<div class="answer" id="a2">Any Pod that matches the selector <strong>and</strong> is Ready — old and new Pods can both get traffic mid-rollout.</div>
 </div>
 
-<div class="quiz">
-<p>Q3. A Service has <code>selector: app: web</code>. Deployment A's Pods carry <code>app: web, track: stable</code>. Deployment B's Pods carry <code>app: web, track: canary</code>. Which Pods receive traffic from the Service?</p>
-<div class="opts">
-<label>A. Only Deployment A's Pods receive traffic</label>
-<label>B. Only Deployment B's Pods receive traffic</label>
-<label>C. Both Deployment A and B's Pods receive traffic</label>
-<label>D. Neither deployment's Pods receive traffic</label>
-</div>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a3">C. The Service's selector only requires <code>app: web</code> — extra labels like <code>track</code> don't exclude a Pod from matching. Both Deployments' Pods satisfy the selector, so both get traffic.</div>
-</div>
-
-<div class="quiz">
-<p>Q4. A new Pod is <code>Running</code> during a rollout but hasn't passed its readiness probe yet. What does the matching Service do with it?</p>
-<div class="opts">
-<label>A. Sends it a small share of traffic</label>
-<label>B. Sends it traffic after a short delay</label>
-<label>C. Skips it until it turns Ready</label>
-<label>D. Sends it traffic immediately anyway</label>
-</div>
-<button onclick="document.getElementById('a4').classList.add('shown')">Reveal answer</button>
-<div class="answer" id="a4">C. The EndpointSlice controller only adds a Pod's IP once it reports Ready — a Running-but-not-Ready Pod gets zero traffic from the Service until then.</div>
-</div>
-
-<h2>Certification mapping</h2>
-<p><strong>Services &amp; Networking (20%)</strong> of the CKA exam — this lesson is the connective tissue between that domain and <strong>Workloads &amp; Scheduling (15%)</strong>. Expect exam scenarios that hand you a Service and a Deployment and ask you to explain or fix why traffic isn't reaching the Pods you expect — the fix is almost always a label/selector mismatch, exactly like the exercise above.</p>
-
-<h2>Production challenge</h2>
-<div class="exercise">
-<h4>Objective</h4>
-<p>Design and prove a safe canary labeling scheme from scratch — with less hand-holding than the exercise above.</p>
-<h4>Scenario</h4>
-<p>You're adding a canary rollout to an existing <code>api</code> Deployment (3 replicas, <code>image: httpd:2.4</code>) already served by a Service named <code>api-svc</code>. You need a second Deployment, <code>api-canary</code> (1 replica, <code>image: nginx:1.29</code>, so you can visibly tell them apart), that receives <strong>zero</strong> traffic from <code>api-svc</code>, plus a separate Service, <code>api-canary-svc</code>, that reaches only the canary Pod.</p>
-<h4>Environment assumptions</h4>
-<p>A kind/minikube cluster. No existing resources named <code>api</code>, <code>api-svc</code>, <code>api-canary</code>, or <code>api-canary-svc</code>.</p>
-<h4>Commands</h4>
-<p>Don't copy the exercise above verbatim — design your own label scheme first (shared <code>app</code> label plus a unique second label is the pattern this lesson recommends), then write:</p>
+<h2>Now write your own</h2>
+<p>Write a ClusterIP Service that selects the Pods from the Deployment above.</p>
 <ul>
-<li>Deployment <code>api</code> — 3 replicas, your chosen labels</li>
-<li>Service <code>api-svc</code> — selector scoped so it matches only <code>api</code>'s Pods</li>
-<li>Deployment <code>api-canary</code> — 1 replica, sharing the base label but with a distinguishing value</li>
-<li>Service <code>api-canary-svc</code> — selector scoped so it matches only <code>api-canary</code>'s Pod</li>
+<li>a <code>selector</code> matching <code>app: nginx</code></li>
+<li>a <code>ports</code> entry with <code>port</code> and <code>targetPort</code></li>
 </ul>
-<h4>Expected result</h4>
-<p><code>kubectl get endpoints api-svc</code> lists exactly 3 IPs, all from <code>api</code>. <code>kubectl get endpoints api-canary-svc</code> lists exactly 1 IP, from <code>api-canary</code>. Neither Service's endpoint list ever contains a Pod from the other Deployment.</p>
-<h4>Verification</h4>
-<p>Prove it, don't assume it: cross-check every IP in both endpoint lists against <code>kubectl get pods -o wide --show-labels</code> and confirm each IP belongs to the Deployment you intended. Then delete and re-create <code>api-canary</code> once — endpoints should update to the new Pod's IP automatically, with no manual Service edit.</p>
-<h4>Common failure</h4>
-<p>Making <code>api-canary-svc</code>'s selector too loose (for example just the shared <code>app</code> label). It'll pass a casual glance because it does return traffic, but it'll also silently include <code>api</code>'s stable Pods. The only way to catch this is checking the endpoint count, not just "did curl get a response."</p>
-<h4>Troubleshooting</h4>
-<p>If either Service's endpoint list is empty, compare its <code>spec.selector</code> against the target Deployment's <code>spec.template.metadata.labels</code> field-by-field — a single mismatched key or value (not just a missing one) silently produces zero matches, with no error from <code>kubectl apply</code>.</p>
-<h4>Cleanup / rollback</h4>
-<pre><code>kubectl delete deployment api api-canary
-kubectl delete service api-svc api-canary-svc</code></pre>
-<h4>Production lesson</h4>
-<p>A canary setup isn't "safe" because the YAML looked right on a read-through — it's safe once you've read the actual <code>kubectl get endpoints</code> output for every Service involved and confirmed the IP-to-Pod mapping yourself. That's the same verification habit the Hands-on exercise built, applied here without a script telling you the exact labels to use.</p>
+
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a3"><code>apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+spec:
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+</code></pre>
 </div>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/services-networking/service/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/service</a>, <a href="https://kubernetes.io/docs/concepts/configuration/liveness-readiness-startup-probes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/configuration/liveness-readiness-startup-probes</a>, and <a href="https://kubernetes.io/docs/concepts/workloads/controllers/deployment/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/controllers/deployment</a> — verified 2026-08-03.</p>
+<p><a href="https://kubernetes.io/docs/concepts/services-networking/service/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/service</a></p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>A Service matches <code>spec.selector</code> against Pod labels only — it has no concept of Deployments, ReplicaSets, or ownership.</li>
-    <li>A Deployment's actual Pod labels live at <code>spec.template.metadata.labels</code>, not the Deployment's own <code>metadata.labels</code> or <code>spec.selector.matchLabels</code>.</li>
-    <li>A Pod only receives Service traffic once it reports Ready; a failed readiness probe removes it from every matching Service's endpoints, and a missing readiness probe means "Ready" the instant the container starts running.</li>
-    <li>Two Deployments with distinct, non-overlapping selectors of their own can still both feed the same Service by accident, if the Service's own selector is broader than either Deployment's.</li>
-    <li>Give every Deployment a shared <code>app</code> label plus a unique <code>track</code>/<code>version</code> label, and always select on both in every Service — the single cheapest guard against this failure mode.</li>
+    <li>A Service matches <code>spec.selector</code> against Pod labels — it has no idea a Deployment exists.</li>
+    <li>A Deployment's Pod labels live at <code>spec.template.metadata.labels</code>.</li>
+    <li>A Service routes to any matching Pod that is Ready, even mid-rollout.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck, or did <code>kubectl get endpoints</code> show you something this lesson didn't predict? Paste the exact selector, labels, and endpoint output back to your teacher — that mismatch is exactly the kind of thing worth debugging together.</footer>
+<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
 
 <div class="lesson-nav">
   <a href="0004-deployment.html">&larr; Deployment</a>
