@@ -8,57 +8,24 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 22 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 22 of 24 · teach2 pilot</p>
 <h1>Workload autoscaling</h1>
 
-<p>Lesson 4's Deployment holds replica count fixed until you edit it by hand. A <strong>HorizontalPodAutoscaler (HPA)</strong> edits that number for you, based on real load — more Pods when busy, fewer when idle.</p>
+<p>Lesson 4's Deployment holds replica count fixed until you edit it by hand. A <strong>HorizontalPodAutoscaler (HPA)</strong> edits that number for you, based on real load.</p>
 
-<p class="callout"><strong>Simple example:</strong> the HPA is a thermostat, not a temperature sensor. It doesn't measure CPU itself — it reads numbers from metrics-server (Lesson 23) and adjusts <code>spec.replicas</code> on your Deployment to hit a target. Same reconcile-loop idea as everything else in this course: watch, compare, adjust.</p>
+<p class="callout"><strong>Mental model:</strong> the HPA is a thermostat, not a temperature sensor. It doesn't measure CPU itself — it reads numbers from metrics-server (Lesson 23) and adjusts <code>spec.replicas</code> on your Deployment to hit a target. Same watch/compare/adjust loop as Lesson 4's ReplicaSet controller and Lesson 19's Operators. That predicts its single most common failure: a thermostat with a disconnected sensor doesn't error loudly, it just stops adjusting anything.</p>
+
+<h2>Where this fits</h2>
+<pre><code>metrics-server (Lesson 23)  → real CPU/memory numbers
+   │
+   ▼
+HorizontalPodAutoscaler  ← you are here (reads metrics, writes replicas)
+   │
+   ▼
+Deployment.spec.replicas  (Lesson 4 — HPA edits this field, nothing else)</code></pre>
 
 <h2>Creating one</h2>
-<pre><code>kubectl autoscale deployment my-app --cpu-percent=50 --min=1 --max=10
-</code></pre>
-<p>Or the manifest form, which is what the exam usually expects you to write:</p>
 <pre><code>apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: my-app
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: my-app
-  minReplicas: 1
-  maxReplicas: 10
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 50
-</code></pre>
-<p><code>scaleTargetRef</code> is the only part that points at your Deployment — everything else describes the target and the bounds. This only ever changes <em>replica count</em> (horizontal) — it never changes a single Pod's CPU/memory requests. Resizing an individual Pod's resources is a different, separate feature (Vertical Pod Autoscaler), not part of this lesson.</p>
-
-<h2>Reading it</h2>
-<pre><code>kubectl get hpa
-NAME     REFERENCE          TARGETS   MINPODS   MAXPODS   REPLICAS
-my-app   Deployment/my-app  35%/50%   1         10        2
-</code></pre>
-<p>If <code>TARGETS</code> shows <code>&lt;unknown&gt;/50%</code> instead of a real number, the HPA has nothing to read from — metrics-server (Lesson 23) isn't installed or isn't reporting yet. That's the single most common HPA failure, and it looks nothing like an error.</p>
-
-<h2>Try it — before looking below</h2>
-<div class="quiz">
-<p>Q1. You create an HPA and traffic spikes hard, but <code>kubectl get hpa</code> shows <code>&lt;unknown&gt;/50%</code> and replica count never moves. What's actually broken?</p>
-<input type="text" id="q1" placeholder="type your answer">
-<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">Nothing about the HPA object itself — it's waiting on metrics it never receives. Check <code>kubectl top pods</code> works at all; if it doesn't, metrics-server isn't installed or isn't healthy, and the HPA has no data to act on.</div>
-</div>
-
-<div class="quiz">
-<p>Q2. Write an HPA manifest by hand for a Deployment called <code>web</code>, targeting 70% CPU, min 2 / max 6 replicas. Try it before revealing.</p>
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a2"><code>apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: web
@@ -70,17 +37,69 @@ spec:
   minReplicas: 2
   maxReplicas: 6
   metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: 70
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+</code></pre>
+<p><code>scaleTargetRef</code> is the only field pointing at your Deployment. This only ever changes <em>replica count</em> (horizontal) — never a single Pod's resource requests; resizing an individual Pod is a separate feature (Vertical Pod Autoscaler), not covered here.</p>
+
+<h2>Reading it</h2>
+<pre><code>kubectl get hpa
+NAME   REFERENCE          TARGETS   MINPODS   MAXPODS   REPLICAS
+web    Deployment/web     35%/70%   2         6         2</code></pre>
+<p>If <code>TARGETS</code> shows <code>&lt;unknown&gt;/70%</code> instead of a real number, the HPA has nothing to read from — metrics-server isn't installed or isn't reporting yet. The single most common HPA failure, and it looks nothing like an error.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. Traffic spikes hard, but <code>kubectl get hpa</code> shows <code>&lt;unknown&gt;/70%</code> and replica count never moves. What's actually broken?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Nothing about the HPA object itself — it's waiting on metrics it never receives. Check <code>kubectl top pods</code> works at all; if not, metrics-server isn't installed or isn't healthy.</div>
+</div>
+<p>Now write your own, by hand: an HPA for a Deployment <code>api</code>, targeting 60% CPU, min 1 / max 8. Try before revealing.</p>
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 1
+  maxReplicas: 8
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60
 </code></pre>
 </div>
 
+<p class="callout mistake"><strong>Common mistake:</strong> not setting resource <code>requests</code> (Lesson 11) on the target Deployment — <code>averageUtilization</code> is a percentage of the request, so without one the HPA has no baseline to compute a percentage against.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>kubectl autoscale deployment web --cpu-percent=50 --min=1 --max=5
+kubectl get hpa web</code></pre>
+<p><strong>Predict first:</strong> if metrics-server isn't installed on this cluster, what does <code>TARGETS</code> show? <strong>Observe:</strong> <code>&lt;unknown&gt;/50%</code>, permanently — the HPA object is valid and created successfully, it just has no data source, the same silent-failure shape every earlier lesson's controlled failure produced.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> set <code>minReplicas</code> above 1 for anything serving production traffic — an HPA scaling down to a single replica during a quiet period removes the redundancy Lesson 4's Deployment was supposed to guarantee.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Core to <strong>Workloads &amp; Scheduling (15%)</strong>, with a real <strong>Troubleshooting (30%)</strong> angle via the metrics-server dependency.</p>
+<p><strong>Interview Q:</strong> "An HPA's TARGETS column shows <code>&lt;unknown&gt;</code>. Is the HPA broken?" <strong>A:</strong> No — the HPA object itself is fine, it's waiting on metrics-server, which is a separate component and the single most common cause of this exact symptom.</p>
+
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/" target="_blank" rel="noopener">kubernetes.io/docs — Horizontal Pod Autoscaling</a> — exam-allowed page.</p>
+<p><a href="https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/" target="_blank" rel="noopener">Horizontal Pod Autoscaling</a> — verified 2026-08-05.</p>
 
 <div class="recap">
   <strong>Recap</strong>
@@ -91,7 +110,15 @@ spec:
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does an HPA need a resource <code>request</code> set on the target Deployment to work at all?</li>
+<li>When would you deliberately set a higher <code>minReplicas</code> than "just enough"?</li>
+<li>What happens to replica count if metrics-server crashes mid-traffic-spike?</li>
+<li>How would you verify an HPA is reading real numbers, not just that the object exists?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>kubectl get hpa</code> output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0021-coredns-gateway-api.html">&larr; CoreDNS &amp; Gateway API</a>

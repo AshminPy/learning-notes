@@ -8,96 +8,122 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 4 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 4 of 24 · teach2 pilot</p>
 <h1>Deployment</h1>
 
-<p>A bare Pod has no memory. Kill it and it stays dead — nothing recreates it. A <strong>Deployment</strong> fixes that: it watches a Pod template and keeps the right number of copies running, always.</p>
+<p>Lesson 1 proved a bare Pod has no memory — delete it and nothing brings it back. That's fine for a debug session, unacceptable for a real service: a Node failure would mean permanently lost capacity. A <strong>Deployment</strong> is the controller layer Lesson 1 predicted would exist: it watches a Pod template and keeps the right number of copies running, always.</p>
 
-<p class="callout"><strong>Simple example:</strong> think of a Deployment like a staffing agency with a standing order — "always keep 3 people on this shift." If one quits, the agency notices and sends a replacement. You never manage the individual worker.</p>
+<p class="callout"><strong>Mental model:</strong> a Deployment is a staffing agency with a standing order — "always keep 3 people on this shift." If one quits, the agency notices within seconds and sends a replacement, without anyone asking. You manage the standing order, never the individual worker. That predicts what happens when you edit the order (change the image): the agency phases in new workers and phases out old ones — a rolling update, not a mass firing.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Cluster └ Node └ Pod └ Labels
+                          ├ Service     (Lesson 3 — reads labels, routes traffic)
+                          └ Deployment  ← you are here (reads/writes labels, creates Pods)</code></pre>
+<pre><code>Deployment
+  spec.selector.matchLabels: app=web
+      │  (creates + owns)
+      ▼
+ReplicaSet
+      │  (creates + owns)
+      ▼
+Pod × spec.replicas   label: app=web</code></pre>
 
 <h2>What's inside a Deployment manifest</h2>
 <pre><code>apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: my-nginx
+  name: web
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: my-nginx
+      app: web
   template:
     metadata:
       labels:
-        app: my-nginx
+        app: web
     spec:
       containers:
-        - name: nginx
-          image: nginx
+      - name: web
+        image: nginx:1.29
 </code></pre>
-<p>Three parts:</p>
 <ul>
 <li><code>spec.replicas</code> — how many Pod copies should exist</li>
-<li><code>spec.selector.matchLabels</code> — how the Deployment finds "which Pods are mine"</li>
-<li><code>spec.template</code> — a full Pod spec, embedded (this is the Pod manifest you already know)</li>
+<li><code>spec.selector.matchLabels</code> — how the Deployment finds "which Pods are mine" (Lesson 2's mechanism again)</li>
+<li><code>spec.template</code> — a full Pod spec, embedded — this is the Lesson 1 Pod manifest, nested</li>
 </ul>
-<p><strong>Gotcha:</strong> <code>spec.selector.matchLabels</code> must exactly match <code>spec.template.metadata.labels</code>, or the Deployment is invalid.</p>
-<p>A Deployment doesn't touch Pods directly — it creates and manages a <strong>ReplicaSet</strong>, and the ReplicaSet creates and watches the Pods. Update the image and re-apply: a new ReplicaSet is created and scaled up, the old one scaled to zero. That's a rolling update.</p>
+<p><strong>Gotcha:</strong> <code>spec.selector.matchLabels</code> must exactly match <code>spec.template.metadata.labels</code>, or the object is rejected outright — and normally the selector is immutable after creation.</p>
+<p><strong>Why it's built this way:</strong> a Deployment never touches Pods directly — it creates and owns a <strong>ReplicaSet</strong>, which creates and watches the actual Pods. That extra layer is what makes rolling updates safe: updating the image creates a <em>new</em> ReplicaSet, scaled up gradually, while the old one scales down — if the new version is broken, the old ReplicaSet (and its Pods) are still right there to roll back to.</p>
 
-<h2>Try it — before looking below</h2>
+<h2>Try it</h2>
 <div class="quiz">
 <p>Q1. What two fields must match for a Deployment to be valid?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
 <div class="answer" id="a1"><code>spec.selector.matchLabels</code> must match <code>spec.template.metadata.labels</code>.</div>
 </div>
-
-<h2>Now write your own</h2>
-<p>Turn your Lesson 2 Pod into a Deployment with 3 replicas — by hand. It needs:</p>
-<ul>
-<li><code>apiVersion: apps/v1</code>, <code>kind: Deployment</code> (Pod is <code>v1</code>, Deployment is <code>apps/v1</code>)</li>
-<li><code>spec.replicas: 3</code></li>
-<li><code>spec.selector.matchLabels</code> and <code>spec.template.metadata.labels</code> — same key/value</li>
-</ul>
-<p>Apply it, then run <code>kubectl get deploy</code>, <code>kubectl get rs</code>, and <code>kubectl get pods --show-labels</code>. Try it before you look below.</p>
-
+<p>Now write your own: a Deployment with 3 replicas running <code>nginx:1.29</code>, by hand. Apply it, then run <code>kubectl get deploy,rs,pods --show-labels</code> and connect what you see to the ownership diagram above. Try before revealing.</p>
 <div class="quiz">
 <p>Reveal the reference answer</p>
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
 <pre class="answer" id="a2"><code>apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: my-nginx
+  name: web
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: my-nginx
+      app: web
   template:
     metadata:
       labels:
-        app: my-nginx
+        app: web
     spec:
       containers:
-        - name: nginx
-          image: nginx
+      - name: web
+        image: nginx:1.29
 </code></pre>
 </div>
 
-<p>Once it's running, try the operational payoff: <code>kubectl rollout status deployment/my-nginx</code>, <code>kubectl rollout undo deployment/my-nginx</code>, <code>kubectl rollout history deployment/my-nginx</code>.</p>
+<p class="callout mistake"><strong>Common mistake:</strong> writing <code>spec.selector.matchLabels</code> and <code>spec.template.metadata.labels</code> with a small mismatch (extra key, different casing) — rejected outright as invalid, unlike a Service's silent empty match.</p>
+
+<h2>A controlled failure</h2>
+<p>See the rolling update / rollback mechanism the mental model predicted:</p>
+<pre><code>kubectl set image deployment/web web=nginx:1.30
+kubectl rollout status deployment/web</code></pre>
+<p><strong>Predict first:</strong> if <code>nginx:1.30</code> doesn't exist (a typo), what happens to the rollout? Then try it with a deliberately bad tag, e.g. <code>nginx:99-does-not-exist</code>. <strong>Observe:</strong> <code>kubectl rollout status</code> hangs — new Pods sit in <code>ImagePullBackOff</code>, but your 3 original Pods are untouched and still serving traffic; a Deployment never kills old capacity before new capacity is ready. Fix it:</p>
+<pre><code>kubectl rollout undo deployment/web
+kubectl rollout status deployment/web</code></pre>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> real Deployments almost always set explicit resource requests/limits (Lesson 11) and a rolling-update strategy (<code>maxUnavailable</code>/<code>maxSurge</code>) rather than relying on defaults — the defaults are reasonable for a demo, not for a service where "briefly zero capacity" is an incident.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Core to <strong>Workloads &amp; Scheduling (15%)</strong>, and a frequent live-troubleshooting target under <strong>Troubleshooting (30%)</strong>.</p>
+<p><strong>Interview Q:</strong> "You roll out a bad image. What happens to traffic while you fix it?" <strong>A:</strong> Nothing, if it's caught before the rollout completes — a Deployment only replaces old Pods with new ones as new ones become Ready, so a broken new image just stalls the rollout, it doesn't take down the old, working Pods.</p>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/workloads/controllers/deployment/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/controllers/deployment</a> — the exact page you can search in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/concepts/workloads/controllers/deployment/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/controllers/deployment</a> — verified 2026-08-05, searchable in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>A Deployment = Pod template + desired replica count + a selector that finds its own Pods.</li>
-    <li><code>spec.selector.matchLabels</code> must match <code>spec.template.metadata.labels</code>.</li>
-    <li>A Deployment manages a ReplicaSet, which manages the Pods.</li>
+    <li>A Deployment = Pod template + desired replica count + a selector (Lesson 2's mechanism) that finds its own Pods.</li>
+    <li>It never touches Pods directly — it owns a ReplicaSet, which owns the Pods.</li>
+    <li>A rolling update creates a new ReplicaSet and scales it up while scaling the old one down — old capacity survives until new capacity is Ready.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does a Deployment create a ReplicaSet instead of managing Pods itself?</li>
+<li>When would <code>spec.replicas: 1</code> on a Deployment still beat a bare Pod?</li>
+<li>What happens if you roll out an image that doesn't exist?</li>
+<li>How would you verify a rollout is stuck vs. still progressing normally?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>kubectl rollout status</code> or <code>kubectl describe rs</code> output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0003-service-to-pod.html">&larr; Service &rarr; Pod</a>

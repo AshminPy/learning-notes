@@ -3,59 +3,90 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lesson 19 — CRDs & Operators</title>
+<title>Lesson 19 — CRDs &amp; Operators</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 19 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 19 of 24 · teach2 pilot</p>
 <h1>CRDs &amp; Operators</h1>
 
-<p><code>Pod</code>, <code>Deployment</code>, <code>Service</code> — every <code>kind</code> you've written so far is one Kubernetes ships with. A <strong>CustomResourceDefinition (CRD)</strong> lets someone add a brand new <code>kind</code> to your cluster's API, as if it were built in.</p>
+<p><code>Pod</code>, <code>Deployment</code>, <code>Service</code> — every <code>kind</code> so far is one Kubernetes ships with. A <strong>CustomResourceDefinition (CRD)</strong> lets someone add a brand-new <code>kind</code> to your cluster's API, as if it were built in — which is exactly how Lesson 21's Gateway API objects work.</p>
 
-<p class="callout"><strong>Simple example:</strong> a CRD is a blank order form — it defines the fields a new object type accepts, nothing more. An <strong>Operator</strong> is the person who reads submitted forms and actually does the work. Install the CRD and nothing happens; you need an Operator watching it to act.</p>
+<p class="callout"><strong>Mental model:</strong> a CRD is a blank order form — it defines the fields a new object type accepts, nothing more. An <strong>Operator</strong> is the person who reads submitted forms and actually does the work. That predicts something concrete: install the CRD and create an object, and nothing happens yet — the form exists, but no one's reading the tray.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Kubernetes core (Pod, Deployment, Service — built in)
+   │
+   ▼
+CRD  (teaches the API server a new kind, e.g. Certificate)
+   │
+   ▼
+Operator  (a normal Pod, same reconcile loop as Lesson 4's ReplicaSet controller)
+   │
+   ▼
+Watches the new kind, acts on it (e.g. writes a TLS cert into a Secret)</code></pre>
 
 <h2>CRD — a new kind, defined</h2>
-<p>Installing a CRD teaches the API server a new <code>kind</code> — e.g. cert-manager installs a <code>Certificate</code> CRD. You can create objects of that kind immediately, they just do nothing until something is watching them.</p>
-<pre><code>kubectl get crds                       # every custom kind installed in this cluster
-kubectl explain certificate.spec       # CRDs support explain, same as built-in kinds
+<pre><code>kubectl get crds                       # every custom kind installed
+kubectl explain certificate.spec       # CRDs support explain, same as built-ins
 </code></pre>
 
 <h2>Operator — the controller that acts on it</h2>
-<p>An Operator is ordinary code, running as an ordinary Deployment/Pod in your cluster, doing the exact same thing <code>kube-controller-manager</code> does for built-in objects: watch for a desired state, compare to actual state, reconcile the difference. Create a <code>Certificate</code> object — the cert-manager Operator notices, requests a cert, and writes the result into a Secret. You never told it how; the CRD only described the shape of the request.</p>
+<p>An Operator is ordinary code running as an ordinary Deployment, doing exactly what <code>kube-controller-manager</code> (Lesson 13) does for built-in objects: watch desired state, compare to actual state, reconcile the difference. <strong>Why it's built this way:</strong> this is the same reconcile-loop pattern from Lesson 4, deliberately reused rather than reinvented — CRDs and Operators just extend that one pattern to things Kubernetes didn't ship with, instead of the API needing a new mechanism per extension.</p>
 <pre><code>kubectl get pods -n cert-manager       # the Operator is just a Pod
 kubectl logs -n cert-manager deploy/cert-manager   # troubleshoot it like any workload
 </code></pre>
-<p>This is the same reconcile-loop pattern from Lesson 4 (a Deployment's controller keeps replica count matching spec) — CRDs and Operators just let you extend that pattern to things Kubernetes didn't ship with.</p>
 
-<h2>Try it — before looking below</h2>
+<h2>Try it</h2>
 <div class="quiz">
 <p>Q1. You create a custom-kind object and nothing happens — no error, no result. What's the most likely reason?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">The CRD is installed (so the API server accepted the object), but no Operator is running to watch and act on it. Check <code>kubectl get pods</code> in the namespace the Operator should be in.</div>
+<div class="answer" id="a1">The CRD is installed (the API server accepted the object), but no Operator is running to watch and act on it. Check <code>kubectl get pods</code> in the namespace the Operator should be in.</div>
+</div>
+<p>Now, before revealing: an Operator's Pod crashed an hour ago and just restarted. What happens to custom objects created during that hour?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Nothing is lost — they're stored in etcd like any other object (Lesson 14). Once the Operator's Pod is <code>Running</code> again, its reconcile loop picks up every object not yet matching desired state, same as a Deployment controller catching up after a restart.</div>
 </div>
 
-<div class="quiz">
-<p>Q2. An Operator's Pod crashed an hour ago and just restarted. What happens to custom objects created during that hour?</p>
-<input type="text" id="q2" placeholder="type your answer">
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2">Nothing is lost — they're stored in etcd like any other object. Once the Operator's Pod is Running again, its reconcile loop picks up every object that doesn't yet match desired state, same as a Deployment controller catching up after a restart.</div>
-</div>
+<p class="callout mistake"><strong>Common mistake:</strong> assuming a CRD alone does something — installing it only teaches the API server a shape, it never grants behavior.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>kubectl get crds | wc -l
+kubectl get pods -A | grep -iE "operator|controller" | wc -l</code></pre>
+<p><strong>Predict first:</strong> should these two numbers be roughly equal? <strong>Observe:</strong> usually not — several CRDs can be installed by one Operator (one controller Pod watching multiple related kinds), so CRD count and running-Operator count are independent numbers, not a 1:1 pairing.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> before installing a CRD-based tool, confirm its Operator has resource requests/limits and a PodDisruptionBudget like any other production workload — an Operator crashing doesn't lose data, but it does stop reconciling everything it manages until it's back.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Ties into <strong>Cluster Architecture (25%)</strong> and the extension-interfaces pattern from Lesson 18.</p>
+<p><strong>Interview Q:</strong> "How is an Operator different from a built-in controller like the ReplicaSet controller?" <strong>A:</strong> Mechanically, it isn't — same watch/compare/reconcile loop, running as a normal Pod instead of inside <code>kube-controller-manager</code>. The only real difference is what kind it watches: a CRD instead of a built-in type.</p>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/" target="_blank" rel="noopener">kubernetes.io/docs — Custom Resources</a> and <a href="https://kubernetes.io/docs/concepts/extend-kubernetes/operator/" target="_blank" rel="noopener">kubernetes.io/docs — Operator pattern</a> — exam-allowed pages.</p>
+<p><a href="https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/" target="_blank" rel="noopener">Custom Resources</a> and <a href="https://kubernetes.io/docs/concepts/extend-kubernetes/operator/" target="_blank" rel="noopener">Operator pattern</a> — verified 2026-08-05.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
     <li>A CRD only defines a new <code>kind</code> — it doesn't act on it.</li>
-    <li>An Operator is a normal Pod running a reconcile loop, the same pattern as built-in controllers.</li>
+    <li>An Operator is a normal Pod running Lesson 4's reconcile-loop pattern, extended to custom kinds.</li>
     <li>Custom objects persist in etcd even if the Operator is down — it catches up once it's back.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does Kubernetes reuse the reconcile-loop pattern for Operators instead of inventing something new?</li>
+<li>When would you need a CRD without an Operator at all? (Hint: think about pure data storage use cases.)</li>
+<li>What happens to existing custom objects if their Operator is deleted entirely?</li>
+<li>How would you verify whether a "kind not found" error means the CRD is missing vs. just not yet acted on?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>kubectl get crds</code> output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0018-extension-interfaces.html">&larr; Extension interfaces: CNI, CSI, CRI</a>

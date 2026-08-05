@@ -8,49 +8,55 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 20 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 20 of 24 · teach2 pilot</p>
 <h1>Highly-available control plane</h1>
 
-<p>Lesson 13 built a cluster with one control-plane node. If that node dies, the cluster can't be changed — existing Pods keep running (kubelets don't need the API server minute to minute), but nothing can be scheduled, healed, or modified until it's back. A highly-available (HA) control plane runs multiple control-plane nodes so no single machine is that critical.</p>
+<p>Lesson 13 built a cluster with one control-plane node. If that node dies, existing Pods keep running (kubelets don't need the API server minute to minute), but nothing can be scheduled, healed, or modified until it's back. A highly-available (HA) control plane runs multiple control-plane nodes so no single machine is that critical.</p>
 
-<p class="callout"><strong>Simple example:</strong> <code>kube-apiserver</code> is stateless — run three copies behind a load balancer and any of them can answer any request, same answer either way. <code>kube-scheduler</code> and <code>kube-controller-manager</code> are the opposite — running two copies acting at once would double-schedule Pods, so exactly one is elected leader at a time; the rest sit idle, watching.</p>
+<p class="callout"><strong>Mental model:</strong> <code>kube-apiserver</code> is stateless — run three copies behind a load balancer and any of them answers any request identically. <code>kube-scheduler</code> and <code>kube-controller-manager</code> are the opposite: two copies deciding independently could schedule the same Pod twice, so exactly one is elected leader; the rest sit idle, watching. That predicts why losing the leader isn't an outage: a standby is already running, just waiting for the Lease.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Cluster
+  └ control plane × 3 (not 1, per Lesson 13)
+      ├ kube-apiserver × 3   — all ACTIVE simultaneously, behind a load balancer
+      ├ kube-scheduler × 3   — 1 LEADER (Lease), 2 idle standbys
+      └ kube-controller-manager × 3 — same pattern</code></pre>
 
 <h2>Setting it up with kubeadm</h2>
 <pre><code>kubeadm init --control-plane-endpoint "LB_DNS_NAME:6443" --upload-certs
 </code></pre>
-<p><code>--control-plane-endpoint</code> points every node at the load balancer, not at one specific control-plane node's IP — this is what makes the other control-plane nodes replaceable later. <code>--upload-certs</code> stores the cluster's certs in a Secret so the next control-plane node can fetch them automatically.</p>
-<p>The command prints two different <code>kubeadm join</code> commands:</p>
-<ul>
-<li>A plain one, for worker nodes.</li>
-<li>One with <code>--control-plane --certificate-key &lt;key&gt;</code>, for adding another control-plane node.</li>
-</ul>
+<p><code>--control-plane-endpoint</code> points every node at the load balancer, not one specific node's IP — that's what makes the other control-plane nodes replaceable later. <code>--upload-certs</code> stores the cluster's certs in a Secret so the next control-plane node fetches them automatically. The command prints two <code>kubeadm join</code> variants: a plain one for workers, one with <code>--control-plane --certificate-key &lt;key&gt;</code> for adding another control-plane node.</p>
 
 <h2>etcd: stacked vs. external</h2>
-<p>kubeadm defaults to <strong>stacked etcd</strong> — each control-plane node runs its own etcd member locally, alongside its API server. Simpler to operate, and what the exam expects unless told otherwise. <strong>External etcd</strong> runs etcd as a separate cluster the API servers all connect to — more moving parts, used when etcd needs to scale or fail independently of the control plane.</p>
+<p>kubeadm defaults to <strong>stacked etcd</strong> — each control-plane node runs its own etcd member locally. Simpler, and what the exam expects unless told otherwise. <strong>External etcd</strong> runs etcd as a separate cluster, used when etcd needs to scale or fail independently of the control plane.</p>
 
-<h2>Who's actually in charge right now</h2>
-<p>Every <code>kube-apiserver</code> is active simultaneously. <code>kube-scheduler</code> and <code>kube-controller-manager</code> use a <code>Lease</code> object to elect one leader each — check who's holding it:</p>
-<pre><code>kubectl get lease -n kube-system kube-scheduler -o jsonpath='{.spec.holderIdentity}'
-kubectl get lease -n kube-system kube-controller-manager -o jsonpath='{.spec.holderIdentity}'
-</code></pre>
-
-<h2>Try it — before looking below</h2>
+<h2>Try it</h2>
 <div class="quiz">
-<p>Q1. In a 3-control-plane-node cluster, the node currently holding the <code>kube-scheduler</code> lease goes down. What happens to scheduling?</p>
+<p>Q1. Why does <code>kube-apiserver</code> not need leader election, but <code>kube-scheduler</code> does?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">Briefly nothing new gets scheduled, then one of the two remaining <code>kube-scheduler</code> instances acquires the Lease (it was already running, just idle) and becomes the new leader. No manual action needed — that's the point of running more than one.</div>
+<div class="answer" id="a1"><code>kube-apiserver</code> is stateless — any number of copies can serve requests at once with no conflict. <code>kube-scheduler</code> makes decisions; two copies deciding independently could double-schedule a Pod, so only one may act at a time.</div>
+</div>
+<p>Now, before revealing: in a 3-control-plane-node cluster, the node holding the <code>kube-scheduler</code> Lease goes down. What happens to scheduling?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Briefly nothing new gets scheduled, then one of the two remaining <code>kube-scheduler</code> instances (already running, just idle) acquires the Lease and becomes leader. No manual action needed.</div>
 </div>
 
-<div class="quiz">
-<p>Q2. Why does <code>kube-apiserver</code> not need leader election, but <code>kube-scheduler</code> does?</p>
-<input type="text" id="q2" placeholder="type your answer">
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2"><code>kube-apiserver</code> is stateless — it just reads/writes etcd, so any number of copies can serve requests at once with no conflict. <code>kube-scheduler</code> makes decisions (which node gets this Pod) — two copies deciding independently could schedule the same Pod twice, so only one may act at a time.</div>
-</div>
+<h2>A controlled failure</h2>
+<pre><code>kubectl get lease -n kube-system kube-scheduler -o jsonpath='{.spec.holderIdentity}'</code></pre>
+<p><strong>Predict first:</strong> on a single-control-plane cluster (kind/minikube), does this Lease still exist? <strong>Observe:</strong> yes — leader election runs even with one instance, it just always wins uncontested. The mechanism doesn't know or care how many replicas exist; that's exactly why adding a second one later needs zero application-level changes.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> production clusters run an odd number of control-plane nodes (3 or 5) — etcd's Raft consensus needs a majority to keep writing, and an odd count avoids a tie during a network split.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Core to <strong>Cluster Architecture, Installation &amp; Configuration (25%)</strong>.</p>
+<p><strong>Interview Q:</strong> "Why run an odd number of control-plane nodes, not an even one?" <strong>A:</strong> etcd needs a strict majority to keep accepting writes; an even count (e.g. 4) can split into two equal halves during a network partition, with neither having a majority — an odd count always has a decisive majority side.</p>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/high-availability/" target="_blank" rel="noopener">kubernetes.io/docs — kubeadm: Creating Highly Available Clusters</a> — exam-allowed page.</p>
+<p><a href="https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/high-availability/" target="_blank" rel="noopener">kubeadm: Creating Highly Available Clusters</a> — verified 2026-08-05.</p>
 
 <div class="recap">
   <strong>Recap</strong>
@@ -61,7 +67,15 @@ kubectl get lease -n kube-system kube-controller-manager -o jsonpath='{.spec.hol
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why can <code>kube-apiserver</code> run active-active while <code>kube-scheduler</code> can't?</li>
+<li>When would you choose external etcd over kubeadm's stacked default?</li>
+<li>What happens to in-flight scheduling decisions when the leader Lease changes hands?</li>
+<li>How would you verify which instance currently holds a given Lease?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>kubectl get lease</code> output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0019-crds-operators.html">&larr; CRDs &amp; Operators</a>
