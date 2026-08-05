@@ -3,80 +3,91 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lesson 21 — CoreDNS & Gateway API</title>
+<title>Lesson 21 — CoreDNS &amp; Gateway API</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 21 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 21 of 24 · teach2 pilot</p>
 <h1>CoreDNS &amp; Gateway API</h1>
 
-<p>Since Lesson 3, you've written Service names into other objects and they just resolved. That only works because CoreDNS is silently running in every cluster. And since Lesson 8, Ingress has been the only way in — Gateway API is the newer, more expressive alternative the curriculum now expects you to know.</p>
+<p>Since Lesson 3, you've written Service names into other objects and they just resolved. That only works because CoreDNS runs silently in every cluster. And since Lesson 8, Ingress has been the only way in — Gateway API is the newer, more expressive alternative the curriculum now expects.</p>
 
-<p class="callout"><strong>Simple example:</strong> CoreDNS is the cluster's phone book — every Service gets an entry the moment it's created, no action needed from you. Gateway API is Ingress split into two jobs: infra teams manage <em>where traffic enters</em> (Gateway), app teams manage <em>where it goes</em> (HTTPRoute) — separate permissions, separate blast radius.</p>
+<p class="callout"><strong>Mental model:</strong> CoreDNS is the cluster's phone book — every Service gets an entry the moment it's created, no action needed. Gateway API is Ingress split into two jobs: infra teams manage <em>where traffic enters</em> (Gateway), app teams manage <em>where it goes</em> (HTTPRoute) — separate permissions, separate blast radius. That predicts why teams migrate to it: an app team can ship new routing rules without ever touching load-balancer config.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Every Service (Lesson 3)
+   │  auto-registered as
+   ▼
+CoreDNS   (&lt;service&gt;.&lt;namespace&gt;.svc.cluster.local)
+
+Gateway API (a CRD group, Lesson 19's pattern):
+GatewayClass (infra)  →  Gateway (infra)  →  HTTPRoute (app team)  →  Service (Lesson 3)</code></pre>
 
 <h2>CoreDNS — the phone book</h2>
-<p>CoreDNS runs as a Deployment in <code>kube-system</code>, fronted by the <code>kube-dns</code> Service. Every Pod's <code>/etc/resolv.conf</code> points at that Service's ClusterIP by default (<code>dnsPolicy: ClusterFirst</code>) — that's the entire mechanism behind every Service name you've used so far resolving.</p>
-<pre><code>&lt;service&gt;.&lt;namespace&gt;.svc.cluster.local
-</code></pre>
-<p>Its config lives in a ConfigMap, not a file on disk — edit it live, no redeploy needed:</p>
-<pre><code>kubectl -n kube-system get configmap coredns -o yaml   # see the Corefile
-kubectl -n kube-system get pods -l k8s-app=kube-dns     # is it even running
+<p>CoreDNS runs as a Deployment in <code>kube-system</code>, fronted by the <code>kube-dns</code> Service. Every Pod's <code>/etc/resolv.conf</code> points at that Service's ClusterIP by default (<code>dnsPolicy: ClusterFirst</code>) — the entire mechanism behind every Service name resolving.</p>
+<pre><code>kubectl -n kube-system get pods -l k8s-app=kube-dns
 kubectl run -it --rm dnsutils --image=registry.k8s.io/e2e-test-images/jessie-dnsutils:1.3 -- nslookup kubernetes.default
 </code></pre>
-<p>If Service names stop resolving cluster-wide, check CoreDNS's own Pods first (Lesson 16's ladder: <code>describe</code> → <code>logs</code>) before assuming the app is broken.</p>
+<p><strong>Why it's built this way:</strong> its config lives in a ConfigMap (Lesson 6's mechanism), not a file baked into an image — edit it live, no redeploy needed, the same "config outside the container" principle Lesson 6 taught, applied to a cluster-critical component.</p>
 
 <h2>Gateway API — Ingress, with role separation</h2>
-<p>Three kinds, three owners:</p>
 <ul>
-<li><strong><code>GatewayClass</code></strong> (cluster-scoped) — which load-balancer implementation exists (e.g. <code>nginx</code>, <code>cilium</code>). Managed by infra admins.</li>
-<li><strong><code>Gateway</code></strong> — one actual listener: an IP, a port, a protocol. References a <code>GatewayClass</code>. Also infra-owned.</li>
-<li><strong><code>HTTPRoute</code></strong> (namespace-scoped) — routing rules, attached to a <code>Gateway</code> via <code>parentRefs</code>. App teams own these in their own namespace, without needing access to the Gateway itself.</li>
+<li><strong><code>GatewayClass</code></strong> (cluster-scoped) — which load-balancer implementation exists. Infra-owned.</li>
+<li><strong><code>Gateway</code></strong> — one listener: IP, port, protocol. References a <code>GatewayClass</code>. Also infra-owned.</li>
+<li><strong><code>HTTPRoute</code></strong> (namespace-scoped) — routing rules, attached via <code>parentRefs</code>. App teams own these.</li>
 </ul>
-<pre><code>apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: my-app
-spec:
-  parentRefs:
-    - name: shared-gateway
-  rules:
-    - matches:
-        - path: { type: PathPrefix, value: /my-app }
-      backendRefs:
-        - name: my-app-service
-          port: 80
-</code></pre>
-<p>Unlike Ingress, none of this is built into core Kubernetes — it's a CRD group (Lesson 19) plus a controller that implements it. <code>kubectl get gatewayclass,gateway,httproute -A</code> shows what's installed.</p>
+<p>Unlike Ingress, none of this is built into core Kubernetes — it's exactly Lesson 19's CRD-plus-controller pattern. <code>kubectl get gatewayclass,gateway,httproute -A</code> shows what's installed.</p>
 
-<h2>Try it — before looking below</h2>
+<h2>Try it</h2>
 <div class="quiz">
 <p>Q1. Every Pod in a namespace suddenly can't resolve any Service name — Pods themselves are Running and Ready. What do you check first?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">CoreDNS's own Pods in <code>kube-system</code> — <code>kubectl get pods -n kube-system -l k8s-app=kube-dns</code>, then <code>describe</code>/<code>logs</code>. If the phone book is down, nothing in the cluster can look anything up, even though every individual app is healthy.</div>
+<div class="answer" id="a1">CoreDNS's own Pods in <code>kube-system</code>. If the phone book is down, nothing in the cluster can look anything up, even though every individual app is healthy.</div>
+</div>
+<p>Now, before revealing: an app team wants to add routing rules without touching load-balancer config. Ingress or Gateway API?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Gateway API — <code>HTTPRoute</code> is namespace-scoped and app-owned, while <code>Gateway</code>/<code>GatewayClass</code> stay with infra. Ingress mixes both concerns in one object.</div>
 </div>
 
-<div class="quiz">
-<p>Q2. An app team asks for the ability to add new routing rules without ever touching load-balancer config. Ingress or Gateway API — which grants that split cleanly, and why?</p>
-<input type="text" id="q2" placeholder="type your answer">
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2">Gateway API — <code>HTTPRoute</code> is namespace-scoped and owned by the app team, while <code>Gateway</code>/<code>GatewayClass</code> stay with infra. Ingress mixes both concerns in one object, so splitting permissions cleanly is harder.</div>
-</div>
+<h2>A controlled failure</h2>
+<pre><code>kubectl run web --image=nginx:1.29 --labels=app=web
+kubectl expose pod web --port=80 --name=web-svc
+kubectl run tester --image=busybox --restart=Never -it --rm -- \
+  nslookup web-svc.default.svc.cluster.local</code></pre>
+<p><strong>Predict first:</strong> if you then scale CoreDNS to 0 replicas, does <code>tester</code> still reach <code>web-svc</code> by IP? By name? <strong>Observe (reason through it, or test on a scratch cluster):</strong> by IP, yes — routing (Lesson 3's kube-proxy mechanism) doesn't depend on DNS at all. By name, no — name resolution is entirely CoreDNS's job, a separate failure domain from Service routing itself.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> run CoreDNS with at least 2 replicas and a PodDisruptionBudget — it's a single point of failure for name resolution cluster-wide despite looking like "just another Deployment."</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Directly scored under <strong>Services &amp; Networking (20%)</strong>.</p>
+<p><strong>Interview Q:</strong> "Traffic works by IP but not by Service DNS name. What's broken?" <strong>A:</strong> CoreDNS specifically, not routing — Service routing (Lesson 3) and DNS resolution (this lesson) are separate mechanisms that happen to both usually work, so this symptom isolates the problem to one of them precisely.</p>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/" target="_blank" rel="noopener">kubernetes.io/docs — DNS debugging</a> and <a href="https://gateway-api.sigs.k8s.io/" target="_blank" rel="noopener">gateway-api.sigs.k8s.io</a> — exam-allowed pages.</p>
+<p><a href="https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/" target="_blank" rel="noopener">DNS debugging</a> and <a href="https://gateway-api.sigs.k8s.io/" target="_blank" rel="noopener">gateway-api.sigs.k8s.io</a> — verified 2026-08-05.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
     <li>CoreDNS gives every Service a name automatically; if names stop resolving cluster-wide, check CoreDNS itself first.</li>
     <li>Gateway API splits Ingress into <code>GatewayClass</code>/<code>Gateway</code> (infra) and <code>HTTPRoute</code> (app team) for cleaner permission boundaries.</li>
-    <li>Neither Gateway API kind is built in — it's CRDs plus a controller, same pattern as Lesson 19.</li>
+    <li>Neither Gateway API kind is built in — it's CRDs plus a controller, Lesson 19's pattern again.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why is DNS resolution a separate failure domain from Service routing?</li>
+<li>When would Gateway API's role split actually matter to your organization?</li>
+<li>What happens to already-open connections if CoreDNS goes down mid-session?</li>
+<li>How would you verify whether a connectivity issue is DNS or routing, in one command?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>nslookup</code> output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0020-ha-control-plane.html">&larr; Highly-available control plane</a>

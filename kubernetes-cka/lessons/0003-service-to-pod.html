@@ -8,80 +8,112 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 3 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 3 of 24 · teach2 pilot</p>
 <h1>Service &rarr; Pod (ClusterIP)</h1>
 
-<p>Pods come and go — they get rescheduled, and get a new IP every time. A <strong>Service</strong> is a stable address that always finds the right Pods, by matching labels.</p>
+<p>Lesson 1 established that Pods get replaced, usually with a new IP. That's a problem the moment something else needs to reach a Pod reliably — a frontend calling a backend, a job calling an API. Hardcode a Pod IP and it's stale within hours. A <strong>Service</strong> is Kubernetes's answer: a stable address that keeps finding the right Pods, live, no matter how many times they're replaced.</p>
 
-<p class="callout"><strong>Simple example:</strong> think of a Service like a company's front-desk phone number. Staff (Pods) come and go, move desks, change extensions — but the front-desk number always routes you to whoever currently has the job.</p>
+<p class="callout"><strong>Mental model:</strong> a Service is a company's front-desk phone number, not a direct extension. Staff (Pods) come and go, move desks, quit — the front-desk number never changes, but who answers does, automatically, based on who currently has the job (the label). Call it right after someone's replaced and you still get through, with zero awareness anything changed.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Cluster └ Node └ Pod └ Labels
+                          └ Service       ← you are here (reads labels, doesn't own them)</code></pre>
+<p>A Service doesn't create or manage Pods — it only watches labels (Lesson 2) and routes to whatever currently matches. Lesson 4's Deployment sits at the same level, doing the opposite job: creating and replacing Pods. Together they're the two most common consumers of the label mechanism you already know.</p>
+<pre><code>Service
+  selector: app=web
+      │  (continuously re-matched, live)
+      ▼
+Pod  label: app=web
+      │
+      ▼
+Traffic flows here</code></pre>
 
 <h2>What's inside a Service manifest</h2>
 <pre><code>apiVersion: v1
 kind: Service
 metadata:
-  name: my-nginx-svc
+  name: web-svc
 spec:
   type: ClusterIP
   selector:
-    app: my-nginx
+    app: web
   ports:
-    - port: 80
-      targetPort: 80
+  - name: http
+    port: 80
+    targetPort: 80
 </code></pre>
-<p>Key fields:</p>
 <ul>
 <li><code>spec.type</code> — <code>ClusterIP</code> is the default: reachable only inside the cluster</li>
-<li><code>spec.selector</code> — must exactly match a Pod's <code>metadata.labels</code>, or the Service finds nothing</li>
-<li><code>spec.ports</code> — the port the Service listens on, and the port to forward to on the Pod</li>
+<li><code>spec.selector</code> — must exactly match a Pod's <code>metadata.labels</code> (Lesson 2's mechanism, unchanged), or the Service finds nothing</li>
+<li><code>port</code> — what clients dial; <code>targetPort</code> — what the container actually listens on</li>
 </ul>
-<p>No selector match, no traffic — the Service exists but is silently empty. Inside the cluster, reach it by DNS: <code>&lt;service&gt;.&lt;namespace&gt;.svc.cluster.local</code>.</p>
+<p><strong>Why it's built this way:</strong> since Lesson 1 made Pods disposable and Lesson 2 made "which Pods" a live label query instead of a fixed list, a Service is the natural next piece — it's just a selector query (like <code>kubectl get pods -l</code>) that also gets a stable IP and DNS name attached to it. Nothing new conceptually, just wired into the network.</p>
+<p>No selector match, no traffic — the Service exists and reports healthy either way, silently. Inside the cluster, reach it by DNS: <code>&lt;service&gt;.&lt;namespace&gt;.svc.cluster.local</code>.</p>
 
-<h2>Try it — before looking below</h2>
+<h2>Try it</h2>
 <div class="quiz">
 <p>Q1. You create a Service and see no errors. What command tells you whether it actually found any Pods?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
 <div class="answer" id="a1"><code>kubectl get endpoints &lt;service-name&gt;</code> — an empty list means the selector matched nothing.</div>
 </div>
-
-<h2>Now write your own</h2>
-<p>Write a ClusterIP Service for the Lesson 2 Pod — by hand. It needs:</p>
-<ul>
-<li>a <code>selector</code> matching the labels on your Lesson 2 Pod</li>
-<li>a <code>port</code> forwarding to the port your container listens on</li>
-</ul>
-<p>Apply it, then run <code>kubectl get endpoints &lt;your-service-name&gt;</code> and confirm it lists your Pod's IP. Try it before you look below.</p>
-
+<p>Now write your own: a ClusterIP Service for your Lesson 2 Pod, by hand — selector matching its labels, port forwarding to its container port. Try before revealing.</p>
 <div class="quiz">
 <p>Reveal the reference answer</p>
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
 <pre class="answer" id="a2"><code>apiVersion: v1
 kind: Service
 metadata:
-  name: my-nginx-svc
+  name: web-svc
 spec:
   type: ClusterIP
   selector:
-    app: my-nginx
+    app: web
   ports:
-    - port: 80
-      targetPort: 80
+  - name: http
+    port: 80
+    targetPort: 80
 </code></pre>
 </div>
 
+<p class="callout mistake"><strong>Common mistake:</strong> mixing up <code>port</code> and <code>targetPort</code> — get them backward and you get a Service with a full, correct-looking endpoint list that still refuses every connection.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>kubectl run web --image=nginx:1.29 --labels=app=web
+kubectl expose pod web --port=80 --name=web-svc
+kubectl patch service web-svc -p '{"spec":{"selector":{"app":"webapp"}}}'</code></pre>
+<p><strong>Predict first:</strong> what will <code>kubectl get endpoints web-svc</code> show after that patch? Then run it. <strong>Observe:</strong> <code>&lt;none&gt;</code> — the Service still looks completely healthy in <code>kubectl get svc</code>, it just found nothing. Restore it:</p>
+<pre><code>kubectl patch service web-svc -p '{"spec":{"selector":{"app":"web"}}}'
+kubectl get endpoints web-svc</code></pre>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> always call other services by DNS name (<code>web-svc</code> or the full <code>web-svc.default.svc.cluster.local</code>), never by Pod IP or Service ClusterIP — the name is the only part guaranteed stable. Named ports (<code>name: http</code>, as above) are the real-world default too, not just numbers, because a Service can expose more than one port and names disambiguate them.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Directly scored under <strong>Services &amp; Networking (20%)</strong>.</p>
+<p><strong>Interview Q:</strong> "A Service and its Pods both look healthy, but traffic fails. What's your first check?" <strong>A:</strong> <code>kubectl get endpoints &lt;service&gt;</code> — a clean <code>kubectl apply</code> proves nothing about whether the selector actually matched anything.</p>
+
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/services-networking/service/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/service</a> — the exact page you can search in the real exam. DNS naming rules: <a href="https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/" target="_blank" rel="noopener">dns-pod-service</a>.</p>
+<p><a href="https://kubernetes.io/docs/concepts/services-networking/service/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/service</a> — verified 2026-08-05, searchable in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>A Service = a stable IP + DNS name that load-balances to Pods matching its <code>selector</code>.</li>
-    <li><code>spec.selector</code> must exactly match the Pod's <code>metadata.labels</code>.</li>
-    <li><code>kubectl get endpoints &lt;service&gt;</code> checks whether it actually found Pods.</li>
+    <li>A Service = a stable IP + DNS name that continuously matches its selector against Pod labels — the same mechanism from Lesson 2, wired into the network.</li>
+    <li><code>port</code> is what clients dial; <code>targetPort</code> is what the container listens on.</li>
+    <li>A selector mismatch is silent — the Service reports healthy either way. <code>kubectl get endpoints</code> is the real check.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why can't Kubernetes just let clients call a Pod's IP directly?</li>
+<li>When would you reach for a headless Service instead of a normal one? (If unsure, that's fine — it's not covered yet.)</li>
+<li>What happens if a Service's selector matches zero Pods?</li>
+<li>How would you verify a Service actually found its Pods?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>kubectl get endpoints</code> output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0002-pod-labels.html">&larr; Pod + labels</a>

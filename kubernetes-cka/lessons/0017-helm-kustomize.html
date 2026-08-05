@@ -3,85 +3,104 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lesson 17 — Helm & Kustomize</title>
+<title>Lesson 17 — Helm &amp; Kustomize</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 17 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 17 of 24 · teach2 pilot</p>
 <h1>Helm &amp; Kustomize</h1>
 
-<p>Every object so far, you've written by hand. In the real world, cluster components (an Ingress controller, cert-manager, Prometheus) ship as someone else's YAML — dozens or hundreds of files. Helm and Kustomize are the two tools the exam expects you to know for installing and adapting that YAML without hand-editing every file.</p>
+<p>Every object so far, you've written by hand. Real cluster components (an Ingress controller, cert-manager, Prometheus) ship as someone else's YAML — dozens or hundreds of files. Helm and Kustomize are the two tools the exam expects for installing and adapting that YAML without hand-editing every file.</p>
 
-<p class="callout"><strong>Simple example:</strong> Helm packages and templates a whole app into one installable unit (a "chart") — think an app store install. Kustomize takes plain YAML you already have and layers small, targeted edits on top ("overlays") without touching the original files. Different problem, both exam-tested, often used together.</p>
+<p class="callout"><strong>Mental model:</strong> Helm packages and templates a whole app into one installable unit (a "chart") — an app-store install. Kustomize takes plain YAML you already have and layers small, targeted edits on top ("overlays") without touching the originals. That predicts when each fits: distributing a reusable package to other people needs Helm's structure; a single app that only differs by replica count between dev and prod doesn't need a templating language at all.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Someone else's YAML (a chart, or a base)
+   │
+   ▼
+Helm: template + install as a tracked "release"
+   OR
+Kustomize: patch the base with small overlays, no templating
+   │
+   ▼
+Ordinary Kubernetes objects — Deployments, Services, everything from Lessons 1-16</code></pre>
 
 <h2>Helm — install and manage packaged apps</h2>
-<p>A <strong>chart</strong> is a packaged set of templated manifests plus a <code>values.yaml</code> of defaults. Installing one creates a <strong>release</strong> — a tracked, named instance of that chart in your cluster.</p>
+<p>A <strong>chart</strong> is templated manifests plus a <code>values.yaml</code> of defaults. Installing one creates a <strong>release</strong> — a tracked, named instance in your cluster.</p>
 <pre><code>helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm repo update
 helm install my-ingress ingress-nginx/ingress-nginx
+helm upgrade my-ingress ingress-nginx/ingress-nginx --set controller.replicaCount=2
+helm rollback my-ingress 1
+helm uninstall my-ingress
 </code></pre>
-<ul>
-<li><code>helm upgrade my-ingress ingress-nginx/ingress-nginx --set controller.replicaCount=2</code> — change config, same release</li>
-<li><code>helm rollback my-ingress 1</code> — back to a previous revision</li>
-<li><code>helm uninstall my-ingress</code> — remove everything the chart created</li>
-<li><code>helm template ingress-nginx/ingress-nginx</code> — render the manifests locally, without installing anything</li>
-</ul>
-<p>Whatever Helm installs is still ordinary Kubernetes objects underneath — <code>kubectl get all -l app.kubernetes.io/instance=my-ingress</code> shows them. Troubleshoot a Helm-installed app exactly like any other: <code>describe</code>, <code>logs</code>, <code>get events</code>. Helm only changes how it got created.</p>
+<p><strong>Why it's built this way:</strong> whatever Helm installs is still ordinary Kubernetes objects underneath (<code>kubectl get all -l app.kubernetes.io/instance=my-ingress</code> shows them) — Helm only changes how they got created, not what they are, so nothing about troubleshooting them changes.</p>
 
 <h2>Kustomize — patch YAML without templating</h2>
-<p>Kustomize has been built into <code>kubectl</code> since v1.14 — no install needed. It starts from a <strong>base</strong> (plain manifests) and applies <strong>overlays</strong> (small patches) for each environment.</p>
-<pre><code># base/kustomization.yaml
+<p>Built into <code>kubectl</code> since v1.14 — no install needed. A <strong>base</strong> (plain manifests) plus <strong>overlays</strong> (small patches) per environment:</p>
+<pre><code># overlays/prod/kustomization.yaml
 resources:
-  - deployment.yaml
-  - service.yaml
-
-# overlays/prod/kustomization.yaml
-resources:
-  - ../../base
+- ../../base
 patches:
-  - target:
-      kind: Deployment
-      name: my-app
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 5
+- target: { kind: Deployment, name: my-app }
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 5
 </code></pre>
-<ul>
-<li><code>kubectl kustomize overlays/prod</code> — render the final YAML, don't apply</li>
-<li><code>kubectl apply -k overlays/prod</code> — render and apply in one step</li>
-</ul>
-<p>No templating language, no <code>{{ }}</code> — just your real YAML, plus patches. That's the whole pitch.</p>
+<pre><code>kubectl kustomize overlays/prod   # render only
+kubectl apply -k overlays/prod    # render and apply</code></pre>
 
-<h2>Try it — before looking below</h2>
+<h2>Try it</h2>
 <div class="quiz">
-<p>Q1. You need to deploy the same app to dev and prod, only the replica count differs. Kustomize or Helm — which fits with less setup, and why?</p>
+<p>Q1. You need to deploy the same app to dev and prod, only the replica count differs. Kustomize or Helm — which fits with less setup?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">Kustomize — one base, two small overlays, no templating language or chart authoring needed. Helm is worth the extra structure when you're distributing a reusable package to other people/teams, not for a single app with a one-line difference between environments.</div>
+<div class="answer" id="a1">Kustomize — one base, two small overlays, no templating language or chart authoring. Helm's structure earns its cost when distributing a reusable package to others.</div>
+</div>
+<p>Now, before revealing: a teammate ran <code>helm install</code> and three Pods are crashing. What commands do you run — do you need anything Helm-specific?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No — <code>kubectl get pods</code>, <code>describe</code>, <code>logs</code>, same as Lesson 16. Find them via <code>kubectl get all -l app.kubernetes.io/instance=&lt;release&gt;</code> if you don't know their names.</div>
 </div>
 
-<div class="quiz">
-<p>Q2. A teammate ran <code>helm install</code> and now three Pods are crashing. What commands do you run — do you need to know anything Helm-specific to debug it?</p>
-<input type="text" id="q2" placeholder="type your answer">
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2">No — <code>kubectl get pods</code>, <code>kubectl describe pod</code>, <code>kubectl logs</code>, same as always. Helm's involvement ended the moment the objects were created; find them with <code>kubectl get all -l app.kubernetes.io/instance=&lt;release&gt;</code> if you don't know their names.</div>
-</div>
+<p class="callout mistake"><strong>Common mistake:</strong> assuming a Helm-installed app needs Helm-specific troubleshooting — it doesn't, Helm's involvement ends the moment the objects are created.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>helm install demo ingress-nginx/ingress-nginx --set controller.replicaCount=999
+kubectl get pods -l app.kubernetes.io/instance=demo</code></pre>
+<p><strong>Predict first:</strong> does this fail cleanly, or create 999 Pods stuck Pending? <strong>Observe:</strong> Helm doesn't validate whether your cluster can actually run 999 replicas — it just renders and applies the YAML. The Pods get created and most sit <code>Pending</code>, no different from Lesson 4's scheduling constraints, because Helm's job ended at "apply," not "verify it's sane."</p>
+<pre><code>helm uninstall demo</code></pre>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> pin exact chart versions in CI (<code>helm install --version x.y.z</code>) rather than always pulling latest — an upstream chart update can silently change defaults under you otherwise.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Both tools are explicitly listed in the CKA curriculum under <strong>Cluster Architecture, Installation &amp; Configuration (25%)</strong>.</p>
+<p><strong>Interview Q:</strong> "When would you reach for Kustomize instead of Helm?" <strong>A:</strong> When you own the base YAML and only need small, environment-specific tweaks — no templating language, no chart-authoring overhead, built into kubectl already.</p>
 
 <h2>Source</h2>
-<p><a href="https://helm.sh/docs/" target="_blank" rel="noopener">helm.sh/docs</a> and <a href="https://kubectl.docs.kubernetes.io/references/kustomize/" target="_blank" rel="noopener">kubectl.docs.kubernetes.io — Kustomize reference</a> — exam-allowed pages.</p>
+<p><a href="https://helm.sh/docs/" target="_blank" rel="noopener">helm.sh/docs</a> and <a href="https://kubectl.docs.kubernetes.io/references/kustomize/" target="_blank" rel="noopener">kubectl.docs.kubernetes.io — Kustomize</a> — verified 2026-08-05.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
     <li>Helm = package + template + track as a "release." Kustomize = patch existing plain YAML, no templating.</li>
     <li><code>kubectl apply -k &lt;dir&gt;</code> is built into kubectl — no separate install.</li>
-    <li>Whatever either tool creates is ordinary Kubernetes objects — troubleshoot the same way regardless of how they got created.</li>
+    <li>Whatever either tool creates is ordinary Kubernetes objects — troubleshoot the same way, regardless of how they got created.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does neither tool require Helm/Kustomize-specific troubleshooting knowledge once objects exist?</li>
+<li>When would Helm's extra structure actually pay off over Kustomize?</li>
+<li>What happens if a Helm chart's values request more replicas than the cluster can schedule?</li>
+<li>How would you verify which tool (or neither) created a given running object?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>helm install</code> or <code>kubectl apply -k</code> output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0016-troubleshooting-application-workload.html">&larr; Troubleshooting: application &amp; workload</a>

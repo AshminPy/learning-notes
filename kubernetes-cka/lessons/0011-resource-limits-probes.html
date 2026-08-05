@@ -8,15 +8,19 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 11 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 11 of 24 · teach2 pilot</p>
 <h1>Resource limits + probes</h1>
 
-<p>Two topics that always show up together: how much CPU/memory a container may use, and how Kubernetes checks if a container is healthy.</p>
+<p>A Deployment (Lesson 4) keeps N Pods running, but "running" isn't the same as "healthy" or "well-behaved." Two mechanisms fill that gap: resource requests/limits control how much CPU/memory a container may use, and probes tell Kubernetes whether a container is actually working.</p>
 
-<p class="callout"><strong>Simple example:</strong> requests are what you tell the scheduler you need — like reserving a seat. Limits are the hard ceiling you can't cross once seated. Requests get you placed. Limits cap you.</p>
+<p class="callout"><strong>Mental model:</strong> <code>requests</code> is what you tell the scheduler you need — like reserving a seat. <code>limits</code> is the hard ceiling you can't cross once seated. That predicts why they're enforced by different components at different times: <code>requests</code> only matters once, at scheduling; <code>limits</code> is enforced continuously by the kubelet for as long as the container runs.</p>
 
-<h2>Requests vs limits</h2>
-<p><code>requests</code> is what the <strong>scheduler</strong> uses to pick a node — a promise, not a cap. <code>limits</code> is what the <strong>kubelet</strong> enforces once the Pod is running — a hard ceiling.</p>
+<h2>Where this fits</h2>
+<pre><code>Cluster └ Node └ Pod └ Labels
+                          ├ Deployment          (Lesson 4 — keeps N Pods running)
+                          └ resources / probes  ← you are here (defines "running well")</code></pre>
+
+<h2>Requests vs. limits</h2>
 <pre><code>resources:
   requests:
     cpu: "100m"
@@ -25,88 +29,30 @@
     cpu: "250m"
     memory: "256Mi"
 </code></pre>
-<p><strong>The exam trap:</strong> exceeding the two limits does not do the same thing.</p>
-<ul>
-<li>Memory limit exceeded &rarr; kernel <strong>OOMKills</strong> the container. It dies and restarts (per <code>restartPolicy</code>).</li>
-<li>CPU limit exceeded &rarr; container is <strong>throttled</strong>, not killed. It keeps running, just slower.</li>
-</ul>
+<p><strong>Why exceeding each limit does something different:</strong> memory can't be reclaimed from a process without killing it, so the kernel <strong>OOMKills</strong> the container when it crosses its memory limit — it dies and restarts per <code>restartPolicy</code>. CPU time, on the other hand, can just be rationed — the kernel <strong>throttles</strong> a container that hits its CPU limit instead, no kill needed. Same enforcement layer, different underlying resource, different consequence.</p>
 
 <h2>The three probes</h2>
-<p>A probe is the kubelet asking a container a yes/no question, on a timer.</p>
-<ul>
-<li><strong>livenessProbe</strong> — "alive?" Fails &rarr; kubelet <strong>restarts</strong> the container.</li>
-<li><strong>readinessProbe</strong> — "ready for traffic?" Fails &rarr; Pod is <strong>removed from Service endpoints</strong>. No restart.</li>
-<li><strong>startupProbe</strong> — "finished starting?" While it hasn't succeeded, liveness and readiness are disabled. For slow-starting apps.</li>
-</ul>
-<p class="callout">Most confused pair: readiness failing never restarts anything — it only stops traffic. Liveness failing is the one that restarts.</p>
+<p>A probe is the kubelet asking a container a yes/no question, on a timer:</p>
+<pre><code>Probe fails
+   │
+   ▼
+livenessProbe   → kubelet RESTARTS the container
+readinessProbe  → Pod REMOVED from Service endpoints (Lesson 3) — no restart
+startupProbe    → liveness/readiness disabled until this succeeds once</code></pre>
+<p class="callout mistake"><strong>Common mistake:</strong> assuming a failing readiness probe restarts anything — it never does, it only stops new traffic (via Lesson 3's endpoint mechanism). Only liveness restarts.</p>
 
-<h2>Pod admission and scheduling constraints</h2>
-<p>Requests/limits (above) constrain <em>resources</em>. Two more mechanisms constrain <em>where</em> a Pod runs and <em>whether it's allowed to exist at all</em>:</p>
-<ul>
-<li><strong>Pod Security Admission</strong> — a built-in admission controller that rejects (or just warns about) Pods violating a security standard, enforced per-namespace via a label: <code>pod-security.kubernetes.io/enforce: restricted</code>. The three standards are <code>privileged</code>, <code>baseline</code>, and <code>restricted</code> (least permissive). This replaced the older, now-removed PodSecurityPolicy.</li>
-<li><strong>Node affinity</strong> — <code>spec.affinity.nodeAffinity</code> constrains which nodes a Pod can land on, by matching node labels. <code>requiredDuringSchedulingIgnoredDuringExecution</code> is a hard requirement (won't schedule without a match); <code>preferredDuringSchedulingIgnoredDuringExecution</code> is a soft preference (schedules elsewhere if no match).</li>
-</ul>
-<pre><code>apiVersion: v1
-kind: Namespace
-metadata:
-  name: secure-ns
-  labels:
-    pod-security.kubernetes.io/enforce: restricted
-</code></pre>
-<div class="trap"><strong>Exam trap:</strong> a Pod rejected by Pod Security Admission never shows up in <code>kubectl get pods</code> at all — the create request itself is denied. If <code>kubectl apply</code> errors immediately with an admission message and nothing gets created, that's this, not a scheduling failure (which would create the Pod in a <code>Pending</code> state instead).</div>
-
-<h2>Try it — before looking below</h2>
+<h2>Try it</h2>
 <div class="quiz">
-<p>Q1. A Pod's readiness probe starts failing. Does the container restart?</p>
+<p>Q1. A container hits its memory limit. A different container hits its CPU limit. What happens to each?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">No. It's pulled from the Service's endpoint list. The container keeps running.</div>
+<div class="answer" id="a1">Memory: OOMKilled, then restarted. CPU: throttled, keeps running slower — never killed.</div>
 </div>
-
-<div class="quiz">
-<p>Q2. A container hits its memory limit. A different container hits its CPU limit. What happens to each?</p>
-<input type="text" id="q2" placeholder="type your answer">
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2">Memory: OOMKilled, then restarted. CPU: throttled, keeps running slower — never killed.</div>
-</div>
-
-<div class="quiz">
-<p>Q3. <code>kubectl apply</code> on a Pod manifest fails instantly with an admission error, and <code>kubectl get pods</code> shows nothing was created. Is this a scheduling problem?</p>
-<input type="text" id="q3" placeholder="type your answer">
-<button onclick="document.getElementById('a3q').classList.add('shown')">Reveal</button>
-<div class="answer" id="a3q">No — a scheduling failure still creates the Pod object, just stuck <code>Pending</code>. Nothing being created at all, with an immediate admission error, points to Pod Security Admission (or another admission controller) rejecting the request outright.</div>
-</div>
-
-<h2>Now write your own</h2>
-<p>Take a Deployment's Pod template (no copy-paste) and add to the container:</p>
-<ul>
-<li><code>resources.requests</code> — a CPU and memory value</li>
-<li><code>resources.limits</code> — a CPU and memory value, at or above your requests</li>
-<li><code>readinessProbe</code> — an HTTP GET on the container's port, with <code>initialDelaySeconds</code> and <code>periodSeconds</code></li>
-</ul>
-<p>Apply it. Run <code>kubectl describe pod &lt;name&gt;</code> and check the <code>Requests</code>/<code>Limits</code> and <code>Readiness</code> lines.</p>
-
+<p>Now write your own: add <code>requests</code>, <code>limits</code>, and a <code>readinessProbe</code> to a Deployment's Pod template, by hand. Apply it, check with <code>kubectl describe pod</code>. Try before revealing.</p>
 <div class="quiz">
 <p>Reveal the reference answer</p>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a3"><code>apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: my-nginx
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: my-nginx
-  template:
-    metadata:
-      labels:
-        app: my-nginx
-    spec:
-      containers:
-        - name: nginx
-          image: nginx
-          resources:
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>          resources:
             requests:
               cpu: "100m"
               memory: "128Mi"
@@ -122,21 +68,50 @@ spec:
 </code></pre>
 </div>
 
+<h2>A controlled failure</h2>
+<pre><code>kubectl run bad-probe --image=nginx:1.29 --overrides='{"spec":{"containers":[{"name":"bad-probe","image":"nginx:1.29","readinessProbe":{"httpGet":{"path":"/does-not-exist","port":80}}}]}}'
+kubectl get pod bad-probe
+kubectl expose pod bad-probe --port=80 --name=bad-probe-svc
+kubectl get endpoints bad-probe-svc</code></pre>
+<p><strong>Predict first:</strong> is <code>bad-probe</code> <code>Running</code>? Does it get an endpoint? <strong>Observe:</strong> it's <code>Running</code>, <code>READY 0/1</code> — and <code>bad-probe-svc</code> has zero endpoints, same silent-failure shape Lesson 3 taught, caused this time by a probe instead of a label mismatch.</p>
+
+<h2>Pod admission and scheduling constraints</h2>
+<p>Requests/limits constrain <em>resources</em>. Two more mechanisms constrain <em>where</em> a Pod runs and <em>whether it's allowed to exist at all</em>:</p>
+<ul>
+<li><strong>Pod Security Admission</strong> — rejects (or warns about) Pods violating a security standard, enforced per-namespace via a label: <code>pod-security.kubernetes.io/enforce: restricted</code>. Standards: <code>privileged</code>, <code>baseline</code>, <code>restricted</code> (least permissive).</li>
+<li><strong>Node affinity</strong> — <code>spec.affinity.nodeAffinity</code> constrains which nodes a Pod can land on. <code>requiredDuringSchedulingIgnoredDuringExecution</code> is a hard requirement; <code>preferredDuringSchedulingIgnoredDuringExecution</code> is a soft preference.</li>
+</ul>
+<p class="callout mistake"><strong>Common mistake:</strong> confusing a Pod Security Admission rejection with a scheduling failure. A rejected Pod never gets created at all — <code>kubectl apply</code> errors immediately, nothing shows in <code>kubectl get pods</code>. A scheduling failure creates the Pod, just stuck <code>Pending</code>.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> always set both requests and limits — no requests means the scheduler under-provisions the node; no limits means one runaway container can starve every other Pod on the node. Set <code>restricted</code> Pod Security Admission on every namespace that doesn't have a specific reason to need more.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Core to <strong>Workloads &amp; Scheduling (15%)</strong>, and a frequent <strong>Troubleshooting (30%)</strong> scenario.</p>
+<p><strong>Interview Q:</strong> "A Pod is <code>Running</code> with zero restarts but receives no traffic. What's the likely cause?" <strong>A:</strong> A failing readiness probe — the container is alive (liveness is fine), just not passing its readiness check, so it's pulled from Service endpoints without ever restarting.</p>
+
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/" target="_blank" rel="noopener">manage-resources-containers</a>, <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/" target="_blank" rel="noopener">pod-lifecycle</a> (probes), and <a href="https://kubernetes.io/docs/concepts/security/pod-security-admission/" target="_blank" rel="noopener">Pod Security Admission</a> — exact pages you can search in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/" target="_blank" rel="noopener">manage-resources-containers</a>, <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/" target="_blank" rel="noopener">pod-lifecycle</a> (probes), and <a href="https://kubernetes.io/docs/concepts/security/pod-security-admission/" target="_blank" rel="noopener">Pod Security Admission</a> — verified 2026-08-05.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li><code>requests</code> places the Pod (scheduler). <code>limits</code> caps it once running (kubelet).</li>
-    <li>Memory limit exceeded &rarr; OOMKilled + restart. CPU limit exceeded &rarr; throttled, no restart.</li>
-    <li>Liveness fails &rarr; restart. Readiness fails &rarr; removed from Service, no restart. startupProbe delays both for slow-starting apps.</li>
-    <li>Pod Security Admission rejects non-compliant Pods at creation time (per-namespace label) — nothing gets created, unlike a scheduling failure which creates a <code>Pending</code> Pod.</li>
-    <li>Node affinity constrains which nodes a Pod can land on — <code>required...</code> is a hard rule, <code>preferred...</code> is a soft one.</li>
+    <li><code>requests</code> places the Pod (scheduler, once). <code>limits</code> caps it once running (kubelet, continuously).</li>
+    <li>Memory limit exceeded → OOMKilled + restart. CPU limit exceeded → throttled, no restart.</li>
+    <li>Liveness fails → restart. Readiness fails → removed from Service endpoints, no restart.</li>
+    <li>Pod Security Admission rejects non-compliant Pods at creation — nothing gets created, unlike a Pending scheduling failure.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why are memory and CPU limit violations handled differently by the kernel?</li>
+<li>When would you use a startupProbe instead of just a long <code>initialDelaySeconds</code> on liveness?</li>
+<li>What happens to a Pod's traffic if only its readiness probe starts failing?</li>
+<li>How would you verify whether a Pod-creation failure was Pod Security Admission vs. a scheduling problem?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>kubectl describe pod</code> output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0010-networkpolicy.html">&larr; NetworkPolicy</a>

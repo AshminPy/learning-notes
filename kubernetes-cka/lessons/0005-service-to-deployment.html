@@ -8,89 +8,86 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 5 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 5 of 24 · teach2 pilot · practical lesson</p>
 <h1>Service &rarr; Deployment</h1>
 
-<p>You already wired a Service to a bare Pod. Now do the same for a Deployment. Same mechanism, one layer up.</p>
+<p>This is a practical lesson, not a new concept — it applies Lessons 2-4 together. You already wired a Service to a bare Pod (Lesson 3) and built a Deployment (Lesson 4). Wire them together, and see the one thing that's easy to get wrong: <em>where</em> a Deployment's Pod labels actually live.</p>
 
-<p class="callout"><strong>Simple example:</strong> a Service is like a receptionist who only reads name tags. It doesn't care who hired the person wearing the tag — Pod, Deployment, whatever. It just matches tags (labels) to send calls (traffic).</p>
+<pre><code>Deployment
+  spec.template.metadata.labels: app=web   ← a Service selector matches THIS
+      │
+      ▼
+Pod   label: app=web
+      ▲
+      │  (selector: app=web)
+Service</code></pre>
+<p>A Service has no idea a Deployment exists — it never reads <code>spec.selector.matchLabels</code> (that's the Deployment's own bookkeeping) or the Deployment's top-level <code>metadata.labels</code> (that's the Deployment object's own labels, not its Pods'). It only ever matches Pod labels, which live at <code>spec.template.metadata.labels</code> inside the Deployment.</p>
 
-<h2>Where the labels live</h2>
-<p>A Service matches <code>spec.selector</code> against <strong>Pod labels</strong>. Nothing else. In a Deployment, those Pod labels sit inside the template, not at the top:</p>
-
-<pre><code>apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: nginx-deployment
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: nginx
-  template:
-    metadata:
-      labels:
-        app: nginx      # <- this is what a Service selector matches
-    spec:
-      containers:
-        - name: nginx
-          image: nginx:1.14.2
-</code></pre>
-
-<p>The Service selector points at <code>spec.template.metadata.labels</code> — not the Deployment's own <code>metadata.labels</code>, and not <code>spec.selector.matchLabels</code>.</p>
-
-<h2>Try it — before looking below</h2>
+<h2>Try it</h2>
 <div class="quiz">
-<p>Q1. Does a Service care whether Pods came from a Deployment, a ReplicaSet, or were created bare?</p>
+<p>Q1. Does a Service care whether its matched Pods came from a Deployment, a ReplicaSet, or were created bare?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">No. It only matches labels — it has no field that references who created the Pod.</div>
+<div class="answer" id="a1">No. A Service only matches labels — nothing in its spec references who or what created a Pod.</div>
 </div>
-
 <div class="quiz">
-<p>Q2. During a rolling update, which Pods does a Service send traffic to?</p>
+<p>Q2. During a rolling update, which Pods does a Service send traffic to — old, new, or both?</p>
 <input type="text" id="q2" placeholder="type your answer">
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2">Any Pod that matches the selector <strong>and</strong> is Ready — old and new Pods can both get traffic mid-rollout.</div>
+<div class="answer" id="a2">Both — any Pod matching the selector <strong>and</strong> currently Ready, regardless of which ReplicaSet (old or new) owns it.</div>
 </div>
 
-<h2>Now write your own</h2>
-<p>Write a ClusterIP Service that selects the Pods from the Deployment above.</p>
-<ul>
-<li>a <code>selector</code> matching <code>app: nginx</code></li>
-<li>a <code>ports</code> entry with <code>port</code> and <code>targetPort</code></li>
-</ul>
-
+<p>Now do it: reuse Lesson 4's Deployment, write a ClusterIP Service selecting <code>app: web</code>, apply both, and confirm with <code>kubectl get endpoints</code> that it lists all 3 Pod IPs. Try before revealing.</p>
 <div class="quiz">
 <p>Reveal the reference answer</p>
 <button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
 <pre class="answer" id="a3"><code>apiVersion: v1
 kind: Service
 metadata:
-  name: nginx-service
+  name: web-svc
 spec:
   selector:
-    app: nginx
+    app: web
   ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 80
+  - name: http
+    port: 80
+    targetPort: 80
 </code></pre>
 </div>
 
+<h2>A controlled failure</h2>
+<p>Predict, then run: start a rolling update to a slow-starting image, and watch endpoints mid-flight.</p>
+<pre><code>kubectl set image deployment/web web=nginx:1.29
+kubectl get endpoints web-svc --watch</code></pre>
+<p><strong>Observe:</strong> the endpoint count doesn't drop to 0 and jump back — it grows and shrinks gradually as new Pods become Ready and old ones terminate. That's the "both, if Ready" answer above, made visible in real time. Stop watching with Ctrl-C when it settles at 3.</p>
+
+<p class="callout production"><strong>Production note:</strong> this is exactly why a Deployment's readiness probe (Lesson 11) matters for zero-downtime rollouts — a new Pod that's <code>Running</code> but not yet <code>Ready</code> gets zero traffic from the Service, so a slow-starting app doesn't get real requests before it can handle them.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Combines <strong>Workloads &amp; Scheduling (15%)</strong> and <strong>Services &amp; Networking (20%)</strong> — a very common live-troubleshooting combination on the exam.</p>
+<p><strong>Interview Q:</strong> "Your Service selector is <code>app: web</code> but traffic still fails after deploying. Where do you check first?" <strong>A:</strong> The Deployment's <code>spec.template.metadata.labels</code>, not its top-level <code>metadata.labels</code> or <code>spec.selector.matchLabels</code> — that's the field a Service actually reads.</p>
+
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/services-networking/service/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/service</a></p>
+<p><a href="https://kubernetes.io/docs/concepts/services-networking/service/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/service</a> — verified 2026-08-05.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>A Service matches <code>spec.selector</code> against Pod labels — it has no idea a Deployment exists.</li>
-    <li>A Deployment's Pod labels live at <code>spec.template.metadata.labels</code>.</li>
-    <li>A Service routes to any matching Pod that is Ready, even mid-rollout.</li>
+    <li>A Service matches Pod labels only — it has no concept of Deployments, ReplicaSets, or ownership.</li>
+    <li>A Deployment's Pod labels live at <code>spec.template.metadata.labels</code> — that's the field a Service selector must match.</li>
+    <li>A Service routes to any matching, Ready Pod — old and new can both receive traffic mid-rollout.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why doesn't a Service need to know a Deployment exists at all?</li>
+<li>When could a rolling update send traffic to a broken new Pod? (Hint: think about probes.)</li>
+<li>What happens to endpoints if a Deployment's template labels change mid-rollout?</li>
+<li>How would you verify traffic is reaching both old and new Pods during a rollout?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result? Paste the exact <code>kubectl get endpoints --watch</code> output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0004-deployment.html">&larr; Deployment</a>

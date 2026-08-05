@@ -8,49 +8,63 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 1 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 1 of 24 · teach2 pilot</p>
 <h1>The Pod</h1>
 
-<p>A Pod is the smallest thing Kubernetes runs. Everything bigger (Deployment, Service, Job) is just "a Pod, plus extra rules."</p>
+<p>Every workload you'll ever run on Kubernetes — a web API, a batch job, a database — comes down to the same question: what actually runs my container, and what happens to it when something goes wrong? Skip this lesson and every later one (Deployment, Service, Job) feels like memorizing unrelated objects instead of variations on one idea.</p>
 
-<p class="callout"><strong>Simple example:</strong> think of a Pod like one shipping container. Inside it: one or more apps that share the same address and the same fate — they start together, they stop together. Most Pods hold just one app.</p>
+<p>A <strong>Pod</strong> is the smallest thing Kubernetes runs — one or more containers that share the same network address and the same fate: they start together, they stop together. Most Pods hold exactly one container.</p>
+
+<p class="callout"><strong>Mental model:</strong> a Pod is a boarding pass, not the passenger. When a flight is cancelled, the airline doesn't repair your old boarding pass — it issues a new one, for a new flight, with a new seat. A "restarted" Pod works the same way: it's not fixed, it's replaced — a new object, usually with a new IP. That predicts something concrete: any system that assumes "this Pod will always have this IP" will break the first time it's replaced.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Cluster
+  └ Node            (a machine — full mechanics in Lesson 13)
+      └ Pod          ← you are here
+          └ Container(s)</code></pre>
+<p>You already know roughly what a cluster and a node are from real-world use — this course fills in the manifest-level detail, starting at the bottom. Everything else in this course (Deployment, Service, Job) is a controller that creates and manages Pods on your behalf — none of them replace this layer, they all sit on top of it.</p>
 
 <h2>What's inside a Pod manifest</h2>
-<p>Every Kubernetes object (Pod, Deployment, Service — all of them) is written the same shape:</p>
+<p>Every Kubernetes object — Pod, Deployment, Service, all of them — is written the same shape:</p>
 <pre><code>apiVersion: v1
 kind: Pod
 metadata:
-  name: my-nginx
+  name: nginx
 spec:
   containers:
-    - name: nginx
-      image: nginx
+  - name: nginx
+    image: nginx:1.29
 </code></pre>
-<p>Four parts, always:</p>
 <ul>
 <li><code>apiVersion</code> — which version of the Kubernetes API this object uses</li>
 <li><code>kind</code> — what kind of object this is (here: <code>Pod</code>)</li>
-<li><code>metadata</code> — its name and labels</li>
-<li><code>spec</code> — what you actually want (here: run the <code>nginx</code> image)</li>
+<li><code>metadata</code> — its name (and, from Lesson 2, its labels)</li>
+<li><code>spec</code> — what you actually want: run the <code>nginx</code> image, one container</li>
 </ul>
-<p>Learn these four once. Every object you write from here on reuses the same shape.</p>
+<p>Learn these four once — every object you write from here on reuses the same shape.</p>
 
-<h2>Try it — before looking below</h2>
+<h2>How it works, and why</h2>
+<pre><code>you write YAML
+   │
+   ▼
+API server        (accepts and stores the Pod object)
+   │
+   ▼
+scheduler          (picks which Node it runs on)
+   │
+   ▼
+kubelet (on that Node)   (actually creates the containers, watches them)</code></pre>
+<p>The <strong>kubelet</strong> is the part that matters most for this lesson: it's the only thing watching a bare Pod after creation. It applies <code>restartPolicy</code>, reports status back to the API server, and terminates containers gracefully on delete. No controller, no scheduler stays involved once the Pod exists.</p>
+<p><strong>Why it's built this way:</strong> Kubernetes assumes any single machine can fail at any time. If Pods were repaired in place, a dead Node would mean permanently dead workloads. Making Pods disposable — and pushing "keep N of these running" into a separate, optional controller layer (Deployment, Lesson 4) — is what makes self-healing possible at all. A bare Pod opts out of that layer entirely, which is exactly what this lesson's failure below demonstrates.</p>
+
+<h2>Try it</h2>
 <div class="quiz">
-<p>Q1. Which of the four parts says <em>what container to actually run</em>?</p>
+<p>Q1. Which of the four top-level fields says <em>what container to actually run</em>?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
 <div class="answer" id="a1"><code>spec</code> — specifically <code>spec.containers</code>.</div>
 </div>
-
-<h2>Now write your own</h2>
-<p>Open a terminal or editor. Write a Pod manifest by hand (no copy-paste) with:</p>
-<ul>
-<li>a name of your choice</li>
-<li>the <code>redis</code> image</li>
-</ul>
-<p>Try it before you look at the answer below.</p>
-
+<p>Now write your own, by hand, no copy-paste: a Pod named <code>my-redis</code> running the <code>redis</code> image. Try before revealing.</p>
 <div class="quiz">
 <p>Reveal the reference answer</p>
 <button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
@@ -60,24 +74,51 @@ metadata:
   name: my-redis
 spec:
   containers:
-    - name: redis
-      image: redis
+  - name: redis
+    image: redis:7
 </code></pre>
 </div>
 
+<p class="callout mistake"><strong>Common mistake:</strong> writing bare Pods for real workloads because it's the first primitive you learn, then being surprised when a routine node drain takes the workload down permanently instead of rescheduling it.</p>
+
+<h2>A controlled failure</h2>
+<p>Prove the mental model above, don't just take it on faith:</p>
+<pre><code>kubectl run my-nginx --image=nginx:1.29
+kubectl get pod my-nginx</code></pre>
+<p><strong>Predict first:</strong> if you delete this Pod, will it come back? Then run:</p>
+<pre><code>kubectl delete pod my-nginx
+kubectl get pod my-nginx</code></pre>
+<p><strong>Observe:</strong> <code>Error from server (NotFound)</code> — nothing recreated it. That's the whole lesson, made concrete: no controller was watching, so nothing replaced it.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> a bare Pod almost never survives real code review for a service. It shows up for two legitimate reasons only: quick interactive debugging (<code>kubectl run debug --image=busybox -it --rm -- sh</code>), and as the object a controller creates on your behalf. You'll still write raw Pod YAML constantly in this course and on the exam — it's the primitive every controller builds on.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Foundational — not separately weighted on the CKA exam, but every scored domain sits on top of it.</p>
+<p><strong>Interview Q:</strong> "If a Node running a bare Pod crashes, what brings the Pod back?" <strong>A:</strong> Nothing. A bare Pod has no controller watching it — it stays gone until something (you, or a controller if one existed) creates it again. This is precisely why production workloads use a Deployment instead.</p>
+
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/workloads/pods/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/pods</a> — the exact page you can search in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/concepts/workloads/pods/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/workloads/pods</a> — verified 2026-08-05, searchable in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>A Pod = one or more containers that share an IP and a lifecycle.</li>
-    <li>Every object: <code>apiVersion</code>, <code>kind</code>, <code>metadata</code>, <code>spec</code>.</li>
-    <li><code>spec.containers</code> is the part a Pod can't exist without.</li>
+    <li>A Pod = one or more containers sharing network and storage; every object follows the same <code>apiVersion</code>/<code>kind</code>/<code>metadata</code>/<code>spec</code> shape.</li>
+    <li>Kubernetes never repairs a Pod — a "restarted" Pod is a new object, usually with a new IP.</li>
+    <li>Only the kubelet watches a bare Pod after creation — no self-healing without a controller layered on top.</li>
+    <li>Pods are deliberately disposable so that "keep N running" can be a separate, optional layer (Deployment) instead of built into every workload.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does Kubernetes make Pods disposable instead of repairable?</li>
+<li>When is it actually fine to run a bare Pod?</li>
+<li>What happens if the Node running your bare Pod is deleted?</li>
+<li>How would you verify a Pod was replaced vs. never went away? (Hint: think about what changes and what doesn't.)</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact command and output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <span>&larr; Start</span>

@@ -8,61 +8,55 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 9 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 9 of 24 · teach2 pilot</p>
 <h1>RBAC — ServiceAccount, Role, RoleBinding</h1>
 
-<p>Every manifest so far assumed permissions just work. They don't. RBAC (Role-Based Access Control) is the layer that says who is allowed to do what.</p>
+<p>Every manifest so far assumed permissions just work. They don't — and Lesson 6 already flagged why this matters: a Secret's real protection is who can read it, not its encoding. RBAC (Role-Based Access Control) is the layer that decides who is allowed to do what to the API.</p>
 
-<p class="callout"><strong>Simple example:</strong> think of RBAC like a keycard system. A <strong>ServiceAccount</strong> is the badge a Pod wears. A <strong>Role</strong> is the list of doors a badge type may open. A <strong>RoleBinding</strong> is what actually hands the badge those keys — no binding, no access, no matter what the Role allows.</p>
+<p class="callout"><strong>Mental model:</strong> a keycard system. A <strong>ServiceAccount</strong> is the badge a Pod wears. A <strong>Role</strong> is the list of doors a badge type may open. A <strong>RoleBinding</strong> is what actually hands the badge those keys. That predicts something exam candidates trip on constantly: a perfectly correct Role, with no RoleBinding pointing at it, grants nothing at all — a defined permission and a granted permission are two different objects.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Cluster └ Node └ Pod └ Labels
+                          └ ServiceAccount   ← you are here (a Pod's identity for API calls)</code></pre>
+<pre><code>Role            (what's allowed — verbs on resources)
+   ▲
+   │  attached via
+RoleBinding     (subject: ServiceAccount / User / Group)
+   ▲
+   │  used by
+Pod  spec.serviceAccountName</code></pre>
 
 <h2>The three pieces</h2>
-<p>A Role lists what's allowed:</p>
 <pre><code>apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: pod-reader
 rules:
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
 </code></pre>
 <ul>
 <li><strong>ServiceAccount</strong> — an identity a Pod can act as, instead of you</li>
-<li><strong>Role</strong> — which <code>verbs</code> are allowed on which <code>resources</code>, in one namespace (shown above)</li>
-<li><strong>RoleBinding</strong> — grants the Role to a subject (ServiceAccount, User, or Group)</li>
+<li><strong>Role</strong> — which <code>verbs</code> are allowed on which <code>resources</code>, in one namespace</li>
+<li><strong>RoleBinding</strong> — grants the Role to a subject</li>
 </ul>
-<p><strong>ClusterRole</strong> / <strong>ClusterRoleBinding</strong> are the same two objects, just cluster-scoped instead of namespaced.</p>
+<p><strong>ClusterRole</strong>/<strong>ClusterRoleBinding</strong> are the same two objects, cluster-scoped instead of namespaced.</p>
+<p><strong>Why it's built this way:</strong> splitting "what's allowed" (Role) from "who gets it" (RoleBinding) lets one Role definition (e.g. <code>pod-reader</code>) be reused across many teams/ServiceAccounts without rewriting the rules each time — the same separation-of-concerns pattern Lesson 7 used for storage (PV vs. PVC).</p>
+<p class="callout"><strong>RBAC is additive only.</strong> There are no deny rules. A missing grant means no access — full stop.</p>
 
-<p class="callout">RBAC is additive only. There are no deny rules. A missing grant means no access — full stop.</p>
-
-<h2>Try it — before looking below</h2>
+<h2>Try it</h2>
 <div class="quiz">
 <p>Q1. What actually grants a Role to someone — as opposed to just defining what it allows?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
 <div class="answer" id="a1">A RoleBinding (or ClusterRoleBinding). The Role only defines permissions — the binding attaches it to a subject.</div>
 </div>
-
-<div class="quiz">
-<p>Q2. What command checks if ServiceAccount <code>ci-bot</code> in namespace <code>ci</code> can delete pods — without actually testing it?</p>
-<input type="text" id="q2" placeholder="type your answer">
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2"><code>kubectl auth can-i delete pods --as=system:serviceaccount:ci:ci-bot -n ci</code></div>
-</div>
-
-<h2>Now write your own</h2>
-<p>Write three manifests by hand (no copy-paste) that together let a workload read Pods and nothing else:</p>
-<ul>
-<li>a <strong>ServiceAccount</strong>, any name, in a namespace of your choice</li>
-<li>a <strong>Role</strong> in the same namespace allowing <code>get</code> and <code>list</code> on <code>pods</code> only</li>
-<li>a <strong>RoleBinding</strong> connecting the two</li>
-</ul>
-<p>Apply all three, then confirm with <code>kubectl auth can-i</code> before checking the answer below.</p>
-
+<p>Now write your own, by hand: a ServiceAccount, a Role allowing only <code>get</code>/<code>list</code> on <code>pods</code>, and a RoleBinding connecting them. Apply all three, verify with <code>kubectl auth can-i</code>, then try before revealing.</p>
 <div class="quiz">
 <p>Reveal the reference answer</p>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a3"><code>apiVersion: v1
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: pod-reader-sa
@@ -72,17 +66,17 @@ kind: Role
 metadata:
   name: pod-reader
 rules:
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: read-pods
 subjects:
-  - kind: ServiceAccount
-    name: pod-reader-sa
+- kind: ServiceAccount
+  name: pod-reader-sa
 roleRef:
   kind: Role
   name: pod-reader
@@ -90,19 +84,41 @@ roleRef:
 </code></pre>
 </div>
 
+<p class="callout mistake"><strong>Common mistake:</strong> writing a correct Role and assuming it does something on its own — nothing is granted until a RoleBinding names it.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>kubectl auth can-i delete pods --as=system:serviceaccount:default:pod-reader-sa</code></pre>
+<p><strong>Predict first:</strong> yes or no? <strong>Observe:</strong> <code>no</code> — the Role above only grants <code>get</code>/<code>list</code>, and RBAC being additive-only means there's nothing to accidentally grant <code>delete</code>. Compare against a verb it does have:</p>
+<pre><code>kubectl auth can-i get pods --as=system:serviceaccount:default:pod-reader-sa</code></pre>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> give every workload its own dedicated ServiceAccount with the narrowest Role it needs — never run production Pods under the <code>default</code> ServiceAccount, which typically has no useful permissions but is still a shared identity every unconfigured Pod in the namespace inherits.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Core to <strong>Cluster Architecture, Installation &amp; Configuration (25%)</strong>.</p>
+<p><strong>Interview Q:</strong> "A ServiceAccount has a correctly-written Role for the access it needs, but calls still get denied. What's the first thing you check?" <strong>A:</strong> Whether a RoleBinding (or ClusterRoleBinding) actually attaches that Role to the ServiceAccount — a Role by itself grants nothing.</p>
+
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/reference/access-authn-authz/rbac/" target="_blank" rel="noopener">kubernetes.io/docs/reference/access-authn-authz/rbac</a> — the exact page you can search in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/reference/access-authn-authz/rbac/" target="_blank" rel="noopener">kubernetes.io/docs/reference/access-authn-authz/rbac</a> — verified 2026-08-05, searchable in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
     <li>ServiceAccount = an identity a Pod acts as. Role = allowed verbs on resources. RoleBinding = what grants the Role.</li>
-    <li>ClusterRole / ClusterRoleBinding are the same pair, cluster-scoped.</li>
+    <li>ClusterRole/ClusterRoleBinding are the same pair, cluster-scoped.</li>
     <li>RBAC is additive only — no deny rules, and no grant means no access.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does Kubernetes split Role (what's allowed) from RoleBinding (who gets it) into two objects?</li>
+<li>When would you reach for a ClusterRole instead of a namespaced Role?</li>
+<li>What happens if a Role exists but no RoleBinding references it?</li>
+<li>How would you verify a ServiceAccount's actual permissions without testing the real action?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>kubectl auth can-i</code> output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0008-ingress.html">&larr; Ingress &rarr; Service</a>

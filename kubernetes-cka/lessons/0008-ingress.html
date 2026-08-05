@@ -3,102 +3,127 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lesson 8 — Ingress &rarr; Service</title>
+<title>Lesson 8 — Ingress → Service</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 8 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 8 of 24 · teach2 pilot</p>
 <h1>Ingress &rarr; Service</h1>
 
-<p>A Service gives you a stable address inside the cluster. It has no path in from outside. Ingress is that last hop — it routes outside traffic to the right Service.</p>
+<p>A ClusterIP Service (Lesson 3) gives you a stable address, but only reachable inside the cluster's own network. Real users are outside it. Ingress is the last hop: a set of routing rules that gets traffic from the internet to the right Service based on hostname and path.</p>
 
-<p class="callout"><strong>Simple example:</strong> think of Ingress like a building receptionist. One door, one address. The receptionist reads where you want to go and sends you to the right room — the right Service — based on the hostname and path you asked for.</p>
+<p class="callout"><strong>Mental model:</strong> Ingress is a building directory board in the lobby, not a receptionist. The board lists "Room 4B → Acme Corp," but the board itself doesn't walk anyone anywhere — someone (staff) has to actually read it and direct people. That predicts the exam's biggest Ingress trap: the board (the Ingress object) can be posted perfectly and still send nobody anywhere, if no one (an Ingress controller) is actually reading it.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Cluster └ Node └ Pod └ Labels
+                          ├ Service            (Lesson 3)
+                          └ Ingress            ← you are here (routes to a Service, never a Pod)</code></pre>
+<pre><code>Internet
+   │
+   ▼
+Ingress controller   (must be installed separately — reads the rules below)
+   │  reads
+Ingress   host + path rules
+   │  points at
+Service   (Lesson 3's mechanism, unchanged)
+   │
+   ▼
+Pod</code></pre>
 
 <h2>The shape of an Ingress</h2>
-<p>An Ingress is a list of rules. Each rule says: for this host and path, send traffic to this Service.</p>
-<pre><code>rules:
-  - host: nginx.example.com
-    http:
-      paths:
-        - path: /
-          pathType: Prefix
-          backend:
-            service:
-              name: nginx-service
-              port:
-                number: 80
-</code></pre>
-<ul>
-<li><code>host</code> — the hostname this rule matches</li>
-<li><code>path</code> / <code>pathType</code> — the URL path, and how strictly it must match</li>
-<li><code>backend.service</code> — which Service, and which port, gets the traffic</li>
-</ul>
-<p>Notice: an Ingress rule only ever points at a Service, never at Pods directly.</p>
-
-<p class="callout"><strong>The trap:</strong> an Ingress is only routing rules. It does nothing by itself. Something called an <strong>Ingress controller</strong> has to run in the cluster and read those rules. Apply an Ingress with no controller installed, and nothing happens — no error, just silence.</p>
-
-<h2>Try it — before looking below</h2>
-<div class="quiz">
-<p>Q1. You apply a correct Ingress. No traffic gets routed. What's missing?</p>
-<input type="text" id="q1" placeholder="type your answer">
-<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">An Ingress controller. The Ingress object is just rules — a controller has to be running to read them and configure a real proxy or load balancer.</div>
-</div>
-
-<div class="quiz">
-<p>Q2. What field says which controller should handle a given Ingress?</p>
-<input type="text" id="q2" placeholder="type your answer">
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2"><code>spec.ingressClassName</code> — it names an <code>IngressClass</code>, which maps to a specific controller.</div>
-</div>
-
-<h2>Now write your own</h2>
-<p>Write an Ingress by hand (no copy-paste) that routes to a Service called <code>nginx-service</code>, with:</p>
-<ul>
-<li><code>kind: Ingress</code>, API group <code>networking.k8s.io/v1</code></li>
-<li>an <code>ingressClassName</code> of your choice</li>
-<li>one rule: any <code>host</code>, path <code>/</code>, <code>pathType: Prefix</code></li>
-<li>a backend pointing at <code>nginx-service</code>, port <code>80</code></li>
-</ul>
-<p>Try it before you look at the answer below.</p>
-
-<div class="quiz">
-<p>Reveal the reference answer</p>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a3"><code>apiVersion: networking.k8s.io/v1
+<pre><code>apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: nginx-ingress
+  name: web-ingress
 spec:
   ingressClassName: nginx
   rules:
-    - host: nginx.example.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: nginx-service
-                port:
-                  number: 80
+  - host: web.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-svc
+            port:
+              number: 80
+</code></pre>
+<ul>
+<li><code>host</code> / <code>path</code>/<code>pathType</code> — what request this rule matches</li>
+<li><code>backend.service</code> — which Service (never a Pod directly) gets the traffic</li>
+<li><code>ingressClassName</code> — which controller should handle this Ingress</li>
+</ul>
+<p><strong>Why it's built this way:</strong> the Ingress API is deliberately just data — a routing spec, no implementation. That's what lets multiple different controllers (nginx, Traefik, a cloud load balancer) all implement the exact same object shape, so your YAML doesn't change if you switch controllers, only <code>ingressClassName</code> does.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. You apply a correct Ingress. No traffic gets routed, no error anywhere. What's missing?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">An Ingress controller. The Ingress object is only rules — a controller must be running to read them and configure a real proxy/load balancer.</div>
+</div>
+<p>Now write your own, by hand: an Ingress routing to a Service called <code>web-svc</code> on port 80, path <code>/</code>. Try before revealing.</p>
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: web.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-svc
+            port:
+              number: 80
 </code></pre>
 </div>
 
+<p class="callout mistake"><strong>Common mistake:</strong> pointing an Ingress backend at Pods, or expecting it to load-balance on its own — it only ever points at a Service, and the Service still does the actual Pod selection from Lesson 3.</p>
+
+<h2>A controlled failure</h2>
+<p>Apply the Ingress above, even with no controller installed:</p>
+<pre><code>kubectl apply -f web-ingress.yaml
+kubectl get ingress web-ingress</code></pre>
+<p><strong>Predict first:</strong> will the <code>ADDRESS</code> column ever fill in without a controller? <strong>Observe:</strong> the object is created fine — <code>kubectl get ingress</code> shows it, no error — but <code>ADDRESS</code> stays empty forever. Same silent-failure shape as Lesson 3's empty endpoints: the object exists and looks harmless, the thing actually missing is invisible from the object itself.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> real clusters standardize on one Ingress controller (commonly nginx or a cloud-managed one) cluster-wide, and TLS termination is configured on the Ingress itself (<code>spec.tls</code>) rather than in each backend app — centralizing certs at the edge instead of per-service.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Directly scored under <strong>Services &amp; Networking (20%)</strong>.</p>
+<p><strong>Interview Q:</strong> "You apply an Ingress and it never gets an external address. What's your first check?" <strong>A:</strong> Whether an Ingress controller is actually installed and running — <code>kubectl get pods -A</code> looking for it — before assuming anything is wrong with the Ingress YAML itself.</p>
+
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/services-networking/ingress/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/ingress</a> — the exact page you can search in the real exam.</p>
+<p><a href="https://kubernetes.io/docs/concepts/services-networking/ingress/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/services-networking/ingress</a> — verified 2026-08-05, searchable in the real exam.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Ingress routes outside traffic to Services by host and path — it never points at Pods directly.</li>
-    <li>An Ingress does nothing without an Ingress controller running in the cluster.</li>
+    <li>Ingress routes outside traffic to Services by host/path — it never points at Pods directly, Lesson 3's Service still does that.</li>
+    <li>An Ingress does nothing without a separately-installed Ingress controller — the object applies cleanly either way.</li>
     <li><code>ingressClassName</code> picks which controller handles a given Ingress.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does the Ingress API stay separate from any specific controller's implementation?</li>
+<li>When would you need more than one Ingress controller in a cluster?</li>
+<li>What happens if you apply an Ingress with no matching controller installed?</li>
+<li>How would you verify an Ingress is actually being served, not just accepted by the API server?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>kubectl get ingress</code> output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0007-pvc.html">&larr; PVC &rarr; Pod</a>

@@ -3,115 +3,123 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lesson 7 — PersistentVolumeClaim &rarr; Pod</title>
+<title>Lesson 7 — PersistentVolumeClaim → Pod</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 7 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 7 of 24 · teach2 pilot</p>
 <h1>PersistentVolumeClaim &rarr; Pod</h1>
 
-<p>A container's filesystem dies with the container. Anything that must survive a restart needs real, persistent storage. Kubernetes splits this into three layers.</p>
+<p>A container's filesystem dies with the container — and per Lesson 1, a Pod itself is disposable too. Anything that must survive a restart (a database's data, an upload store) needs storage that outlives both. Kubernetes splits this into three layers instead of letting a Pod just declare "give me a disk."</p>
 
-<p class="callout"><strong>Simple example:</strong> think of a PersistentVolume (PV) as an actual storage locker. A PersistentVolumeClaim (PVC) is the request form: "I need a locker this size." A Pod never touches the locker directly — it only holds the claim form.</p>
+<p class="callout"><strong>Mental model:</strong> a PersistentVolume (PV) is an actual storage locker; a PersistentVolumeClaim (PVC) is the request form — "I need a locker this size." A Pod never touches the locker directly, it only holds the claim form. That predicts something real: delete the Pod, the claim form (PVC) and the locker (PV) are untouched — storage outlives the Pod exactly the way it's supposed to.</p>
 
-<h2>The three layers</h2>
+<h2>Where this fits</h2>
+<pre><code>Cluster └ Node └ Pod └ Labels
+                          └ PVC   ← you are here (Pod holds the claim, not the disk)</code></pre>
+<pre><code>PersistentVolume (PV)        real storage, cluster-scoped
+      ▲
+      │  bound to
+PersistentVolumeClaim (PVC)  namespaced request
+      ▲
+      │  mounted by
+Pod</code></pre>
+
+<h2>The three layers, and why</h2>
 <ul>
 <li><strong>PersistentVolume (PV)</strong> — the real storage. Cluster-scoped, not namespaced.</li>
-<li><strong>PersistentVolumeClaim (PVC)</strong> — a namespaced request for storage. The cluster binds it to a matching PV.</li>
+<li><strong>PersistentVolumeClaim (PVC)</strong> — a namespaced request for storage; the cluster binds it to a matching PV.</li>
 <li><strong>Pod</strong> — mounts the <strong>PVC</strong>, never the PV directly.</li>
 </ul>
-
+<p><strong>Why it's built this way:</strong> this separates "what storage exists" (an infra/admin concern — disk type, size, backend) from "what a Pod needs" (an app concern — just a mount path). A Pod manifest asking for a PVC stays identical whether it runs on AWS EBS, GCP PD, or bare-metal NFS — only the PV/StorageClass underneath changes, which is what makes the same manifest portable across clusters.</p>
 <pre><code>apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: my-pvc
 spec:
   accessModes:
-    - ReadWriteOnce
+  - ReadWriteOnce
   storageClassName: standard
   resources:
     requests:
       storage: 1Gi
 </code></pre>
-
-<p>Most clusters (GKE included) auto-create the PV for you — this is <strong>dynamic provisioning</strong>, triggered by <code>storageClassName</code>. The older pattern, <strong>static provisioning</strong>, is an admin hand-creating PVs ahead of time.</p>
+<p>Most managed clusters auto-create the PV for you — <strong>dynamic provisioning</strong>, triggered by <code>storageClassName</code>. The older pattern, <strong>static provisioning</strong>, is an admin hand-creating PVs ahead of time.</p>
 
 <h2>What happens when the PVC is deleted</h2>
 <p>A PV's <code>persistentVolumeReclaimPolicy</code> decides what happens to the underlying storage once its PVC is gone:</p>
 <ul>
-<li><strong>Delete</strong> — the PV <em>and</em> the real storage behind it are deleted too. The default for dynamically-provisioned volumes.</li>
-<li><strong>Retain</strong> — the PV is kept (status <code>Released</code>), data intact, but it won't bind to a new PVC automatically. An admin has to manually reclaim or delete it. Use this for anything you can't afford to lose to a mistaken <code>kubectl delete pvc</code>.</li>
-<li><strong>Recycle</strong> — deprecated, don't use it.</li>
+<li><strong>Delete</strong> — the PV <em>and</em> the real storage behind it are deleted too. Default for dynamically-provisioned volumes.</li>
+<li><strong>Retain</strong> — the PV is kept (status <code>Released</code>), data intact, but won't bind to a new PVC automatically — an admin has to manually reclaim it. Use this for anything you can't afford to lose to a mistaken <code>kubectl delete pvc</code>.</li>
 </ul>
-<pre><code>kubectl get pv                                    # STATUS column: Bound / Released / Available
-kubectl patch pv &lt;name&gt; -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
-</code></pre>
 
-<h2>Try it — before looking below</h2>
+<h2>Try it</h2>
 <div class="quiz">
 <p>Q1. Does a Pod's <code>spec.volumes</code> reference a PV or a PVC?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
 <div class="answer" id="a1">A PVC — always. The Pod never mounts a PV directly.</div>
 </div>
-
-<div class="quiz">
-<p>Q2. Which <code>accessMode</code> lets many nodes mount a volume read-write at the same time?</p>
-<input type="text" id="q2" placeholder="type your answer">
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2">ReadWriteMany (RWX) — most cloud block storage only supports ReadWriteOnce, so this needs a backend like NFS.</div>
-</div>
-
-<div class="quiz">
-<p>Q3. A PVC holding a production database is accidentally deleted. Its PV's reclaim policy is <code>Retain</code>. Is the data gone?</p>
-<input type="text" id="q3b" placeholder="type your answer">
-<button onclick="document.getElementById('a3b').classList.add('shown')">Reveal</button>
-<div class="answer" id="a3b">No. The PV moves to <code>Released</code>, not deleted — the underlying disk and its data are untouched. An admin has to manually re-bind or clean it up; nothing happens automatically. If the policy had been <code>Delete</code>, the data would already be gone.</div>
-</div>
-
-<h2>Now write your own</h2>
-<p>Write a Pod that mounts the PVC above.</p>
-<ul>
-<li>mounts <code>my-pvc</code> as a volume</li>
-<li>mounts it at a path in the container, e.g. <code>/usr/share/nginx/html</code></li>
-</ul>
-
+<p>Now write your own: a Pod that mounts the PVC above at <code>/usr/share/nginx/html</code>. Try before revealing.</p>
 <div class="quiz">
 <p>Reveal the reference answer</p>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a3"><code>apiVersion: v1
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>apiVersion: v1
 kind: Pod
 metadata:
   name: pvc-pod
 spec:
   containers:
-    - name: app
-      image: nginx
-      volumeMounts:
-        - name: data
-          mountPath: /usr/share/nginx/html
-  volumes:
+  - name: app
+    image: nginx:1.29
+    volumeMounts:
     - name: data
-      persistentVolumeClaim:
-        claimName: my-pvc
+      mountPath: /usr/share/nginx/html
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: my-pvc
 </code></pre>
 </div>
 
+<p class="callout mistake"><strong>Common mistake:</strong> assuming the default <code>Delete</code> reclaim policy is fine for production data — it means one mistaken <code>kubectl delete pvc</code> destroys the underlying disk too, with no recovery path.</p>
+
+<h2>A controlled failure</h2>
+<p>Set a PV to <code>Retain</code>, then delete its PVC — a mistake you want to survive, not just avoid:</p>
+<pre><code>kubectl patch pv &lt;pv-name&gt; -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
+kubectl delete pvc my-pvc
+kubectl get pv</code></pre>
+<p><strong>Predict first:</strong> is the data gone? <strong>Observe:</strong> the PV's <code>STATUS</code> shows <code>Released</code>, not deleted — the underlying disk and its data are untouched, just unbound and waiting for an admin to manually re-bind or clean it up.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> set <code>Retain</code> explicitly on any StorageClass or PV backing real data — never rely on the <code>Delete</code> default for anything you'd need to recover from. Snapshot/backup policy at the storage layer (Lesson 14's etcd backup is the control-plane equivalent) is a separate, additional safeguard, not a substitute for the right reclaim policy.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Directly scored under <strong>Storage (10%)</strong> — the smallest domain by weight, but a reliable source of exam tasks.</p>
+<p><strong>Interview Q:</strong> "A PVC bound to production data gets accidentally deleted. What determines whether the data is recoverable?" <strong>A:</strong> The PV's <code>reclaimPolicy</code> — <code>Retain</code> means the PV survives as <code>Released</code> with data intact; <code>Delete</code> (the default for dynamic provisioning) destroys the underlying storage along with the PVC.</p>
+
 <h2>Source</h2>
-<p><a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/storage/persistent-volumes</a></p>
+<p><a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/" target="_blank" rel="noopener">kubernetes.io/docs/concepts/storage/persistent-volumes</a> — verified 2026-08-05.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
     <li>PV = real storage, cluster-scoped. PVC = namespaced request. Pod mounts the PVC, never the PV.</li>
-    <li>Dynamic provisioning (PVC + StorageClass) auto-creates the PV — the default on GKE/cloud.</li>
-    <li><code>accessModes</code>: ReadWriteOnce (one node), ReadOnlyMany (many, read-only), ReadWriteMany (many, read-write).</li>
-    <li><code>reclaimPolicy</code>: Delete (default, storage goes with the PVC) vs. Retain (storage survives, needs manual cleanup).</li>
+    <li>Dynamic provisioning (PVC + StorageClass) auto-creates the PV — the default on most managed clusters.</li>
+    <li><code>reclaimPolicy</code>: <code>Delete</code> (default, storage goes with the PVC) vs. <code>Retain</code> (storage survives, needs manual cleanup).</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does Kubernetes separate PV, PVC, and Pod into three layers instead of one?</li>
+<li>When would you deliberately choose <code>Retain</code> over the <code>Delete</code> default?</li>
+<li>What happens to a PV's data if its PVC is deleted under each reclaim policy?</li>
+<li>How would you verify whether deleted PVC data is actually recoverable?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>kubectl get pv</code> output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0006-configmap-secret.html">&larr; ConfigMap &amp; Secret</a>

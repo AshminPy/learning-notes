@@ -8,53 +8,79 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 23 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 23 of 24 · teach2 pilot</p>
 <h1>Resource monitoring</h1>
 
-<p>Lessons 15 and 16 diagnosed Pods and nodes that were visibly broken — CrashLoopBackOff, Pending, failed probes. This lesson is for the case with no error at all: the cluster is technically healthy, but something is slow, and you need real numbers, not a guess.</p>
+<p>Lessons 15-16 diagnosed Pods and nodes that were visibly broken — CrashLoopBackOff, Pending, failed probes. This lesson is for the case with no error at all: the cluster is technically healthy, but something is slow, and you need real numbers, not a guess.</p>
 
-<p class="callout"><strong>Simple example:</strong> <code>metrics-server</code> is a light gauge, not a data logger. It asks every kubelet "what's your CPU/memory right now" and keeps the answer in memory for a short time — nothing is stored, nothing has history. For real dashboards and alerting over time, that's Prometheus's job, not this.</p>
+<p class="callout"><strong>Mental model:</strong> <code>metrics-server</code> is a light gauge, not a data logger — it asks every kubelet "what's your CPU/memory right now" and keeps the answer in memory briefly. Nothing is stored, nothing has history. That predicts why it's also Lesson 22's single dependency: an HPA's thermostat needs a live sensor reading, not a historical chart, which is exactly what this component is built to provide and nothing more.</p>
+
+<h2>Where this fits</h2>
+<pre><code>kubelet (every node)
+   │  Summary API
+   ▼
+metrics-server   ← you are here (point-in-time only, no history)
+   │
+   ├─→ kubectl top          (you, reading it directly)
+   └─→ HorizontalPodAutoscaler (Lesson 22, reading it automatically)</code></pre>
 
 <h2>kubectl top</h2>
 <pre><code>kubectl top nodes
-kubectl top pods
-kubectl top pods --containers          # per-container, not just per-Pod totals
-kubectl top pods -n kube-system        # any namespace, same as kubectl get
+kubectl top pods --containers
+kubectl top pods -n kube-system
 </code></pre>
-<p>This is only possible because <code>metrics-server</code> is running in the cluster, scraping each kubelet's Summary API and exposing it through the Kubernetes Metrics API. On a kubeadm cluster, unlike most managed platforms, it isn't installed by default — you have to add it.</p>
+<p>This only works because <code>metrics-server</code> is running, scraping each kubelet's Summary API. On a kubeadm cluster, unlike most managed platforms, it isn't installed by default.</p>
 
 <h2>When it doesn't work</h2>
-<p>If <code>metrics-server</code> isn't installed or isn't healthy, <code>kubectl top</code> fails outright — no numbers, an error about the metrics API being unavailable. This is also exactly why an HPA (Lesson 22) shows <code>&lt;unknown&gt;</code> instead of a percentage: same missing data source, two different symptoms.</p>
-<p>A well-known kubeadm-specific gotcha: <code>metrics-server</code>'s Pod can CrashLoop because it can't verify kubelets' self-signed certs. The (deliberately narrow, lab-only) fix is adding <code>--kubelet-insecure-tls</code> to its args — worth recognizing, not something you'd do in production without understanding the trade-off you're making.</p>
+<p>If <code>metrics-server</code> isn't installed or isn't healthy, <code>kubectl top</code> fails outright — no numbers, a metrics-API-unavailable error. <strong>Why the same fix underlies two different symptoms:</strong> Lesson 22's HPA and this lesson's <code>kubectl top</code> both depend on exactly one component; when it's missing, one shows <code>&lt;unknown&gt;</code> and the other errors outright, but the root cause and the fix are identical.</p>
+<p>A kubeadm-specific gotcha: <code>metrics-server</code>'s Pod can CrashLoop because it can't verify kubelets' self-signed certs — the narrow, lab-only fix is <code>--kubelet-insecure-tls</code>, worth recognizing, not something to use in production without understanding the trust you're giving up.</p>
 
-<h2>Try it — before looking below</h2>
+<h2>Try it</h2>
 <div class="quiz">
-<p>Q1. <code>kubectl top pods</code> returns an error instead of numbers, but every Pod is Running and Ready. What's actually wrong?</p>
+<p>Q1. <code>kubectl top pods</code> returns an error, but every Pod is Running and Ready. What's actually wrong?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
-<div class="answer" id="a1">Nothing wrong with the Pods — <code>metrics-server</code> is missing or unhealthy. Check <code>kubectl get pods -n kube-system | grep metrics-server</code> (or wherever it's installed) and its logs, the same ladder as any other workload.</div>
+<div class="answer" id="a1">Nothing wrong with the Pods — <code>metrics-server</code> is missing or unhealthy. Check <code>kubectl get pods -n kube-system | grep metrics-server</code> and its logs, same ladder as Lesson 16.</div>
+</div>
+<p>Now, before revealing: a user reports the app "feels slow" — no failed probes, no restarts, no events. What's your first command, and what would point at a resource problem specifically?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>kubectl top pods --containers</code> for that app first. A container pinned near its CPU limit (Lesson 11) with no crashes is a classic silent slowdown — <code>describe</code>/events show nothing failed, because nothing did; it's just starved.</div>
 </div>
 
-<div class="quiz">
-<p>Q2. A user reports the app "feels slow" but there are no failed probes, no restarts, no events. What's your first command, and what would make you suspect a resource problem specifically?</p>
-<input type="text" id="q2" placeholder="type your answer">
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2"><code>kubectl top pods --containers</code> for that app first. A container pinned near its CPU limit (Lesson 11) with no crashes or restarts is a classic silent slowdown — the Pod looks perfectly healthy in <code>describe</code>/<code>get events</code> because nothing failed, it's just starved.</div>
-</div>
+<h2>A controlled failure</h2>
+<pre><code>kubectl top pods 2>&1 | head -3</code></pre>
+<p><strong>Predict first:</strong> on a fresh kubeadm cluster with nothing extra installed, does this work out of the box? <strong>Observe:</strong> no — an error naming the metrics API as unavailable, on a completely healthy cluster with every Pod Running. This is the exact same silent-dependency shape as Lesson 8's Ingress and Lesson 22's HPA: the consuming object/command is fine, the thing underneath it is simply absent.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> <code>metrics-server</code> gives point-in-time numbers only — for dashboards, alerting, and historical trends, that's Prometheus's job, a separate tool entirely, not a bigger version of this one.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Ties directly into <strong>Troubleshooting (30%)</strong> and Lesson 22's <strong>Workloads &amp; Scheduling (15%)</strong>.</p>
+<p><strong>Interview Q:</strong> "An HPA shows <code>&lt;unknown&gt;</code> and <code>kubectl top</code> also fails. Are these two separate bugs?" <strong>A:</strong> No — almost certainly one root cause, metrics-server missing or unhealthy, surfacing as two different symptoms in two different consumers of the same data source.</p>
 
 <h2>Source</h2>
-<p><a href="https://kubernetes-sigs.github.io/metrics-server/" target="_blank" rel="noopener">kubernetes-sigs.github.io/metrics-server</a> and <a href="https://kubernetes.io/docs/reference/kubectl/generated/kubectl_top/" target="_blank" rel="noopener">kubectl top reference</a> — exam-allowed pages.</p>
+<p><a href="https://kubernetes-sigs.github.io/metrics-server/" target="_blank" rel="noopener">metrics-server</a> and <a href="https://kubernetes.io/docs/reference/kubectl/generated/kubectl_top/" target="_blank" rel="noopener">kubectl top reference</a> — verified 2026-08-05.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li><code>metrics-server</code> gives point-in-time numbers only — no history, that's a separate tool's job.</li>
+    <li><code>metrics-server</code> gives point-in-time numbers only — no history, that's a separate tool's job (Prometheus).</li>
     <li>Not installed by default on kubeadm clusters — <code>kubectl top</code> failing outright usually means this, not a Pod problem.</li>
-    <li>Same missing dependency explains both a failing <code>kubectl top</code> and an HPA stuck at <code>&lt;unknown&gt;</code>.</li>
+    <li>The same missing dependency explains both a failing <code>kubectl top</code> and an HPA stuck at <code>&lt;unknown&gt;</code>.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does metrics-server deliberately not store history?</li>
+<li>When would <code>kubectl top</code> succeed but still not explain a real performance problem?</li>
+<li>What happens to Lesson 22's HPA the moment metrics-server becomes unavailable mid-operation?</li>
+<li>How would you verify a "slow app" complaint is a resource problem before looking anywhere else?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>kubectl top</code> error back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0022-workload-autoscaling.html">&larr; Workload autoscaling</a>

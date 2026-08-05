@@ -8,48 +8,33 @@
 </head>
 <body>
 
-<p class="eyebrow">Kubernetes / CKA — Lesson 12 of 24</p>
+<p class="eyebrow">Kubernetes / CKA — Lesson 12 of 24 · teach2 pilot</p>
 <h1>StatefulSet, DaemonSet, Job, CronJob</h1>
 
-<p>Four controllers, each breaking one assumption a Deployment makes: that Pods are interchangeable, disposable, and meant to run forever.</p>
+<p>A Deployment (Lesson 4) assumes three things: Pods are interchangeable, exactly N should run, and they should run forever. Plenty of real workloads break one of those assumptions — a database cares which replica it is, a log agent needs exactly one per node, a migration needs to run once and stop. Four controllers exist because bolting all of that onto Deployment would make it worse at the one job it's actually good at.</p>
 
-<p class="callout"><strong>Simple example:</strong> Deployment Pods are identical workers — any one can do the job. StatefulSet workers wear name tags. DaemonSet posts exactly one guard per building. Job and CronJob run an errand, then stop.</p>
+<p class="callout"><strong>Mental model:</strong> Deployment Pods are identical, interchangeable workers — any one can do the job. StatefulSet workers wear name tags. DaemonSet posts exactly one guard per building. Job and CronJob run an errand, then stop. Each breaks exactly one Deployment assumption, not all of them — that's why there are four separate controllers instead of one with more flags.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Cluster └ Node └ Pod └ Labels └ Deployment
+                                    │  (assumes: interchangeable, N forever)
+                                    ▼  ← you are here: what breaks each assumption
+                      StatefulSet | DaemonSet | Job | CronJob</code></pre>
 
 <h3>StatefulSet — stable identity</h3>
-<p>Kill a Deployment Pod, its replacement gets a random name. StatefulSet Pods keep a <strong>stable identity</strong> instead.</p>
-<ul>
-<li>Predictable names: <code>web-0</code>, <code>web-1</code>, <code>web-2</code> — pattern is <code>$(name)-$(ordinal)</code>.</li>
-<li>Stable DNS per Pod, but only if you also write a <strong>headless Service</strong> (<code>clusterIP: None</code>).</li>
-<li><code>volumeClaimTemplates</code> gives each replica its own storage that follows it — <code>web-0</code> always gets its volume back.</li>
-</ul>
-<p><strong>Use for:</strong> databases, anything where "which replica" matters.</p>
+<p>Kill a Deployment Pod, its replacement gets a random name. StatefulSet Pods keep a <strong>stable identity</strong> instead: predictable names (<code>web-0</code>, <code>web-1</code>, <code>web-2</code>), stable per-Pod DNS (needs a headless Service, <code>clusterIP: None</code>), and <code>volumeClaimTemplates</code> giving each replica its own storage that follows it back after rescheduling. <strong>Use for:</strong> databases, anything where "which replica" matters.</p>
 
 <h3>DaemonSet — one Pod per node</h3>
-<p>No <code>replicas</code> field. Keeps one matching Pod on every node (or every node matching a selector), automatically.</p>
-<p><strong>Use for:</strong> node-level agents — log collectors, monitoring agents, CNI components.</p>
+<p>No <code>replicas</code> field — keeps one matching Pod on every node (or every node matching a selector), automatically. <strong>Use for:</strong> node-level agents — log collectors, monitoring agents, CNI components.</p>
 
 <h3>Job — run to completion</h3>
-<p>A Deployment treats a dead Pod as a failure. A Job runs Pods until they <strong>succeed</strong>, then stops.</p>
-<ul>
-<li><code>completions</code> — successful Pod completions needed.</li>
-<li><code>parallelism</code> — how many Pods run at once.</li>
-<li><code>backoffLimit</code> — retries before giving up. Defaults to 6.</li>
-</ul>
-<p><strong>Use for:</strong> migrations, batch exports, one-off scripts.</p>
+<p>A Deployment treats a dead Pod as a failure to fix. A Job runs Pods until they <strong>succeed</strong>, then stops on purpose. <code>completions</code> — successes needed. <code>parallelism</code> — how many run at once. <code>backoffLimit</code> — retries before giving up (default 6). <strong>Use for:</strong> migrations, batch exports, one-off scripts.</p>
 
 <h3>CronJob — a Job on a schedule</h3>
-<p>Creates a new Job at each scheduled time, using cron syntax in <code>.spec.schedule</code> (e.g. <code>0 3 * * *</code> = daily at 3 AM).</p>
-<p><code>concurrencyPolicy</code> decides what happens if the previous run hasn't finished:</p>
-<ul>
-<li><code>Allow</code> (default) — both run.</li>
-<li><code>Forbid</code> — skip the new run.</li>
-<li><code>Replace</code> — kill the old run, start the new one.</li>
-</ul>
+<p>Creates a new Job at each scheduled time (cron syntax, e.g. <code>0 3 * * *</code> = daily 3 AM). <code>concurrencyPolicy</code>: <code>Allow</code> (default, both run), <code>Forbid</code> (skip new run), <code>Replace</code> (kill old, start new).</p>
 
 <table>
-  <thead>
-    <tr><th>Workload</th><th>Replica identity?</th><th>When to use</th><th>Key field</th></tr>
-  </thead>
+  <thead><tr><th>Workload</th><th>Replica identity?</th><th>When to use</th><th>Key field</th></tr></thead>
   <tbody>
     <tr><td>Deployment</td><td>No — interchangeable</td><td>Stateless apps</td><td><code>replicas</code></td></tr>
     <tr><td>StatefulSet</td><td><strong>Yes</strong> — stable name + storage</td><td>Databases, per-replica state</td><td><code>volumeClaimTemplates</code></td></tr>
@@ -59,35 +44,18 @@
   </tbody>
 </table>
 
-<h2>Try it — before looking below</h2>
+<h2>Try it</h2>
 <div class="quiz">
 <p>Q1. Which controller gives each replica a stable name and its own storage that follows it across rescheduling?</p>
 <input type="text" id="q1" placeholder="type your answer">
 <button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
 <div class="answer" id="a1">StatefulSet — names follow <code>$(name)-$(ordinal)</code>, and <code>volumeClaimTemplates</code> gives each one its own storage.</div>
 </div>
-
-<div class="quiz">
-<p>Q2. A CronJob's previous run is still going when the next scheduled time hits. Name the three <code>concurrencyPolicy</code> values and what each does.</p>
-<input type="text" id="q2" placeholder="type your answer">
-<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
-<div class="answer" id="a2"><code>Allow</code> (default) — both run. <code>Forbid</code> — new run skipped. <code>Replace</code> — old run killed, new one starts.</div>
-</div>
-
-<h2>Now write your own</h2>
-<p>Write a Job by hand (no copy-paste) that runs one task to completion:</p>
-<ul>
-<li><code>kind: Job</code>, with a name</li>
-<li>one container, any image that exits on its own (e.g. <code>busybox</code> with a short <code>command</code>)</li>
-<li><code>restartPolicy</code> set to a value Job allows (not <code>Always</code>)</li>
-<li>an explicit <code>backoffLimit</code></li>
-</ul>
-<p>Apply it. Run <code>kubectl get jobs</code> and <code>kubectl get pods</code> — watch the Pod go <code>Running</code> &rarr; <code>Completed</code>, and the Job show <code>1/1</code>.</p>
-
+<p>Now write your own, by hand: a Job that runs one task to completion, with an explicit <code>backoffLimit</code>. Try before revealing.</p>
 <div class="quiz">
 <p>Reveal the reference answer</p>
-<button onclick="document.getElementById('a3').classList.add('shown')">Reveal</button>
-<pre class="answer" id="a3"><code>apiVersion: batch/v1
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>apiVersion: batch/v1
 kind: Job
 metadata:
   name: one-off-task
@@ -96,31 +64,62 @@ spec:
   template:
     spec:
       containers:
-        - name: task
-          image: busybox
-          command: ["echo", "job ran to completion"]
+      - name: task
+        image: busybox
+        command: ["echo", "job ran to completion"]
       restartPolicy: Never
 </code></pre>
 </div>
 
+<p class="callout mistake"><strong>Common mistake:</strong> using a Deployment for a batch job because it's the first controller you learned — a Deployment expects its Pods to keep running, so a container that exits successfully just gets restarted forever, not recognized as "done."</p>
+
+<h2>A controlled failure</h2>
+<pre><code>kubectl apply -f - <<'EOF'
+apiVersion: batch/v1
+kind: Job
+metadata: { name: always-fails }
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      containers:
+      - name: task
+        image: busybox
+        command: ["sh", "-c", "exit 1"]
+      restartPolicy: Never
+EOF
+kubectl get pods -l job-name=always-fails --watch</code></pre>
+<p><strong>Predict first:</strong> does this retry forever? <strong>Observe:</strong> exactly 3 Pods total (<code>backoffLimit: 2</code> = 2 retries after the first attempt), then the Job stops trying — <code>kubectl get job always-fails</code> shows it <code>Failed</code>, not stuck retrying indefinitely.</p>
+<pre><code>kubectl delete job always-fails</code></pre>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> set <code>activeDeadlineSeconds</code> on Jobs that touch external systems, so a hung (not failed) task doesn't run forever — <code>backoffLimit</code> only bounds failed attempts, not a single attempt that never exits.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Core to <strong>Workloads &amp; Scheduling (15%)</strong>.</p>
+<p><strong>Interview Q:</strong> "You need to run a nightly database migration. Which controller, and why not a CronJob-less Job triggered manually?" <strong>A:</strong> CronJob — it's the only controller with a schedule; a plain Job still needs something else to create it at the right time, which is exactly what CronJob automates.</p>
+
 <h2>Source</h2>
-<ul>
-<li><a href="https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/" target="_blank" rel="noopener">statefulset</a></li>
-<li><a href="https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/" target="_blank" rel="noopener">daemonset</a></li>
-<li><a href="https://kubernetes.io/docs/concepts/workloads/controllers/job/" target="_blank" rel="noopener">job</a></li>
-<li><a href="https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/" target="_blank" rel="noopener">cron-jobs</a></li>
-</ul>
+<p><a href="https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/" target="_blank" rel="noopener">statefulset</a>, <a href="https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/" target="_blank" rel="noopener">daemonset</a>, <a href="https://kubernetes.io/docs/concepts/workloads/controllers/job/" target="_blank" rel="noopener">job</a>, <a href="https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/" target="_blank" rel="noopener">cron-jobs</a> — verified 2026-08-05.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
+    <li>Each controller breaks exactly one Deployment assumption: StatefulSet (identity), DaemonSet (one per node), Job/CronJob (finite, not forever).</li>
     <li>StatefulSet: stable name + DNS (via headless Service) + storage that follows the replica.</li>
-    <li>DaemonSet: no <code>replicas</code> — one Pod per matching node.</li>
-    <li>Job runs to completion (<code>backoffLimit</code>, default 6). CronJob is a Job on a schedule (<code>concurrencyPolicy</code>).</li>
+    <li>Job runs to completion (<code>backoffLimit</code>, default 6, bounds retries not runtime). CronJob is a Job on a schedule.</li>
   </ul>
 </div>
 
-<footer class="teacher-reminder">Stuck? Re-read the docs link above — that's the habit the real exam requires anyway.</footer>
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why not just add a "keep identity" flag to Deployment instead of a separate StatefulSet?</li>
+<li>When would a DaemonSet be the wrong choice even for a "run on every node" need?</li>
+<li>What happens to a Job's Pods once <code>backoffLimit</code> is exceeded?</li>
+<li>How would you verify a CronJob actually ran last night, not just that it's scheduled?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>kubectl get job</code> output back to your teacher.</footer>
 
 <div class="lesson-nav">
   <a href="0011-resource-limits-probes.html">&larr; Resource limits &amp; probes</a>
