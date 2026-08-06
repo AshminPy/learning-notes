@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 23 — Evaluation Datasets &amp; Golden Answers</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 23 of 30</p>
+<h1>Evaluation Datasets &amp; Golden Answers</h1>
+
+<p>Lessons 1 through 22 covered building an agent, running it at scale, and locking it down with governance. None of that tells you whether the agent is actually any good — whether its answers are correct, its tool calls are safe, or a change you just shipped made things better or worse. That's what the <strong>Optimize</strong> pillar is for, and every technique in it starts from the same object: an evaluation dataset with a documented schema — not any random spreadsheet of questions.</p>
+
+<p class="callout"><strong>Mental model:</strong> an evaluation dataset row is an exam question with an optional answer key. The <code>prompt</code> is the question; the <code>response</code> is what your agent answered; the <code>reference</code> field is the answer key a teacher already wrote — the "golden" answer. Some grading methods (overlap-based scoring like BLEU/ROUGE) need that answer key to work at all. Others — an LLM acting as a judge against a rubric — can grade an open-ended answer without ever seeing a reference. That predicts something concrete: pick a reference-based metric and leave <code>reference</code> blank, and that row simply can't be scored. That's not a bug — it's a structural requirement of that grading method, same as a strict answer-matching quiz can't grade an essay question with no answer key.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Build   (ADK agents, tools, models)                     Lessons 4-14
+   │
+Scale   (Agent Runtime, A2A, Memory Bank)                Lessons 15-17
+   │
+Govern  (Agent Identity, Gateway, Model Armor, Policy)   Lessons 18-22
+   │
+   ▼
+Optimize
+   │
+   ▼
+Evaluation dataset (golden answers)   ← you are here
+   │
+   ▼
+Agent evaluation: AutoRaters, online eval, synthetic scenarios   (Lesson 24)
+   │
+   ▼
+Agent Simulation (Lesson 25)  →  Agent Observability (Lesson 26)</code></pre>
+<p>Every later Optimize lesson assumes you already have a dataset shaped the way this lesson describes. Lesson 24's AutoRaters, Lesson 25's simulated conversations, and Lesson 26's production traces all eventually get scored through the same evaluation service and the same handful of schema fields introduced here.</p>
+
+<h2>The Gen AI evaluation service</h2>
+<p>Per Google's own documentation, the platform's <strong>Gen AI evaluation service</strong> is what actually scores model and agent output — it isn't a separate agent-only tool bolted on later; it's the same evaluation engine both the model-evaluation docs and the Optimize pillar's agent-evaluation pages are built on. Calling <code>client.evals.evaluate()</code> or <code>client.evals.create_evaluation_run()</code> runs one or more metrics against a dataset you supply.</p>
+
+<h2>The dataset schema: what the service looks for</h2>
+<p>The evaluation service auto-detects a small set of documented field names in your dataset:</p>
+<ul>
+<li><code>prompt</code> (required) — the input given to the model or agent.</li>
+<li><code>response</code> (required) — the output being evaluated.</li>
+<li><code>reference</code> (optional) — the ground-truth "golden" answer to compare against. Often required in practice for computation-based metrics like <code>bleu</code> and <code>rouge</code>, which measure textual overlap against something already known to be correct.</li>
+<li><code>conversation_history</code> (optional) — prior turns, used for multi-turn evaluation.</li>
+<li><code>reference_trajectory</code> — required for agent trajectory metrics, with one documented exception (<code>trajectory_single_tool_use</code> doesn't need it): the expected sequence of tool calls, used to check whether the agent took the right steps, not just whether it produced the right final text.</li>
+</ul>
+<p>A minimal row, following that schema:</p>
+<pre><code>{
+  "prompt": "What is our return policy for electronics?",
+  "response": "You can return electronics within 30 days with a receipt.",
+  "reference": "Electronics can be returned within 30 days of purchase with proof of purchase.",
+  "reference_trajectory": [
+    {"tool_name": "search_policy_docs", "tool_input": {"category": "electronics"}}
+  ]
+}</code></pre>
+<p><strong>Why it's built this way:</strong> separating <code>reference</code> (golden text answer) from <code>reference_trajectory</code> (golden sequence of tool calls) lets the service score two different questions independently — "did the agent say the right thing" and "did the agent do the right thing to get there." That distinction matters because an agent can call the wrong tool and still stumble into a correct-sounding answer; only a trajectory check catches that.</p>
+
+<h2>Why "golden" is optional, not universal</h2>
+<p>The platform ships 20+ pre-built metrics spanning quality, safety, grounding, and tool use, plus <strong>adaptive rubrics</strong> that tailor evaluation criteria per case rather than applying one fixed rubric to every row. Rubric-based, LLM-judge metrics are <strong>reference-free</strong> — they grade a response against stated criteria, not against a pre-written answer. That's deliberate: hand-writing a golden answer for every conceivable user question doesn't scale. Reference-based metrics stay valuable for the smaller set of cases where an exact or near-exact answer genuinely exists (policy text, pricing, compliance language) — Lesson 24 covers the AutoRaters that do the actual scoring.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. You have a dataset with <code>prompt</code> and <code>response</code> filled in for every row, but no <code>reference</code> column at all. You run a rubric-based, LLM-judge metric. Does it fail?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — a reference-free metric like a rubric/LLM-judge check scores the response directly against stated criteria, not against a golden answer, so it runs fine without <code>reference</code>. Only computation-based metrics like <code>bleu</code>/<code>rouge</code>, and trajectory metrics other than <code>trajectory_single_tool_use</code>, need reference fields filled in.</div>
+</div>
+<p>Now, before revealing: write your own dataset row (in the box) for evaluating whether an agent correctly cancels a subscription in exactly one tool call. Use the field names from this lesson.</p>
+<div class="quiz">
+<p>Reveal a modeled answer</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>{
+  "prompt": "Cancel my subscription, account ID 4471",
+  "response": "Your subscription (account 4471) has been cancelled.",
+  "reference_trajectory": [
+    {"tool_name": "cancel_subscription", "tool_input": {"account_id": "4471"}}
+  ]
+}</code></pre>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating <code>reference</code> as mandatory for every metric, then concluding "we can't evaluate anything without golden answers for every case." Most modern per-case rubric grading is deliberately designed to work without one — that's the entire point of reference-free metrics. Golden answers are worth writing for a small, high-stakes subset of cases, not the whole dataset.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># Dataset row, deliberately missing "reference"
+{"prompt": "Refund a $40 order for user 118", "response": "Refunded $40 to user 118."}
+
+# Run a computation-based, reference-based metric against it
+eval_result = client.evals.evaluate(
+    dataset=my_dataset,
+    metrics=["rouge"],
+)</code></pre>
+<p><strong>Predict first:</strong> can this row be scored? <strong>Observe:</strong> no — <code>rouge</code> measures textual overlap against something known-correct, and this row supplies nothing to compare against. This isn't the evaluation service being fragile; the metric is doing exactly what its name says (overlap against a reference) with no reference present. The fix isn't a workaround — it's either picking a reference-free metric for this open-ended case, or actually writing the golden answer.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> teams don't hand-write golden answers for every conceivable user question — that doesn't scale past a handful of cases. The realistic pattern: write a small set of reference-based golden rows for your highest-stakes, most stable answers (policy text, pricing, compliance language) where an exact-or-near-exact match genuinely matters, and rely on rubric-based, reference-free metrics for the long tail of open-ended conversation. Lesson 24 covers where those long-tail test cases actually come from at scale.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (confirmed 2026-08-06) — this is real evaluation-engineering skill for shipping agents responsibly, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "Why would an evaluation dataset need a <code>reference_trajectory</code> field separate from <code>reference</code>?" <strong>A:</strong> Because an agent can call the wrong tool and still produce a correct-sounding final answer — <code>reference</code> checks whether the text is right, <code>reference_trajectory</code> checks whether the agent's actual steps to get there were right, and those two things can disagree.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/evaluation-overview" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/models/evaluation-overview</a>, <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/evaluation-dataset" target="_blank" rel="noopener">.../models/evaluation-dataset</a>, and <a href="https://developers.googleblog.com/agent-and-model-evaluations-in-gemini-enterprise-agent-platform-are-now-ga/" target="_blank" rel="noopener">developers.googleblog.com — "Agent and Model Evaluations... are now GA"</a> (published 2026-07-31) — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>An evaluation dataset row auto-detects five documented fields: <code>prompt</code> and <code>response</code> (required), <code>reference</code>, <code>conversation_history</code>, and <code>reference_trajectory</code> (optional, but effectively required for specific metric types).</li>
+    <li><code>reference</code> is the golden text answer; <code>reference_trajectory</code> is the golden sequence of tool calls — they check different things and can disagree.</li>
+    <li>Reference-based metrics (bleu, rouge, most trajectory metrics) need a golden answer to run at all; reference-free, rubric-based metrics don't.</li>
+    <li>Golden answers don't need to cover every case — write them for high-stakes, stable answers; let reference-free metrics cover the open-ended long tail.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What are the five documented evaluation-dataset fields, and which two are required?</li>
+<li>Why can't a computation-based metric like rouge score a row with no <code>reference</code>?</li>
+<li>What's the practical difference between <code>reference</code> and <code>reference_trajectory</code>?</li>
+<li>How would you decide which of your agent's test cases deserve a hand-written golden answer versus a reference-free rubric?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or building a real dataset for your own agent? Paste a real row back to your teacher and we'll check which fields it actually needs.</footer>
+
+<div class="lesson-nav">
+  <a href="0022-policy-engines-semantic-governance.html">&larr; Policy engines &amp; semantic governance</a>
+  <a href="0024-agent-evaluation-autoraters.html">Next: Agent evaluation — AutoRaters, online evaluation &amp; synthetic test scenarios &rarr;</a>
+</div>
+
+</body>
+</html>

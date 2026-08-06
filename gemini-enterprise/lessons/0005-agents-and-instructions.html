@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 5 — Agents and Instructions</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 5 of 30</p>
+<h1>Agents and Instructions</h1>
+
+<p>Lesson 4 got one agent running with four fields — <code>model</code>, <code>name</code>, <code>description</code>, <code>instruction</code> — and one closing question: which single field would you change to alter its behavior? You already guessed <code>instruction</code>. This lesson is why that guess was right, and what the other three fields are actually for.</p>
+
+<p class="callout"><strong>Mental model:</strong> if the model (Lesson 2) is the employee's brain, the <strong>instruction</strong> is their job description and standing orders — the document that turns a generically-capable brain into someone doing one specific job, with one specific personality, inside one specific set of limits. That predicts something concrete: two agents built on the exact same model, with the exact same tools, can behave completely differently — one terse and refusing off-topic questions, one chatty and permissive — purely because their instruction text differs. Nothing about the model changed; only the standing orders did.</p>
+
+<h2>Where this fits</h2>
+<pre><code>ADK Agent   (google.adk.agents.llm_agent.Agent)
+ ├── name           required — unique id, avoid reserved words like "user"
+ ├── model           required — the reasoning engine, e.g. gemini-flash-latest
+ ├── instruction     ← you are here — the system prompt: goal, persona, constraints
+ ├── description     optional but recommended — how OTHER agents route to this one (Lesson 8)
+ └── tools[]                                    — what the agent can DO (Lesson 6)</code></pre>
+<p>Lesson 4 showed you all five fields at once without explaining four of them. This lesson slows down on <code>name</code>, <code>model</code>, <code>instruction</code>, and <code>description</code>; Lesson 6 does the same for <code>tools</code>.</p>
+
+<h2>Name: not just a label</h2>
+<p>An agent's <code>name</code> is "a unique string identifier crucial for internal operations, especially in multi-agent systems," per ADK's own guidance. The documentation is specific about two things: choose descriptive names (<code>customer_support_router</code>, not <code>agent1</code>), and avoid reserved names — <code>user</code> being the one explicitly called out, because conversational roles like "user" and "model" are already meaningful identifiers inside the framework's own turn-taking. Naming an agent something already reserved is exactly the kind of mistake that looks fine until a multi-agent system (Lesson 8) tries to route a task by name and collides with it.</p>
+
+<h2>Model: swappable, not fixed</h2>
+<p>The <code>model</code> field names the reasoning engine as a plain string, like <code>"gemini-flash-latest"</code>. Lesson 2 already made the key point: the model is a component of the agent, not the agent itself — Lesson 13 (Phase D) covers how and why you'd swap it for a different one without touching <code>instruction</code> or <code>tools</code> at all.</p>
+
+<h2>Instruction: the actual system prompt</h2>
+<p>Per ADK's own guidance, the instruction communicates the agent's core goal and task, its personality or persona, behavioral constraints, when and why to use specific tools, and desired output formats. The documentation's own quality bar is "Clear and Specific" — vague instructions like "be helpful" give the model nothing to actually constrain its behavior against. Instructions also support dynamic state substitution using <code>{var}</code> syntax, so the same instruction template can inject session-specific values (Lesson 10 covers session state in full) without hand-writing a new instruction per conversation.</p>
+
+<h2>Description: for other agents, not for you</h2>
+<p>The <code>description</code> field is easy to mistake for documentation of your own. Its real audience is <strong>other LLM agents</strong> deciding whether to route a task to this one — a concise, accurate description is what makes automatic multi-agent routing (Lesson 8) actually work. An agent with a vague or missing description is invisible to that routing logic, even if its instruction is excellent.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. You write an agent with a perfect instruction but leave its <code>description</code> blank, then plug it into a multi-agent system that routes tasks by description. What breaks?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Routing to that agent breaks or becomes unreliable — the router (Lesson 8) decides where to send a task based on <code>description</code>, not <code>instruction</code>. A great instruction the router never sees might as well not exist for routing purposes.</div>
+</div>
+<p>Now, before revealing: could you name an agent <code>user</code> and have ADK silently accept it with no problem?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No — ADK's own docs explicitly call out <code>user</code> as a reserved name to avoid, because it already means something specific in the framework's conversational turn-taking. This is exactly the kind of thing that only surfaces once a multi-agent setup tries to reference the name.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> writing an instruction that only states the goal ("Answer questions about the weather") with no persona, constraints, or tool guidance. That's technically an instruction, but it leaves the model to improvise everything else — tone, refusal behavior, when to call a tool versus answer from memory. ADK's own "Clear and Specific" guidance exists precisely because an underspecified instruction produces inconsistent agent behavior across otherwise-identical runs.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>weak_agent = Agent(
+    model='gemini-flash-latest',
+    name='weather_agent',
+    instruction="Answer questions about the weather.",
+    tools=[get_current_time],   # a time tool, not a weather tool
+)</code></pre>
+<p><strong>Predict first:</strong> a user asks this agent for the current time in Tokyo. Does the instruction's narrow framing ("weather") stop the model from using the <code>get_current_time</code> tool it was actually given? <strong>Observe:</strong> not reliably — the model reasons over both its instruction and its available tools, and an instruction that doesn't explicitly scope tool usage leaves room for the model to call a tool that contradicts its own stated purpose. The fix isn't removing the tool; it's an instruction that states constraints explicitly ("only answer weather questions; if asked something else, say so") instead of leaving the boundary implicit.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> teams that maintain many agents standardize their instruction structure the same way they'd standardize a code style guide — goal, persona, constraints, tool-usage guidance, output format, in that fixed order — so any engineer can read an unfamiliar agent's instruction and immediately know where to look for a given kind of rule. An instruction that's just a paragraph of prose is harder to audit and harder to diff in code review than one with that consistent internal structure.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (verified 2026-08-06) — this is real day-2 skill for anyone maintaining production agents, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "Two agents share the same model and the same tools but behave completely differently in production. Where do you look first?" <strong>A:</strong> "The <code>instruction</code> field on each. Model and tools define capability; instruction defines behavior, persona, and constraints — identical capability with different instructions is the single most common reason for divergent behavior."</p>
+
+<h2>Source</h2>
+<p><a href="https://adk.dev/agents/llm-agents/" target="_blank" rel="noopener">adk.dev/agents/llm-agents</a> and <a href="https://adk.dev/get-started/python/" target="_blank" rel="noopener">adk.dev/get-started/python</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>name</code> must be unique and descriptive — avoid reserved words like <code>user</code>, especially once multi-agent routing is involved.</li>
+    <li><code>instruction</code> is the real system prompt: goal, persona, constraints, and tool-usage guidance, ideally in that explicit order.</li>
+    <li><code>description</code> is written for other agents to read, not for you — it's what makes automatic routing (Lesson 8) work.</li>
+    <li>An instruction that doesn't explicitly constrain tool usage doesn't reliably stop the model from using a tool anyway.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Which field would you change to give an agent a different personality without touching its tools?</li>
+<li>Who actually reads an agent's <code>description</code> — the end user, or something else?</li>
+<li>Why is naming an agent <code>user</code> a real risk, not just a style nitpick?</li>
+<li>How would you verify that an instruction's constraints actually hold, rather than just assuming they do?</li>
+</ul>
+
+<footer class="teacher-reminder">Got an agent behaving inconsistently and you're not sure if it's the instruction or the model? Paste the instruction text to your teacher and we'll audit it against this lesson's structure.</footer>
+
+<div class="lesson-nav">
+  <a href="0004-adk-overview.html">&larr; Agent Development Kit (ADK) overview</a>
+  <a href="0006-tools-function-openapi-builtin.html">Next: Tools — function tools, OpenAPI, built-ins &rarr;</a>
+</div>
+
+</body>
+</html>

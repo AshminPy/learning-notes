@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 12 — Agent Studio vs. Raw ADK</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 12 of 30</p>
+<h1>Agent Studio vs. Raw ADK: When to Use Which</h1>
+
+<p>Lesson 11 ended at a ceiling: Agent Designer can't express custom control-flow logic, because its Chat pane and Flow canvas describe connectable steps, not code. You now have three real building paths — Agent Designer (Lesson 11), <strong>Agent Studio</strong>, and raw ADK (Lessons 4-10) — and three options without a decision rule just means guessing. This lesson gives you that rule.</p>
+
+<p class="callout"><strong>Mental model:</strong> if Agent Designer is a conversation that writes config, Agent Studio is an IDE's visual designer with a "view source" panel that's always open. Its canvas is a dual-pane workspace — one side previews the agent, the other shows real generated code, updating together. That predicts something concrete: unlike Agent Designer, nothing in Agent Studio is invisible to you as code — and unlike raw ADK, you don't have to write that code by hand to get started.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Three ways to build the same agent construct (Lesson 11's diagram, extended):
+   ├── Agent Designer   (no-code: Chat + Flow/Schedule/Preview — Lesson 11)
+   │      ceiling: no custom control-flow logic
+   │
+   ├── Agent Studio      ← you are here (low-code: dual-pane canvas — preview + live code)
+   │      ceiling: advanced customization, complex logic, or integration
+   │      beyond what natural-language refinement + the canvas can produce
+   │
+   └── Raw ADK           (full code: agents, tools, MCP, multi-agent — Lessons 4-10)
+          no ceiling — but no natural-language shortcuts either
+   │
+   ▼
+Models layer (Lessons 13-14) — all three paths ultimately select a model here</code></pre>
+
+<h2>The canvas: preview and code, together</h2>
+<p>Agent Studio's "Interactive canvas view... illustrates the artifact to be retrieved for development, which includes a preview and a code view." You're never looking at only one side — editing the preview updates the code, and vice versa. Studio itself is described as "a collaborative workspace for discovering models, refining system instructions, and optimizing prompts," aimed at teams moving from concept to production-ready application, not just individual prototyping.</p>
+
+<h2>Natural language, without giving up code</h2>
+<p>Studio keeps Designer's no-code convenience but layers code visibility on top of it. Two specific features carry that: a `/prompt` command that lets you "provide feedback and to create a well-formatted revised prompt," and a one-click feature that "asks Gemini to automatically optimize a system instruction based on the prompt." Neither requires writing the instruction yourself — but both leave you a real, inspectable system instruction afterward, unlike a conversation that only lives in Designer's Chat pane.</p>
+<p>Studio also adds a <strong>side-by-side comparison</strong> feature "for models, system instructions, and prompts, which lets you compare multiple prompts and your responses simultaneously" — a way to test two candidate configurations before committing to either.</p>
+
+<h2>The real bridge to raw ADK: code export</h2>
+<p>The feature that actually answers "when do I graduate to raw ADK" is code export: Studio offers "Generate code files" and "the ability to download generated code files as a zip file." Per Google's own framing, teams should reach for Agent Studio when they need rapid prototyping, integrated grounding, or quick deployment without full custom development — and should move to full code (ADK) "when requiring advanced customization, complex logic, or integration with existing systems beyond Studio's capabilities."</p>
+<p><strong>Why it's built this way:</strong> exporting real code means a Studio prototype isn't throwaway work. A team can prototype visually, hit Studio's ceiling, export, and continue in their normal ADK repository and code review process — instead of rebuilding from zero once the project outgrows the low-code tool.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. A team prototypes an agent entirely in Agent Studio, then needs it in their existing CI/CD pipeline and version control. Do they rebuild it from scratch in raw ADK?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. Studio's "Generate code files" / download-as-zip feature exists precisely so a prototype exports as real code that drops into a normal ADK repo — no rebuild required.</div>
+</div>
+<p>Now predict before revealing: you want to check whether a smaller, faster model changes your agent's output quality before committing to it. Which Studio feature does this without building two separate agents?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The side-by-side comparison feature — it compares multiple prompts, system instructions, and models simultaneously, so you see both outputs without standing up two separate agents.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating Agent Studio as a beginner-only stepping stone that gets discarded once "real" development starts. Because it exports real code, teams commonly keep using it to prototype new features and merge the exported code into their existing ADK codebase — it isn't a tool you graduate away from permanently, just one you reach for at a different stage of the same project.</p>
+
+<h2>A controlled failure</h2>
+<p><strong>Predict first:</strong> your agent's tool-calling logic needs a custom authentication handshake against your company's internal auth service — bespoke integration code, not a documented connector. Can Agent Studio's canvas or natural-language tools produce this?</p>
+<p><strong>Reality:</strong> no — this is exactly the line Google's own docs draw. Studio suits rapid prototyping, integrated grounding, and quick deployment; the moment a requirement needs "advanced customization, complex logic, or integration with existing systems beyond Studio's capabilities," the documented path is exporting to code and continuing in raw ADK — not pushing further inside Studio's chat or canvas tools.</p>
+
+<p class="callout production"><strong>Production note:</strong> a platform team standardizing on this stack typically routes by builder profile, not preference: business analysts prototype in Agent Designer; engineers who need visible, editable code but still want speed use Agent Studio; anything needing custom integration or code review before deploy gets exported to (or written directly in) the team's shared ADK repository. The routing decision is made once, at request intake — not re-litigated per agent.</p>
+
+<table>
+<tr><th>Path</th><th>Builder profile</th><th>Code visible?</th><th>Use when</th><th>Avoid when</th></tr>
+<tr><td>Agent Designer</td><td>Non-technical</td><td>No</td><td>Describable workflow connecting existing tools/data</td><td>Custom logic or control flow needed</td></tr>
+<tr><td>Agent Studio</td><td>Technical or mixed</td><td>Yes, live</td><td>Fast prototyping, model/prompt comparison, built-in grounding</td><td>Advanced customization or system integration needed</td></tr>
+<tr><td>Raw ADK</td><td>Engineers</td><td>Yes, hand-written</td><td>Complex logic, custom integration, full CI/CD ownership</td><td>Speed matters more than control</td></tr>
+</table>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (verified 2026-08-06).</p>
+<p><strong>Interview Q:</strong> "How would you decide whether a new internal automation belongs in Agent Designer, Agent Studio, or raw ADK?" <strong>A:</strong> Start from the builder's technical background and the workflow's need for custom logic or system integration. If it's a non-technical builder connecting existing tools, Agent Designer. If it needs visible code, model comparison, or built-in grounding but not deep integration, Agent Studio — with code export as the escape hatch. If it needs custom integration or strict CI/CD ownership, raw ADK from the start.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/agent-studio" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/agent-studio</a> and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/agent-studio/agent-studio-capabilities" target="_blank" rel="noopener">agent-studio/agent-studio-capabilities</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Agent Studio's canvas shows preview and real code together — unlike Agent Designer's code-invisible Chat pane, and unlike raw ADK's code-only workflow.</li>
+    <li>Natural-language tools (`/prompt`, one-click instruction optimization) speed up building without hiding the resulting code.</li>
+    <li>Code export ("Generate code files" / download as zip) is the real bridge to raw ADK — Studio prototypes aren't throwaway.</li>
+    <li>Route by builder profile and need for custom logic/integration: Designer → Studio → raw ADK, not a strict one-way ladder.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What can you see in Agent Studio that you can't see in Agent Designer?</li>
+<li>Which Studio feature means a prototype doesn't have to be rebuilt from scratch in ADK?</li>
+<li>What kind of requirement should make you skip Studio and go straight to raw ADK?</li>
+<li>How would you verify two candidate system instructions actually differ in output quality, before picking one?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck deciding which path fits something you're actually building? Describe the workflow and its trickiest requirement to your teacher — that's the exact question this lesson's decision table answers.</footer>
+
+<div class="lesson-nav">
+  <a href="0011-agent-designer.html">&larr; Agent Designer</a>
+  <a href="0013-model-garden-selection.html">Next: Model Garden and model selection &rarr;</a>
+</div>
+
+</body>
+</html>

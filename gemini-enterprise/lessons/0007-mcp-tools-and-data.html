@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 7 — MCP: Connecting Agents to Tools and Data</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 7 of 30</p>
+<h1>MCP: Connecting Agents to Tools and Data</h1>
+
+<p>Lesson 6 covered three tool types, each tying an agent to one place: a function you wrote, an API spec someone else wrote, or a capability ADK ships. All three assume the tool speaks whatever protocol that specific integration expects. MCP is the answer to a different question: what if you want any agent to connect to any tool server, without custom glue code per pair? This lesson closes Phase B's tool coverage with the one tool type that's a standard, not a format.</p>
+
+<p class="callout"><strong>Mental model:</strong> MCP is a power outlet standard, not a custom cable per device. Before a universal standard, every appliance needed its own plug shape and its own adapter; a standard socket means any compliant device works with any compliant outlet, made by anyone. MCP does the same for agents and tools: an ADK agent that speaks MCP can connect to a tool server built by a completely different team, in a completely different framework, with zero custom integration code — as long as both sides speak MCP. That predicts something concrete: a tool you build once, wrapped as an MCP server, becomes usable by ADK agents, Claude, or any other MCP-compliant client — not just the framework you happened to build it in.</p>
+
+<h2>Where this fits</h2>
+<pre><code>agent.tools = [ ... ]                         (Lesson 6's three tool types, plus a fourth)
+ ├── Function / OpenAPI / Built-in tools        — Lesson 6, one integration per pair
+ └── MCP tools                        ← you are here — one standard, many servers
+
+MCP client (an ADK agent)                MCP server (yours, or someone else's)
+  tools=[McpToolset(...)]  ────────►      exposes: tools, resources, prompts
+                                            e.g. Agent Platform's own remote MCP
+                                            server, or aiplatform.googleapis.com
+
+ADK also runs the OTHER direction:
+  FastMCP wraps your ADK tools  ────►     any MCP client (not just ADK) can call them</code></pre>
+
+<h2>What MCP actually is</h2>
+<p>The Model Context Protocol is, in its own description, "an open standard designed to standardize how Large Language Models (LLMs) like Gemini and Claude communicate with external applications, data sources, and tools." The key word is <em>standardize</em> — before MCP, connecting an agent to a new tool server meant writing integration code specific to that server's own API shape. MCP follows a client-server architecture, defining how "data (resources), interactive templates (prompts), and actionable functions (tools) are exposed by an MCP server and consumed by an MCP client" — one shared contract, regardless of who built either side.</p>
+
+<h2>ADK as an MCP client</h2>
+<p>An ADK agent can act as an MCP client, using tools an external MCP server exposes — mechanically, this is just another entry in the agent's <code>tools</code> list, pointed at a server instead of a function or a spec. This is the direction most agent builders reach for first: connecting an existing agent to tools and data that already live behind an MCP server someone else runs, without writing a custom integration for that server's specific API.</p>
+
+<h2>ADK as an MCP server</h2>
+<p>The relationship also runs in reverse: ADK can "build an MCP server that wraps ADK tools, making them accessible to any MCP client." This uses FastMCP, described as "a high-level and Pythonic" framework where "in most cases, decorating a function is all you need." <strong>Why it's built this way:</strong> a tool you write once for your own ADK agent doesn't have to be rewritten to be usable by a completely different framework — wrap it once as an MCP server, and any MCP-compliant client (including non-ADK ones) can call it, the same way any USB-C device works with any USB-C port.</p>
+
+<h2>The platform's own MCP surface</h2>
+<p>MCP isn't only an ADK-level concept here — Gemini Enterprise Agent Platform exposes its own MCP surface directly. Its reference documentation names an MCP reference for <code>aiplatform.googleapis.com</code>, and the platform separately documents its own remote MCP server your agents can connect to. Practically, this means an ADK agent's path to platform capabilities isn't limited to ADK-specific integrations — it can also reach the platform the same standardized way it reaches any other MCP server.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. An ADK agent connects to a third-party tool server that was built entirely in a different framework, with no ADK-specific code on either side. What made that possible?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Both sides speak MCP — the standardized client-server protocol. Neither side needed to know anything ADK-specific about the other, because MCP is the shared contract, not either framework's own API shape.</div>
+</div>
+<p>Now, before revealing: a completely different AI framework (not ADK at all) wants to use a tool you already built and tested inside ADK. Do you rewrite the tool in that other framework?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No — wrap your existing ADK tool as an MCP server using FastMCP. Any MCP-compliant client, including that other framework, can then call it directly. This is ADK acting as an MCP <em>server</em> instead of a client — the reverse direction from Lesson 7's first example.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating "MCP tool" as just another ADK-specific tool type, the same mental category as a function tool. Function, OpenAPI, and built-in tools (Lesson 6) are all ADK integrating with something on ADK's terms. MCP is the opposite direction — a vendor-neutral standard that exists independently of ADK entirely; ADK simply implements it on both the client and server side.</p>
+
+<h2>A controlled failure</h2>
+<p>An agent's tools list includes an MCP toolset pointed at a server that requires authenticated access, but no credentials were configured for that connection.</p>
+<p><strong>Predict first:</strong> does this fail inside your agent's own instruction-following logic, or somewhere else entirely? <strong>Observe:</strong> it fails at the MCP server boundary — the client-server handshake itself, before your agent's instruction or reasoning is even involved. The practical consequence: when an MCP-backed tool call fails, the first thing to check is the server's own auth requirements and your client's configured credentials, not your agent's prompt or tool-calling logic, which never got a chance to be the problem.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> treat every MCP server your agents connect to as an external, unverified tool source — the same instinct you'd apply to any third-party API, and one Phase F's governance stack formalizes directly. MCP's own attack surface (prompt-injection through tool responses) is real enough that Lesson 21 covers dedicated hardening for it; this lesson's takeaway is narrower: know which MCP servers your agents actually connect to, and don't treat "it's just a tool call" as lower-risk than it is.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (verified 2026-08-06) — this is real day-2 integration skill, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "Why would a platform team standardize on MCP instead of letting each team write custom tool integrations?" <strong>A:</strong> "Custom integrations are one-off and don't compose — every new tool-agent pair needs its own glue code. MCP is a shared standard: one MCP server built once is usable by any compliant client, and one client (like an ADK agent) can reach any compliant server, which is what makes tool integration scale across many teams instead of multiplying per pair."</p>
+
+<h2>Source</h2>
+<p><a href="https://adk.dev/mcp/" target="_blank" rel="noopener">adk.dev/mcp</a>, <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/mcp" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/reference/mcp</a>, and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/use-agent-platform-mcp" target="_blank" rel="noopener">.../reference/use-agent-platform-mcp</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>MCP is an open, vendor-neutral standard for connecting LLMs/agents to external tools and data — not an ADK-specific tool type.</li>
+    <li>An ADK agent can be an MCP <em>client</em> (using someone else's server) or, via FastMCP, an MCP <em>server</em> (exposing its own tools to any client).</li>
+    <li>Gemini Enterprise Agent Platform exposes its own MCP surface, including a dedicated remote MCP server — agents can reach platform capabilities through the same standard protocol.</li>
+    <li>MCP failures happen at the client-server boundary, not inside your agent's own reasoning — check server auth and connection config first.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What problem does MCP solve that Lesson 6's three tool types don't?</li>
+<li>What are the two directions ADK can participate in MCP, and what's the difference?</li>
+<li>Where does an MCP authentication failure actually happen — inside your agent, or elsewhere?</li>
+<li>How would you explain to a teammate why MCP servers deserve the same scrutiny as third-party APIs?</li>
+</ul>
+
+<footer class="teacher-reminder">Wiring an agent up to an MCP server and something's not connecting? Paste the exact setup and error to your teacher — Phase F's Lesson 21 covers hardening once the basic connection works.</footer>
+
+<div class="lesson-nav">
+  <a href="0006-tools-function-openapi-builtin.html">&larr; Tools: function tools, OpenAPI, built-ins</a>
+  <span>Next lesson not yet published</span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 15 — Agent Runtime (Formerly Agent Engine)</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 15 of 30</p>
+<h1>Agent Runtime: Where Agents Actually Execute</h1>
+
+<p>Lessons 4 through 14 built an agent's logic: ADK agents and tools, Agent Designer or Agent Studio, a chosen model, grounding via RAG. Every one of those ran in your terminal, a notebook, or a builder's own preview pane — reachable by nobody but you. <strong>Agent Runtime</strong> is the piece that turns "an agent that works on my machine" into "an agent that's live": a managed place for it to actually run, be called, and stay up. It's the foundation the next two lessons — agent-to-agent orchestration and Memory Bank — both sit directly on top of.</p>
+
+<p>If you've touched Vertex AI before this platform existed, you may already know this component under a different name. State it plainly: <strong>Agent Runtime is the current name for what Vertex AI called Agent Engine.</strong> Nothing about the underlying service changed identity — the rebrand from Vertex AI to Gemini Enterprise Agent Platform (announced at Google Cloud Next '26) renamed the product, not the thing it does. If a deploy-state, a teammate, or an older tutorial says "Agent Engine," they mean this lesson's Agent Runtime.</p>
+
+<p class="callout"><strong>Mental model:</strong> Agent Runtime is a serviced apartment, not an empty plot of land. Cloud Run and GKE (Lesson 27) hand you land and utilities — you still frame the building yourself. Agent Runtime hands you a furnished unit built specifically for agents: it already knows how to hold a session open, wire up tracing, and enforce your IAM policy before you've written a line of infrastructure code. That predicts something concrete: the same ADK agent that takes real infrastructure work to run well on GKE can go live on Agent Runtime with a fraction of that setup — but you also give up the freedom to rewire the building's plumbing yourself.</p>
+
+<h2>Where this fits</h2>
+<pre><code>ADK Agent            (Lessons 4-9 — agents, tools, multi-agent, graph orchestration)
+Agent Designer / Studio   (Lessons 11-12 — no-code and code-first building)
+   │  built and tested locally — nothing else can reach it yet
+   ▼
+Agent Runtime   ← you are here   (Vertex AI called this "Agent Engine")
+   │  fully-managed, opinionated execution environment for agents
+   ├── Sessions        (per-conversation state — this lesson)
+   ├── Memory Bank      (state that outlives one session — Lesson 17, next)
+   └── A2A endpoint     (how other agents call this one — Lesson 16, next)
+   │
+   ▼
+Alternative execution paths: Cloud Run / GKE (Lesson 27 — same agent, different trade-offs)</code></pre>
+
+<h2>The name changed, the resource didn't</h2>
+<p>Per Google's own Agent Runtime documentation: "Because the name of Agent Runtime changed over time, the name of the resource in the API reference is <code>ReasoningEngine</code>" — kept exactly so that code, deploy-states, and tutorials written under the older name keep working without modification. That single fact explains a lot of confusion learners hit going through real production repos: the product is called Agent Runtime, Vertex AI called it Agent Engine, and the API resource type underneath both names has stayed <code>ReasoningEngine</code> the whole time. Seeing any of these three words in a colleague's code is not a sign of a different or legacy product — it's the same service at a different point in its naming history.</p>
+
+<h2>What Agent Runtime actually manages</h2>
+<p>Agent Runtime is described as "a fully-managed, opinionated runtime that you can use to deploy, operate, and scale agentic applications." Concretely, it takes over: end-to-end deployment and scaling, container image customization via build-time install scripts, VPC-SC compliance and IAM-based authentication, and calling models and function-calling tools on the agent's behalf. Deploying to it is a five-step flow: set up your environment, develop the agent, deploy to the managed runtime, query it via API requests, then manage it post-deployment.</p>
+<p>Framework support comes in three tiers, and which one your agent falls into changes how much of that management you actually get: <strong>full integration</strong> (the Agent Development Kit — first-class support built directly around it), <strong>SDK integration</strong> (LangChain, LangGraph, AG2, LlamaIndex — supported, but layered on top rather than native), and <strong>custom templates</strong> (CrewAI or a fully custom framework — the most manual wiring). An agent built purely with ADK gets the deepest tooling; an agent ported from another framework still runs, but with more of the plumbing left to you.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. Your team's deploy-state file for an existing production agent says it runs on "Agent Engine." Is that a different, older product than Agent Runtime?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. Agent Engine was Vertex AI's name for the exact same managed execution service that Gemini Enterprise Agent Platform now calls Agent Runtime. The rebrand changed the product's name, not its identity — the underlying API resource type has stayed <code>ReasoningEngine</code> across both names.</div>
+</div>
+<p>Now reason it through: your Lesson 4-9 agent is built purely with ADK's <code>LlmAgent</code> and tool-calling — no LangChain, no custom container. Which support tier does it fall into, and what does that concretely buy you versus porting in a CrewAI agent instead?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Full integration — the top tier, reserved for ADK. That buys first-class deployment tooling and support built directly around your agent's structure. A CrewAI agent falls into the "custom templates" tier: it still runs on Agent Runtime, but with more manual wiring left to you, since the platform's native tooling wasn't built around that framework's internals.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating Agent Runtime as "Cloud Run, but for agents" — generic compute you can reconfigure freely. It's deliberately opinionated: sessions, memory hooks, and tracing are already wired in specifically for agentic workloads. Forcing a non-agent workload onto it, or expecting to freely restructure its container the way you would on GKE, fights the exact trade-off the mental model above describes — you gained a furnished unit by giving up control of its plumbing.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># You deploy an agent, then call the SDK to look up its resource ID
+# Expected (guessed): something like agentRuntimes/1234567890
+# Actual field returned:
+projects/123456789/locations/us-central1/reasoningEngines/1234567890</code></pre>
+<p><strong>Predict first:</strong> does a <code>reasoningEngines/</code> path mean the agent accidentally deployed to some older, different product? <strong>Observe:</strong> no — this is expected, not a bug. Per the docs quoted above, the API resource name stayed <code>ReasoningEngine</code> on purpose, specifically so that this exact naming lag doesn't break anything. Seeing an old identifier in a very current API response is the naming bridge in action, not evidence you're in the wrong place.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> the framework-tier decision is a long-term maintenance cost, not a one-time convenience pick. Teams building new agents get the most from Agent Runtime by staying ADK-native to land in the full-integration tier; reserve the SDK-integration or custom-template tiers for agents that already carry serious sunk cost in another framework (an existing LangGraph pipeline, for example), because day-2 operations — tracing, IAM wiring, observability — is documented as strongest for the natively-supported tier.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (re-verified 2026-08-06) — this is production skill, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "A teammate says their agent lives on 'Agent Engine.' Is that a different system from what your team calls 'Agent Runtime'?" <strong>A:</strong> No — same managed execution service, renamed as part of the Vertex AI → Gemini Enterprise Agent Platform rebrand. Confirm it yourself by checking the API resource path: it still reads <code>reasoningEngines/</code>, kept for backward compatibility across both renames.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime</a> and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/scale</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Agent Runtime is a fully-managed, opinionated execution environment for agentic applications — deploy, operate, and scale without building the infrastructure yourself.</li>
+    <li>Vertex AI called this exact service Agent Engine; the rebrand to Gemini Enterprise Agent Platform renamed the product, not the underlying service, which is why the API resource type has stayed <code>ReasoningEngine</code> across both names.</li>
+    <li>Framework support is tiered: full integration (ADK), SDK integration (LangChain/LangGraph/AG2/LlamaIndex), or custom templates (CrewAI/other) — the tier your agent lands in changes how much tooling you get for free.</li>
+    <li>Agent Runtime is deliberately opinionated, not general-purpose compute — that's the whole trade-off versus Cloud Run/GKE (Lesson 27).</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does seeing "Agent Engine" in an older document not mean it's describing a different product from Agent Runtime?</li>
+<li>What does the <code>ReasoningEngine</code> API resource name tell you about how Google handles renaming a live product?</li>
+<li>Which framework tier gets Agent Runtime's deepest tooling, and why does that make it the safer default for a brand-new agent?</li>
+<li>How would you explain the trade-off Agent Runtime makes versus deploying the same agent to GKE yourself?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or found a doc page that uses a name this lesson didn't mention? Paste it back to your teacher — this platform's naming is still settling.</footer>
+
+<div class="lesson-nav">
+  <span>&larr; Previous lesson not yet published</span>
+  <a href="0016-agent-to-agent-orchestration.html">Next: Agent-to-agent orchestration (A2A) &rarr;</a>
+</div>
+
+</body>
+</html>

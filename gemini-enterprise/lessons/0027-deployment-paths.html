@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 27 — Deployment Paths: Cloud Run, GKE, Agent Runtime &amp; Agent Engine Deployments</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 27 of 30</p>
+<h1>Deployment Paths: Cloud Run, GKE, Agent Runtime &amp; Agent Engine Deployments</h1>
+
+<p>Every earlier phase of this course — building with ADK, governing with Agent Identity, evaluating with AutoRaters — quietly assumes the agent already runs somewhere. It doesn't, until you make one decision: which of three real deployment paths it runs on. Get this wrong and you either over-pay for infrastructure control you don't need, or hit a hard platform limit mid-build that a five-minute read here would have caught.</p>
+
+<p>There's also a naming trap specific to this platform. If you've touched Vertex AI before — or read Ashmin's own SRE agent deploy-state notes — you've seen the term <strong>Agent Engine</strong>. That name didn't disappear; it's the former Vertex AI name for exactly what this platform now calls <strong>Agent Runtime</strong>. Same product, renamed. This lesson names that bridge explicitly, because the old name still surfaces in the SDK and the API itself.</p>
+
+<p class="callout"><strong>Mental model:</strong> the three deployment paths are three ways to open a restaurant. <strong>Agent Runtime</strong> is renting a stall in a food court — the court handles power, cleaning, and foot traffic; you just cook. <strong>Cloud Run</strong> is renting your own shopfront — you sign your own lease (a container) and set your own hours, but the building's plumbing (serverless infrastructure) is still the landlord's problem. <strong>GKE</strong> is buying the whole building — total control over the kitchen and staffing, but you're also the one fixing the boiler at 2am. That predicts something concrete: if the food court doesn't serve your cuisine — today, that means non-Python agents — no amount of wanting a stall there helps. You need your own shopfront or building instead.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Local dev   (ADK agent object — Python, TypeScript, Go, Java, or Kotlin — Phase B)
+   │
+   ▼
+Choose a deployment target   ← you are here
+   │
+   ├─ Agent Runtime    (managed, serverless, Python-only today)
+   │      API resource name: ReasoningEngine   ← the Agent Engine naming bridge
+   │
+   ├─ Cloud Run         (self-managed container, any language, still serverless infra)
+   │
+   └─ GKE                (full infra control; Agent Sandbox = gVisor-isolated execution)
+   │
+   ▼
+Surfaced automatically in the Gemini Enterprise app   (Lesson 3)
+   │
+   ▼
+Governed in flight   (Agent Identity / Agent Gateway / Model Armor — Phase F)
+   │
+   ▼
+Observed and evaluated continuously   (Phase G)</code></pre>
+<p>Deployment isn't the last step of the course by accident — every governance and evaluation concept from Phases F and G attaches to an agent <em>after</em> it's running somewhere. This lesson is the fork in the road that decides how much of that plumbing Google manages for you versus how much you manage yourself.</p>
+
+<h2>Agent Runtime — and the Agent Engine name you'll still see everywhere</h2>
+<p>Per Google's own Agent Runtime documentation: "Agent Runtime is a fully-managed, opinionated runtime that you can use to deploy, operate, and scale agentic applications," and it "abstracts away the underlying infrastructure, which lets you focus on agent logic instead of operations." That's the whole pitch — no servers, no cluster, no container registry required if you don't want one.</p>
+<p>The naming bridge is stated directly in the docs, not something you have to infer: "Because the name of Agent Runtime changed over time, the name of the resource in the API reference is <code>ReasoningEngine</code> to maintain backwards compatibility." In practice this means the Python SDK module you actually import is still called <code>agent_engines</code>, and the managed resource it creates is still a <code>ReasoningEngine</code> under the hood — even though every current doc page, UI label, and this course call the product Agent Runtime. If you inherited code, runbooks, or deploy-state notes that say "Agent Engine," they're describing this exact thing, not something older or different.</p>
+
+<h2>Five ways to get an agent onto Agent Runtime</h2>
+<p>The deployment docs describe five distinct methods, all going through the same SDK call, <code>client.agent_engines.create(...)</code>:</p>
+<table>
+<tr><th>Method</th><th>Best for</th></tr>
+<tr><td>Agent object</td><td>Interactive development (e.g. a Colab notebook) — deploys an in-memory agent object directly</td></tr>
+<tr><td>Source files</td><td>CI/CD pipelines and Infrastructure-as-Code tools like Terraform — fully declarative, no Cloud Storage upload required</td></tr>
+<tr><td>Dockerfile</td><td>Custom build steps, while still deploying to the managed runtime</td></tr>
+<tr><td>Container image (Artifact Registry)</td><td>Deploying a pre-built image you already produced elsewhere</td></tr>
+<tr><td>Developer Connect (Git repo)</td><td>Projects already managed in a Git repository — Google's own recommendation for that case</td></tr>
+</table>
+<p>The actual deploy call, from Google's ADK quickstart, looks like this once you have a local agent (<code>app</code>) built and tested:</p>
+<pre><code>from vertexai import types
+
+remote_agent = client.agent_engines.create(
+    agent=app,
+    config={
+        "requirements": ["google-cloud-aiplatform[agent_engines,adk]"],
+        "staging_bucket": "STAGING_BUCKET",
+        "identity_type": types.IdentityType.AGENT_IDENTITY,
+    }
+)</code></pre>
+<p><strong>Why it's built this way:</strong> notice <code>identity_type: AGENT_IDENTITY</code> sits right in the deploy call, not as a separate governance step bolted on afterward. This platform treats identity as a deploy-time property of the agent, which is exactly why Phase F's governance lessons assume deployment already happened — identity gets attached at the same moment the agent starts running, not later.</p>
+
+<h2>Cloud Run and GKE — the self-managed paths</h2>
+<p><strong>Cloud Run</strong> sits in the middle: you build and own the container, but the underlying compute is still serverless — no cluster to patch. It's the right move the moment your agent needs a language Agent Runtime doesn't support, or a runtime dependency the managed path can't accommodate.</p>
+<p><strong>GKE</strong> gives full infrastructure control, and it comes with its own agent-specific tooling: <strong>Agent Sandbox</strong>, an open-source, Kubernetes-native execution environment built specifically for running untrusted agent code and tool calls safely. Per Google's own numbers (published May 20, 2026): Agent Sandbox natively supports gVisor kernel isolation and allocates <strong>300 sandboxes per second, per cluster</strong>, with sub-second latency — "90% of allocations completing in 200 milliseconds." Running on Google's Axion N4A processors, it delivers "up to 30% better price-performance" than comparable hyperscaler offerings. That's the trade you're buying with GKE's extra operational burden: isolation and density at a scale the other two paths don't expose as a tunable knob.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. You wrote your agent in TypeScript using ADK's TypeScript SDK. Can you deploy it straight to Agent Runtime today the same way you would a Python agent?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. Agent Runtime deployment only supports Python today, even though ADK itself ships in five languages (Python, TypeScript, Go, Java, Kotlin). A TypeScript agent needs Cloud Run or GKE instead.</div>
+</div>
+<p>Now, before revealing: write out the deploy-time line from memory that attaches Agent Identity to an agent at the moment it's created on Agent Runtime.</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>"identity_type": types.IdentityType.AGENT_IDENTITY</code> — passed inside the <code>config</code> dict of <code>client.agent_engines.create(...)</code>. Identity is a property of the deploy call itself, not a separate step.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming "Agent Engine" in older docs, blog posts, or a teammate's code refers to a different or deprecated product. It doesn't — it's the exact same Agent Runtime this lesson covers, and the API resource name (<code>ReasoningEngine</code>) and SDK module (<code>agent_engines</code>) still use it internally, by design, for backward compatibility.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># You have a working ADK agent written in TypeScript, tested locally.
+# You try to deploy it the same way the Python quickstart shows:
+remote_agent = client.agent_engines.create(agent=typescript_app, config={...})</code></pre>
+<p><strong>Predict first:</strong> does this deploy successfully to Agent Runtime, just in a different language? <strong>Observe:</strong> it doesn't — Google's own deployment documentation states plainly that "Agent Runtime deployment only supports Python." The managed path has a hard language boundary that the framework itself doesn't share. The fix isn't a different SDK call — it's a different deployment target: package the TypeScript agent as a container and deploy it to Cloud Run (fastest path to serverless) or GKE (if you also need Agent Sandbox's isolation).</p>
+
+<h2>Production best practices</h2>
+<table>
+<tr><th>Path</th><th>Use when</th><th>Avoid when</th><th>Trade-off</th></tr>
+<tr><td>Agent Runtime</td><td>Python agent, want fastest path to production with built-in identity/sessions/observability</td><td>Non-Python agent, or you need custom network topology</td><td>Least ops burden, least infrastructure control</td></tr>
+<tr><td>Cloud Run</td><td>Any language, want serverless ops without a cluster</td><td>Need GPU scheduling or dense multi-tenant isolation</td><td>Middle ground on both control and burden</td></tr>
+<tr><td>GKE</td><td>Need full infra control, or Agent Sandbox's isolation/density at scale</td><td>Small team without existing Kubernetes operations capacity</td><td>Most control, most operational burden</td></tr>
+</table>
+<p class="callout production"><strong>Production note:</strong> default to Agent Runtime unless you have a specific, named reason not to — a non-Python framework, a compliance requirement for custom network isolation, or a workload dense enough that Agent Sandbox's per-cluster sandbox rate genuinely matters. Teams that reach for GKE "just in case" before hitting one of those reasons are usually trading real operational cost for control they never exercise.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (re-checked at this lesson's write time, 2026-08-06) — this is production deployment judgment, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "Your team's SRE agent code was written against 'Vertex AI Agent Engine.' Is that a different product from what you'd deploy to today?" <strong>A:</strong> "No — Agent Engine was the former Vertex AI name for what Gemini Enterprise Agent Platform now calls Agent Runtime. The underlying API resource (<code>ReasoningEngine</code>) and SDK module (<code>agent_engines</code>) kept the old name for backward compatibility, so old code and new docs are describing the same thing."</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime</a>, <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/deploy-an-agent" target="_blank" rel="noopener">.../scale/runtime/deploy-an-agent</a>, and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime/quickstart-adk" target="_blank" rel="noopener">.../build/runtime/quickstart-adk</a>, plus <a href="https://cloud.google.com/blog/products/containers-kubernetes/bringing-you-agent-sandbox-on-gke-and-agent-substrate" target="_blank" rel="noopener">cloud.google.com/blog — "Bringing you Agent Sandbox on GKE and Agent Substrate"</a> (published May 20, 2026) — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>"Agent Engine" is the former Vertex AI name for Agent Runtime — same product; the API resource (<code>ReasoningEngine</code>) and SDK module (<code>agent_engines</code>) kept the old name for backward compatibility.</li>
+    <li>Agent Runtime is fully managed but Python-only today; Cloud Run and GKE accept any language, at increasing levels of operational control and burden.</li>
+    <li>Agent Identity attaches at deploy time (<code>identity_type</code> in the create call), not as a separate governance step afterward.</li>
+    <li>GKE's Agent Sandbox adds gVisor-isolated execution at 300 sandboxes/second/cluster — a density option the other two paths don't expose.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What single hard constraint decides whether Agent Runtime is even an option for a given agent?</li>
+<li>If a teammate's deploy-state notes mention "Agent Engine," what should you assume that refers to?</li>
+<li>When would GKE's extra operational burden actually be worth it, versus just picking it out of caution?</li>
+<li>How would you verify, right now, whether Agent Runtime still supports only Python by the time you're reading this?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck between Cloud Run and GKE for a real workload, or found this platform now supports more languages than this lesson says? Paste what you found back to your teacher — this page moves fast and deserves a second check.</footer>
+
+<div class="lesson-nav">
+  <span>Lesson 26 not yet published</span>
+  <a href="0028-demo-to-production-path.html">Next: The full demo-to-production path &rarr;</a>
+</div>
+
+</body>
+</html>

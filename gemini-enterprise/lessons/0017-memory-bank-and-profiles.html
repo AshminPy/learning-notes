@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 17 — Memory Bank &amp; Memory Profiles</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 17 of 30</p>
+<h1>Memory Bank &amp; Memory Profiles</h1>
+
+<p>Agent Runtime's Sessions (Lesson 15) hold a conversation's history — but only for that one conversation. The instant a user comes back tomorrow in a new session, an agent relying on Sessions alone has forgotten everything: their preferences, what they were working on, facts they already gave it. <strong>Memory Bank</strong> is the piece that fixes this: it generates "long-term memories based on conversations between the user and your agent" that "persist across multiple sessions, enabling your agent to adapt and personalize responses for context and continuity" — the difference between an agent that re-introduces itself every time and one that actually remembers the user.</p>
+
+<p class="callout"><strong>Mental model:</strong> a Session is today's meeting notes — detailed, useful during the meeting, thrown away once it ends. Memory Bank is the running personnel file that survives every meeting you've ever had with that person. <strong>Memory Profiles</strong> are the standardized intake-form fields on that file (job title, plan tier — fast to read, always in the same place); natural-language memories are the free-text notes a colleague scribbled in the margins. That predicts something concrete: if you need an instant answer to "what's this user's plan tier?" at the very start of a new session, you want a profile field, not a search through paragraphs of notes.</p>
+
+<h2>Where this fits</h2>
+<pre><code>One conversation                    Many conversations, over weeks
+   │                                        │
+   ▼                                        ▼
+Session (Lesson 15)                  Memory Bank   ← you are here
+(this chat's history only,           (persists per user+agent scope,
+ gone once the session ends)          across every future session)
+                                            │
+                              ┌─────────────┴─────────────┐
+                              ▼                            ▼
+                    Natural-language              Memory Profiles
+                    memories (free text)          (fixed schema, low-latency reads)
+                              │                            │
+                              └── GenerateMemories / IngestEvents feed both ──┘
+
+Next: Lesson 18's Agent Identity and Lesson 19's Agent Gateway govern who is even
+allowed to read a given scope's memories — memory isolation is a security boundary, not just a feature.</code></pre>
+
+<h2>How memories actually get generated</h2>
+<p>Nothing writes to Memory Bank automatically just because a conversation happened — generation has to be triggered. Three ways: <strong><code>GenerateMemories</code></strong> extracts facts "at a specified interval (such as the end of every session or the end of every turn)," running <em>extraction</em> (pulling out meaningful information) then <em>consolidation</em> (merging it with what's already stored). <strong><code>IngestEvents</code></strong> streams conversation events continuously and "automatically triggers memory generation based on batching rules you configure." <strong><code>CreateMemory</code></strong> writes a fact directly, for when you want the agent's code — not an LLM's judgment — deciding what gets remembered. Every memory lives inside an isolated scope (user identity plus agent name), so "for each scope, Memory Bank maintains an isolated collection of memories" — one user's memories are never visible under another's scope.</p>
+<p>Retrieval has two modes with a real cost trade-off: <strong>simple retrieval</strong> pulls every memory in a scope; <strong>similarity search</strong> returns "only the most relevant memories to the current conversation." Dumping every memory into a prompt gets expensive and noisy fast at scale — similarity search is what keeps personalization affordable as memory volume grows.</p>
+
+<h2>Memory Profiles: the structured half</h2>
+<p>Profiles are "data structures with static schemas populated and updated using LLMs" — you define the schema once, as a Pydantic model with field descriptions, for example a <code>technical_stack</code> field ("comma-separated list of tools or languages used") or a <code>job_status</code> enum (<code>unemployed</code>, <code>part_time</code>, <code>full_time</code>, <code>student</code>). Each schema gets a unique ID when uploaded at Agent Platform instance creation. Generation runs the same two steps as natural-language memories — extraction, then consolidation, where the LLM either updates an existing field or populates a new one — but the output is always shaped exactly like your schema, never free text. Profiles and natural-language memories aren't either/or: they can coexist, and you can disable natural-language generation entirely if structured fields cover everything you need. The stated payoff is "initializing an interaction between an agent and user" instantly, without an expensive search running before the agent can even say hello.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. A brand-new user sends their very first message to your agent. You immediately query Memory Bank for their profile before the agent replies. What comes back?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Nothing — an empty scope. Memory generation isn't synchronous with the conversation; it only runs when <code>GenerateMemories</code> fires (at its configured interval), <code>IngestEvents</code>' batching rule triggers, or <code>CreateMemory</code> is called explicitly. A query before any of those has happened simply finds nothing yet, which is expected, not a bug.</div>
+</div>
+<p>Now design one before revealing: you want a profile schema that captures a user's subscription tier (free/pro/enterprise) and preferred contact hour. Sketch the Pydantic-style fields, then check your reasoning against the pattern Memory Bank actually expects.</p>
+<div class="quiz">
+<p>Reveal a working pattern</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>class UserProfile(BaseModel):
+    subscription_tier: Literal["free", "pro", "enterprise"] = Field(
+        description="The user's current subscription tier"
+    )
+    preferred_contact_hour: str = Field(
+        description="Hour of day (24h, e.g. '14') the user prefers to be contacted"
+    )
+</code></pre>
+<p>Match against the doc's own <code>job_status</code> example: an enum-style field for a bounded set of values, a plain string field with a clear description for something free-form. Each field gets extracted and consolidated the same way — the schema just tells the LLM exactly what shape to fill in.</p>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming natural-language memories and Memory Profiles are an either/or choice you commit to once. They coexist by default — the real decision per field is which one fits: a bounded, frequently-read fact (plan tier, job status) belongs in a profile; a fuzzy one-off detail that doesn't fit any schema belongs in natural-language memory. Forcing everything into one or the other either loses detail or slows down every session-start read.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># Session ends normally. GenerateMemories is configured to run "at the end of every session."
+# You query the user's memories immediately after the session-end event fires.</code></pre>
+<p><strong>Predict first:</strong> is the new memory guaranteed to be there the instant you query? <strong>Observe:</strong> not necessarily — generation is triggered by the event, but extraction and consolidation still have to run before anything is written. Treating memory generation as instantaneous, and querying immediately in the same request path, is the same class of mistake as the first quiz above: assuming memory exists before the trigger that creates it has actually finished.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> default to similarity search, not simple retrieval, once a user has any real memory volume — injecting every memory into every prompt is both a cost problem (larger context, every call) and a quality one (irrelevant memories crowding out the ones that matter). Reserve Memory Profiles for the small set of fields your agent reads on nearly every turn (plan tier, role, locale); everything else is a better fit for natural-language memory plus similarity search. And because scopes are isolated by user and agent identity, memory isolation is also your first line of defense in a multi-tenant deployment — a bug that leaks scope keys between users is a data-exposure incident, not just a personalization bug.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (re-verified 2026-08-06).</p>
+<p><strong>Interview Q:</strong> "Why would a platform offer both free-text memories and structured Memory Profiles instead of just picking one?" <strong>A:</strong> Profiles give guaranteed-schema, low-latency reads at the very start of a session, with no search needed; natural-language memories cover the long tail of facts that don't fit any predefined field. Most production agents genuinely need both — one for speed on known fields, one for flexibility on everything else.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/memory-bank" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/scale/memory-bank</a> and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/memory-bank/profiles" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/scale/memory-bank/profiles</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Sessions hold one conversation; Memory Bank persists facts across every future session, scoped by user and agent identity.</li>
+    <li>Memories are generated by <code>GenerateMemories</code> (interval-based), <code>IngestEvents</code> (streamed, batched), or <code>CreateMemory</code> (manual) — never automatically just because a conversation happened.</li>
+    <li>Memory Profiles are fixed-schema, LLM-populated structures for fast, predictable reads; natural-language memories are free text — the two coexist by design.</li>
+    <li>Similarity search (not simple retrieval) is the production default once memory volume grows, for both cost and relevance reasons.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does querying Memory Bank right after a brand-new user's first message return nothing?</li>
+<li>When would you reach for a Memory Profile field instead of a natural-language memory?</li>
+<li>What are the three ways memory generation can actually be triggered?</li>
+<li>How would you verify that two different users' memory scopes are genuinely isolated from each other, not just assumed to be?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or seeing memories that don't match what you expected to be extracted? Paste the schema and the raw conversation back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <a href="0016-agent-to-agent-orchestration.html">&larr; Agent-to-agent orchestration (A2A)</a>
+  <span>Next lesson not yet published &rarr;</span>
+</div>
+
+</body>
+</html>

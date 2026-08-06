@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 16 — Agent-to-Agent Orchestration (A2A)</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 16 of 30</p>
+<h1>Agent-to-Agent Orchestration (A2A)</h1>
+
+<p>Lesson 7 connected an agent to tools and data via MCP. That's fine when the thing on the other end is a function — a database query, an API call, something stateless that runs and returns. It breaks down the moment the thing you actually want to reach is <em>another whole agent</em>: one with its own reasoning, its own multi-turn conversation, maybe owned by a different team or built on a different platform entirely. Wrapping that agent as a plain tool call would throw away everything that makes it an agent — its state, its ability to ask a clarifying question back. <strong>Agent2Agent (A2A)</strong> is the protocol built for exactly this: an "open communication protocol... that enables agents from different builders and platforms to discover each other, collaborate, and securely delegate tasks," without reducing either side to a stateless function.</p>
+
+<p class="callout"><strong>Mental model:</strong> MCP (Lesson 7) is an agent reaching into a shared toolbox and picking up a wrench — the wrench doesn't think, it just does one job and hands it back. A2A is an agent picking up the phone and calling a colleague who happens to work at a different company. That colleague can ask a follow-up question, remember what was said earlier in the call, and say no. That predicts something concrete: if you find yourself wanting the called agent to negotiate, clarify, or hold state across multiple exchanges, MCP's tool model can't do that — you need A2A, because a tool call is a one-shot request, not a conversation.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Agent A                                          Agent B
+(deployed on Agent Runtime, Lesson 15)           (deployed anywhere — even another vendor's platform)
+   │                                                  │
+   │  needs Agent B's capability — but NOT as a dumb function call
+   ▼
+   AgentCard  ← "business card": skills, endpoint, capabilities (GET /v1/card)
+   │
+   ▼
+A2A message  →  POST /v1/message:send  →  Agent B keeps its own state, reasoning, multi-turn ability
+   │
+   ▼
+Task status  →  GET /v1/tasks/{task_id}
+
+Contrast: MCP (Lesson 7) = agent picks up a TOOL.  A2A = agent calls ANOTHER FULL AGENT.
+Governance ahead: Lesson 18 (Agent Identity) and Lesson 19 (Agent Gateway) both exist
+specifically to authorize and audit calls exactly like this one.</code></pre>
+
+<h2>The three pieces of an A2A agent</h2>
+<p>Building an A2A agent means defining three components. The <strong>AgentCard</strong> is a metadata document — literally "like a business card that other agents can use to discover what your agent can do" — listing named skills, each with an id, description, tags, and usage examples. The <strong>AgentExecutor</strong> holds the agent's actual task-handling logic: it implements <code>execute()</code> and <code>cancel()</code>, processing incoming requests asynchronously. The optional <strong>ADK <code>LlmAgent</code></strong> is a normal ADK agent — instructions, a model, tools — that the executor wraps and runs. Combine all three into an <code>A2aAgent</code> and call <code>set_up()</code>:</p>
+<pre><code>from a2a.types import AgentSkill
+from vertexai.agent_engines.templates.a2a import create_agent_card, A2aAgent
+
+skill = AgentSkill(
+    id='get_exchange_rate',
+    name='Get Currency Exchange Rate',
+    description='Retrieves the exchange rate between two currencies on a given date.',
+    tags=['Finance', 'Currency'],
+)
+
+agent_card = create_agent_card(
+    agent_name='Currency Exchange Agent',
+    description='An agent that provides currency exchange rates',
+    skills=[skill],
+)
+
+a2a_agent = A2aAgent(
+    agent_card=agent_card,
+    agent_executor_builder=lambda: CurrencyAgentExecutorWithRunner(agent=my_llm_agent),
+)
+a2a_agent.set_up()</code></pre>
+<p>Once deployed to Agent Runtime, the agent becomes reachable through three HTTP endpoints: <code>GET /v1/card</code> for discovery, <code>POST /v1/message:send</code> to hand it a task, and <code>GET /v1/tasks/{task_id}</code> to check status. Notably, "Agent Runtime does not serve the public agent card" — a caller must retrieve it through an authenticated call instead, using an OAuth bearer token scoped to <code>cloud-platform</code>.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. You wrap Agent B as a plain MCP tool instead of calling it via A2A. Mid-conversation, Agent B needs to ask the user a clarifying question before it can finish. Can it, through a tool call?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. A tool call is a single stateless request-response — there's no channel for the tool to pause and ask something back. A2A is built for exactly this case: the called agent keeps its own reasoning and multi-turn ability, so it can hold state and ask a follow-up instead of being reduced to one function call.</div>
+</div>
+<p>Now trace a real flow before revealing: a Restaurant Agent on Cloud Run needs to book a table, so it delegates to a separately-deployed Reservation Agent on Agent Runtime via A2A. What are the three calls it makes, in order, and what does each one give it?</p>
+<div class="quiz">
+<p>Reveal the sequence</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">1. <code>GET /v1/card</code> (authenticated) on the Reservation Agent — discovers its skills (create/check/cancel a reservation) without any integration hardcoded ahead of time. 2. <code>POST /v1/message:send</code> — hands over the booking request as a task; the Reservation Agent keeps its own multi-turn state (managed by its own session service) rather than being reduced to a function call. 3. <code>GET /v1/tasks/{task_id}</code> — polls for the result once the Reservation Agent has finished reasoning about it.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming an A2A agent's public agent card is reachable with a plain unauthenticated request, the way a public REST API doc page often is. It isn't — Agent Runtime explicitly does not serve the public card, so a caller must go through the authenticated retrieval path with real credentials from the start, not add auth only after a first "just try it" request fails.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># Naive first attempt: fetch the agent card with no credentials at all
+curl https://YOUR_AGENT_URL/v1/card</code></pre>
+<p><strong>Predict first:</strong> does this return the agent's skills, the way hitting a public API docs page usually would? <strong>Observe:</strong> it doesn't — Agent Runtime "does not serve the public agent card" at all, by design. The fix isn't adding a header to an otherwise-working request; it's calling the authenticated retrieval path (<code>handle_authenticated_agent_card()</code>) with a real bearer token from the start, because there's no unauthenticated path to fall back to.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> A2A calls run on real Google Cloud IAM — an OAuth bearer token scoped to <code>cloud-platform</code>, checked against the caller's actual project permissions. Don't hardcode long-lived credentials into one agent to call another; scope each agent's calling identity as narrowly as the task needs. This is exactly the gap Lesson 18 (Agent Identity, built on SPIFFE) and Lesson 19 (Agent Gateway) exist to close at scale — this lesson's raw bearer-token pattern is the mechanism those two lessons add real per-tool policy and audit logging on top of.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (re-verified 2026-08-06).</p>
+<p><strong>Interview Q:</strong> "How does A2A actually differ from wrapping one agent as another's tool?" <strong>A:</strong> A tool call is stateless and one-shot — the called system runs once and returns. A2A preserves the full called agent behind a discoverable, authenticated network interface (the AgentCard plus message/task endpoints), so it keeps its own reasoning and multi-turn state instead of being flattened into a single function call.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime/create-an-a2a-agent" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime/create-an-a2a-agent</a> and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/use-an-a2a-agent" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/scale/runtime/use-an-a2a-agent</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A2A is an open protocol for calling another full agent — not a tool call — preserving its state, reasoning, and multi-turn ability.</li>
+    <li>Three components build an A2A agent: the AgentCard (discovery metadata), the AgentExecutor (task logic), and an optional ADK <code>LlmAgent</code>.</li>
+    <li>Agent Runtime never serves the public agent card — every real caller must retrieve it through an authenticated request.</li>
+    <li>A2A calls run on Google Cloud IAM (OAuth bearer tokens) — the raw mechanism that Agent Identity (Lesson 18) and Agent Gateway (Lesson 19) later govern more tightly.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why can't a stateless MCP tool call replace A2A when the called agent needs to ask a clarifying question?</li>
+<li>What are the three components you define to build an A2A agent, and what does each one do?</li>
+<li>What happens if you request an A2A agent's card with no authentication at all?</li>
+<li>How would you verify, from the outside, that a deployed agent actually supports A2A rather than only plain HTTP?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck on an A2A error, or got a different response than "Observe" above? Paste the exact request and response back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <a href="0015-agent-runtime.html">&larr; Agent Runtime</a>
+  <a href="0017-memory-bank-and-profiles.html">Next: Memory Bank &amp; Memory Profiles &rarr;</a>
+</div>
+
+</body>
+</html>

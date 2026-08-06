@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 28 — The Full Demo-to-Production Path</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 28 of 30</p>
+<h1>The Full Demo-to-Production Path</h1>
+
+<p>Lesson 27 answered <em>where</em> an agent runs. This lesson answers a harder question: what actually has to happen, in what order, between "it demoed well in front of the team" and "it's trustworthy in front of real users"? Skip this and every phase of this course stays a pile of separate tools — ADK here, Model Armor there — instead of one repeatable path you can run again on the next agent.</p>
+
+<p class="callout"><strong>Mental model:</strong> think of it like onboarding a new hire, not flipping a switch. A new hire doesn't go from interview straight to unsupervised production work — there's a supervised trial period first, with a small caseload and someone watching closely, before they get full responsibility. Skipping that trial doesn't make the hire more ready; it just moves the moment you discover a problem from "caught in supervision" to "discovered by a customer." That's exactly what skipping a staged rollout does to an agent.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Build       (ADK agents/tools/multi-agent/graph orchestration — Phase B; Agent Designer/Studio — Phase C)
+   │
+   ▼
+Evaluate    (golden datasets, AutoRaters, Agent Simulation — Phase G)
+   │
+   ▼
+Govern      (Agent Identity, Agent Gateway, Model Armor, policy engine — Phase F)
+   │
+   ▼
+Deploy      (Agent Runtime / Cloud Run / GKE — Lesson 27)   ← you are here, one level down:
+   │            ├─ Sandbox     — internal only, validate core behavior
+   │            ├─ Canary      — limited real users, close monitoring
+   │            └─ Production  — full rollout
+   ▼
+Observe     (Agent Observability — Phase G)
+   │
+   └──────────────► feeds back into Evaluate and Build for the next iteration</code></pre>
+<p>Every phase before this lesson taught one box in that diagram in isolation. This lesson's only job is the arrows — the order, and why reordering any of them creates a specific, predictable failure.</p>
+
+<h2>The five stages, in Google's own words</h2>
+<p>Google's own guide to production-ready agents (published February 25, 2026) lays out a staged progression, not a single "deploy" event:</p>
+<ul>
+<li><strong>Build</strong> — architecture design, tool integration via MCP or A2A, context engineering, memory systems. This course's Phases B and C.</li>
+<li><strong>Evaluate</strong> — not just unit tests on individual components, but <strong>trajectory analysis</strong>: examining the full decision sequence an agent took, not only its final answer. The guide specifically calls out assessing "tool selection quality, reasoning quality, error recovery, and clarifying question generation" — all things a single happy-path demo run never exercises.</li>
+<li><strong>Govern</strong> — a security framework that keeps the agent "operating within intended boundaries," authentication and permissions controlling tool access, and real-time logging tracing every decision and action.</li>
+<li><strong>Deploy</strong> — session management, persistent memory, tool authentication, and a <strong>staged rollout</strong> rather than one release.</li>
+<li><strong>Observe</strong> — real-time logging and performance tracking, continuously, to catch problems "before expansion" to more users.</li>
+</ul>
+
+<h2>Deploy isn't one step — it's three</h2>
+<p>The same guide breaks "Deploy" itself into three stages, each with a distinct purpose:</p>
+<table>
+<tr><th>Stage</th><th>Purpose</th></tr>
+<tr><td>Sandbox</td><td>Internal testing in an isolated environment — validate core functionality and decision-making before anyone outside the team sees it</td></tr>
+<tr><td>Canary</td><td>Limited rollout to real users — "catch issues before broader deployment" while monitoring behavior "in production-like conditions"</td></tr>
+<tr><td>Production</td><td>Full rollout to all users, with ongoing monitoring and logging carried forward, not switched off</td></tr>
+</table>
+<p><strong>Why it's built this way:</strong> canary exists specifically to shrink the blast radius of whatever Evaluate didn't catch. A golden dataset can't cover every real-world input; canary is the stage that trades a small, controlled dose of real-world exposure for the chance to catch a failure mode before it reaches everyone at once.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. Which stage's own checklist explicitly calls for testing "tool selection quality, reasoning quality, error recovery" — not just whether the final answer looked right?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Evaluate. This is trajectory analysis — judging the full decision sequence, not just the final output — which is exactly what a demo (a handful of happy-path runs) never exercises.</div>
+</div>
+<p>Now, before revealing: put these five words in the correct order from Google's own path — <em>Observe, Build, Deploy, Govern, Evaluate</em>.</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Build &rarr; Evaluate &rarr; Govern &rarr; Deploy &rarr; Observe. Govern sits before Deploy, not after — security boundaries and permissions are checked into the agent before it ever reaches even the sandbox stage of deployment.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating "the demo worked in front of stakeholders" as equivalent to "evaluated." A demo is a handful of happy-path runs performed by the person who built the agent — it exercises none of trajectory analysis's actual targets (tool selection under pressure, error recovery, clarifying questions on ambiguous input). A good demo and a passed evaluation are unrelated facts about the same agent.</p>
+
+<h2>A controlled failure</h2>
+<p>A team's agent passes every sandbox test. Under deadline pressure, they skip canary and push straight to 100% of production users.</p>
+<p><strong>Predict first:</strong> does skipping canary just save time, with no real downside if sandbox testing was thorough? <strong>Observe:</strong> per Google's own framing, canary's entire purpose is to "catch issues before broader deployment" under "production-like conditions" that sandbox — by definition internal-only — can't fully replicate (real user phrasing, real network conditions, real concurrent load). Skipping canary doesn't remove those failure modes; it just moves the first time you encounter one from "a small, monitored group" to "every user, at once." The fix isn't more sandbox testing — sandbox and canary test different things by design. The fix is running canary, even under deadline pressure, at a duration short enough to fit the deadline rather than skipped entirely.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> a realistic team applying this path for an internal support agent: two weeks in sandbox against a golden dataset and internal dogfooding, one week in canary at 5% of real ticket volume with an engineer watching Agent Observability dashboards daily, then a graduated production rollout (25% &rarr; 100% over a few days) rather than a single cutover. The stages don't need to be long — they need to exist and be watched, not skipped under time pressure.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (re-checked at this lesson's write time, 2026-08-06) — this is the operational judgment a senior engineer is actually hired for.</p>
+<p><strong>Interview Q:</strong> "Walk me through how you'd take an agent from a working prototype to production on this platform." <strong>A:</strong> "Build it with ADK, then evaluate with trajectory-level testing — not just final-answer checks. Govern it before deploying: identity, permissions, and logging attached at deploy time, not bolted on after. Deploy through sandbox, then canary at limited real traffic, then full production. Observe continuously afterward, and feed what Observability finds back into the next Evaluate cycle."</p>
+
+<h2>Source</h2>
+<p><a href="https://cloud.google.com/blog/products/ai-machine-learning/a-devs-guide-to-production-ready-ai-agents/" target="_blank" rel="noopener">cloud.google.com/blog — "A dev's guide to production-ready AI agents"</a> (published February 25, 2026), and <a href="https://cloud.google.com/blog/products/ai-machine-learning/the-new-gemini-enterprise-one-platform-for-agent-development" target="_blank" rel="noopener">cloud.google.com/blog — "The new Gemini Enterprise: one platform for agent development"</a> (published April 22, 2026) — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>The real path is five stages, in order: Build &rarr; Evaluate &rarr; Govern &rarr; Deploy &rarr; Observe, with Observe feeding back into the next iteration.</li>
+    <li>Evaluate means trajectory analysis (tool selection, reasoning, error recovery) — a demo tests none of that.</li>
+    <li>Deploy is itself three stages: sandbox (internal), canary (limited real users), production (full rollout) — not one release event.</li>
+    <li>Govern happens before Deploy, not after — identity, permissions, and logging are checked in before the agent runs anywhere real.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What does "trajectory analysis" actually test that a demo doesn't?</li>
+<li>Why does canary exist even after thorough sandbox testing?</li>
+<li>Where does governance sit in the five-stage order, and why there specifically?</li>
+<li>How would you explain, in one sentence, why "the demo worked" isn't the same claim as "it's production ready"?</li>
+</ul>
+
+<footer class="teacher-reminder">Applying this path to a real agent and something doesn't fit the five stages cleanly? Describe your actual situation to your teacher — the stages compress for small projects, they don't disappear.</footer>
+
+<div class="lesson-nav">
+  <a href="0027-deployment-paths.html">&larr; Deployment paths</a>
+  <a href="0029-final-review.html">Next: Final review &amp; cheat sheet &rarr;</a>
+</div>
+
+</body>
+</html>

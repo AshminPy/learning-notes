@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 29 — Final Review: Cheat Sheet &amp; Practical Assessment</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 29 of 30 (Final Review)</p>
+<h1>Final Review — Cheat Sheet &amp; Practical Assessment</h1>
+
+<p>Two distinct things — don't treat the first as a substitute for the second. <strong>Part 1</strong> is a cheat sheet: the platform's own vocabulary, phase by phase, in one place to skim. <strong>Part 2</strong> is a timed, hands-on assessment covering the deployment and production judgment this course's final phase actually teaches — reading Part 1 proves recall; finishing Part 2 proves you can make the call under time pressure.</p>
+
+<h2>Part 1 — Platform vocabulary cheat sheet</h2>
+
+<h3>A. Foundations</h3>
+<ul>
+<li>Gemini Enterprise Agent Platform is "the evolution of Vertex AI" — a rename and expansion, not a competing product (announced Google Cloud Next '26, April 22, 2026).</li>
+<li>Four pillars organize everything: <strong>Build, Scale, Govern, Optimize</strong>.</li>
+<li><strong>Gemini Enterprise</strong> (the app: Agent Designer, Inbox, Projects, Canvas, Agent Gallery) is a different thing from the <strong>Agent Platform</strong> (the developer layer underneath it) — the app is where agents surface once built.</li>
+</ul>
+
+<h3>B. Building with ADK</h3>
+<ul>
+<li>Agent Development Kit ships in five languages: Python, TypeScript, Go, Java, Kotlin.</li>
+<li>Tools: function tools, OpenAPI specs, and MCP (Model Context Protocol) tools.</li>
+<li>Multi-agent orchestration: sequential, parallel, and looped execution; ADK 2.0 adds graph-based orchestration for deterministic logic combined with AI reasoning.</li>
+<li>Context is structured data, not raw concatenation — sessions, memory, and artifacts are managed and filtered automatically.</li>
+</ul>
+
+<h3>C. No-Code Building</h3>
+<ul>
+<li><strong>Agent Designer</strong> builds agents from natural language, including schedule- or trigger-based agents invoked by another business application.</li>
+<li>Agent Studio / raw ADK is the code-first alternative for cases Agent Designer's natural-language flow doesn't fit.</li>
+</ul>
+
+<h3>D. Models</h3>
+<ul>
+<li>Model Garden is where model selection happens across the platform's supported models.</li>
+<li>RAG grounds agent responses in enterprise data instead of relying on model knowledge alone.</li>
+</ul>
+
+<h3>E. Running &amp; Scaling</h3>
+<ul>
+<li><strong>Agent Runtime</strong> is the managed execution layer — formerly named <strong>Agent Engine</strong> under Vertex AI; the API resource is still <code>ReasoningEngine</code> and the SDK module is still <code>agent_engines</code> (Lesson 27).</li>
+<li>A2A (agent-to-agent) protocol handles orchestration between separate agents.</li>
+<li>Memory Bank and Memory Profiles carry context across sessions, not just within one.</li>
+</ul>
+
+<h3>F. Governance &amp; Security</h3>
+<ul>
+<li><strong>Agent Identity</strong> — a SPIFFE-based cryptographic identity per agent, using auto-renewed X.509 certificates over mTLS; attached at deploy time via <code>identity_type</code> (Lesson 27).</li>
+<li><strong>Agent Gateway</strong> — the networking layer securing client-to-agent and agent-to-anywhere traffic.</li>
+<li><strong>Model Armor</strong> — an optional layer extending Agent Gateway with runtime protection against prompt injection and sensitive data leakage.</li>
+</ul>
+
+<h3>G. Optimize</h3>
+<ul>
+<li>Agent and model evaluation runs on one engine with 20+ pre-built metrics (trajectory quality, final response quality, hallucination, grounding, safety) plus custom code-based or LLM-as-a-judge metrics — generally available as of this course's writing.</li>
+<li><strong>Agent Simulation</strong> stress-tests agents against scenarios before deployment; <strong>Agent Observability</strong> gives real-time visibility afterward.</li>
+</ul>
+
+<h3>H. Demo to Production (this phase)</h3>
+<ul>
+<li>Three deployment paths: <strong>Agent Runtime</strong> (managed, Python-only today), <strong>Cloud Run</strong> (self-managed container, any language), <strong>GKE</strong> (full control, Agent Sandbox's gVisor isolation at 300 sandboxes/sec/cluster).</li>
+<li>The real path to production is five stages — <strong>Build &rarr; Evaluate &rarr; Govern &rarr; Deploy &rarr; Observe</strong> — with Deploy itself split into sandbox, canary, and production.</li>
+</ul>
+
+<h2>Top 4 traps</h2>
+<ol>
+<li>"Agent Engine" and "Agent Runtime" are the same product, not two different ones — the old name persists in the SDK and API by design (Lesson 27).</li>
+<li>Agent Runtime deployment is Python-only today, even though ADK itself is multi-language — a non-Python agent needs Cloud Run or GKE (Lesson 27).</li>
+<li>"The demo worked" and "it's evaluated" are unrelated claims — evaluation means trajectory-level testing (tool selection, error recovery), which a happy-path demo never exercises (Lesson 28).</li>
+<li>Skipping canary doesn't remove a failure mode sandbox testing missed — it just moves the first time you hit it from a small monitored group to every user at once (Lesson 28).</li>
+</ol>
+
+<h2>Part 2 — Practical assessment (timed)</h2>
+<p>Three tasks covering this phase's real judgment calls. Time yourself — targets below are a competent-pace guide, not a hard limit. Attempt fully before revealing the hidden answer.</p>
+
+<div class="quiz">
+<p><strong>Task 1 — Choosing a deployment path · target 3 min</strong><br>
+A teammate has an ADK agent written in Go that needs to go to production this week. They ask whether Agent Runtime is the fastest option. What do you tell them, and what do you recommend instead?</p>
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal hidden answer</button>
+<div class="answer" id="a1">Agent Runtime deployment only supports Python today, regardless of which language ADK itself supports — so it isn't an option here at all, not just a slower one. Recommend Cloud Run: it accepts any language, stays serverless (no cluster to stand up under a one-week deadline), and is the middle ground between Agent Runtime's convenience and GKE's full control. GKE is overkill unless they specifically need Agent Sandbox's isolation.</div>
+</div>
+
+<div class="quiz">
+<p><strong>Task 2 — Spotting a skipped stage · target 4 min</strong><br>
+A team says: "We ran the agent against our golden evaluation dataset, it passed, then we deployed straight to 100% of production." Name the specific stage they skipped and the concrete risk it leaves unaddressed.</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal hidden answer</button>
+<div class="answer" id="a2">They skipped canary. A golden dataset — however thorough — can't cover every real-world input, phrasing, or concurrent-load condition; canary's specific job is catching exactly those gaps against a small slice of real traffic before the whole user base hits them at once. Passing evaluation and skipping canary means the first real-world failure mode surfaces at full volume, not in a monitored, limited blast radius.</div>
+</div>
+
+<div class="quiz">
+<p><strong>Task 3 — The naming bridge · target 2 min</strong><br>
+You find a two-year-old internal doc that says: "Deploy new agents to Agent Engine, staging bucket required." Is this doc describing a deprecated product, and what (if anything) needs to change before following it today?</p>
+<button onclick="document.getElementById('a3').classList.add('shown')">Reveal hidden answer</button>
+<div class="answer" id="a3">Not deprecated — "Agent Engine" is the former Vertex AI name for what's now called Agent Runtime; the staging-bucket requirement and the underlying deploy mechanism are the same thing under a new name. What needs to change is terminology in docs and onboarding material (so new hires searching current docs can find it), not the underlying deployment approach itself.</div>
+</div>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/overview" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/overview</a>, <a href="https://cloud.google.com/blog/products/ai-machine-learning/the-new-gemini-enterprise-one-platform-for-agent-development" target="_blank" rel="noopener">cloud.google.com/blog — "The new Gemini Enterprise"</a>, and <a href="https://adk.dev/" target="_blank" rel="noopener">adk.dev</a> — verified 2026-08-06. Re-check <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/release-notes" target="_blank" rel="noopener">the release notes</a> before treating any specific detail above as still current — this platform moves fast.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>This cheat sheet is vocabulary recall, not depth — go back to the individual lesson for anything that doesn't click.</li>
+    <li>The four traps above cost real production time when missed: naming confusion, a language limit, mistaking a demo for an evaluation, and skipping canary.</li>
+    <li>Reading Part 1 proves recall. Finishing Part 2 under its time targets proves you can actually make the call — do both.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Which of the four pillars would you check first to find Agent Identity, and which to find Agent Runtime?</li>
+<li>What's the one hard constraint that rules out Agent Runtime for a given agent?</li>
+<li>What does "trajectory analysis" test that a passed demo doesn't?</li>
+<li>If you could only keep one of this phase's ideas for a real project, which would it be, and why?</li>
+</ul>
+
+<footer class="teacher-reminder">A trap above still isn't clicking, or Part 2 took you well past its target time? Tell your teacher which task and where you got stuck — that's more useful than re-reading the whole lesson again.</footer>
+
+<div class="lesson-nav">
+  <a href="0028-demo-to-production-path.html">&larr; The full demo-to-production path</a>
+  <a href="0030-capstone.html">Next: Capstone &rarr;</a>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 11 — Agent Designer: Natural-Language Agent Creation</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 11 of 30</p>
+<h1>Agent Designer: Natural-Language Agent Creation</h1>
+
+<p>Every lesson in Phase B assumed you can write code — Python, TypeScript, Go, Java, or Kotlin against ADK. That's a real skill requirement, and not everyone who needs an agent has it. A business analyst who wants tickets triaged automatically, or an ops lead who wants a recurring report drafted, shouldn't need to file an engineering request just to get a working agent. Phase C is about what changes when the builder isn't an engineer. <strong>Agent Designer</strong> is Google's answer: "an interactive no-code, low-code platform for creating, managing, and launching single and multi-step agents in Gemini Enterprise."</p>
+
+<p class="callout"><strong>Mental model:</strong> Agent Designer is a conversation that writes structured config for you, not a chatbot that fakes an agent. Its <strong>Chat pane</strong> is where you describe what you want in plain language; its <strong>Designer pane</strong> is the same underlying agent — the actual flow, schedule, and preview — laid out so you can inspect or hand-adjust it. That predicts something concrete: nothing you build by typing in the Chat pane is a lesser or less-inspectable agent than one built by clicking through the Designer pane directly — they're two views onto the identical object.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Gemini Enterprise App (Lesson 3 — the consumer front door)
+   │
+   ▼
+Three ways to build the SAME kind of agent construct:
+   ├── Agent Designer   ← you are here (no-code: Chat pane + Flow/Schedule/Preview)
+   ├── Agent Studio      (low-code: canvas + code toggle — Lesson 12)
+   └── Raw ADK           (full code: agents, tools, MCP, multi-agent — Lessons 4-10)
+   │
+   ▼
+Models layer (which "brain" runs the agent — Lessons 13-14)
+   │
+   ▼
+Agent Runtime / deployment (Phase E)</code></pre>
+<p>This lesson doesn't introduce a new kind of agent — it introduces a fourth way to build the agents Lessons 4-10 already defined, aimed at a builder who never opens a code editor.</p>
+
+<h2>Two panes, one agent</h2>
+<p>Per Google's own docs, the canvas splits into two panes. The <strong>Chat pane</strong> "provides a conversational interface to build and refine your agent using natural language prompts" — built for no-code users. The <strong>Designer pane</strong> "provides granular, low-code control over your agent's configuration," organized into three tabs: <strong>Flow</strong> (the visual workflow for the main agent and any subagents), <strong>Schedule</strong> (recurring execution), and <strong>Preview</strong> (interactive testing).</p>
+<p><strong>Why it's built this way:</strong> a purely conversational tool with no visible structure would be a black box the moment something needed fixing. Pairing natural language with a visible Flow/Schedule/Preview structure means a non-engineer can build by describing, while still being able to see — and correct — exactly what got built.</p>
+
+<h2>Single-step vs. multi-step agents</h2>
+<p>Agent Designer builds two categories: <strong>single-step agents</strong> — independent agents for a well-defined task — and <strong>multi-step agents</strong>, where a main agent coordinates subagents through a complex, sequential task. This is the no-code equivalent of the multi-agent orchestration Lesson 8 covered in code; here it's assembled on the Flow tab's canvas instead of written as orchestration logic.</p>
+<p>Agents connect outward too: Google's docs list connecting "your agents to Google and third-party data sources and tools like Gmail, Google Drive, and Jira" as a core capability, plus scheduling recurring executions — so a multi-step agent can, for example, watch a Jira queue and act on a schedule without anyone re-triggering it by hand.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. You build an agent entirely by typing in the Chat pane and never open the Flow tab. Is that agent less capable or less real than one someone else built by manually assembling the Flow tab?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. The Chat pane and the Designer pane's Flow tab describe and display the same underlying agent structure — natural language just generates the same Flow/Schedule/Preview configuration you could otherwise click together by hand.</div>
+</div>
+<p>Now predict before revealing: a stakeholder wants their agent to run automatically every Monday morning without anyone re-opening the Chat pane. Which tab handles that, and does it require writing anything?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The Schedule tab, inside the Designer pane. It's a recurring-execution configuration, not code — you set the cadence and the agent runs itself from then on.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming "multi-step" means "harder to build" the way orchestration code in Lesson 8 can be harder to write than a single agent. In Agent Designer, multi-step just means more boxes chained on the Flow canvas — the building method (describe or click) stays exactly the same for one step or ten.</p>
+
+<h2>A controlled failure</h2>
+<p><strong>Predict first:</strong> you describe, in the Chat pane, a workflow that needs a custom retry loop with exponential backoff around a flaky third-party API call — real conditional control-flow logic, not just "do step A then step B." Does Agent Designer build this?</p>
+<p><strong>Reality:</strong> based on its documented capabilities, no. Agent Designer's Chat pane and Flow canvas are built for describable, connectable workflows against existing tools and data sources — chaining and branching steps, not a general-purpose scripting layer. There's no natural-language phrasing that produces bespoke control-flow code, because the underlying tool doesn't expose one. This is exactly the ceiling Lesson 12 exists to remove: Agent Studio's code view, or raw ADK, are the documented paths once a workflow needs logic Agent Designer's model can't express.</p>
+
+<p class="callout production"><strong>Production note:</strong> a real pattern on teams already using this: an IT helpdesk lead builds a multi-step agent, entirely through the Chat pane, that triages incoming Jira tickets, checks a Drive folder for a matching runbook, and drafts a Gmail reply — with a Schedule tab entry so it re-checks the queue every 15 minutes. No engineering ticket gets filed, because nothing here needed code.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (verified 2026-08-06) — this is zero-to-hero skill, not exam prep.</p>
+<p><strong>Interview Q:</strong> "When would you push back on a stakeholder who wants a workflow built entirely in Agent Designer?" <strong>A:</strong> When the workflow needs custom control-flow logic or integration beyond connecting existing tools/data sources — that's the documented line where the request should graduate to Agent Studio or raw ADK (Lesson 12), not be forced into the Chat pane.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini/enterprise/docs/agent-designer" target="_blank" rel="noopener">docs.cloud.google.com/gemini/enterprise/docs/agent-designer</a> and <a href="https://cloud.google.com/blog/products/ai-machine-learning/the-new-gemini-enterprise-one-platform-for-agent-development" target="_blank" rel="noopener">the Google Cloud Blog announcement</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Agent Designer's Chat pane (natural language) and Designer pane (Flow/Schedule/Preview tabs) describe the same underlying agent — neither is a lesser version of the other.</li>
+    <li>It builds single-step agents and multi-step agents (main agent + subagents), the no-code equivalent of Lesson 8's multi-agent orchestration.</li>
+    <li>It connects to real tools and data (Gmail, Drive, Jira) and can run on a schedule with no code.</li>
+    <li>Its ceiling is custom control-flow logic — workflows needing that graduate to Agent Studio or raw ADK.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why doesn't building an agent purely through the Chat pane make it "less real" than one built via the Flow tab?</li>
+<li>What's the difference between a single-step and a multi-step agent in Agent Designer?</li>
+<li>What kind of request should make you say "this doesn't belong in Agent Designer"?</li>
+<li>How would you verify that a Chat-pane-built agent actually does what you described, before trusting it on a schedule?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or building something similar for real? Describe the workflow to your teacher in plain language — that's the same skill Agent Designer's Chat pane is built around.</footer>
+
+<div class="lesson-nav">
+  <span>&larr; Previous lesson not yet published</span>
+  <a href="0012-agent-studio-vs-adk.html">Next: Agent Studio vs. raw ADK &rarr;</a>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 24 — Agent Evaluation: AutoRaters, Online Evaluation &amp; Synthetic Test Scenarios</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 24 of 30</p>
+<h1>Agent Evaluation: AutoRaters, Online Evaluation &amp; Synthetic Test Scenarios</h1>
+
+<p>Lesson 23 gave you the schema an evaluation dataset needs. This lesson is what actually happens once you run one against a real agent: automated raters that score whole conversations instead of single replies, a way to keep scoring the agent after it's already live, and a way to generate the test cases in the first place instead of hand-authoring every one.</p>
+
+<p class="callout"><strong>Mental model:</strong> an AutoRater is a grading TA who reads the entire transcript before scoring, not just the last line. A last-message-only check can only ever judge the final reply. A multi-turn AutoRater reads every turn, so it can catch an agent that answers turn 1 perfectly and then quietly contradicts itself by turn 4. That predicts something concrete: a metric named <code>multi_turn_task_success</code> can fail a conversation that a single-turn grader would happily pass, because the two are looking at completely different amounts of evidence.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Evaluation dataset (Lesson 23 — prompt / response / reference / reference_trajectory)
+   │
+   ▼
+1. Define eval cases      (hand-written, or generated — see Synthetic scenarios below)
+   │
+   ▼
+2. Run inferences          (execute the agent against each case)
+   │
+   ▼
+3. Generate traces          (immutable record: model calls, tool calls, responses)
+   │
+   ▼
+4. Compute metrics    ← you are here (AutoRaters score the traces)
+   │
+   ▼
+5. Analyze &amp; optimize      (cluster failures, refine prompts — programmatically)
+   │
+   ▼
+Agent Simulation (Lesson 25) automates steps 1-3 at scale, against a synthetic user
+Agent Observability (Lesson 26) runs steps 3-4 continuously in production ("online evaluation")</code></pre>
+<p>This five-phase workflow — define, infer, trace, score, analyze — is the platform's own structure for agent evaluation. Lesson 23's dataset schema is what step 1 produces; steps 3 and 4 are where this lesson's AutoRaters actually do their work.</p>
+
+<h2>AutoRaters: scoring the whole conversation</h2>
+<p>Per the platform's agent-evaluation docs, evaluation supports both <strong>prebuilt and custom raters</strong>, and specifically <strong>multi-turn evaluation using autoraters that analyze conversations across multiple steps</strong> — not just the final response. Metrics split the same way Lesson 23's dataset fields did: some are <strong>reference-based</strong> (they need an expected answer — Lesson 23's <code>reference</code> or <code>reference_trajectory</code>), others are <strong>reference-free</strong> (they evaluate the trace on its own merits, no golden answer required). A metric like <code>multi_turn_task_success</code> judges whether the agent actually accomplished the user's goal across the full conversation, not whether any single reply looked good in isolation.</p>
+
+<h2>Synthetic test scenarios: where test cases come from</h2>
+<p>Hand-writing every test conversation doesn't scale. The SDK generates them instead:</p>
+<pre><code>eval_dataset = client.evals.generate_conversation_scenarios(
+    agent_info=support_agent_info,
+    config={
+        "count": 20,
+        "generation_instruction": "Generate scenarios where a user asks for a refund",
+    },
+)</code></pre>
+<p>Each generated scenario has a starting prompt and a conversation plan, produced from your agent's own instructions and tool definitions — you describe the shape of the scenarios you want ("a user asks for a refund"), and the count, and the generator produces that many distinct starting points instead of you writing 20 refund conversations by hand.</p>
+
+<h2>Running the evaluation</h2>
+<p>Install with <code>pip install google-cloud-aiplatform[adk,evaluation]</code>. The core loop chains three SDK calls:</p>
+<pre><code>results = client.evals.run_inference(agent=support_agent, src=eval_dataset)
+
+eval_result = client.evals.evaluate(
+    dataset=results,
+    metrics=["multi_turn_task_success"],
+)</code></pre>
+<p>The same workflow exists in the console: Agent Platform &gt; Agents &gt; Deployments, select your agent's Dashboard tab, open the Evaluation subsection, click New Evaluation, define test cases and select metrics, then Run Evaluation. Both paths run the same underlying five-phase evaluation.</p>
+
+<h2>Online evaluation: scoring the agent after launch</h2>
+<p>Evaluation doesn't stop once an agent ships. <strong>Online Monitors</strong> continuously grade live production traffic as it arrives, surfacing scores over time in built-in dashboards and supporting drift alerts. Per Google's own GA announcement (2026-07-31): "Agent quality must be measured during development against the cases you wrote, and after launch against the tasks the agent actually performed." That's two distinct measurements, not one replacing the other — pre-launch evaluation checks the cases you anticipated; online evaluation checks the real traffic you didn't.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. Your agent answers turn 1 of a 5-turn conversation correctly, then contradicts itself on turn 4. Would a single-turn, last-message-only metric reliably catch this?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — a single-turn check most likely only sees the final message. A multi-turn AutoRater analyzing the full transcript (like <code>multi_turn_task_success</code>) is what's built to catch a contradiction that only appears partway through a conversation.</div>
+</div>
+<p>Before revealing: write the one line of config you'd add to <code>generate_conversation_scenarios()</code> to specifically stress-test refund requests for an order ID that doesn't exist.</p>
+<div class="quiz">
+<p>Reveal a modeled answer</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>config={
+    "count": 15,
+    "generation_instruction": "Generate scenarios where a user requests a refund for an order ID that doesn't exist",
+}</code></pre>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming online evaluation replaces pre-launch evaluation because "the monitors will catch problems anyway." Google's own framing is explicit that quality gets measured twice, for different reasons — during development against cases you wrote, and after launch against what actually happened. Skipping pre-launch evaluation because online monitors exist means real users become your first test cases.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># Output of generate_conversation_scenarios() + run_inference() —
+# a synthetic dataset with real traces, but no hand-labeled reference_trajectory
+eval_result = client.evals.evaluate(
+    dataset=synthetic_results,
+    metrics=["trajectory_exact_match"],
+)</code></pre>
+<p><strong>Predict first:</strong> can a trajectory metric needing <code>reference_trajectory</code> (Lesson 23) run cleanly against a dataset that only came from synthetic scenario generation? <strong>Observe:</strong> not without an extra step — a synthetic scenario gives you a trace of what the agent <em>did</em>, but not a golden <code>reference_trajectory</code> of what it <em>should have</em> done, unless you separately author or derive one. That's exactly why <code>multi_turn_task_success</code> — reference-free, judging the trace on its own merits — is the metric reached for on synthetic data, while trajectory-exact-match style metrics need hand-labeled or otherwise-sourced golden trajectories. Same reference-based vs. reference-free split from Lesson 23, now applied to a full multi-turn run.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> the platform ships 20+ pre-built metrics covering quality, safety, grounding, and tool use, plus adaptive rubrics that tailor criteria per case rather than one fixed rubric for every row. The realistic pattern: run offline evaluation in CI on every prompt or tool-definition change (the development-time check), and leave Online Monitors watching production continuously for drift (the after-launch check) — treating either one alone as sufficient is how regressions ship unnoticed.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (confirmed 2026-08-06) — this is real agent-quality engineering, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "Why would you generate synthetic test scenarios instead of just hand-writing test cases for an agent?" <strong>A:</strong> Hand-written cases only cover what you thought to write, and don't scale past a handful of examples. Generating scenarios from the agent's own instructions and tools produces many distinct, realistic conversation starts at once, covering edge cases (like a nonexistent order ID) a human author is likely to miss.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/agent-evaluation" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/agent-evaluation</a>, <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/evaluate-agents" target="_blank" rel="noopener">.../optimize/evaluation/evaluate-agents</a>, and <a href="https://developers.googleblog.com/agent-and-model-evaluations-in-gemini-enterprise-agent-platform-are-now-ga/" target="_blank" rel="noopener">developers.googleblog.com — "Agent and Model Evaluations... are now GA"</a> (published 2026-07-31) — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Agent evaluation is a five-phase workflow: define eval cases, run inferences, generate traces, compute metrics (AutoRaters), analyze &amp; optimize.</li>
+    <li>Multi-turn AutoRaters score the whole conversation, catching failures a last-message-only check would miss.</li>
+    <li><code>generate_conversation_scenarios()</code> produces synthetic test cases from your agent's own instructions and tools instead of hand-authored ones.</li>
+    <li>Online evaluation (Online Monitors) continuously grades live production traffic — a second, different measurement from pre-launch evaluation, not a replacement for it.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What are the five phases of the agent-evaluation workflow?</li>
+<li>Why can a multi-turn AutoRater catch failures a single-turn metric misses?</li>
+<li>Why doesn't online evaluation make pre-launch evaluation unnecessary?</li>
+<li>Why can't a trajectory-exact-match metric run cleanly on a purely synthetic dataset with no hand-labeled reference trajectory?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or running a real evaluation against your own agent? Paste the metric name and the error back to your teacher — we'll trace it to the exact schema or workflow step it's missing.</footer>
+
+<div class="lesson-nav">
+  <a href="0023-evaluation-datasets-golden-answers.html">&larr; Evaluation datasets &amp; golden answers</a>
+  <a href="0025-agent-simulation.html">Next: Agent Simulation &rarr;</a>
+</div>
+
+</body>
+</html>

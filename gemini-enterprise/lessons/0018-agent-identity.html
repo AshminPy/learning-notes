@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 18 — Agent Identity</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 18 of 30</p>
+<h1>Agent Identity</h1>
+
+<p>Every earlier lesson had an agent do something — call a tool, read from Memory Bank, run on Agent Runtime. None of them asked the question this lesson answers: when an agent calls a Google Cloud API or another agent, <em>who</em> is making that call, and how does the receiving side know the caller is really that agent and not something impersonating it? A service account key you could copy onto another machine doesn't answer that. Agent Identity is Google's answer, and it's the foundation the rest of Phase F (Agent Gateway, Model Armor, MCP hardening) is enforced on top of — none of those layers work without a trustworthy identity to check policy against first.</p>
+
+<p class="callout"><strong>Mental model:</strong> a service account key is a spare house key anyone holding it can use, from anywhere, forever, until someone remembers to revoke it. Agent Identity is a passport that's biologically bound to one person — it can't be handed to someone else and used, it expires and gets reissued on its own schedule, and every border crossing gets logged against the actual passport holder, not "whoever had a key." That predicts something concrete: stealing the bytes of an agent's credential doesn't get an attacker anywhere on Agent Identity, because the credential is cryptographically bound to that one agent's certificate — a copied token without the matching private key is just useless data.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Gemini Enterprise Agent Platform
+ └ Agent Runtime           (Lesson 15 — where the agent process lives)
+     └ Agent Identity       ← you are here (who the agent cryptographically IS)
+         └ Agent Gateway    (Lesson 19 — next: enforces policy USING this identity)
+             └ Model Armor  (Lesson 20 — screens content passing through the gateway)</code></pre>
+<p>This is the first lesson in the course where "identity" stops being an IAM side-note and becomes the thing every governance control in this phase is built on. Lesson 19's Agent Gateway can only grant or deny a request because Agent Identity already proved, cryptographically, which agent is asking.</p>
+<pre><code>Agent deployed on Agent Runtime
+   │
+   │  Google Cloud assigns automatically, at deploy time
+   ▼
+Unique SPIFFE ID + auto-provisioned X.509 certificate (valid 24h, auto-rotated)
+   │
+   │  agent requests a Google Cloud access token
+   ▼
+Token cryptographically bound to that agent's X.509 certificate
+   │
+   │  agent calls a Google Cloud API, or crosses Agent Gateway (mTLS + DPoP)
+   ▼
+Receiving side verifies the SPIFFE principal + bound certificate — not just "a valid token"</code></pre>
+
+<h2>What Agent Identity actually is</h2>
+<p>Per Google Cloud's own docs, Agent Identity provides "a strongly attested, cryptographic identity for each agent that is based on the <a href="https://spiffe.io/" target="_blank" rel="noopener">SPIFFE standard</a>," letting agents "securely authenticate to MCP servers, cloud resources, endpoints, and other agents." Every agent gets a unique SPIFFE ID shaped like <code>spiffe://TRUST_DOMAIN/resources/SERVICE/RESOURCE_PATH</code> — for example, an Agent Runtime deployment gets an ID like <code>spiffe://agents.global.org-123456789012.system.id.goog/resources/aiplatform/projects/9876543210/locations/us-central1/reasoningEngines/my-test-agent</code>. When that identity shows up as a principal in an IAM policy, it's written as <code>principal://TRUST_DOMAIN/resources/SERVICE/RESOURCE_PATH</code> — the same identity, just in IAM's addressing format.</p>
+
+<h2>The cryptographic binding: why a stolen token is useless</h2>
+<p>Identity alone isn't the interesting part — SPIFFE just names the agent. The security actually comes from binding: "an X.509 certificate is auto-provisioned and managed on the agent," valid for 24 hours and automatically rotated by Google Cloud, and "access tokens generated for Google Cloud are cryptographically bound to the agent's unique X.509 certificates to prevent token theft." When agents talk across Agent Gateway, they add Demonstrating Proof of Possession (DPoP) on top of mTLS, creating what the docs call "double-bound credentials for end-to-end security." <strong>Why it's built this way:</strong> a plain bearer token (the kind most APIs use) is valid for whoever holds the bytes — copy it, use it from anywhere. A token bound to a specific certificate is only valid alongside the private key that certificate was issued with, and that key never leaves the agent's runtime. Stealing the token text alone gets an attacker nothing.</p>
+
+<h2>Not a service account with a new name</h2>
+<p>It would be easy to assume Agent Identity is just a service account rebranded for agents. It isn't, and the differences are the actual security story. Unlike service accounts, agent identities "are not shared by multiple workloads by default, can't be impersonated," and developers cannot "generate long-lived service account keys" for them. A service account key is designed to be portable — that's exactly the property Agent Identity removes. Every agent gets its own non-shared, non-impersonable identity, and every access it makes shows up in audit logs attributed to that specific agent's SPIFFE ID, not to a shared credential three different workloads happen to use.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. An attacker copies the text of an agent's bound access token and pastes it into a request from their own laptop. Does the request succeed?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. The token is cryptographically bound to the agent's specific X.509 certificate — using it from a machine that doesn't hold the matching private key fails verification, unlike a copied service-account key or a plain bearer token.</div>
+</div>
+<p>Now, before revealing: two different agents both need to call the same Google Cloud API. With Agent Identity's default model, do they end up sharing one identity to make that easier to manage, or does each keep its own?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Each keeps its own. Agent identities are not shared by multiple workloads by default and can't be impersonated — the whole design trades the convenience of one shared credential for per-agent isolation and clean audit attribution.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming Agent Identity is optional hardening you can skip for internal-only agents. Context-Aware Access — mTLS plus DPoP token binding — is the default Google-managed policy, not an opt-in extra. Treating identity as "something to add later" misreads the platform: it's already the baseline every agent runs under.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># You try to grant an agent identity a legacy storage role
+gcloud storage buckets add-iam-policy-binding gs://my-bucket \
+  --member="principal://agents.global.org-123456789012.system.id.goog/resources/aiplatform/projects/9876543210/locations/us-central1/reasoningEngines/my-test-agent" \
+  --role="roles/storage.legacyBucketReader"</code></pre>
+<p><strong>Predict first:</strong> does this succeed, given the agent identity's principal string is correctly formed? <strong>Observe:</strong> it's rejected — Google Cloud's own docs state plainly that "you cannot grant agent identities legacy bucket roles (for example, <code>storage.legacyBucketReader</code>)." This isn't a syntax problem; legacy IAM roles predate the SPIFFE-based principal model and simply aren't compatible with it. The fix is using a current, fine-grained IAM role (for example <code>roles/storage.objectViewer</code>) instead of a legacy bucket role.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> because agent identities can't be impersonated and can't mint long-lived keys, the usual "just grant broad access and narrow it later" habit from service-account IAM doesn't transfer cleanly — there's no equivalent of quietly sharing a key across a few workloads to save setup time. Google Cloud's Agent Identity docs describe a companion control, Principal Access Boundary (PAB), specifically for limiting which resources an identity can reach even within its granted roles — reach for that instead of over-provisioning one identity's role bindings out of convenience.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (re-verified 2026-08-06) — this is real governance competence, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "Why doesn't Gemini Enterprise Agent Platform just reuse IAM service accounts for agent-to-agent auth?" <strong>A:</strong> Service account keys are portable and impersonable by design — anyone holding the key can act as that identity from anywhere. Agent Identity binds a SPIFFE identity to a short-lived, auto-rotated X.509 certificate via mTLS and DPoP, so the credential is only usable alongside a private key that never leaves the agent's runtime — theft of the token text alone accomplishes nothing.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/agent-identity-overview" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/govern/agent-identity-overview</a> and <a href="https://docs.cloud.google.com/iam/docs/agent-identity-overview" target="_blank" rel="noopener">docs.cloud.google.com/iam/docs/agent-identity-overview</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Agent Identity gives every agent a unique, strongly attested SPIFFE identity, built on the open SPIFFE standard.</li>
+    <li>An auto-provisioned, auto-rotated (24h) X.509 certificate cryptographically binds the agent's tokens — stealing the token text alone is useless without the matching private key.</li>
+    <li>Agent identities are not shared, not impersonable, and can't mint long-lived keys — the opposite design from a portable service-account key.</li>
+    <li>Agent Gateway (Lesson 19) is the layer that actually enforces policy using this identity as its trust anchor.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does stealing a copied access token fail against an Agent Identity-protected resource?</li>
+<li>What are the two things "double-bound" refers to when an agent crosses Agent Gateway?</li>
+<li>How is an agent identity fundamentally different from a shared service-account key, beyond just the name?</li>
+<li>How would you verify, from an audit log, which specific agent made a given API call?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or want to sanity-check your own mental model of this architecture? Describe it back to your teacher in your own words — that's the fastest way to find a gap.</footer>
+
+<div class="lesson-nav">
+  <span>Lesson 17 not yet published</span>
+  <a href="0019-agent-gateway.html">Next: Agent Gateway &rarr;</a>
+</div>
+
+</body>
+</html>
