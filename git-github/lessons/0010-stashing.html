@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 10 — Stashing Work in Progress</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git &amp; GitHub Engineering — Lesson 10 of 20 · teach2 pilot</p>
+<h1>Stashing Work in Progress</h1>
+
+<p>You're mid-change — some edits staged, some not — and you need a clean working directory right now: switch branches to pull an urgent fix, or check out someone else's PR. Committing half-finished work just to switch away is worse than the interruption itself. <code>git stash</code> shelves everything uncommitted, restorable exactly as it was.</p>
+
+<p class="callout"><strong>Mental model:</strong> a stash is a coat-check counter, not a trash can. It holds your uncommitted changes off to the side with a claim ticket (a stash reference), giving you a clean desk to do something else, then hands back exactly what you handed over. That predicts something real: stashes are addressable, not just a single "undo" slot — check three coats in, and you can reclaim the second one specifically, not just whichever's on top.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Working directory  →  Staging area  →  Repository (commits)   (Lesson 1's three areas)
+        │                    │
+        └──────────┬─────────┘
+                    ▼
+                 STASH   ← you are here (both areas, bundled, set aside)</code></pre>
+<pre><code>git stash
+  Working directory: cleared back to last commit
+  Staging area:       cleared
+  Repository:          untouched
+  stash@{0}:           everything that was cleared, safely stored</code></pre>
+
+<h2>The basic cycle</h2>
+<pre><code>git stash              # shelve tracked changes (staged + unstaged)
+git stash list          # stash@{0}: WIP on main: a1b2c3 last commit message
+git stash pop            # reapply the most recent stash, and remove it from the list
+</code></pre>
+<p><strong>Why it's built this way:</strong> <code>pop</code> defaults to the most recent stash (LIFO — last in, first out) because that matches the common case: you interrupted one thing, you want it back. But every stash keeps its own address (<code>stash@{1}</code>, <code>stash@{2}</code>...), so a second or third interruption doesn't overwrite or hide the first — <code>git stash apply stash@{1}</code> reaches any of them directly, and unlike <code>pop</code>, <code>apply</code> leaves the stash in the list afterward.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. <code>git stash pop</code> vs. <code>git stash apply</code> — which one removes the stash from the list afterward?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>pop</code> — it applies and removes in one step. <code>apply</code> only applies, leaving the stash available to apply again elsewhere.</div>
+</div>
+<p>Now try it yourself: edit a tracked file, stash it, confirm the working directory is clean (<code>git status</code>), then bring it back. Try before revealing.</p>
+<div class="quiz">
+<p>Reveal the sequence</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>echo "wip change" >> file.txt
+git status                # shows file.txt modified
+git stash
+git status                # clean
+git stash pop
+git status                # file.txt modified again, exactly as before
+</code></pre>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming <code>git stash</code> shelves everything — untracked and ignored files are skipped by default. Use <code>git stash -u</code> to include untracked files too, or a genuinely new file silently stays in your working directory through the whole cycle.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>echo "line one" > conflict.txt && git add conflict.txt && git commit -m "base"
+echo "stash version" >> conflict.txt
+git stash
+echo "new commit version" >> conflict.txt && git commit -am "conflicting commit"
+git stash pop</code></pre>
+<p><strong>Predict first:</strong> does the pop apply cleanly? <strong>Observe:</strong> a merge conflict, same markers as Lesson 6 — the stash and the new commit both touched the same line. <code>git status</code> shows the conflicted file, and the stash is deliberately <em>not</em> dropped from the list until you resolve it and run <code>git stash drop</code> yourself — losing a stash on a failed pop would be worse than the conflict.</p>
+<pre><code># resolve the conflict marker in conflict.txt, then:
+git stash drop</code></pre>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> don't treat a stash as durable storage — it's local to your machine, invisible to teammates, and easy to lose track of after a few days of accumulating entries. For anything that genuinely needs to survive (a machine switch, a longer interruption), commit to a throwaway WIP branch instead — <code>git stash list</code> gets forgotten; a named branch doesn't.</p>
+
+<h2>Interview notes</h2>
+<p><strong>Interview Q:</strong> "You need to pull an urgent hotfix but have uncommitted, unrelated changes. What's the fastest safe move?" <strong>A:</strong> <code>git stash</code>, pull/checkout the fix, then <code>git stash pop</code> once you're back — safer and faster than a throwaway commit-then-reset cycle, and it never touches the repository's actual history.</p>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/book/en/v2/Git-Tools-Stashing-and-Cleaning" target="_blank" rel="noopener">Pro Git — Stashing and Cleaning</a> — official Git documentation, git-scm.com. Verified 2026-08-05.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A stash bundles working-directory and staged changes together, clears both, leaves commits untouched.</li>
+    <li>Stashes are addressable (<code>stash@{0}</code>, <code>stash@{1}</code>...) — <code>pop</code> takes the most recent and removes it; <code>apply</code> reapplies without removing.</li>
+    <li>Untracked files are skipped by default — <code>-u</code> includes them.</li>
+    <li>A conflicting pop keeps the stash in the list until you resolve and explicitly <code>drop</code> it — nothing is silently lost.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does Git default <code>pop</code> to LIFO instead of asking which stash you mean?</li>
+<li>When would <code>git stash apply</code> be the better choice over <code>pop</code>?</li>
+<li>What happens to a stash if <code>pop</code> hits a conflict?</li>
+<li>How would you verify nothing was silently skipped when you stashed?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>git status</code> and <code>git stash list</code> output back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0009-undoing-changes.html">&larr; Back: Undoing changes</a></span>
+  <span><a href="0011-interactive-rebase.html">Next: Interactive rebase &rarr;</a></span>
+</div>
+
+</body>
+</html>

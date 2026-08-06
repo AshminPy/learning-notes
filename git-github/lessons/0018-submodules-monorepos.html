@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 18 — Submodules &amp; Monorepos</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git &amp; GitHub Engineering — Lesson 18 of 20 · teach2 pilot</p>
+<h1>Submodules &amp; Monorepos</h1>
+
+<p>When one project depends on another repository's code — a shared library, a design-system repo — there are two opposite ways to structure that: keep them as separate repos linked together (a <strong>submodule</strong>), or put everything in one repo (a <strong>monorepo</strong>). Neither is universally right; they trade different problems for different ones.</p>
+
+<p class="callout"><strong>Mental model:</strong> a submodule is a shipping label pointing at one exact box in another warehouse — not a copy of the box's contents, just its precise address (a commit hash) at the time you pointed at it. That predicts the single most common submodule confusion: updating the other warehouse's box doesn't move your label. Your submodule stays pinned to the old commit until you deliberately update the pointer.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Your repo
+  └ .gitmodules            (records: path, url, for each submodule)
+  └ path/to/submodule/  →  pinned to ONE exact commit (not a branch) in another repo
+
+vs.
+
+Monorepo: everything in one repo, one history, one set of commits (Lesson 3)</code></pre>
+
+<h2>Submodules</h2>
+<pre><code>git submodule add https://github.com/org/shared-lib.git libs/shared-lib
+git commit -am "add shared-lib submodule"
+</code></pre>
+<p>This records the exact commit in <code>.gitmodules</code> and as a special entry in your repo — not the submodule's files themselves. Anyone cloning your repo needs an extra step to actually get its contents:</p>
+<pre><code>git clone --recurse-submodules &lt;your-repo&gt;
+# or, after a plain clone:
+git submodule update --init --recursive
+</code></pre>
+<p><strong>Why it's built this way:</strong> pinning to an exact commit (not a branch) means your repo's build is fully reproducible — the submodule can't silently change under you just because someone pushed to the other repo. Updating is a deliberate, separate action:</p>
+<pre><code>cd libs/shared-lib
+git pull origin main        # move the submodule's own checkout forward
+cd ../..
+git commit -am "bump shared-lib submodule"   # record the new pinned commit
+</code></pre>
+
+<h2>Monorepos — the alternative</h2>
+<p>A monorepo puts everything in one repository instead — one <code>git log</code>, one PR can touch both the library and its consumer atomically, no separate pinning step. The trade-off: `git clone` gets slower and larger as the repo grows, and CI (Lesson 16) often needs path-based filtering to avoid rebuilding everything on every change.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. You update code in a submodule's own repository and push it. Does your parent repo's checkout of that submodule change automatically?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — the submodule is pinned to a specific commit, recorded in the parent repo. It stays exactly there until someone deliberately updates the submodule's checkout and commits the new pointer.</div>
+</div>
+<p>Now, before revealing: a teammate clones your repo with a plain <code>git clone</code> (no <code>--recurse-submodules</code>) and reports the submodule directory is empty. What happened, and what's the fix?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">A plain clone only creates the empty directory and records where it should point — it doesn't fetch the submodule's actual contents. Fix: <code>git submodule update --init --recursive</code>.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming a submodule tracks a branch, so it'll "just update" — it tracks one exact commit. Nothing changes it except an explicit update-and-commit cycle, even if the submodule's own branch has moved far ahead.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>git submodule add https://github.com/octocat/Hello-World.git demo-sub
+git commit -am "add demo submodule"
+cd demo-sub && git log -1 --oneline && cd ..
+# simulate someone else forgetting --recurse-submodules:
+git clone . /tmp/fresh-clone-test
+cd /tmp/fresh-clone-test && ls demo-sub</code></pre>
+<p><strong>Predict first:</strong> is <code>demo-sub</code> populated in the fresh clone? <strong>Observe:</strong> the directory exists but is empty — exactly the symptom from the quiz above, reproduced directly, confirming a plain clone never fetches submodule contents automatically.</p>
+<pre><code>cd /tmp/fresh-clone-test && git submodule update --init --recursive
+ls demo-sub   # now populated</code></pre>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> document the <code>--recurse-submodules</code> requirement prominently (README, CI setup) if you use submodules — the "empty directory" confusion is common enough that it costs real onboarding time otherwise, and CI pipelines need the same explicit flag or they'll build against an empty submodule silently.</p>
+
+<h2>Interview notes</h2>
+<p><strong>Interview Q:</strong> "When would you choose submodules over a monorepo for sharing code between projects?" <strong>A:</strong> When the shared code has genuinely independent versioning/release cycles and different ownership/access needs — a submodule lets consumers pin to a specific tested version deliberately. A monorepo fits better when the projects are tightly coupled and should always move together.</p>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/book/en/v2/Git-Tools-Submodules" target="_blank" rel="noopener">Pro Git — Submodules</a> — official Git documentation, git-scm.com. Verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A submodule pins your repo to one exact commit in another repository — not a branch, not automatically updating.</li>
+    <li>A plain clone leaves submodule directories empty — <code>--recurse-submodules</code> or a follow-up <code>submodule update --init --recursive</code> is required.</li>
+    <li>Monorepos trade submodule pinning/update overhead for one unified history and atomic cross-project changes, at the cost of repo size and CI complexity.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does a submodule pin to a commit instead of tracking a branch?</li>
+<li>When would a monorepo's atomic cross-project commits actually matter in practice?</li>
+<li>What happens to a submodule's contents on a plain <code>git clone</code> with no extra flags?</li>
+<li>How would you verify which exact commit a submodule is currently pinned to?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>git submodule status</code> output back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0017-branch-protection.html">&larr; Back: Branch protection &amp; code review</a></span>
+  <span><a href="0019-reflog-recovery.html">Next: Recovering from mistakes &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 17 — Branch Protection &amp; Code Review Workflows</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git &amp; GitHub Engineering — Lesson 17 of 20 · teach2 pilot</p>
+<h1>Branch Protection &amp; Code Review Workflows</h1>
+
+<p>Lesson 15's review-before-merge and Lesson 16's CI checks are both optional habits unless something enforces them. <strong>Branch protection rules</strong> are what turn "we're supposed to review before merging" into "GitHub literally won't let you merge without it."</p>
+
+<p class="callout"><strong>Mental model:</strong> a branch protection rule is a bouncer at the merge button, not a suggestion posted on the wall. It checks a list of requirements — approvals, passing checks, up-to-date branch — and physically disables the merge button until every one is satisfied. That predicts something people miss: an admin can usually still bypass it (a documented, logged exception), but the button itself is genuinely locked for everyone else, not just discouraged.</p>
+
+<h2>Where this fits</h2>
+<pre><code>PR opened (Lesson 15) → CI runs (Lesson 16) → review requested
+   │
+   ▼
+Branch protection rule on `main`   ← you are here (gate, not a habit)
+   requires: N approvals, passing checks, up-to-date branch
+   │
+   ▼
+Merge button enabled only once every requirement is met</code></pre>
+
+<h2>What a rule can require</h2>
+<ul>
+<li><strong>Require pull request reviews before merging</strong> — set a minimum approval count; the button stays disabled below it.</li>
+<li><strong>Require status checks to pass</strong> — name specific CI jobs (Lesson 16) that must succeed; a red or pending check blocks merge.</li>
+<li><strong>Require branches to be up to date before merging</strong> — the PR branch must include <code>main</code>'s latest commits first, so what merges is tested against current <code>main</code>, not a stale copy.</li>
+<li><strong>Restrict who can push directly</strong> — forces even trusted contributors through a PR, no direct commits to the protected branch.</li>
+</ul>
+<p><strong>Why it's built this way:</strong> each requirement targets a specific failure mode: reviews catch what CI can't (design, intent), status checks catch what a human reviewer might miss (a failing test), "up to date" catches integration problems that only show up once two branches' changes combine — three different safety nets, not redundant copies of the same one.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. A PR has 2 approvals and passing CI, but the branch is 10 commits behind <code>main</code>. Does a rule requiring "up to date before merge" allow merging?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — the branch must first be updated (merge or rebase <code>main</code> into it) even with approvals and green CI, specifically to test the merge result against current <code>main</code>, not a stale snapshot.</div>
+</div>
+<p>Now, before revealing: your team wants direct commits to <code>main</code> completely disabled, even for admins, no exceptions. What setting achieves that, and what's the real trade-off?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">"Do not allow bypassing the above settings" (applies the rule to admins too). Trade-off: a genuine emergency fix now has zero fast path — even a critical hotfix must go through the full PR/review/CI cycle, which is sometimes the wrong call for a true outage.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> requiring status checks by name, then renaming the CI job (Lesson 16) — the rule keeps looking for the old name, which never reports again, so the branch is permanently unmergeable until the rule is updated to match.</p>
+
+<h2>A controlled failure</h2>
+<p>On a scratch repo with branch protection requiring 1 approval, open a PR and try to merge it as the sole author:</p>
+<pre><code># after opening a PR from a scratch branch with no other reviewers
+</code></pre>
+<p><strong>Predict first:</strong> can you approve and merge your own PR? <strong>Observe:</strong> the merge button stays disabled — GitHub doesn't count the PR author's own approval toward most protection rules by default, specifically to prevent a single person from satisfying their own review requirement.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> require status checks by their exact job name from the workflow YAML (Lesson 16), and revisit the required-checks list whenever CI job names change — a rule pointing at a renamed or deleted job silently blocks every future PR with no obvious error explaining why.</p>
+
+<h2>Interview notes</h2>
+<p><strong>Interview Q:</strong> "Your team enabled branch protection, but a critical hotfix needs to bypass review during an active outage. What's the safe way to handle that?" <strong>A:</strong> A designated admin uses the documented, logged bypass (if enabled) rather than disabling the protection rule entirely — disabling the rule removes protection for every other PR in flight too, not just the emergency one.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches" target="_blank" rel="noopener">docs.github.com — About protected branches</a> — official GitHub documentation. Verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A branch protection rule disables the merge button until its requirements are met — enforcement, not a posted convention.</li>
+    <li>Reviews, status checks, and "up to date" each catch a different failure mode — not redundant with each other.</li>
+    <li>Renaming a required CI job without updating the rule silently blocks every future merge.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does "up to date before merge" catch problems that reviews and CI alone can't?</li>
+<li>When would allowing admin bypass be the right call despite weakening the protection?</li>
+<li>What happens to a required status check after its underlying CI job is renamed?</li>
+<li>How would you verify a branch protection rule is actually blocking what you think it is?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact branch protection settings and merge-button state back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0016-github-actions-basics.html">&larr; Back: GitHub Actions basics</a></span>
+  <span><a href="0018-submodules-monorepos.html">Next: Submodules &amp; monorepos &rarr;</a></span>
+</div>
+
+</body>
+</html>
