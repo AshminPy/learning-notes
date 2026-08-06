@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 14 — Volumes, Bind Mounts, and tmpfs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Docker Engineering — Lesson 14 of 22 · teach2 pilot</p>
+<h1>Volumes, Bind Mounts, and tmpfs</h1>
+
+<p>A container's writable layer disappears the moment the container is removed — that's deliberate (Lesson 3), but it means a database container with nowhere else to keep its data loses everything on <code>docker rm</code>. Docker gives you three different ways to give a container storage outside its own disposable layer, and picking the wrong one either loses data you needed or couples your app to a host path it shouldn't depend on.</p>
+
+<p class="callout"><strong>Mental model:</strong> a <strong>volume</strong> is a storage unit you rent from Docker itself — Docker decides exactly where it physically lives, hands you a name to reference it, and the unit stays put even after you scrap the moving truck (the container). A <strong>bind mount</strong> is propping your container's door directly into one specific room of the host's own house — full, direct, two-way access to that exact host path, no abstraction. <strong>tmpfs</strong> is a whiteboard in that room — fast, memory-only, wiped clean the instant the room (container) closes. That predicts the actual behavior: delete a container using a named volume, and the data survives (the storage unit is still rented). Delete a container using a bind mount, and the host directory is obviously untouched — it was never the container's to own. Delete or even just restart a container using tmpfs, and the data is gone — it only ever existed in memory tied to that one running container.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Docker Engine
+ └ Client → Daemon → containerd → runc               (Lesson 1)
+ └ Images (read-only layers)                          (Lesson 3)
+    └ Containers (image + writable layer)              (Lessons 2, 4-12)
+       └ Networking (bridge/host/overlay/...)          (Lesson 13)
+       └ Storage  ← you are here (Lesson 14)
+          ├ Volumes      — Docker-managed, outlives the container
+          ├ Bind mounts  — direct host path, host owns it
+          └ tmpfs        — memory-only, gone when the container stops
+             └ next: Compose wires services + networks + volumes together (Lesson 15)</code></pre>
+
+<pre><code>Container "pg"
+  --mount type=volume,src=db-data,dst=/var/lib/postgresql/data
+        │
+        ▼
+Docker-managed volume "db-data"
+  (lives under Docker's own storage area — you never touch the raw path)
+        │
+        ▼
+Survives:  docker stop, docker rm, container recreation
+Lost only if:  docker volume rm db-data  (an explicit, separate action)</code></pre>
+
+<h2>How the three types work</h2>
+<p>Volumes are created explicitly (<code>docker volume create</code>) or implicitly the first time a container references a name that doesn't exist yet. Docker owns where they physically live and can hand that storage off to a <strong>volume driver</strong> for NFS, cloud block storage, or other backends — your container config never needs to know or care which. Bind mounts skip that abstraction entirely: whatever real file or directory you point at on the host is what the container sees, live, in both directions — edit it from the host, the container sees the change immediately, and vice versa. tmpfs mounts a portion of the host's RAM (backed by swap if needed) directly into the container's filesystem namespace — nothing ever touches disk, and the mount ceases to exist the moment the container stops.</p>
+
+<p><strong>Why it's built this way:</strong> containers are meant to be disposable and replaceable (the same idea behind Lesson 12's lifecycle model) — so persistent data can't safely live inside the container's own writable layer, it has to live somewhere the container's lifecycle doesn't control. Volumes exist so that "somewhere" doesn't require your app or your deploy scripts to know or trust an exact host filesystem path; bind mounts exist for the opposite, deliberate case — when you genuinely want that host coupling, like live-editing source code during local development.</p>
+
+<h2><code>--mount</code> vs. <code>-v</code>/<code>--volume</code></h2>
+<table>
+<tr><th></th><th><code>--mount</code> (recommended)</th><th><code>-v</code> / <code>--volume</code> (shorthand)</th></tr>
+<tr><td>Syntax</td><td><code>--mount type=volume,src=db-data,dst=/data</code></td><td><code>-v db-data:/data</code></td></tr>
+<tr><td>Clarity</td><td>Explicit key=value, same shape for volume/bind/tmpfs</td><td>Compact but positional — easy to misread</td></tr>
+<tr><td>Advanced options</td><td>Required for volume drivers, subdirectory mounts</td><td>Not supported for those cases</td></tr>
+<tr><td>Typo behavior</td><td>Invalid type/option errors out</td><td>A missing <code>./</code> or leading slash silently creates a new named volume instead of a bind mount (see Common mistakes)</td></tr>
+</table>
+<p>Docker's own documentation recommends <code>--mount</code> for anything beyond the simplest case, precisely because it's explicit and behaves the same way across all three mount types. Both syntaxes exist and produce identical results for the basic cases — this course uses <code>--mount</code> as the primary example, per the same "teach the production convention first" approach as Lesson 10's base-image pinning.</p>
+
+<h2>Practical example — named volume surviving container removal</h2>
+<pre><code>docker volume create db-data
+docker run -d --name pg --mount type=volume,src=db-data,dst=/var/lib/postgresql/data -e POSTGRES_PASSWORD=demo postgres:16
+sleep 3
+docker exec pg psql -U postgres -c "CREATE TABLE demo(id int);"
+docker rm -f pg
+docker run -d --name pg2 --mount type=volume,src=db-data,dst=/var/lib/postgresql/data -e POSTGRES_PASSWORD=demo postgres:16
+sleep 3
+docker exec pg2 psql -U postgres -c "\dt"</code></pre>
+<p><strong>Active learning action — predict, then run:</strong> before running the last command, predict whether <code>demo</code> shows up in <code>pg2</code>'s table list, given that <code>pg</code> (the container that created it) was removed entirely. Run the sequence and check. Then try the same experiment with a bind mount instead, to see the other side of the model:</p>
+<pre><code>mkdir -p ./html && echo "hello" > ./html/index.html
+docker run -d --name web --mount type=bind,src="$(pwd)"/html,dst=/usr/share/nginx/html,readonly nginx:alpine
+docker exec web cat /usr/share/nginx/html/index.html
+echo "changed on host" > ./html/index.html
+docker exec web cat /usr/share/nginx/html/index.html</code></pre>
+<p>Predict before the last line: does the container see the host-side edit without any restart? (It does — that's the "propped door," live in both directions, and exactly why the volume model deliberately avoids this coupling for anything you don't want tied to a host path.)</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. A container using a named volume for <code>/data</code> is removed with <code>docker rm -f</code>. Is the data in <code>/data</code> gone?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. The volume exists independently of any container's lifecycle — removing the container only removes its writable layer and the reference to the volume. The data stays until something explicitly runs <code>docker volume rm</code> on it (and Docker will refuse that while any container still references it).</div>
+</div>
+<p>Now, before revealing: you run <code>docker run -v test-typo:/data ...</code>, intending to bind-mount a folder named <code>test-typo</code> in your current directory, but you forgot the <code>$(pwd)/</code> prefix. What actually happens?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Docker doesn't error out. Because <code>test-typo</code> has no path separator, the CLI treats it as a <strong>named volume</strong>, not a host path — it silently creates (or reuses) a volume literally called <code>test-typo</code>, mounts that instead, and the container starts normally with empty, unrelated storage. Nothing in the container's output tells you this happened; you'd only notice by running <code>docker volume ls</code> and seeing an unexpected volume.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> using <code>-v</code> with a bare name you meant as a relative host path (e.g. <code>-v mydata:/data</code> instead of <code>-v $(pwd)/mydata:/data</code>). Docker can't tell the difference between "a volume name" and "a relative path you forgot to prefix" — a bare name with no slash is always parsed as a volume name. <code>--mount type=bind,src=...</code> doesn't have this ambiguity, which is one more reason it's the recommended syntax.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>docker run -d --name tmptest --mount type=tmpfs,dst=/scratch alpine sh -c "echo secret > /scratch/note.txt; sleep 300"
+docker exec tmptest cat /scratch/note.txt</code></pre>
+<p><strong>Predict first:</strong> the file is written and readable right now — will it still be there after the container restarts? <strong>Observe:</strong> restart it and check:</p>
+<pre><code>docker restart tmptest
+docker exec tmptest cat /scratch/note.txt</code></pre>
+<p><code>cat: can't open '/scratch/note.txt': No such file or directory</code> — the tmpfs mount is recreated empty on every start, because it's backed by memory tied to that specific running container instance, not disk. <strong>Why this matters:</strong> tmpfs is the right choice specifically <em>because</em> it never persists (secrets, scratch space you don't want touching disk) — using it for anything you expect to survive a restart is the mistake, not the mount type itself.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> use named volumes for anything stateful you actually need to keep — databases, message queue data — with a volume driver matched to your infrastructure (local disk is fine for a single host; an NFS or cloud-block driver for anything that needs to survive the host itself dying). Reserve bind mounts for deliberate host coupling: local dev source-code hot-reload, or mounting a config file/cert you manage outside the image. Docker doesn't back up volumes for you — treat "how do I back this up" as a real question before you put production data in one, not an afterthought.</p>
+
+<h2>Interview notes</h2>
+<p><strong>Interview Q:</strong> "Why would you use a named volume instead of a bind mount for a database container?" <strong>A:</strong> A named volume decouples the data from any specific host path — Docker manages where it physically lives, it can be backed by a proper storage driver, and it survives container recreation cleanly. A bind mount ties you to one exact host directory structure, which is fragile across different hosts/environments and gives the container direct read/write access to a real filesystem path you may not want it touching.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.docker.com/engine/storage/volumes/" target="_blank" rel="noopener">Docker docs — Volumes</a>, <a href="https://docs.docker.com/engine/storage/bind-mounts/" target="_blank" rel="noopener">Docker docs — Bind mounts</a>, <a href="https://docs.docker.com/engine/storage/tmpfs/" target="_blank" rel="noopener">Docker docs — tmpfs mounts</a> — official Docker documentation, docs.docker.com. Verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Volumes are Docker-managed and outlive any single container — the right default for anything stateful you need to keep.</li>
+    <li>Bind mounts give direct, live, two-way access to one exact host path — correct only when you deliberately want that coupling.</li>
+    <li>tmpfs is memory-only and disappears on every stop/restart — correct only for data you explicitly don't want to persist.</li>
+    <li><code>--mount</code> is the explicit, recommended syntax; <code>-v</code>'s shorthand can silently turn a forgotten path prefix into an unrelated named volume.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why can't persistent data safely live in a container's own writable layer?</li>
+<li>When would a bind mount be the correct choice over a volume?</li>
+<li>What happens to a tmpfs mount's contents when its container restarts?</li>
+<li>How would you verify, after removing and recreating a container, that a named volume's data actually survived?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>docker volume inspect</code> output back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0013-docker-networking.html">&larr; Back: Docker networking</a></span>
+  <span>Lesson 15 not yet published</span>
+</div>
+
+</body>
+</html>

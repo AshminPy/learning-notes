@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 13 — Docker Networking</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Docker Engineering — Lesson 13 of 22 · teach2 pilot</p>
+<h1>Docker Networking</h1>
+
+<p>A container that can't talk to another container is nearly useless — a web app that can't reach its database, a worker that can't reach a queue. Docker solves this with virtual networks, but the driver you pick changes something fundamental: whether containers can even find each other by name, or only by an IP address that changes every time you recreate them.</p>
+
+<p class="callout"><strong>Mental model:</strong> a Docker network is a hotel floor. The <strong>default bridge network</strong> is a floor with no directory service — you can dial a room's raw extension (IP address) but there's no concierge to look up "the room named db" for you. A <strong>user-defined bridge network</strong> is a floor with a concierge (Docker's embedded DNS server) who resolves any guest's name to their current room the instant they check in. That predicts the exact failure you'll see later: two containers on the default bridge can ping each other's IP just fine, but <code>ping db</code> fails — there's no concierge on that floor to ask.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Docker Engine
+ └ Client (docker CLI) → Daemon (dockerd) → containerd → runc      (Lesson 1)
+ └ Images (read-only layers)                                       (Lesson 3)
+    └ Containers (image + writable layer + config)                 (Lessons 2, 4-12)
+       └ Networking  ← you are here (Lesson 13)
+          └ Storage: volumes / bind mounts / tmpfs                 (next, Lesson 14)</code></pre>
+<p>Networking and storage are the two things a container needs beyond its own filesystem to be useful in a real stack: something to talk to, and somewhere to keep data that outlives it. Lesson 14 covers the second half.</p>
+
+<pre><code>Container "web"
+  docker run --network my-app-net --name web ...
+        │
+        ▼
+my-app-net  (user-defined bridge)
+        │
+        ▼
+Docker's embedded DNS server (127.0.0.11)
+        │
+        ▼
+Container "db" on the same network resolves the name "web" → web's current IP
+  → docker exec db ping web   succeeds</code></pre>
+
+<h2>The six built-in drivers</h2>
+<p>Every Docker network uses one driver. On Linux, the built-in drivers are:</p>
+<ul>
+<li><strong>bridge</strong> — the default. An isolated private network on the host, containers reach each other and the outside world through NAT. Most single-host setups use this.</li>
+<li><strong>host</strong> — no isolation at all: the container shares the host's network namespace directly. No port mapping needed (and none possible) — the container just uses the host's ports.</li>
+<li><strong>none</strong> — no networking except loopback. Total isolation.</li>
+<li><strong>overlay</strong> — connects multiple Docker daemons together (Swarm), so containers on different physical hosts can reach each other as if on one network.</li>
+<li><strong>macvlan</strong> — gives a container its own MAC address, so it appears as a physical device on the host's LAN.</li>
+<li><strong>ipvlan</strong> — similar goal to macvlan (container reachable directly on the physical network), different mechanism — containers share the host's MAC address instead of getting their own.</li>
+</ul>
+
+<h2>Default bridge vs. user-defined bridge</h2>
+<p>Every fresh Docker install already has a default bridge network, and any container started without <code>--network</code> lands on it silently. It works, but with one real limitation worth internalizing:</p>
+<table>
+<tr><th></th><th>Default bridge</th><th>User-defined bridge</th></tr>
+<tr><td>Container-to-container by name</td><td>Not supported — no embedded DNS for it</td><td>Supported via Docker's embedded DNS (127.0.0.11)</td></tr>
+<tr><td>Container-to-container by IP</td><td>Works</td><td>Works</td></tr>
+<tr><td>How you get on it</td><td>Automatic if you skip <code>--network</code></td><td>Explicit: <code>docker network create</code> first</td></tr>
+<tr><td>Isolation from other networks</td><td>Shared floor for everything</td><td>Its own floor, per app/stack</td></tr>
+</table>
+<p><strong>Why it's built this way:</strong> the default bridge predates Docker's embedded DNS server and was kept for backward compatibility rather than removed. Once multi-container apps became the normal case, Docker added user-defined networks with real name-based service discovery — so the fix isn't "the default bridge is broken," it's "always create your own network for anything with more than one container," which is also exactly what Docker Compose does for you automatically (Lesson 15).</p>
+
+<h2>Practical example — the production convention: your own network first</h2>
+<p>Create a user-defined bridge network before running anything, the way a real multi-container app is set up:</p>
+<pre><code>docker network create --driver bridge my-app-net
+docker network ls
+docker run -d --name db --network my-app-net postgres:16
+docker run -it --rm --network my-app-net alpine ping -c 2 db
+docker network inspect my-app-net</code></pre>
+<p><strong>Active learning action — predict, then run:</strong> before you run the <code>ping</code> command above, predict whether it succeeds. Then run the whole sequence for real (postgres:16 needs no special setup for this — it'll start even without a password env var set, just to prove reachability; don't use it this way for anything real). Now run the same test against the default bridge instead, and compare:</p>
+<pre><code>docker run -d --name db2 postgres:16
+docker run -it --rm alpine ping -c 2 db2</code></pre>
+<p>Predict again before running: does <code>ping db2</code> succeed this time? Check <code>docker network inspect bridge</code> afterward and look for a DNS-related section — you'll find none, unlike <code>my-app-net</code>'s inspect output.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. Two containers are both running with no <code>--network</code> flag specified. Can they reach each other using <code>ping their-container-name</code>?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. With no <code>--network</code> flag they both land on the default bridge network, which doesn't run Docker's embedded DNS for user containers — only IP-to-IP reachability works there. They'd need to be started on the same user-defined network (<code>docker network create</code> + <code>--network my-app-net</code> on both) for name resolution to work.</div>
+</div>
+<p>Now, before revealing: you run <code>docker run --network host -p 8080:80 nginx</code>. Does the <code>-p 8080:80</code> flag do anything?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No — <code>host</code> networking mode shares the host's network namespace directly, so the container is already using the host's real ports with no isolation to map through. Docker ignores <code>-p</code> in this mode (nginx binds directly to the host's port 80, not 8080). This is a common source of "why didn't my port mapping work" confusion.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming the default bridge network supports container-name DNS because "it's just Docker networking." It's the one driver mode that doesn't — always create a user-defined network for anything with more than one container that needs to talk to another by name.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>docker run -d --name failtest-db postgres:16
+docker run -it --rm --name failtest-app alpine ping -c 2 failtest-db</code></pre>
+<p><strong>Predict first:</strong> both containers exist and are running — does the ping resolve? <strong>Observe:</strong> <code>ping: bad address 'failtest-db'</code> — DNS resolution fails immediately, even though both containers are healthy and running. <strong>Why:</strong> both landed on the default bridge (no <code>--network</code> was given), which has no embedded DNS entry for either container name. <strong>Fix:</strong> put them on a user-defined network instead and re-test:</p>
+<pre><code>docker network create failtest-net
+docker run -d --name failtest-db2 --network failtest-net postgres:16
+docker run -it --rm --network failtest-net alpine ping -c 2 failtest-db2</code></pre>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> give every application/stack its own user-defined bridge network, never share the default bridge across unrelated apps — it keeps DNS resolution scoped correctly and stops unrelated containers from being reachable by name at all. Reserve <code>host</code> mode for the rare case of a network-appliance-style container that genuinely needs the host's raw network stack (e.g. some monitoring agents); using it for ordinary app containers throws away Docker's isolation for no real benefit. <code>macvlan</code>/<code>ipvlan</code> are specialist tools — only reach for them when a container genuinely needs to appear as its own device on the physical LAN (e.g. legacy network services expecting a real IP), not as a default choice.</p>
+
+<h2>Interview notes</h2>
+<p><strong>Interview Q:</strong> "What's the practical difference between Docker's default bridge network and a user-defined bridge network?" <strong>A:</strong> Both are the same driver (bridge) and both give containers NAT'd outbound access, but only the user-defined one runs Docker's embedded DNS server, so containers can resolve each other by name. On the default bridge, containers can only reach each other by IP — which is why real multi-container setups always create their own network first (Compose does this automatically).</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.docker.com/engine/network/" target="_blank" rel="noopener">Docker docs — Networking overview</a> — official Docker documentation, docs.docker.com. Verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Six built-in drivers: bridge (default), host, none, overlay (Swarm), macvlan, ipvlan.</li>
+    <li>Only user-defined bridge networks run Docker's embedded DNS (127.0.0.11) — the default bridge only supports IP-to-IP reachability, not name resolution.</li>
+    <li>Real setups always create their own network first (<code>docker network create</code>) instead of relying on the default bridge — this is what Compose does automatically under the hood.</li>
+    <li><code>host</code> mode shares the host's network namespace entirely — no isolation, and <code>-p</code> port mapping is ignored because there's nothing to map through.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does Docker's default bridge network exist at all if it can't resolve container names?</li>
+<li>When would you reach for <code>host</code> networking instead of a user-defined bridge?</li>
+<li>What happens to <code>-p</code> port-mapping flags when a container uses <code>--network host</code>?</li>
+<li>How would you verify two containers can resolve each other by name, without just trying an app and seeing if it works?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>docker network inspect</code> output back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <span>Lesson 12 not yet published</span>
+  <span><a href="0014-volumes-bind-mounts-tmpfs.html">Next: Volumes, bind mounts, and tmpfs &rarr;</a></span>
+</div>
+
+</body>
+</html>

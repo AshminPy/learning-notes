@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docker Engineering — Course roadmap tracker</title>
+<meta name="description" content="Zero-to-hero Docker course roadmap: Dockerfiles, multi-stage builds, Compose, registries, networking, volumes, security scanning. Free, independent study resource.">
+<link rel="canonical" href="https://ashminpy.github.io/learning-notes/docker/objectives.html">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .domain {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 1.25rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .domain-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .domain-head h2 { margin: 0; padding: 0; border: none; font-size: 1.1rem; }
+  .domain-head p { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--muted); }
+  .count { color: var(--accent); font-weight: bold; font-size: 0.9rem; white-space: nowrap; }
+  .bar-track {
+    height: 6px;
+    background: var(--code-bg);
+    border-radius: 3px;
+    margin: 0.7rem 0 1rem;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.2s ease;
+  }
+  .item-list { list-style: none; padding: 0; margin: 0; }
+  .item-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.35rem 0;
+  }
+  .item-list input[type="checkbox"] { margin-top: 0.2rem; }
+  .item-list a { color: var(--fg); }
+  .item-list a:hover { color: var(--accent); }
+  .planned { color: var(--muted); font-size: 0.95rem; }
+  .planned-tag {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.05rem 0.35rem;
+  }
+  .overall {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .reset-btn {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .reset-btn:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Docker Engineering — Zero to Hero</p>
+<h1>Course roadmap tracker</h1>
+<p>The complete planned curriculum — 22 lessons across 6 phases. No single certification anchors this course; it covers Docker-specific tooling (Dockerfiles, Compose, registries, security scanning) that this site's linux and kubernetes-cka courses deliberately don't duplicate — see each course's own container-fundamentals lesson for namespaces/cgroups/CRI. Check off a lesson once you can rebuild/explain it from memory. Progress is saved in this browser only.</p>
+<p class="overall" id="overall"></p>
+<button class="reset-btn" id="reset-progress" type="button" aria-label="Reset Docker tracker progress">Reset progress</button>
+
+<div id="domains"></div>
+
+<div class="lesson-nav">
+  <a href="index.html">&larr; Back to course</a>
+  <span></span>
+</div>
+
+<script>
+const PHASES = [
+  {
+    key: "foundations",
+    name: "A. Docker Foundations",
+    lessons: [
+      { id: "0001", title: "What Docker actually is", href: null },
+      { id: "0002", title: "Installing Docker & running your first container", href: null },
+      { id: "0003", title: "Images and the layered filesystem", href: null }
+    ]
+  },
+  {
+    key: "dockerfiles",
+    name: "B. Writing Dockerfiles",
+    lessons: [
+      { id: "0004", title: "Your first Dockerfile", href: null },
+      { id: "0005", title: "CMD vs ENTRYPOINT vs RUN", href: null },
+      { id: "0006", title: "Build context, .dockerignore, COPY vs ADD", href: null },
+      { id: "0007", title: "Layer caching & build performance", href: null },
+      { id: "0008", title: "Multi-stage builds", href: null },
+      { id: "0009", title: "BuildKit & modern build features", href: null },
+      { id: "0010", title: "Choosing and hardening base images", href: null },
+      { id: "0011", title: "Build-time vs run-time config: ARG vs ENV", href: null },
+      { id: "0012", title: "Container lifecycle & health", href: null }
+    ]
+  },
+  {
+    key: "networking-storage",
+    name: "C. Networking & Storage",
+    lessons: [
+      { id: "0013", title: "Docker networking", href: null },
+      { id: "0014", title: "Volumes, bind mounts, and tmpfs", href: null }
+    ]
+  },
+  {
+    key: "compose",
+    name: "D. Docker Compose",
+    lessons: [
+      { id: "0015", title: "Compose fundamentals", href: null },
+      { id: "0016", title: "Compose networking, volumes & multi-service apps", href: null },
+      { id: "0017", title: "Compose for local dev workflows", href: null }
+    ]
+  },
+  {
+    key: "registries",
+    name: "E. Registries & Distribution",
+    lessons: [
+      { id: "0018", title: "Image registries", href: null },
+      { id: "0019", title: "Tagging & release strategy", href: null }
+    ]
+  },
+  {
+    key: "security-production",
+    name: "F. Security & Production",
+    lessons: [
+      { id: "0020", title: "Resource limits & the Docker CLI surface over cgroups", href: null },
+      { id: "0021", title: "Container security hardening", href: null },
+      { id: "0022", title: "Image security scanning & the final capstone", href: null }
+    ]
+  }
+];
+
+const STORE_KEY = "docker-objectives-progress";
+const state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+function renderPhase(d) {
+  const built = d.lessons.filter(l => l.href);
+  const wrap = document.createElement("div");
+  wrap.className = "domain";
+
+  const head = document.createElement("div");
+  head.className = "domain-head";
+  head.innerHTML = `<div><h2>${d.name}</h2><p>${built.length} of ${d.lessons.length} lessons published</p></div><span class="count">${d.lessons.length} planned</span>`;
+  wrap.appendChild(head);
+
+  const track = document.createElement("div");
+  track.className = "bar-track";
+  const fill = document.createElement("div");
+  fill.className = "bar-fill";
+  track.appendChild(fill);
+  wrap.appendChild(track);
+
+  const list = document.createElement("ul");
+  list.className = "item-list";
+  d.lessons.forEach(l => {
+    const li = document.createElement("li");
+    if (l.href) {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!state[l.id];
+      cb.setAttribute("aria-label", `Mark Lesson ${Number(l.id)} — ${l.title} as reviewed`);
+      cb.addEventListener("change", () => {
+        state[l.id] = cb.checked;
+        save();
+        updateBar();
+        updateOverall();
+      });
+      const a = document.createElement("a");
+      a.href = l.href;
+      a.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      li.appendChild(cb);
+      li.appendChild(a);
+    } else {
+      const span = document.createElement("span");
+      span.className = "planned";
+      span.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      const tag = document.createElement("span");
+      tag.className = "planned-tag";
+      tag.textContent = "planned";
+      li.appendChild(span);
+      li.appendChild(tag);
+    }
+    list.appendChild(li);
+  });
+  wrap.appendChild(list);
+
+  function updateBar() {
+    const done = built.filter(l => state[l.id]).length;
+    const pct = built.length ? Math.round((done / built.length) * 100) : 0;
+    fill.style.width = pct + "%";
+  }
+  updateBar();
+
+  return wrap;
+}
+
+function updateOverall() {
+  const all = PHASES.flatMap(d => d.lessons);
+  const built = all.filter(l => l.href);
+  const done = built.filter(l => state[l.id]).length;
+  document.getElementById("overall").textContent =
+    `${built.length} of ${all.length} lessons published — ${done} of ${built.length} published lessons checked off.`;
+}
+
+const container = document.getElementById("domains");
+PHASES.forEach(d => container.appendChild(renderPhase(d)));
+updateOverall();
+
+document.getElementById("reset-progress").addEventListener("click", () => {
+  if (confirm("Reset all Docker tracker progress? This only clears this tracker's checkboxes in this browser — it does not affect any other course on this site.")) {
+    localStorage.removeItem(STORE_KEY);
+    location.reload();
+  }
+});
+</script>
+
+</body>
+</html>

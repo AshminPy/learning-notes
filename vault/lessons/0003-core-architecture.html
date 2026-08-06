@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3 — Vault's Core Architecture</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">HashiCorp Vault Engineering — Lesson 3 of 28</p>
+<h1>Vault's Core Architecture</h1>
+
+<p>Lesson 2 had you write and read a secret without asking where it actually lives or how it stays protected. Every later lesson in this course — seal/unseal, storage backends, auth methods, policies — is a detail sitting on top of three architectural pieces this lesson introduces. Skip this, and later lessons feel like unrelated trivia instead of one coherent system.</p>
+
+<p class="callout"><strong>Mental model:</strong> Vault is a safe-deposit box room, not a filing cabinet. The room itself (the barrier) is what actually encrypts and decrypts — nothing gets stored or retrieved except through it. The boxes (the storage backend) sit in a vendor's warehouse outside the room and are treated as untrusted — if someone steals a box, they get locked steel, not readable contents, because everything was already encrypted before it left the room. That predicts something concrete: compromising Vault's storage backend alone (a database breach, a stolen disk) doesn't hand over your secrets — the encryption happened before data ever reached storage.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Client (CLI / UI / SDK)   ← Lesson 2's vault commands are this
+   │  HTTP API
+   ▼
+Core   (enforces ACLs, audit logging, request routing)
+   │
+   ▼
+Barrier   ← you are here (the encryption layer — nothing bypasses this)
+   │  encrypted data only
+   ▼
+Storage backend   (untrusted — Consul, Integrated Storage/Raft, cloud object storage)</code></pre>
+
+<h2>The barrier: Vault's encryption layer</h2>
+<p>Per HashiCorp's own architecture docs: "Vault's encryption layer, referred to as the barrier, is responsible for encrypting and decrypting Vault data." Every single read or write to storage passes through the barrier — there is no path that reaches storage unencrypted.</p>
+
+<h2>The storage backend: deliberately untrusted</h2>
+<p>"Since the storage backend resides outside the barrier, it's considered untrusted so Vault will encrypt the data before it sends them to the storage backend." <strong>Why it's built this way:</strong> this separation means Vault's actual security model doesn't depend on trusting whatever holds the bytes — a cloud provider's object storage, a self-hosted Consul cluster — because none of them ever see plaintext. Lesson 6 covers the specific backend options (Integrated Storage/Raft is the current recommended default); this lesson's point is that the choice of backend never changes what an attacker gains from compromising it alone.</p>
+
+<h2>The core and the HTTP API</h2>
+<p>Every client — the CLI you used in Lesson 2, the web UI, or any SDK — talks to Vault exclusively through its HTTP API. "Requests may be processed from the HTTP API to the core once Vault is unsealed," and the core "manages the flow of requests through the system, enforces ACLs, and ensures audit logging is done." This is why policies (Lesson 17) and audit devices (Lesson 26) can be enforced consistently no matter which client is used — they're not client-side features, they're enforced once, centrally, in the core.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. If an attacker steals a full copy of Vault's storage backend files, do they get readable secrets?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — the storage backend only ever holds data the barrier already encrypted. Without the encryption key (protected by the seal, Lesson 4), stolen storage is unreadable ciphertext.</div>
+</div>
+<p>Now, before revealing: which single component in this lesson's diagram is the one every client — CLI, UI, or SDK — is required to go through, with no exceptions?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The HTTP API into the core. There's no client-side bypass — ACL enforcement and audit logging happen centrally in the core, which is exactly why they can't be skipped by using a different client.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming storage backend choice (Consul vs. cloud storage vs. Raft) is primarily a security decision — it isn't. Every option sits outside the barrier and receives only encrypted data either way; the real trade-offs (Lesson 6) are durability, operational complexity, and HA behavior, not confidentiality.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>vault server -dev
+# note the storage type from:
+vault status
+# stop the server, inspect what's on disk (dev mode uses inmem, so nothing persists —
+# this is the architecture's in-memory case, the extreme end of "storage is separate from the barrier")</code></pre>
+<p><strong>Predict first:</strong> since dev mode's storage is in-memory, does that change anything about the barrier's role? <strong>Observe:</strong> no — even in-memory storage still only ever receives encrypted data from the barrier; "untrusted storage" doesn't mean "less encrypted," it means the architecture doesn't rely on that layer being trustworthy regardless of what it physically is.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> because the storage backend is explicitly untrusted by design, production teams don't need to over-invest in exotic storage-layer encryption or access controls beyond what the backend itself reasonably offers — the barrier is already doing the real protective work. Effort is better spent on unseal/auto-unseal hardening (Lesson 4) and network-level TLS, which protect the layers the barrier doesn't cover.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Directly scored under <strong>Vault architecture fundamentals</strong> — one of the 9 real exam domains.</p>
+<p><strong>Interview Q:</strong> "Why does Vault treat its own storage backend as untrusted?" <strong>A:</strong> Because the barrier encrypts all data before it ever reaches storage — this means Vault's security doesn't depend on the storage layer's own access controls being perfect, and a storage-layer breach alone yields only ciphertext, not secrets.</p>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/vault/docs/internals/architecture" target="_blank" rel="noopener">developer.hashicorp.com/vault/docs/internals/architecture</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>The barrier is Vault's encryption layer — every read/write to storage passes through it, no exceptions.</li>
+    <li>The storage backend sits outside the barrier and is treated as untrusted — it only ever holds encrypted data.</li>
+    <li>Every client (CLI/UI/SDK) talks through one HTTP API into the core, which centrally enforces ACLs and audit logging.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why doesn't Vault's security model depend on trusting the storage backend?</li>
+<li>When would storage backend choice actually matter, if not for security? (Preview — Lesson 6.)</li>
+<li>What does "the core enforces ACLs" actually prevent a client from bypassing?</li>
+<li>How would you verify that data at rest in Vault's storage backend is genuinely encrypted, not just assumed to be?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or want to sanity-check your own mental model of this architecture? Describe it back to your teacher in your own words — that's the fastest way to find a gap.</footer>
+
+<div class="lesson-nav">
+  <a href="0002-installing-running-vault.html">&larr; Installing &amp; running Vault</a>
+  <a href="0004-seal-unseal.html">Next: Seal, unseal &amp; auto-unseal &rarr;</a>
+</div>
+
+</body>
+</html>

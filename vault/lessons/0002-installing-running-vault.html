@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2 — Installing &amp; Running Vault</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">HashiCorp Vault Engineering — Lesson 2 of 28</p>
+<h1>Installing &amp; Running Vault</h1>
+
+<p>Lesson 1 explained why Vault exists. Before touching any real concept, you need a Vault server to actually run commands against — and HashiCorp ships a mode built exactly for that: a throwaway, zero-config server that starts unsealed and ready in one command.</p>
+
+<p class="callout"><strong>Mental model:</strong> dev mode is a demo car, not a production vehicle — full working controls, zero safety certification, and it's towed away (data gone) the moment you turn the engine off. That predicts the one rule this lesson repeats from HashiCorp's own docs: never run it anywhere real traffic could reach it, because "insecure" here isn't a caveat, it's the literal design.</p>
+
+<h2>Where this fits</h2>
+<pre><code>vault server -dev
+   │
+   ▼
+Dev-mode Vault: initialized, unsealed, in-memory storage
+   │
+   ▼
+vault status / vault kv put / vault kv get   ← you are here</code></pre>
+
+<h2>Starting a dev-mode server</h2>
+<pre><code>vault server -dev
+</code></pre>
+<p>This single command auto-configures everything a real deployment normally needs a separate setup pass for:</p>
+<ul>
+<li><strong>Initialized and unsealed</strong> — ready to use immediately, no manual init step (Lesson 4 covers what "sealed" means and why real deployments don't skip it)</li>
+<li><strong>In-memory storage</strong> — all data encrypted in RAM, lost on restart</li>
+<li><strong>No TLS</strong> — listens on <code>127.0.0.1:8200</code> unencrypted</li>
+<li><strong>A KV v2 secrets engine already mounted</strong> at <code>secret/</code></li>
+</ul>
+<p><strong>Why it's built this way:</strong> HashiCorp's own docs are direct about the trade-off: "Never, ever, ever run a 'dev' mode server in production. It is insecure and will lose data on every restart (since it stores data in-memory)." Every convenience above is a security or durability property a real deployment needs — dev mode trades all of them away specifically so you can learn the CLI and API without a multi-step setup first.</p>
+
+<h2>Your first commands</h2>
+<pre><code>vault status
+</code></pre>
+<p>Reports whether the server is <code>Initialized</code>, <code>Sealed</code>, its <code>Version</code>, storage type, and HA status — the first command to run against any Vault server, dev or production, to confirm what you're actually talking to.</p>
+<pre><code>vault kv put -mount=secret creds passcode=my-long-passcode
+vault kv get -mount=secret creds
+</code></pre>
+<p>The <code>-mount</code> flag names which KV engine instance to use — current HashiCorp guidance prefers this explicit flag over the older path-style syntax, specifically to avoid confusion with KV v2's internal <code>/data/</code> path segment (the actual API path a policy or raw API call uses is different from what you type here).</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. Does dev mode need <code>vault operator init</code> or an unseal step before you can use it?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — dev mode starts already initialized and unsealed. That's exactly what makes it dev-only; a real deployment doesn't get to skip that step (Lesson 4).</div>
+</div>
+<p>Now try it yourself: start a dev server, write a secret with a field of your choice, read it back, then run <code>vault status</code> and identify what <code>Storage Type</code> it reports. Try before revealing.</p>
+<div class="quiz">
+<p>Reveal the sequence</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>vault server -dev
+# in a second terminal, using the root token and VAULT_ADDR printed above:
+vault kv put -mount=secret myapp username=admin
+vault kv get -mount=secret myapp
+vault status
+</code></pre>
+<p><code>Storage Type</code> should read <code>inmem</code> — confirming the in-memory, non-durable storage the dev-mode warning refers to.</p>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> restarting a dev-mode server expecting the data to still be there — it won't. In-memory storage means every restart is a clean slate, which is exactly why dev mode is unsuitable for anything you'd be upset to lose.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>vault kv put -mount=secret temp value=hello
+vault kv get -mount=secret temp
+# stop the server (Ctrl-C), then start a fresh one:
+vault server -dev
+vault kv get -mount=secret temp</code></pre>
+<p><strong>Predict first:</strong> does the second <code>get</code> find the secret? <strong>Observe:</strong> no — a fresh dev-mode invocation is a brand-new server with a brand-new in-memory store; nothing carries over, not even the same root token or unseal key.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> the root token dev mode prints on startup has unrestricted access to everything — treat it exactly like you would in a real deployment (Lesson 10 covers why the real root token gets revoked after initial setup, not used day to day) even in a throwaway dev environment, so the habit is already correct before it matters for real.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Foundational — sets up the hands-on environment every later domain's lessons use.</p>
+<p><strong>Interview Q:</strong> "A teammate wants to demo Vault quickly for a five-minute meeting. What's the fastest safe way?" <strong>A:</strong> <code>vault server -dev</code> — but explicitly flag it as demo-only, never point real application traffic or real secrets at it, and expect all data to vanish the moment it's stopped.</p>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/vault/docs/concepts/dev-server" target="_blank" rel="noopener">developer.hashicorp.com/vault/docs/concepts/dev-server</a>, <a href="https://developer.hashicorp.com/vault/docs/commands/kv" target="_blank" rel="noopener">developer.hashicorp.com/vault/docs/commands/kv</a>, and <a href="https://developer.hashicorp.com/vault/docs/commands/status" target="_blank" rel="noopener">developer.hashicorp.com/vault/docs/commands/status</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>vault server -dev</code> starts an already-initialized, unsealed, in-memory-storage server — convenient for learning, never for production.</li>
+    <li><code>vault status</code> is the first command to run against any Vault server to confirm what you're talking to.</li>
+    <li><code>vault kv put</code>/<code>vault kv get -mount=secret ...</code> is the current recommended CLI syntax for the KV v2 engine.</li>
+    <li>Dev-mode data doesn't survive a restart — every fresh invocation is a clean slate.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does HashiCorp's own documentation warn so explicitly against dev mode in production?</li>
+<li>When is dev mode still the right tool even for experienced Vault operators?</li>
+<li>What happens to data written to a dev-mode server after it's stopped?</li>
+<li>How would you verify whether a running Vault server is dev mode or a real deployment, without being told?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>vault status</code> output back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <a href="0001-what-problem-vault-solves.html">&larr; What problem Vault solves</a>
+  <a href="0003-core-architecture.html">Next: Vault's core architecture &rarr;</a>
+</div>
+
+</body>
+</html>

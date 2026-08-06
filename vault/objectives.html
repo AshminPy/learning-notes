@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HashiCorp Vault Engineering — Exam objectives tracker</title>
+<meta name="description" content="HashiCorp Certified: Vault Associate (003) exam objectives tracker — real exam domains, verbatim from HashiCorp's own exam content list. Free, independent study resource.">
+<link rel="canonical" href="https://ashminpy.github.io/learning-notes/vault/objectives.html">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .domain {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 1.25rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .domain-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .domain-head h2 { margin: 0; padding: 0; border: none; font-size: 1.1rem; }
+  .domain-head p { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--muted); }
+  .bar-track {
+    height: 6px;
+    background: var(--code-bg);
+    border-radius: 3px;
+    margin: 0.7rem 0 1rem;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.2s ease;
+  }
+  .item-list { list-style: none; padding: 0; margin: 0; }
+  .item-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.35rem 0;
+  }
+  .item-list input[type="checkbox"] { margin-top: 0.2rem; }
+  .item-list a { color: var(--fg); }
+  .item-list a:hover { color: var(--accent); }
+  .planned { color: var(--muted); font-size: 0.95rem; }
+  .planned-tag {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.05rem 0.35rem;
+  }
+  .overall {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .reset-btn {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .reset-btn:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">HashiCorp Vault Engineering — Exam Objectives</p>
+<h1>Course roadmap tracker</h1>
+<p>Grouped by the real <a href="https://developer.hashicorp.com/vault/tutorials/associate-cert-003/associate-review-003" target="_blank" rel="noopener">HashiCorp Certified: Vault Associate (003)</a> exam content list, verbatim domain names, verified 2026-08-06. HashiCorp does not publish percentage weights for this exam (unlike CNCF's CKA curriculum) — no weight column is shown, an honest omission rather than an invented one. Check off a lesson once you can rebuild it from memory, not just once you've read it. Progress is saved in this browser only.</p>
+<p class="overall" id="overall"></p>
+<button class="reset-btn" id="reset-progress" type="button" aria-label="Reset Vault tracker progress">Reset progress</button>
+
+<h2>Foundations (not separately weighted)</h2>
+<ul class="item-list" id="foundations-list"></ul>
+
+<div id="domains"></div>
+
+<div class="lesson-nav">
+  <a href="index.html">&larr; Back to course</a>
+  <span></span>
+</div>
+
+<script>
+const FOUNDATIONS = [
+  { id: "0001", title: "What problem Vault solves", href: "lessons/0001-what-problem-vault-solves.html" },
+  { id: "0002", title: "Installing & running Vault", href: "lessons/0002-installing-running-vault.html" },
+  { id: "0003", title: "Vault's core architecture", href: "lessons/0003-core-architecture.html" }
+];
+
+const DOMAINS = [
+  {
+    key: "arch-fundamentals",
+    name: "Vault architecture fundamentals",
+    lessons: [
+      { id: "0004", title: "Seal, unseal & auto-unseal", href: null },
+      { id: "0005", title: "Working with Vault: CLI, API, UI & environment variables", href: null }
+    ]
+  },
+  {
+    key: "deployment-arch",
+    name: "Vault deployment architecture",
+    lessons: [
+      { id: "0006", title: "Storage backends", href: null },
+      { id: "0007", title: "High availability clustering & self-managed vs. HCP", href: null },
+      { id: "0008", title: "Disaster recovery & performance replication", href: null }
+    ]
+  },
+  {
+    key: "auth-methods",
+    name: "Authentication methods",
+    lessons: [
+      { id: "0009", title: "Authentication methods overview", href: null },
+      { id: "0010", title: "Token auth method & the root token", href: null },
+      { id: "0011", title: "Userpass & LDAP auth", href: null },
+      { id: "0012", title: "AppRole auth", href: null },
+      { id: "0013", title: "Kubernetes auth method", href: null },
+      { id: "0014", title: "Identity: entities and groups", href: null }
+    ]
+  },
+  {
+    key: "tokens",
+    name: "Vault tokens",
+    lessons: [
+      { id: "0015", title: "Vault tokens deep dive", href: null }
+    ]
+  },
+  {
+    key: "leases",
+    name: "Vault leases",
+    lessons: [
+      { id: "0016", title: "Leases: renewal and revocation", href: null }
+    ]
+  },
+  {
+    key: "policies",
+    name: "Vault policies",
+    lessons: [
+      { id: "0017", title: "Policy fundamentals: paths and capabilities", href: null },
+      { id: "0018", title: "Writing and testing policies", href: null }
+    ]
+  },
+  {
+    key: "secrets-engines",
+    name: "Secrets engines",
+    lessons: [
+      { id: "0019", title: "Secrets engines overview: static vs. dynamic secrets", href: null },
+      { id: "0020", title: "KV secrets engine (v2)", href: null },
+      { id: "0021", title: "Dynamic secrets: the database secrets engine", href: null },
+      { id: "0022", title: "PKI secrets engine", href: null }
+    ]
+  },
+  {
+    key: "encryption-as-a-service",
+    name: "Encryption as a Service",
+    lessons: [
+      { id: "0023", title: "Transit secrets engine: encryption as a service", href: null }
+    ]
+  },
+  {
+    key: "access-mgmt-arch",
+    name: "Access management architecture",
+    lessons: [
+      { id: "0024", title: "Vault Agent", href: null },
+      { id: "0025", title: "Vault on Kubernetes", href: null }
+    ]
+  }
+];
+
+const REVIEW = [
+  { id: "0026", title: "Production hardening & audit devices", href: null },
+  { id: "0027", title: "Final review & cheat sheet", href: null },
+  { id: "0028", title: "Practice exam", href: null }
+];
+
+const STORE_KEY = "vault-objectives-progress";
+const state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+function renderItemList(list, container, ariaVerb) {
+  list.forEach(l => {
+    const li = document.createElement("li");
+    if (l.href) {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!state[l.id];
+      cb.setAttribute("aria-label", `Mark Lesson ${Number(l.id)} — ${l.title} as reviewed`);
+      cb.addEventListener("change", () => { state[l.id] = cb.checked; save(); updateOverall(); });
+      const a = document.createElement("a");
+      a.href = l.href;
+      a.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      li.appendChild(cb);
+      li.appendChild(a);
+    } else {
+      const span = document.createElement("span");
+      span.className = "planned";
+      span.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      const tag = document.createElement("span");
+      tag.className = "planned-tag";
+      tag.textContent = "planned";
+      li.appendChild(span);
+      li.appendChild(tag);
+    }
+    container.appendChild(li);
+  });
+}
+
+function renderDomain(d) {
+  const built = d.lessons.filter(l => l.href);
+  const wrap = document.createElement("div");
+  wrap.className = "domain";
+
+  const head = document.createElement("div");
+  head.className = "domain-head";
+  head.innerHTML = `<div><h2>${d.name}</h2><p>${built.length} of ${d.lessons.length} lessons published</p></div>`;
+  wrap.appendChild(head);
+
+  const track = document.createElement("div");
+  track.className = "bar-track";
+  const fill = document.createElement("div");
+  fill.className = "bar-fill";
+  track.appendChild(fill);
+  wrap.appendChild(track);
+
+  const list = document.createElement("ul");
+  list.className = "item-list";
+  renderItemList(d.lessons, list);
+  wrap.appendChild(list);
+
+  function updateBar() {
+    const done = built.filter(l => state[l.id]).length;
+    const pct = built.length ? Math.round((done / built.length) * 100) : 0;
+    fill.style.width = pct + "%";
+  }
+  updateBar();
+  wrap.updateBar = updateBar;
+
+  return wrap;
+}
+
+function updateOverall() {
+  const all = [...FOUNDATIONS, ...DOMAINS.flatMap(d => d.lessons), ...REVIEW];
+  const built = all.filter(l => l.href);
+  const done = built.filter(l => state[l.id]).length;
+  document.getElementById("overall").textContent =
+    `${built.length} of ${all.length} lessons published — ${done} of ${built.length} published lessons checked off.`;
+  document.querySelectorAll(".domain").forEach(el => el.updateBar && el.updateBar());
+}
+
+const foundationsList = document.getElementById("foundations-list");
+renderItemList(FOUNDATIONS, foundationsList);
+
+const container = document.getElementById("domains");
+DOMAINS.forEach(d => container.appendChild(renderDomain(d)));
+
+const reviewWrap = document.createElement("div");
+reviewWrap.className = "domain";
+reviewWrap.innerHTML = `<div class="domain-head"><div><h2>Review &amp; Practice Exam (not separately weighted)</h2></div></div>`;
+const reviewList = document.createElement("ul");
+reviewList.className = "item-list";
+renderItemList(REVIEW, reviewList);
+reviewWrap.appendChild(reviewList);
+container.appendChild(reviewWrap);
+
+updateOverall();
+
+document.getElementById("reset-progress").addEventListener("click", () => {
+  if (confirm("Reset all Vault tracker progress? This only clears this tracker's checkboxes in this browser — it does not affect any other course on this site.")) {
+    localStorage.removeItem(STORE_KEY);
+    location.reload();
+  }
+});
+</script>
+
+</body>
+</html>

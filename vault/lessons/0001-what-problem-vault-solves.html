@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 — What Problem Vault Solves</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">HashiCorp Vault Engineering — Lesson 1 of 28</p>
+<h1>What Problem Vault Solves</h1>
+
+<p>Every application needs secrets — database passwords, API keys, TLS certificates. The default path of least resistance is hardcoding them in config files or environment variables, copy-pasted between teammates, never rotated because rotating means finding every place a secret was pasted. That's how a single leaked laptop or a compromised CI log turns into a full breach: one static credential, valid forever, with no record of who used it or when.</p>
+
+<p class="callout"><strong>Mental model:</strong> most teams' secrets today are sticky notes on a monitor — anyone walking by reads them, nobody knows who did, and replacing one means finding every place a copy was made. Vault is a bank vault with a logbook: every withdrawal is identity-checked, time-stamped, and — for the secrets that support it — the "cash" itself expires and gets reissued automatically instead of sitting valid forever. That predicts Vault's real value: it's not just a hiding place for secrets, it's a system that can hand out secrets that don't need rotating by hand because they were never meant to live long.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Application needs a secret
+   │
+   ▼
+Option A: hardcoded / copy-pasted     ← the default, and the problem
+Option B: Vault  ← you are here (centralized, audited, identity-based)</code></pre>
+
+<h2>What Vault actually manages</h2>
+<p>Per HashiCorp's own definition, Vault "provides centralized, well-audited privileged access and secret management for mission-critical data whether you deploy systems on-premises, in the cloud, or in a hybrid environment." Concretely, that's four things this course teaches in order:</p>
+<ul>
+<li><strong>Secrets engines</strong> — generate, store, and manage the secrets themselves (Phase F, Lessons 19-23)</li>
+<li><strong>Authentication methods</strong> — control who gets in, and how they prove identity (Phase C, Lessons 9-14)</li>
+<li><strong>Policies</strong> — define what an authenticated identity can actually do (Phase E, Lessons 17-18)</li>
+<li><strong>Storage backends</strong> — where the encrypted data actually persists (Phase B, Lesson 6)</li>
+</ul>
+<p><strong>Why it's built this way:</strong> Vault's real differentiator isn't "a place to put secrets" — plenty of tools do that. It's that secrets can be <strong>dynamic</strong>: generated on-demand, scoped to one request, and automatically expired, so a leaked credential is worthless within minutes instead of valid forever. That single idea — a secret with a lease, not a secret with no end date — is the thread connecting almost every lesson in this course.</p>
+
+<h2>Where this sits next to what you already know</h2>
+<p>If you've used Kubernetes Secrets or fed a Terraform variable from a secrets manager, you've already touched adjacent pieces of this problem: Kubernetes Secrets are base64-encoded, not encrypted by default, and static once created — Vault can generate and inject secrets into Kubernetes workloads dynamically instead (Lesson 25 covers exactly this integration). This course teaches Vault itself, not a repeat of what native K8s Secrets already do.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. What makes a Vault-issued dynamic secret fundamentally different from a hardcoded API key?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">It's generated on-demand, scoped to a lease, and expires automatically — a leaked copy stops being useful once its lease ends, instead of being valid indefinitely.</div>
+</div>
+<p>Now, before moving to Lesson 2: write down, in your own words, one secret your own work currently handles the "sticky note" way (hardcoded, shared, or never rotated). You'll use this as your own running example through the course.</p>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating Vault as "just an encrypted place to store the same static secrets" — that captures maybe a third of its value. The dynamic-secrets model (Lessons 19-23) is what actually changes your security posture, not just where the bytes live.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> teams adopting Vault almost always start with static secrets (the KV engine, Lesson 20) because it's the easiest migration off "secrets in a config file," then move specific high-value secrets (database credentials, cloud IAM) to dynamic engines once the team trusts the operational model. Trying to go straight to full dynamic-everything on day one is a common cause of stalled Vault rollouts.</p>
+
+<h2>Exam &amp; interview notes</h2>
+<p>Foundational for the HashiCorp Certified: Vault Associate (003) exam — not a separately weighted domain, but every scored domain assumes this framing.</p>
+<p><strong>Interview Q:</strong> "Why would a team adopt Vault instead of just encrypting a secrets file and checking it into a private repo?" <strong>A:</strong> Encryption-at-rest alone doesn't solve identity-based access control, audit logging of who accessed what and when, or automatic credential rotation — Vault's real value is the combination of centralized access control, audit trail, and the option of short-lived dynamic secrets, not the encryption itself.</p>
+
+<h2>Source</h2>
+<p><a href="https://developer.hashicorp.com/vault/docs/what-is-vault" target="_blank" rel="noopener">developer.hashicorp.com/vault/docs/what-is-vault</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Hardcoded/shared static secrets are the default failure mode — no rotation, no audit trail, valid forever.</li>
+    <li>Vault manages four things: secrets engines, auth methods, policies, storage backends.</li>
+    <li>Vault's real differentiator is dynamic secrets — generated on demand, leased, auto-expiring — not just centralized storage.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does a hardcoded secret stay dangerous even after the person who hardcoded it leaves the team?</li>
+<li>When would static secrets (not dynamic) still be the right choice? (Preview — Lesson 19 covers this trade-off fully.)</li>
+<li>What happens to a Vault-issued dynamic secret once its lease expires?</li>
+<li>How would you verify whether a given secret in your own systems today is static or dynamic?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or want to talk through your own team's secrets sprawl example? Paste it to your teacher — real examples make the rest of this course land better than abstract ones.</footer>
+
+<div class="lesson-nav">
+  <span>&larr; Start</span>
+  <span><a href="0002-installing-running-vault.html">Next: Installing &amp; running Vault &rarr;</a></span>
+</div>
+
+</body>
+</html>
