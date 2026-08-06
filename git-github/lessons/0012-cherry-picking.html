@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 12 — Cherry-Picking Commits</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git &amp; GitHub Engineering — Lesson 12 of 20 · teach2 pilot</p>
+<h1>Cherry-Picking Commits</h1>
+
+<p>Sometimes you need exactly one commit from another branch — a critical bug fix on <code>main</code> that also needs to land on a <code>release-1.2</code> branch — without merging or rebasing the whole branch. <code>git cherry-pick</code> takes one specific commit and replays just its changes onto your current branch.</p>
+
+<p class="callout"><strong>Mental model:</strong> cherry-picking is photocopying one page from another book into yours, not lending the whole book. The original commit stays exactly where it was, untouched — what lands on your branch is a brand-new commit with the same changes and message, but its own hash and its own place in your branch's history. That predicts something Lesson 11 already showed for rebase: cherry-picked commits are new objects, not the original moved.</p>
+
+<h2>Where this fits</h2>
+<pre><code>main:     A---B---C---D  (D = the fix you need)
+                     \
+release:  A---B---E       (missing D)
+                     │
+                     ▼  git cherry-pick D  (while on release)
+release:  A---B---E---D'  (D' = new commit, same changes, new hash)</code></pre>
+
+<h2>The basic command</h2>
+<pre><code>git checkout release-1.2
+git cherry-pick a1b2c3d
+</code></pre>
+<p><strong>Why it's built this way:</strong> unlike merge (Lesson 5), cherry-pick doesn't care about the two branches' shared history at all — it just takes one commit's diff and applies it fresh. That's exactly what makes it the right tool for "just this one fix," and the wrong tool for bringing over a whole feature (that's what merge/rebase are for).</p>
+<pre><code>git cherry-pick a1b2c3d b2c3d4e   # multiple commits, applied in the order given
+git cherry-pick -n a1b2c3d         # apply changes, but don't auto-commit — stage only
+</code></pre>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. After cherry-picking a commit, does the original commit on the source branch change or disappear?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — it's untouched. Cherry-pick creates a brand-new commit with a new hash on your current branch; the original stays exactly where it was.</div>
+</div>
+<p>Now try it yourself: make a commit on <code>main</code>, branch off before it, then cherry-pick it onto the new branch. Try before revealing.</p>
+<div class="quiz">
+<p>Reveal the sequence</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>git checkout main
+echo fix >> f.txt && git commit -am "critical fix"
+FIX_HASH=$(git rev-parse HEAD)
+git checkout -b hotfix-branch HEAD~1
+git cherry-pick $FIX_HASH
+git log --oneline -2      # a new commit, different hash than $FIX_HASH
+</code></pre>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> cherry-picking a whole sequence of commits one-by-one to bring over a feature — that's what merge or rebase are actually for. Reach for cherry-pick when you need one or two specific commits, not as a substitute for combining branches.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>echo a > conflict.txt && git add conflict.txt && git commit -m "base"
+git checkout -b feature-x
+echo b >> conflict.txt && git commit -am "feature change"
+git checkout main
+echo c >> conflict.txt && git commit -am "main change, same line"
+git cherry-pick feature-x</code></pre>
+<p><strong>Predict first:</strong> does this apply cleanly? <strong>Observe:</strong> a merge conflict, same markers as Lesson 6 — cherry-pick replays a diff, and a diff can conflict with unrelated changes exactly like a merge or rebase can. Resolve it the same way:</p>
+<pre><code># fix the conflict markers in conflict.txt, then:
+git add conflict.txt
+git cherry-pick --continue</code></pre>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> cherry-picked commits keep an <code>(cherry picked from commit ...)</code> line in their message (add <code>-x</code> to make this automatic) — worth doing on any release-branch backport, so anyone reading history later can trace exactly which original commit a fix came from.</p>
+
+<h2>Interview notes</h2>
+<p><strong>Interview Q:</strong> "You need a single hotfix from <code>main</code> on an older release branch, without pulling in every other change since the branches diverged. What do you use?" <strong>A:</strong> <code>git cherry-pick &lt;commit&gt;</code> — it applies just that one commit's diff, unlike merge or rebase which bring the full history between the branches.</p>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/docs/git-cherry-pick" target="_blank" rel="noopener">git-scm.com — git-cherry-pick</a> — official Git documentation. Verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Cherry-pick applies one commit's changes as a brand-new commit on your current branch — the original is untouched.</li>
+    <li>It ignores shared history between branches entirely, unlike merge/rebase — the right tool for "just this one fix."</li>
+    <li>A cherry-pick can conflict exactly like a merge — resolve, <code>git add</code>, then <code>git cherry-pick --continue</code>.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does cherry-picking a commit not remove it from the source branch?</li>
+<li>When would repeated cherry-picking be the wrong tool compared to a merge?</li>
+<li>What happens to the commit hash of a cherry-picked commit?</li>
+<li>How would you verify which original commit a backported fix came from, months later?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>git cherry-pick</code> error back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0011-interactive-rebase.html">&larr; Back: Interactive rebase</a></span>
+  <span><a href="0013-tags-releases.html">Next: Git tags &amp; releases &rarr;</a></span>
+</div>
+
+</body>
+</html>

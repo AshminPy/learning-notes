@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 13 — Git Tags &amp; Releases</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git &amp; GitHub Engineering — Lesson 13 of 20 · teach2 pilot</p>
+<h1>Git Tags &amp; Releases</h1>
+
+<p>A branch name (Lesson 4) moves — it always points at the latest commit made on it. Sometimes you need the opposite: a permanent, unmoving pointer at exactly one commit, marking "this is what v1.0 actually was," forever. That's a tag.</p>
+
+<p class="callout"><strong>Mental model:</strong> a branch is a sticky note that moves to whatever page you're currently on. A tag is a bookmark glued to one specific page — it never moves, even after you keep reading (committing) past it. That predicts something branches can't offer: come back in two years, and <code>v1.0</code> still points at exactly the commit it did the day you tagged it, no matter how much history has been added since.</p>
+
+<h2>Where this fits</h2>
+<pre><code>main:  A---B---C---D---E   (branch pointer: moves to E, the latest commit)
+           │
+          v1.0              (tag: stays glued to B, forever)</code></pre>
+
+<h2>Lightweight vs. annotated tags</h2>
+<pre><code>git tag v1.0-lite                          # lightweight — just a name, no metadata
+git tag -a v1.0 -m "First stable release"  # annotated — name + message + author + date
+</code></pre>
+<p><strong>Why it's built this way:</strong> a lightweight tag is barely more than a branch name that doesn't move — cheap, but no record of who tagged it or why. An annotated tag is a real Git object with its own message, tagger identity, and date, which is what makes it show up properly in <code>git describe</code> and GitHub Releases. Use annotated for anything meant to mark an actual release; lightweight is fine for a quick personal bookmark.</p>
+<pre><code>git tag                          # list all tags
+git push origin v1.0             # tags don't push automatically — explicit, on purpose
+git push origin --tags           # push every local tag at once
+</code></pre>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. You commit five more times after tagging <code>v1.0</code>. Does <code>v1.0</code> move to include those commits?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. A tag is a fixed pointer to the exact commit it was created on — unlike a branch, it never moves as you keep committing.</div>
+</div>
+<p>Now try it yourself: make a commit, tag it as an annotated release, then confirm the tag stays put after a second commit. Try before revealing.</p>
+<div class="quiz">
+<p>Reveal the sequence</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>echo release > f.txt && git add f.txt && git commit -m "release commit"
+git tag -a v1.0 -m "First release"
+echo more >> f.txt && git commit -am "post-release work"
+git log --oneline v1.0        # shows only up through "release commit"
+git log --oneline main        # shows the newer "post-release work" too
+</code></pre>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming <code>git push</code> also pushes your tags — it doesn't, by design, since a tag is often created after review/CI passes, separately from the push that triggered it. You need <code>git push origin &lt;tag&gt;</code> or <code>--tags</code> explicitly.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>git tag v1.0
+echo change > f.txt && git add f.txt && git commit -m "another commit"
+git tag v1.0</code></pre>
+<p><strong>Predict first:</strong> does the second <code>git tag v1.0</code> move the tag to the new commit? <strong>Observe:</strong> Git refuses — <code>fatal: tag 'v1.0' already exists</code>. Tags are deliberately immutable once created; moving one requires an explicit, unambiguous <code>-f</code>:</p>
+<pre><code>git tag -f v1.0
+git push origin v1.0 --force   # remote tags need the same explicit force, for the same reason</code></pre>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> never force-move a tag that's already been pulled by others or referenced in a deployed artifact — same divergence risk as force-pushing a branch (Lesson 9's reset-vs-revert logic applies here too). Once <code>v1.0</code> has shipped, treat it as permanently immutable; cut <code>v1.0.1</code> instead of moving <code>v1.0</code>.</p>
+
+<h2>Interview notes</h2>
+<p><strong>Interview Q:</strong> "Why does Git require an explicit <code>--tags</code> or tag name to push tags, instead of pushing them along with commits automatically?" <strong>A:</strong> Tags often mark a deliberate milestone (a release) created after review, separately from routine commit pushes — making tag pushes explicit prevents an unfinished or accidental tag from shipping just because a normal <code>git push</code> happened.</p>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/book/en/v2/Git-Basics-Tagging" target="_blank" rel="noopener">Pro Git — Tagging</a> — official Git documentation, git-scm.com. Verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A tag is a fixed pointer to one commit — unlike a branch, it never moves as you keep committing.</li>
+    <li>Annotated tags (<code>-a -m</code>) carry a real message/author/date; lightweight tags are just a name.</li>
+    <li>Tags don't push automatically — <code>git push origin &lt;tag&gt;</code> or <code>--tags</code> is required, on purpose.</li>
+    <li>Moving an existing tag requires explicit <code>-f</code> — treat a shipped tag as immutable in practice.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does Git treat tags as immutable by default, unlike branches?</li>
+<li>When would a lightweight tag be good enough instead of an annotated one?</li>
+<li>What happens if you try to re-create a tag name that already exists, without <code>-f</code>?</li>
+<li>How would you verify a specific tag corresponds to a specific commit, months after the fact?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>git tag</code> error back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0012-cherry-picking.html">&larr; Back: Cherry-picking commits</a></span>
+  <span><a href="0014-blame-bisect.html">Next: Git blame &amp; bisect &rarr;</a></span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 11 — Interactive Rebase</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git &amp; GitHub Engineering — Lesson 11 of 20 · teach2 pilot</p>
+<h1>Interactive Rebase</h1>
+
+<p>Lesson 5 used rebase to replay one branch's commits onto another. Interactive rebase replays your <em>own</em> recent commits back onto themselves — letting you clean up messy history (squash a "fix typo" commit into the one it fixes, reorder, reword a bad message) before anyone else sees it.</p>
+
+<p class="callout"><strong>Mental model:</strong> interactive rebase hands you your last N commits as an editable to-do list, one line per commit, and lets you rewrite the list before Git replays it. That predicts the actual mechanic: nothing happens by editing the list itself — Git only acts once you save and close it, replaying each commit in the order and mode you specified, top to bottom.</p>
+
+<h2>Where this fits</h2>
+<pre><code>git log --oneline -3
+   c3d4e5  fix typo
+   b2c3d4  add feature
+   a1b2c3  base commit
+        │
+        ▼  git rebase -i HEAD~2
+[editable to-do list, in reverse-chronological-becomes-top order]
+   pick b2c3d4 add feature
+   pick c3d4e5 fix typo
+        │  (edit the list, save)
+        ▼
+Git replays each line, producing new commits with new hashes</code></pre>
+
+<h2>The to-do list commands</h2>
+<pre><code>git rebase -i HEAD~3
+</code></pre>
+<table>
+<tr><th>Command</th><th>Effect</th></tr>
+<tr><td><code>pick</code></td><td>Keep the commit as-is (default for every line)</td></tr>
+<tr><td><code>reword</code></td><td>Keep the changes, edit the commit message</td></tr>
+<tr><td><code>squash</code></td><td>Combine into the commit above it, keep both messages (edit prompt shown)</td></tr>
+<tr><td><code>fixup</code></td><td>Same as squash, but discard this commit's message entirely</td></tr>
+<tr><td><code>drop</code></td><td>Remove the commit entirely</td></tr>
+<tr><td><code>edit</code></td><td>Pause here so you can amend the commit's content before continuing</td></tr>
+</table>
+<p><strong>Why it's built this way:</strong> like Lesson 5's rebase, every replayed commit gets a new hash — this is history rewriting, same rule applies: safe on commits only you have, unsafe (same divergence problem from Lesson 9) on anything already pushed and pulled by someone else.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. You want to combine a commit into the one above it, but don't care about its message at all. <code>squash</code> or <code>fixup</code>?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>fixup</code> — combines silently, discarding the fixed-up commit's message. <code>squash</code> combines but stops to let you edit a merged message from both.</div>
+</div>
+<p>Now try it yourself: make three small commits on a scratch branch, then squash the last two into one with a clean message. Try before revealing.</p>
+<div class="quiz">
+<p>Reveal the sequence</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>echo a > f.txt && git add f.txt && git commit -m "add f"
+echo b >> f.txt && git commit -am "wip"
+echo c >> f.txt && git commit -am "fix wip"
+git rebase -i HEAD~2
+# in the editor, change the second "pick" to "squash" (or "s"), save
+# Git then prompts for a combined commit message — edit and save that too
+git log --oneline
+</code></pre>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> running interactive rebase on commits already pushed to a shared branch — every replayed commit gets a new hash, creating the exact divergence Lesson 9 warned about for plain <code>reset</code>. If it's shared, use <code>git rebase --abort</code> the moment you realize, before saving the to-do list.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>echo a > conflict.txt && git add conflict.txt && git commit -m "base"
+echo b >> conflict.txt && git commit -am "first change"
+echo c >> conflict.txt && git commit -am "second change"
+git rebase -i HEAD~2
+# mark the second commit "edit", save — rebase pauses there</code></pre>
+<p><strong>Predict first:</strong> does <code>edit</code> apply the commit and stop, or stop before applying it? <strong>Observe:</strong> it applies that commit, then pauses with it as the current <code>HEAD</code> — you can now amend it (<code>git commit --amend</code>) before running <code>git rebase --continue</code> to resume replaying the rest.</p>
+<pre><code>git rebase --continue</code></pre>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> squash noisy WIP commits into logical, reviewable units before opening a pull request (Lesson 15) — a reviewer reading 8 "wip" commits gets no value from that history; 2-3 clean, well-described commits do.</p>
+
+<h2>Interview notes</h2>
+<p><strong>Interview Q:</strong> "What's the difference between <code>squash</code> and <code>fixup</code> in an interactive rebase, and when would you use each?" <strong>A:</strong> Both combine a commit into the one above it; <code>squash</code> keeps both messages for you to merge, <code>fixup</code> silently discards the absorbed commit's message. Use <code>fixup</code> for pure "oops, forgot a line" commits with no message worth keeping; <code>squash</code> when both messages add real information.</p>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/book/en/v2/Git-Tools-Rewriting-History" target="_blank" rel="noopener">Pro Git — Rewriting History</a> — official Git documentation, git-scm.com. Verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Interactive rebase presents your last N commits as an editable to-do list — nothing happens until you save it.</li>
+    <li><code>pick</code>/<code>reword</code>/<code>squash</code>/<code>fixup</code>/<code>drop</code>/<code>edit</code> — each line's command decides that commit's fate.</li>
+    <li>Every replayed commit gets a new hash — safe only on commits nobody else has pulled, same rule as Lesson 9's reset vs. revert.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does nothing happen until you save the rebase to-do list?</li>
+<li>When would you choose <code>edit</code> over just amending the latest commit directly?</li>
+<li>What happens to commit hashes for every commit replayed during an interactive rebase?</li>
+<li>How would you verify a shared branch hasn't been rebased out from under you?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>git rebase -i</code> to-do list and error back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0010-stashing.html">&larr; Back: Stashing work in progress</a></span>
+  <span><a href="0012-cherry-picking.html">Next: Cherry-picking commits &rarr;</a></span>
+</div>
+
+</body>
+</html>

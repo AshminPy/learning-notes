@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 16 — GitHub Actions Basics</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git &amp; GitHub Engineering — Lesson 16 of 20 · teach2 pilot</p>
+<h1>GitHub Actions Basics</h1>
+
+<p>Lesson 15's PRs get reviewed by humans, but humans shouldn't have to manually run tests on every push to check them. GitHub Actions runs automation — tests, builds, deploys — triggered directly by the same events you already produce: a push, a PR being opened, a tag created (Lesson 13).</p>
+
+<p class="callout"><strong>Mental model:</strong> a workflow file is a standing instruction taped to the repo's door: "whenever X happens, do Y, automatically, on a fresh machine." That predicts something important: each run starts from a completely clean environment — nothing persists between runs unless you explicitly save it, which is exactly why a workflow has to check out the repo itself as its first real step.</p>
+
+<h2>Where this fits</h2>
+<pre><code>git push (Lesson 7) / PR opened (Lesson 15) / tag created (Lesson 13)
+   │  event
+   ▼
+.github/workflows/*.yml   ← you are here (declares what runs, and when)
+   │
+   ▼
+A fresh runner VM, executing your steps</code></pre>
+
+<h2>Anatomy of a workflow</h2>
+<pre><code># .github/workflows/ci.yml
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "run your tests here"
+</code></pre>
+<ul>
+<li><code>on</code> — which events trigger this workflow (push, pull_request, a schedule, manual dispatch)</li>
+<li><code>jobs.&lt;id&gt;.runs-on</code> — what kind of machine runs it</li>
+<li><code>steps</code> — run in order; <code>uses</code> runs someone else's packaged action, <code>run</code> runs a raw shell command</li>
+</ul>
+<p><strong>Why <code>actions/checkout@v4</code> comes first, always:</strong> the runner starts with an empty filesystem — no repo, no history, nothing. <code>actions/checkout</code> is what actually clones your repository onto the runner; skip it and every later step that expects your files to exist fails immediately.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. A workflow's second step tries to read a file from your repo and fails with "file not found." What's the most likely missing first step?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>actions/checkout@v4</code> — without it, the runner never clones the repository, so no file from it exists on the runner's filesystem at all.</div>
+</div>
+<p>Now write your own, by hand: a workflow that runs on every push to <code>main</code>, checks out the repo, and prints "hello from CI." Try before revealing.</p>
+<div class="quiz">
+<p>Reveal the reference answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>name: Hello CI
+on:
+  push:
+    branches: [main]
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "hello from CI"
+</code></pre>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> hardcoding a secret value directly in the workflow YAML — it's committed history the moment you push, permanently, even if you delete it in a later commit. Use <code>${{ secrets.MY_SECRET }}</code>, configured in the repo's Settings, never a literal value in the file.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># .github/workflows/broken.yml — missing checkout on purpose
+name: Broken
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: cat README.md</code></pre>
+<p><strong>Predict first:</strong> does this workflow fail, and with what kind of error? <strong>Observe (reason through it, or push this to a scratch repo):</strong> <code>cat: README.md: No such file or directory</code> — the runner's filesystem is genuinely empty at that point; this isn't a permissions or syntax error, the file simply was never placed there because <code>checkout</code> was skipped.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> pin action versions to a specific major version (<code>@v4</code>) rather than <code>@main</code>/<code>@latest</code> — an upstream action can change behavior under you otherwise, the exact same "don't pull latest unpinned" lesson as Lesson 17's Helm chart-version advice, applied to CI.</p>
+
+<h2>Interview notes</h2>
+<p><strong>Interview Q:</strong> "A CI workflow works on your branch but fails on the exact same code after merging to main. What's a likely GitHub-Actions-specific cause?" <strong>A:</strong> Different trigger conditions or secrets availability — some secrets/environments are restricted to specific branches, and a workflow can be defined differently (or missing) on <code>main</code> versus the feature branch until the PR that adds it is itself merged.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.github.com/en/actions/writing-workflows/quickstart" target="_blank" rel="noopener">docs.github.com — GitHub Actions quickstart</a> and <a href="https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets" target="_blank" rel="noopener">Using secrets in workflows</a> — official GitHub documentation. Verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A workflow file declares events (<code>on</code>) and steps to run automatically when they happen.</li>
+    <li>Every run starts on a fresh, empty runner — <code>actions/checkout</code> is what actually puts your repo there.</li>
+    <li>Secrets go through <code>${{ secrets.NAME }}</code>, configured in repo settings — never a literal value in the YAML.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does every workflow need to explicitly check out the repo instead of it being automatic?</li>
+<li>When would you pin an action to an exact commit SHA instead of just a major version tag?</li>
+<li>What happens to a hardcoded secret in a workflow file the moment it's committed, even if removed later?</li>
+<li>How would you verify which event actually triggered a specific workflow run?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact workflow YAML and error back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0015-github-pull-requests.html">&larr; Back: GitHub pull requests</a></span>
+  <span><a href="0017-branch-protection.html">Next: Branch protection &amp; code review workflows &rarr;</a></span>
+</div>
+
+</body>
+</html>

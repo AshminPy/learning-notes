@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 19 — Recovering from Mistakes: Reflog &amp; Lost Commits</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git &amp; GitHub Engineering — Lesson 19 of 20 · teach2 pilot</p>
+<h1>Recovering from Mistakes: Reflog &amp; Lost Commits</h1>
+
+<p>Lesson 9's <code>git reset --hard</code>, Lesson 11's interactive rebase, Lesson 12's cherry-pick — every history-rewriting operation in this course can make a commit look gone. It almost never actually is. The <strong>reflog</strong> is Git's private log of everywhere your branches and <code>HEAD</code> have pointed, and it's the safety net under nearly every "I think I just lost work" panic.</p>
+
+<p class="callout"><strong>Mental model:</strong> the reflog is a security camera pointed at your own <code>HEAD</code>, not the commit history itself. It doesn't record what changed in each commit — it records every place <code>HEAD</code> and your branches have <em>pointed</em>, second by second, including addresses you've since moved away from. That predicts its real limit: it only sees your local repository's movements. A commit that existed only on someone else's machine, never checked out or fetched locally, was never in this camera's view to begin with.</p>
+
+<h2>Where this fits</h2>
+<pre><code>git reset --hard HEAD~3    (Lesson 9)  → branch pointer moves, 3 commits look "gone"
+git rebase -i HEAD~5       (Lesson 11) → new commits replace old ones, old hashes look "gone"
+        │
+        ▼
+git reflog   ← you are here — every one of those old positions is still logged, locally</code></pre>
+
+<h2>Reading the reflog</h2>
+<pre><code>git reflog
+a1b2c3d HEAD@{0}: reset: moving to HEAD~3
+d4e5f6g HEAD@{1}: commit: add feature
+e5f6g7h HEAD@{2}: commit: fix bug
+</code></pre>
+<p>Each line is a snapshot of where <code>HEAD</code> pointed, most recent first. <code>HEAD@{1}</code> in the example above is the commit that existed right before the reset moved things — genuinely still in your repository's object database, just no longer reachable from any branch, which is the actual definition of "looks gone."</p>
+
+<h2>Recovering a lost commit</h2>
+<pre><code>git checkout d4e5f6g              # look at it directly, detached HEAD
+git branch recovered-work d4e5f6g  # or: give it a permanent name
+# or, to move your current branch back to it entirely:
+git reset --hard d4e5f6g
+</code></pre>
+<p><strong>Why it's built this way:</strong> Git almost never deletes commit objects immediately — a "lost" commit becomes genuinely unreachable garbage only after it drops out of the reflog (default ~90 days) <em>and</em> a garbage collection run happens. That two-stage delay is deliberate breathing room, specifically so a reset/rebase mistake has a real recovery window instead of being instantly, permanently destructive.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. You run <code>git reset --hard HEAD~2</code> by mistake. Are the two commits you just "lost" actually deleted?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No — they still exist as objects, just unreachable from any branch. <code>git reflog</code> shows the commit hash your branch pointed to right before the reset; <code>git reset --hard &lt;that-hash&gt;</code> restores it.</div>
+</div>
+<p>Now try it yourself: make two commits, hard-reset past both, then use the reflog to get them back. Try before revealing.</p>
+<div class="quiz">
+<p>Reveal the sequence</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>echo a > f.txt && git add f.txt && git commit -m "commit one"
+echo b >> f.txt && git commit -am "commit two"
+git reset --hard HEAD~2       # both commits now unreachable from this branch
+git reflog                     # find the hash labeled "commit two" (right before the reset)
+git reset --hard &lt;that-hash&gt;   # both commits are back
+</code></pre>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming the reflog protects commits that were only ever on a teammate's machine or an unpushed remote branch that got deleted — it only logs <em>your own local repository's</em> ref movements. If you never fetched or checked out those commits locally, your reflog never saw them, and this recovery path doesn't apply.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>echo a > f.txt && git add f.txt && git commit -m "important work"
+git reflog | head -1</code></pre>
+<p><strong>Predict first:</strong> if you now run <code>git gc --prune=now</code> immediately (forcing garbage collection), does the commit disappear? <strong>Observe:</strong> no — it's still referenced by the current branch and by the reflog entry itself; <code>gc</code> only removes objects that are both unreachable from any ref <em>and</em> aged out of the reflog. This is why the two-stage delay in "Why it's built this way" above matters in practice, not just in theory.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> the reflog is local-only — it doesn't survive a fresh clone, isn't backed up with your remote, and isn't a substitute for pushing important work. Push to a remote (even a personal scratch branch) as soon as work matters enough to lose sleep over; the reflog is a short-term local safety net, not durable storage.</p>
+
+<h2>Interview notes</h2>
+<p><strong>Interview Q:</strong> "A teammate ran <code>git rebase -i</code> and accidentally dropped a commit they needed. Is it recoverable?" <strong>A:</strong> Almost certainly yes, on their own machine — <code>git reflog</code> will show the pre-rebase position, and <code>git cherry-pick</code> or <code>git reset --hard</code> against that hash restores it. It's only unrecoverable if their reflog has already aged out and garbage collection has run, which takes real time by default.</p>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/docs/git-reflog" target="_blank" rel="noopener">git-scm.com — git-reflog</a> — official Git documentation. Verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>The reflog logs every position your local <code>HEAD</code>/branches have pointed to — a "lost" commit almost always still exists as an object.</li>
+    <li>Commits become truly unreachable only after aging out of the reflog (~90 days default) <em>and</em> a garbage-collection run — a deliberate recovery window.</li>
+    <li>The reflog is strictly local — it can't recover a commit that never existed in your own repository.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does Git delay actually deleting "lost" commits instead of removing them immediately?</li>
+<li>When would the reflog NOT be able to help recover a commit?</li>
+<li>What happens to a reflog entry after roughly 90 days by default?</li>
+<li>How would you verify a specific hash from the reflog is really the commit you think it is, before resetting to it?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>git reflog</code> output back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0018-submodules-monorepos.html">&larr; Back: Submodules &amp; monorepos</a></span>
+  <span><a href="0020-final-review.html">Next: Final review &amp; cheat sheet &rarr;</a></span>
+</div>
+
+</body>
+</html>

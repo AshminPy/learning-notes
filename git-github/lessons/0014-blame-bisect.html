@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 14 — Git Blame &amp; Bisect</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Git &amp; GitHub Engineering — Lesson 14 of 20 · teach2 pilot</p>
+<h1>Git Blame &amp; Bisect</h1>
+
+<p>Two different questions, both answered by history you already have: "who last touched this line, and why?" (<code>blame</code>), and "which of these 200 commits actually broke this?" (<code>bisect</code>). Neither requires guessing — both search history that's already sitting in your repository.</p>
+
+<p class="callout"><strong>Mental model:</strong> <code>blame</code> is a magnifying glass on one line; <code>bisect</code> is a metal detector sweeping a whole field. <code>blame</code> answers "who, when, why" for a line you've already found. <code>bisect</code> finds the line/commit you haven't found yet, by narrowing a range in half repeatedly instead of reading every commit in order. That predicts the speed difference: checking 200 commits one at a time is 200 steps; bisecting the same range is about 8 (log2 of 200).</p>
+
+<h2>Where this fits</h2>
+<pre><code>git log        → the full linear history (Lesson 3)
+   │
+   ├─→ git blame &lt;file&gt;    → per-line: which commit, who, when
+   └─→ git bisect            → binary search across commits for the one that broke something</code></pre>
+
+<h2>git blame — per-line history</h2>
+<pre><code>git blame f.txt
+a1b2c3d4 (Alice  2026-07-01 10:00:00) line one
+b2c3d4e5 (Bob    2026-07-15 14:30:00) line two
+</code></pre>
+<p>Every line shows its last-modifying commit, author, and date. <code>git log -L 10,20:f.txt</code> goes further — full history for just that line range, across every change, not only the most recent one.</p>
+
+<h2>git bisect — binary search for a regression</h2>
+<pre><code>git bisect start
+git bisect bad                # current commit is broken
+git bisect good v1.0           # this old tag/commit was known-working
+</code></pre>
+<p>Git checks out a commit roughly halfway between <code>good</code> and <code>bad</code>. Test it, then tell Git the result:</p>
+<pre><code>git bisect good     # or: git bisect bad
+</code></pre>
+<p><strong>Why it's built this way:</strong> each answer halves the remaining search space — the same divide-and-conquer idea behind binary search in any sorted list, applied to commit history instead of an array. Repeat until Git reports the exact first-bad commit, then stop:</p>
+<pre><code>git bisect reset    # return to the branch/commit you started from
+</code></pre>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. History has 100 commits between the last known-good and known-bad state. Roughly how many test steps will bisect take to find the exact breaking commit?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">About 7 (log2 of 100 ≈ 6.6, rounded up) — each test halves the remaining range, regardless of how the 100 commits are ordered.</div>
+</div>
+<p>Now try it yourself: use <code>git blame</code> on a real file in one of your repos to find who last touched a specific line, and why (read that commit's message). Try before revealing what you'd expect.</p>
+<div class="quiz">
+<p>Reveal what to expect</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">A commit hash, author, and date per line. <code>git show &lt;that-hash&gt;</code> gives the full commit message and diff — often the real "why," which the blame output alone doesn't show.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> reading <code>blame</code> output as "who wrote this code" — it only shows who last <em>touched</em> the line. A one-character formatting fix by someone unrelated to the original logic shows up as the blamed author, which can misdirect who you ask about the actual reasoning.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>git bisect start
+git bisect bad HEAD
+git bisect good HEAD~10</code></pre>
+<p><strong>Predict first:</strong> what happens if, mid-bisect, you accidentally run a normal <code>git checkout main</code> instead of testing? <strong>Observe:</strong> bisect's internal state doesn't reset — it's still mid-search, tracking its own detached-HEAD position separately from your branches. Running <code>git bisect good</code>/<code>bad</code> again continues correctly from where it left off; only <code>git bisect reset</code> actually ends the session.</p>
+<pre><code>git bisect reset</code></pre>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> <code>git bisect run &lt;script&gt;</code> automates the whole loop — point it at a test script that exit-codes 0 for good, non-zero for bad, and bisect drives the entire search unattended, checking out and testing each candidate commit itself. Worth setting up for any regression with a reliable automated test, instead of manually testing each step.</p>
+
+<h2>Interview notes</h2>
+<p><strong>Interview Q:</strong> "A regression was introduced somewhere in the last 150 commits, but you don't know which one. What's your approach?" <strong>A:</strong> <code>git bisect</code> — mark the current commit bad and the last known-good one good, then let Git's binary search narrow it down in roughly log2(150) ≈ 8 steps, automating the test with <code>bisect run</code> if a reliable test exists.</p>
+
+<h2>Source</h2>
+<p><a href="https://git-scm.com/docs/git-blame" target="_blank" rel="noopener">git-scm.com — git-blame</a> and <a href="https://git-scm.com/docs/git-bisect" target="_blank" rel="noopener">git-scm.com — git-bisect</a> — official Git documentation. Verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>git blame</code> shows the last commit/author/date per line — a magnifying glass on a line you've already found.</li>
+    <li><code>git bisect</code> binary-searches commit history for a regression — roughly log2(N) steps instead of checking N commits one by one.</li>
+    <li><code>bisect run &lt;script&gt;</code> automates the whole search against a reliable test.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why is bisect dramatically faster than checking every commit in order?</li>
+<li>When would <code>git log -L</code> tell you more than plain <code>git blame</code>?</li>
+<li>What happens to bisect's search state if you check out an unrelated branch mid-search?</li>
+<li>How would you verify blame's "last touched" author is actually who wrote the original logic?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>git bisect</code> output back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <span><a href="0013-tags-releases.html">&larr; Back: Git tags &amp; releases</a></span>
+  <span><a href="0015-github-pull-requests.html">Next: GitHub pull requests &rarr;</a></span>
+</div>
+
+</body>
+</html>
