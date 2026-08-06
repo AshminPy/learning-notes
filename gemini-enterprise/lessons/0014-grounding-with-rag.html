@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 14 — Grounding Responses with RAG</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 14 of 30</p>
+<h1>Grounding Responses with RAG</h1>
+
+<p>Lesson 13 let you pick a model deliberately. But even the best model on Model Garden only knows what it was trained on — nothing about your company's internal policies, this week's inventory numbers, or anything created after its training cutoff. Ask it anyway, and it will still answer confidently, often wrong. <strong>Grounding</strong> is the platform's fix: connecting model output to verifiable data instead of the model's own memory. <strong>RAG</strong> (retrieval-augmented generation) is the most common way this platform does it.</p>
+
+<p class="callout"><strong>Mental model:</strong> RAG Engine is a librarian who fetches the exact right pages from your bookshelf before you ask your question, so the model quotes from something real instead of guessing from memory. That predicts something concrete: the model is only ever as good as what the librarian actually finds — if the right page isn't on the shelf, no amount of model capability fixes that.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Models layer (Lesson 13: pick a model from Model Garden)
+   │
+   ▲  augmented context (retrieved data) feeds INTO the model call
+   │
+Grounding / retrieval layer   ← you are here
+   ├── RAG Engine          (your own documents — this lesson)
+   ├── Google Search / Maps (public, real-time facts)
+   ├── Agent Search         (connects to a website or document set)
+   └── Elasticsearch         (an existing Elasticsearch index)
+   │
+   ▼
+Your data (Cloud Storage, Google Drive, local files, existing indexes)</code></pre>
+<p>This is the last piece of Phase D: Lesson 13 chose the model, this lesson decides what real information reaches it before it answers.</p>
+
+<h2>What grounding actually does</h2>
+<p>Grounding "anchors generative AI responses to factual, external sources of information," ensuring outputs are based on verifiable data rather than the model's internal knowledge alone. The platform lists several grounding methods — RAG, Google Search, Google Maps, Agent Search, Elasticsearch, and a few web-search integrations — but they all solve the same problem: reducing hallucination by tethering the answer to something real and checkable.</p>
+
+<h2>How RAG Engine's pipeline actually works</h2>
+<p>Per Google's own docs, RAG Engine runs a specific sequence. <strong>Ingestion</strong>: it accepts data "from different data sources. For example, local files, Cloud Storage, and Google Drive." <strong>Chunking</strong>: the data is converted "in preparation for indexing... data is split into chunks." <strong>Embedding</strong>: chunks become vectors, built so that "similar or related words or text tend to have similar embeddings... closer together in the high-dimensional vector space." <strong>Corpus/indexing</strong>: this structures the knowledge base "so it's optimized for searching." <strong>Retrieval</strong>: at query time, RAG Engine "searches through its knowledge base to find information that is relevant to the query," and that retrieved context is passed to the model alongside the original question — "improved context along with the query enhances the quality of the LLM's response."</p>
+<p><strong>Why it's built this way:</strong> embeddings, not exact keyword matching, are what let retrieval survive a user asking a question in different words than the source document uses — closeness in vector space, not shared vocabulary, is what "relevant" means here.</p>
+
+<h2>Check-grounding: the safety net</h2>
+<p>RAG Engine also exposes a check-grounding API that "compares RAG output with retrieved facts to ensure statements are grounded." This exists because retrieval and generation are separate steps — a model can still generate a sentence the retrieved context doesn't actually support, and check-grounding is how you catch that instead of assuming grounding automatically means correctness.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. Your RAG corpus only contains last year's HR policy PDF. A user asks about a policy that changed last month. What's the most likely outcome?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The agent confidently answers using the outdated PDF — RAG only retrieves from what's actually indexed. Grounding prevents pure hallucination from the model's memory, but it doesn't fix a stale or incomplete corpus. Keeping the corpus current is your job, not the model's.</div>
+</div>
+<p>Now walk through it yourself before revealing: in your own words, what's the exact order RAG Engine's pipeline runs in for a single user question, from raw document to final answer?</p>
+<div class="quiz">
+<p>Reveal the sequence</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Ingest documents (files/Cloud Storage/Drive) → split into chunks → convert chunks to embeddings → build a searchable corpus/index → at query time, vector-search the corpus for relevant chunks → pass retrieved context plus the original query to the model → optionally run check-grounding to verify the answer is actually supported by what was retrieved.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming grounding means zero hallucination. RAG reduces ungrounded claims by supplying real context, but the check-grounding API exists precisely because a model can still say something the retrieved context doesn't support. Grounding lowers the risk — it doesn't guarantee it away.</p>
+
+<h2>A controlled failure</h2>
+<p><strong>Predict first:</strong> your corpus contains a document with the right answer, but the user's question uses completely different wording than that document — no shared keywords at all. Does vector search still find it?</p>
+<p><strong>Reality:</strong> usually yes, and this is the entire point of embeddings — "similar or related words or text tend to have similar embeddings," so retrieval is designed to survive vocabulary mismatch, unlike exact keyword search. It's not guaranteed for every phrasing, though: if retrieval still misses the right chunk, that's a retrieval-quality problem (how the corpus was chunked or organized), not the model hallucinating — and it needs a different fix. Confusing the two means you'd tune the wrong layer.</p>
+
+<p class="callout production"><strong>Production note:</strong> the choice of grounding method is a data-ownership decision, not just a technical one. RAG Engine fits private, enterprise-controlled documents you're willing to ingest and re-index (HR policies, internal runbooks). Google Search or Maps grounding fits public, real-time facts you don't want to maintain a copy of yourself. Elasticsearch grounding fits specifically when the org already runs a production Elasticsearch index and doesn't want a second, redundant index living in RAG Engine.</p>
+
+<table>
+<tr><th>Method</th><th>Best for</th><th>Avoid when</th></tr>
+<tr><td>RAG Engine</td><td>Private documents you control and can re-index</td><td>Data changes faster than you can re-ingest it</td></tr>
+<tr><td>Google Search / Maps grounding</td><td>Public, real-time facts</td><td>Answer depends on internal/private data</td></tr>
+<tr><td>Elasticsearch grounding</td><td>Org already has a production Elasticsearch index</td><td>No existing index — RAG Engine is simpler to start with</td></tr>
+</table>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (verified 2026-08-06).</p>
+<p><strong>Interview Q:</strong> "Your agent gave a confident, wrong policy answer even though it's grounded with RAG. What are the two most likely causes, and how do you tell them apart?" <strong>A:</strong> Either (1) the corpus is grounded but stale — check-grounding would show the answer <em>is</em> supported by the retrieved (outdated) text, so the fix is refreshing the corpus; or (2) retrieval missed the right chunk entirely and the model filled the gap itself — check-grounding would flag the response as not well-supported, so the fix is chunking/retrieval tuning, not corpus content. Running check-grounding is what tells you which one you're facing.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/grounding/overview" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/models/grounding/overview</a>, <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/grounding/ground-responses-using-rag" target="_blank" rel="noopener">.../grounding/ground-responses-using-rag</a>, and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/rag-engine/rag-overview" target="_blank" rel="noopener">.../build/rag-engine/rag-overview</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Grounding anchors model output to verifiable external data instead of the model's own memory — RAG is the most common method for your own documents.</li>
+    <li>RAG Engine's pipeline: ingest → chunk → embed → index (corpus) → retrieve → augment the query → optionally check-grounding.</li>
+    <li>Embeddings let retrieval survive vocabulary mismatch — but a stale or poorly chunked corpus still causes wrong answers, and that's not the model's fault.</li>
+    <li>Check-grounding exists because grounding reduces hallucination risk, it doesn't eliminate it.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why can a "grounded" agent still give a confidently wrong answer?</li>
+<li>What's the actual order of steps in RAG Engine's pipeline, from document to answer?</li>
+<li>When would you choose Elasticsearch grounding over RAG Engine?</li>
+<li>How would you use check-grounding to tell a stale-corpus problem apart from a retrieval-miss problem?</li>
+</ul>
+
+<footer class="teacher-reminder">Building a real RAG-grounded agent and getting a wrong answer? Bring the actual question and what your corpus contains to your teacher — that's exactly the debugging split this lesson's interview question walks through.</footer>
+
+<div class="lesson-nav">
+  <a href="0013-model-garden-selection.html">&larr; Model Garden and model selection</a>
+  <a href="0015-agent-runtime.html">Next: Agent Runtime (formerly Agent Engine) &rarr;</a>
+</div>
+
+</body>
+</html>

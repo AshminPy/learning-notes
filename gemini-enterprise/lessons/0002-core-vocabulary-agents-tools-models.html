@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2 — Core Vocabulary: Agents, Tools, Models</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 2 of 30</p>
+<h1>Core Vocabulary: Agents, Tools, Models</h1>
+
+<p>Lesson 1 mapped where the platform sits relative to Vertex AI. Before you read a single ADK code sample in Phase B, you need three words used precisely: <strong>agent</strong>, <strong>tool</strong>, and <strong>model</strong>. This course uses them exactly as the Agent Development Kit's own docs do — and mixing them up is the single most common beginner confusion in agent frameworks generally, not just this one.</p>
+
+<p class="callout"><strong>Mental model:</strong> an agent is a small, autonomous employee. A model is that employee's brain — the reasoning engine (Gemini) doing the actual thinking. A tool is a single instrument on their desk — a stapler, a phone — that does exactly one thing when picked up and hands control straight back. That predicts something concrete: a tool should never need its own multi-step reasoning loop. The moment something needs to decide, plan, or call other things on its own judgment, it has stopped being a tool and become a sub-agent — exactly the multi-agent pattern Lesson 8 covers.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Gemini Enterprise Agent Platform   (Lesson 1)
+   │
+   ▼
+Build pillar → Agent Development Kit (ADK)   — Phase B, Lessons 4-10
+   │
+   ▼
+Agent   ← you are here (combines a model + tools + instructions)
+   ├── Model     — the reasoning engine, e.g. gemini-flash-latest
+   └── Tool(s)   — a single callable capability, e.g. a search function</code></pre>
+<p>Phase B spends seven lessons building on exactly these three words. Get the boundary between "agent" and "tool" wrong here, and Lesson 8's multi-agent systems and Lesson 9's graph orchestration will both feel like they're reinventing vocabulary instead of composing it.</p>
+
+<h2>Agent: model + tools + instructions</h2>
+<p>Per the Agent Development Kit's own framing, an agent combines a language model with tools and instructions to accomplish tasks autonomously. The autonomy is the key word — an agent doesn't just answer a single prompt, it decides which tools to call, in what order, based on the instructions it was given and what the model reasons through at each step.</p>
+
+<h2>Tool: one callable capability</h2>
+<p>A tool is a capability an agent can invoke — a single, discrete action, not a reasoning process of its own. ADK's own examples name concrete ones like <code>google_search</code> and <code>GoogleSearchTool</code>: an agent calls the tool, the tool does exactly one thing (run a search), and control returns to the agent with a result. Tools are what let an agent interact with external systems and data beyond pure language generation — without them, an agent could only talk, never act.</p>
+
+<h2>Model: the reasoning engine underneath</h2>
+<p>The model is the underlying generative AI engine powering an agent — ADK's documentation names examples like <code>gemini-flash-latest</code>. It handles the reasoning and decision-making inside an agent, but it is a swappable component, not the agent itself: the same agent instructions and tools can often run against a different model, which is exactly what Phase D's Model Garden lesson (Lesson 13) is about. ADK itself is available in Python, TypeScript, Go, Java, and Kotlin — the vocabulary in this lesson holds across all five, even though this course's code examples in Phase B use one language for consistency.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. An agent calls <code>google_search</code> mid-conversation to look something up. Is <code>google_search</code> itself an agent or a tool?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">A tool. It's a single callable capability the agent invokes for one discrete action — it doesn't reason, plan, or decide anything on its own, which is what would make it an agent instead.</div>
+</div>
+<p>Now, before revealing: predict this one using only the definitions above — no lookup needed. If you gave that same search function its own multi-step planning loop and let it decide on its own judgment when to call other functions, would ADK still call it a "tool"?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No. At that point it has its own reasoning and autonomy — the exact definition of an agent, not a tool. This is precisely the sub-agent pattern Lesson 8's multi-agent systems formalizes.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> calling the model "the agent." Gemini and "the agent" are not the same thing — the model is the swappable reasoning engine inside an agent, while the agent is the combination of that model with its tools and instructions. Confusing the two makes Lesson 13's model-selection content look like it's changing "the agent" when it's really only swapping one component inside it.</p>
+
+<h2>A controlled failure</h2>
+<p>Using only the definitions above — not a lookup — predict: you want an agent to remember something a user told it three turns ago the next time a tool gets called. Does that memory live inside the tool, or somewhere else?</p>
+<p><strong>Predict first,</strong> then check your reasoning against the definitions in this lesson. <strong>Observe:</strong> a tool is a stateless, single-purpose capability — it doesn't hold memory between invocations. State and conversation history belong to the agent (its session), and at platform scale, to Memory Bank and Memory Profiles, which Lesson 17 covers directly. Building a "tool" that secretly tracks state across calls is a design smell — it means what you actually built is an under-specified sub-agent wearing a tool's name.</p>
+
+<p class="callout production"><strong>Production note:</strong> when you design your own tools in Phase B, keep each one doing exactly one thing — the way <code>GoogleSearchTool</code> does exactly one search. A "tool" that internally branches into five different behaviors depending on its input is usually an unbuilt sub-agent in disguise; split it out the moment you notice that pattern, using the same agent/tool boundary this lesson defines.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (verified 2026-08-06) — this is real day-2 platform vocabulary, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "A teammate says: 'I added a new agent to handle date formatting.'" What's the more accurate term for what they actually built, if it's a single input-to-output function? <strong>A:</strong> "That's a tool, not an agent. 'Agent' should be reserved for something combining a model, tools, and instructions with autonomous decision-making — a single deterministic function is a tool by definition."</p>
+
+<h2>Source</h2>
+<p><a href="https://adk.dev/" target="_blank" rel="noopener">adk.dev</a> — Agent Development Kit overview and core concepts — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>An agent combines a model, tools, and instructions to act autonomously — the autonomy is what separates it from a tool.</li>
+    <li>A tool is a single callable capability an agent invokes; it has no reasoning loop and no memory of its own.</li>
+    <li>The model is the swappable reasoning engine inside an agent — not the agent itself.</li>
+    <li>ADK ships in Python, TypeScript, Go, Java, and Kotlin — this vocabulary holds across all five.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What's the one property that turns a "tool" into a "sub-agent"?</li>
+<li>Why doesn't the model count as "the agent" on its own?</li>
+<li>Where does conversation memory actually live — the tool, or somewhere else?</li>
+<li>How would you decide, for a new capability you're building, whether it should be a tool or a full agent?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck on where a specific capability you're picturing should sit — tool or agent? Describe it to your teacher and we'll work through the boundary together.</footer>
+
+<div class="lesson-nav">
+  <a href="0001-what-gemini-enterprise-agent-platform-actually-is.html">&larr; What Gemini Enterprise Agent Platform actually is</a>
+  <a href="0003-the-gemini-enterprise-app-front-door.html">Next: The Gemini Enterprise App — the consumer front door &rarr;</a>
+</div>
+
+</body>
+</html>

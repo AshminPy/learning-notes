@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 10 — Context Management</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 10 of 30</p>
+<h1>Context Management: Sessions, Memory &amp; Artifacts</h1>
+
+<p>Every pattern in Lessons 8 and 9 quietly leaned on something this lesson finally names. A SequentialAgent's <code>output_key</code> handoff, a graph node's data flow between steps — both need somewhere to live between one step and the next. That "somewhere" isn't one thing in ADK; it's three, each with a different scope and a different lifetime, and confusing them is exactly what causes an agent to "forget" something a developer assumed it would remember.</p>
+
+<p class="callout"><strong>Mental model:</strong> Session and its State are a whiteboard in today's meeting room — great for referencing what was said five minutes ago, wiped when the room resets unless someone specifically photographs it to a durable backend. Memory is the company wiki — searchable, built up from past meetings' minutes, still there next month. Artifacts are the shared drive folder — you don't scrawl a whole PDF's bytes on the whiteboard, you drop the file in the folder, and the folder keeps every version you've ever saved, not just the latest one. That predicts something concrete: a state key you write mid-conversation vanishes the moment an in-memory backend restarts, but something explicitly ingested into Memory survives that same restart, and a re-saved artifact never destroys the version that came before it.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Gemini Enterprise Agent Platform
+ └ Agent Development Kit (ADK)
+     └ Multi-agent systems (Lesson 8) ─┐
+     └ Graph-based orchestration (Lesson 9) ─┴─ both read/write through
+         └ Context management  ← you are here (the state layer underneath both)
+             └ Memory Bank & Memory Profiles (Lesson 17 — the platform-managed evolution of this)</code></pre>
+<pre><code>InvocationContext   (one per request, created automatically by the Runner)
+ ├─ Session          → session.state{}   (temp: / user: / app: prefixes)
+ │      lifecycle managed by a SessionService — InMemory, Database, or VertexAI
+ ├─ Artifacts         → context.save_artifact() / load_artifact() / list_artifacts()
+ │      versioned binary blobs, managed by an ArtifactService — InMemory or GCS
+ └─ Memory            → context.search_memory()
+        long-term, cross-session knowledge, managed by a MemoryService</code></pre>
+
+<h2>Session and State: the current conversation, nothing more</h2>
+<p>Per ADK's docs, a Session represents "a single, ongoing interaction between a user and your agent system" — the chronological record of events within one conversation thread. State (<code>session.state</code>) is "data stored within a specific Session, used to manage information relevant only to the current, active conversation thread." State keys carry semantic prefixes that change their scope: plain keys and <code>temp:</code> are invocation/session-scoped, <code>user:</code> persists across a user's sessions (with a durable backend), and <code>app:</code> is application-wide. A SessionService — InMemorySessionService, DatabaseSessionService, or VertexAiSessionService — owns creating, updating, and deleting these sessions; the docs are blunt that the in-memory option is "designed specifically for local testing and fast development" and that everything in it "is lost when your application restarts."</p>
+
+<h2>Artifacts: versioned files, not text in a state key</h2>
+<p>Artifacts handle "named, versioned binary data" — files, images, audio, generated reports — that don't belong crammed into a text state value. Saving one is a single call: <code>context.save_artifact(filename, artifact)</code> returns an incrementing version number, and every prior version stays retrievable with <code>context.load_artifact(filename, version=N)</code> — the latest loads by default if you omit the version. <code>context.list_artifacts()</code> lists what's available. Filenames default to session scope; prefixing with <code>user:</code> (e.g. <code>"user:settings.json"</code>) makes an artifact persist across that user's sessions instead. InMemoryArtifactService is the local, ephemeral option; GcsArtifactService persists to Google Cloud Storage for anything meant to survive a restart or redeploy.</p>
+
+<h2>Memory: searchable knowledge that outlives one conversation</h2>
+<p>Memory is the one layer explicitly designed to cross session boundaries. Per the docs, Memory "might span multiple past sessions or include external data sources" — a MemoryService ingests information, often from completed sessions, into a long-term store, and exposes it back to a running agent through <code>context.search_memory(query)</code>. This is the mechanism that lets an agent recall something a user mentioned last week without that fact ever having been kept alive in this week's session state.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. Your agent calls <code>context.save_artifact("report.pdf", ...)</code> twice, with two different sets of bytes. Does the second call overwrite the first, or does the first version stay retrievable?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The first version stays retrievable. save_artifact returns an incrementing version number rather than overwriting — you can load_artifact with a specific version number, or omit it to get the latest.</div>
+</div>
+<p>Now, before revealing: your agent writes a plain (unprefixed) state key mid-conversation. Does that value automatically show up in a brand-new conversation with the same user next week?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No. Plain session state is scoped to the current conversation thread only — it doesn't carry into a new session on its own. Anything meant to persist across sessions needs a user: (or app:) prefixed key on a durable backend, or has to be ingested into Memory explicitly.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> shipping InMemorySessionService or InMemoryArtifactService to production because it worked fine in local testing. Both are documented as built specifically for local development — every session, state value, and artifact they hold is gone the moment the application restarts, which in production means gone on every redeploy.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># A PNG's raw bytes are saved with the wrong declared type:
+context.save_artifact(
+    filename="chart.pdf",
+    artifact=types.Part.from_bytes(data=png_bytes, mime_type="application/pdf")
+)</code></pre>
+<p><strong>Predict first:</strong> does <code>save_artifact</code> reject this because the bytes don't actually match a PDF? <strong>Observe:</strong> no — it saves successfully. Nothing in the artifact service validates that the declared mime_type matches the actual bytes; it stores whatever you tell it to store. The failure shows up later, downstream, when some other tool calls <code>load_artifact</code> and tries to interpret those bytes as a PDF and gets garbage or an outright parse error — which is exactly why the docs stress providing an accurate mime_type up front, not as a formality but as the only thing standing between this save and a confusing failure two steps later.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> the backend choice per layer is a real decision, not boilerplate — DatabaseSessionService or VertexAiSessionService for session state, GcsArtifactService for artifacts, both once anything needs to survive past a local dev loop. State-key prefixes are the other lever worth planning deliberately: a design that quietly expects a plain state key to "just be there" next session is a design that will pass local testing and then quietly lose data in production the first time the service restarts.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (re-verified 2026-08-06) — this is real platform competence, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "What's the actual difference between Session state and Memory in ADK, beyond one being 'short-term' and one being 'long-term'?" <strong>A:</strong> Session state is scoped to the current conversation thread and is only ever read/written directly by the running agent; Memory is a separately managed, searchable store — usually built from completed sessions or external sources — that an agent queries explicitly via search_memory. Expecting a plain state key to behave like Memory is the actual bug, not a naming confusion: nothing moves data from one to the other automatically.</p>
+
+<h2>Source</h2>
+<p><a href="https://adk.dev/sessions/" target="_blank" rel="noopener">adk.dev/sessions</a>, <a href="https://adk.dev/context/" target="_blank" rel="noopener">adk.dev/context</a>, and <a href="https://adk.dev/artifacts/" target="_blank" rel="noopener">adk.dev/artifacts</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Session/State covers only the current conversation thread; it's gone on restart unless backed by a durable SessionService.</li>
+    <li>Artifacts are versioned binary files — save_artifact never overwrites, it increments a version number you can still retrieve later.</li>
+    <li>Memory is the one layer explicitly built to cross session boundaries, queried via search_memory, usually filled from completed sessions or external sources.</li>
+    <li>InMemory* services are for local development only — every real deployment needs a durable backend per layer (Database/VertexAI for sessions, GCS for artifacts).</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does a plain state key not survive into next week's conversation with the same user?</li>
+<li>What actually happens when you call save_artifact a second time with the same filename?</li>
+<li>What's the practical risk of declaring the wrong mime_type on an artifact, and when does it actually surface?</li>
+<li>Which service backend would you pick for session state in a production deployment, and why not the in-memory default?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or want to sanity-check your own mental model of this architecture? Describe it back to your teacher in your own words — that's the fastest way to find a gap.</footer>
+
+<div class="lesson-nav">
+  <a href="0009-graph-based-orchestration.html">&larr; Graph-Based Orchestration (ADK 2.0)</a>
+  <span>Lesson 11 not yet published</span>
+</div>
+
+</body>
+</html>

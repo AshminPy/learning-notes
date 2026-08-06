@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 20 — Model Armor</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 20 of 30</p>
+<h1>Model Armor</h1>
+
+<p>Agent Gateway (Lesson 19) answers "is this identity allowed to make this call?" — a question entirely about who and what, not about the actual words in the request. An identity can be perfectly authorized and still send a prompt engineered to hijack the model, or a response that leaks a customer's credit card number. Model Armor is the layer that inspects the actual content flowing through the gateway, not just the permission to send it — it's a different kind of check, running on the same path Lesson 19 already governs.</p>
+
+<p class="callout"><strong>Mental model:</strong> if Agent Gateway is airport security checking your boarding pass, Model Armor is the baggage scanner running at the same checkpoint — a completely different check, on the same line, looking inside what's actually being carried rather than who's carrying it. A perfectly valid boarding pass doesn't get your bag waved through unscanned. That predicts something concrete: an agent with flawless Agent Identity credentials and full Agent Gateway authorization can still have its prompt or response blocked by Model Armor, because authorization and content safety are two independent gates, not one.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Gemini Enterprise Agent Platform
+ └ Agent Identity          (Lesson 18 — WHO is calling)
+     └ Agent Gateway        (Lesson 19 — WHAT that identity may call)
+         └ Model Armor      ← you are here (WHAT'S INSIDE the prompt/response, regardless of who's authorized)
+             └ MCP hardening (Lesson 21 — next: this same CONTENT_AUTHZ pairing, applied to MCP-specific attacks)</code></pre>
+<pre><code>Prompt (from user, or from one agent to another)
+   │
+   ▼
+Agent Gateway  — CONTENT_AUTHZ Service Extension calls Model Armor
+   │  screens for: prompt injection, jailbreak, malicious URLs,
+   │               Responsible AI violations, sensitive data (PII/credentials)
+   ▼
+   ├─ INSPECT_ONLY   → violation logged, request still proceeds
+   └─ INSPECT_AND_BLOCK → violation blocks the request, blockReason: "MODEL_ARMOR"
+   ▼
+Gemini model  (only reached if not blocked)
+   │
+   ▼
+Response screened the same way before it reaches the caller</code></pre>
+
+<h2>What it actually screens for</h2>
+<p>Per Google Cloud's Model Armor overview, it's "designed to enhance the security and safety of your AI applications" by "proactively screening LLM prompts and responses" across four concrete categories: <strong>prompt injection and jailbreak detection</strong> (configurable confidence levels), <strong>Responsible AI filters</strong> (hate speech, harassment, dangerous content, sexually explicit content, plus CSAM), <strong>sensitive data protection</strong> (PII, credit cards, SSNs, and cloud credentials — built on Google Cloud's Sensitive Data Protection service, adapted for unpredictable AI-generated text), and <strong>malicious URL detection</strong> in both prompts and responses.</p>
+
+<h2>How it's wired into Agent Gateway: the CONTENT_AUTHZ extension</h2>
+<p>This is the RESOURCES.md gap this lesson closes: Model Armor doesn't sit somewhere separate from Agent Gateway — it's plugged directly into the same Service Extensions mechanism Lesson 19 introduced for REQUEST_AUTHZ. A <code>CONTENT_AUTHZ</code> extension "streams body events to the extension for content sanitization, used to call Model Armor," and when content passes through Agent Gateway, "it invokes Model Armor to enforce your predefined security templates." Ingress and egress get configured with separate templates, exactly the same two-directions split as Lesson 19: ingress templates screen traffic between clients and agents, egress templates screen traffic between agents and external tools, MCP servers, or other agents.</p>
+
+<h2>Two enforcement modes, and a clear priority order</h2>
+<p>Every template is set to one of two modes: <code>INSPECT_ONLY</code> reports a violation without blocking the request; <code>INSPECT_AND_BLOCK</code> actually stops it, and a blocked response carries <code>"blockReason": "MODEL_ARMOR"</code> so the failure is unambiguous, not a generic error. Google Cloud's docs also specify a precedence order when multiple layers of protection exist: a request-level template (highest priority) overrides project-level floor settings, which override Gemini's own native safety filters (lowest priority) — so a project's floor setting is a baseline, not the final word, if a specific request explicitly names a stricter template.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. An agent is fully authorized by Agent Gateway's REQUEST_AUTHZ policy to call a given tool, but its prompt contains a jailbreak attempt. Does the authorized status get the prompt through?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. REQUEST_AUTHZ and CONTENT_AUTHZ are independent checks on the same gateway path — being authorized to make the call doesn't exempt the prompt's content from Model Armor's screening, and a jailbreak match can still block it.</div>
+</div>
+<p>Now, before revealing: a project has a floor setting requiring PII screening on all requests. One specific API call also names its own Model Armor template with a stricter policy. Which one actually applies to that call?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The request-level template. Templates take highest priority, then project-level floor settings, then Gemini's native safety filters last — a floor setting is only the fallback when nothing more specific is named.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> setting a Model Armor template to <code>INSPECT_ONLY</code> during testing and forgetting to switch it to <code>INSPECT_AND_BLOCK</code> before production. <code>INSPECT_ONLY</code> still logs every violation, so the system looks like it's "working" in dashboards — but nothing is actually stopped, which only becomes obvious the first time a real violation reaches the model or the caller.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># Model Armor template configured for a region where the request doesn't route
+gcloud model-armor floorsettings update \
+  --full-uri=projects/PROJECT_ID/locations/us-central1/floorSetting \
+  --add-integrated-services=VERTEX_AI
+# ...but a request gets routed to a different region entirely</code></pre>
+<p><strong>Predict first:</strong> if Gemini Enterprise Agent Platform routes a request to a region where the specified Model Armor template doesn't exist, does the request fall back to running unscreened, or does it fail? <strong>Observe:</strong> per Google Cloud's own documented limitation, "if Gemini Enterprise Agent Platform routes a request to a region where the specified Model Armor template doesn't exist, the request fails" outright — it does not silently skip screening. The one case content does proceed unscreened is a genuine Model Armor service outage, and even then, in <code>INSPECT_AND_BLOCK</code> mode a configuration error still triggers reporting rather than passing silently. The practical fix is matching template regions to your Agent Gateway's actual deployment regions before relying on them.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> Model Armor "operates as a stateless service, processing all prompts and model responses entirely in memory" and doesn't persist content unless Cloud Logging is explicitly enabled for it — worth knowing before assuming screened content is retained somewhere for later audit by default. If you need an audit trail of what was screened and why something was blocked, turn on the sanitization logs deliberately (Private Logs Viewer role required to read them) rather than assuming they exist.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (re-verified 2026-08-06) — this is real governance competence, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "An agent has correct IAM permissions and passes Agent Gateway authorization, but a request still gets blocked. What's the likely cause?" <strong>A:</strong> Authorization (REQUEST_AUTHZ, checking who/what) and content screening (CONTENT_AUTHZ via Model Armor, checking the actual prompt/response) are independent gates on the same gateway path — a fully authorized identity can still be blocked if its content trips a prompt injection, jailbreak, sensitive-data, or Responsible AI filter, surfaced as <code>blockReason: "MODEL_ARMOR"</code>.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/model-armor/overview" target="_blank" rel="noopener">docs.cloud.google.com/model-armor/overview</a> (verified 2026-08-06, page last updated 2026-07-30), <a href="https://docs.cloud.google.com/model-armor/model-armor-agent-gateway-integration" target="_blank" rel="noopener">docs.cloud.google.com/model-armor/model-armor-agent-gateway-integration</a> (page last updated 2026-07-29), and <a href="https://docs.cloud.google.com/model-armor/model-armor-vertex-integration" target="_blank" rel="noopener">docs.cloud.google.com/model-armor/model-armor-vertex-integration</a> (page last updated 2026-07-29) — all verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Model Armor screens actual prompt/response content — prompt injection, jailbreak, malicious URLs, Responsible AI violations, sensitive data — independent of who's authorized to send it.</li>
+    <li>It plugs into Agent Gateway via a CONTENT_AUTHZ Service Extension, the content-inspection counterpart to Lesson 19's REQUEST_AUTHZ authorization extension, with separate templates for ingress and egress.</li>
+    <li>Two modes: INSPECT_ONLY logs without blocking; INSPECT_AND_BLOCK actually stops the request and returns <code>blockReason: "MODEL_ARMOR"</code>.</li>
+    <li>Priority order is template &gt; project floor setting &gt; Gemini's native safety filters — and a routing mismatch to a region without the template fails the request rather than skipping screening silently.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why can a fully Agent Gateway-authorized request still get blocked?</li>
+<li>What's the practical difference between INSPECT_ONLY and INSPECT_AND_BLOCK, and why is leaving a production template on INSPECT_ONLY a real risk?</li>
+<li>If a request-level template and a project floor setting disagree, which one wins?</li>
+<li>How would you verify whether Model Armor is actually retaining the content it screens, rather than assuming it does?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or want to sanity-check your own mental model of this architecture? Describe it back to your teacher in your own words — that's the fastest way to find a gap.</footer>
+
+<div class="lesson-nav">
+  <a href="0019-agent-gateway.html">&larr; Agent Gateway</a>
+  <span>Lesson 21 not yet published</span>
+</div>
+
+</body>
+</html>

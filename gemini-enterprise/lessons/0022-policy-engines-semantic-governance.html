@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 22 — Policy Engines &amp; Semantic Governance</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 22 of 30</p>
+<h1>Policy Engines &amp; Semantic Governance</h1>
+
+<p>Lesson 21 closed MCP's biggest security gap: REQUEST_AUTHZ proves who's calling, CONTENT_AUTHZ plus Model Armor proves the payload isn't dangerous. But "safe" and "correct" are different questions. A tool call can carry zero injected instructions, zero PII, zero jailbreak attempt — and still be completely wrong for what the user actually asked, or in direct violation of a business rule nobody wrote into code. Semantic governance is the platform's answer to that gap: a policy engine that checks meaning and intent, not just safety.</p>
+
+<p class="callout"><strong>Mental model:</strong> Agent Gateway and Model Armor are the bouncer at the door — checking IDs, scanning bags, stopping weapons and forged badges. Semantic governance is the compliance officer standing just inside, who already let this correctly-badged, unarmed guest through security, but is now listening to what they actually said they wanted at the front desk and comparing it to what they're about to do. A perfectly legitimate guest can still be stopped here — not because they're dangerous, but because the request doesn't match what they asked for, or breaks a house rule the door staff was never asked to enforce. That predicts something concrete: content that passes Model Armor with a clean bill of health can still get denied by semantic governance, because the two checks are asking entirely different questions.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Agent Gateway (Lesson 19)
+   │  REQUEST_AUTHZ → identity is valid (Lesson 18)
+   │  CONTENT_AUTHZ → content is safe (Lesson 20, Lesson 21)
+   ▼
+Semantic governance policy engine   &larr; you are here
+   │  checks: does this tool call match the user's actual intent?
+   │  checks: does this tool call comply with your Natural Language Constraints?
+   ▼
+ALLOW  → tool call executes
+DENY   → tool call rejected, verdict + rationale logged to Cloud Logging</code></pre>
+<p>Notice what changed in the question being asked. Every control through Lesson 21 answered "is this request allowed to happen at all" (identity, access, content safety). Semantic governance is the first layer in this course that asks "given everything the user actually said, is this specific action the right one" — a question no amount of identity or content screening can answer, because the answer depends on meaning, not bytes.</p>
+
+<h2>Two policy types on this platform</h2>
+<p>Per Google Cloud's Policies overview, governance here splits into two genuinely different mechanisms. <strong>IAM policies</strong> (Lesson 19's territory) are deterministic — a role either grants an action or it doesn't, enforced centrally by Agent Gateway and IAP. <strong>Semantic governance policies</strong> are described as "a natural language-based security and compliance layer" that exists specifically because IAM's deterministic model can't express "does this match what the user meant" — the docs frame this as addressing "the non-deterministic nature of LLMs," which a fixed boolean role check was never designed to catch. Neither replaces the other: one is the hard boundary, the other is the judgment layer sitting on top of it.</p>
+
+<h2>How the policy engine actually decides</h2>
+<p>Per the semantic-governance-overview docs, after the agent's model returns a response, "the policy engine examines each proposed tool call in the model response against the user prompt, conversation history, and your policies by performing a semantic analysis." Two distinct checks run: <strong>intent alignment</strong> — do the proposed actions match "the original semantic intent of the user prompt"? The docs give a concrete example: a user asks the agent to "summarize my calendar," but the model's response tries to call a <code>send_email</code> tool instead — semantic governance rejects that, because the action doesn't match what was actually asked, regardless of whether the email content itself is harmless. And <strong>compliance verification</strong> — do the actions comply with organizational rules "expressed in Natural Language," such as "Disallow automated processing of refund requests, for amounts in excess of $75"? Both checks return a verdict of <strong>ALLOW</strong> or <strong>DENY</strong>, with a rationale, logged for audit.</p>
+
+<h2>Natural Language Constraints: policy as English, not code</h2>
+<p>The mechanism behind compliance verification is the Natural Language Constraint (NLC) — per the docs, "NLCs are evaluated semantically by a Large Language Model (LLM) at runtime. This approach decouples security from code, allowing administrators and compliance teams to define complex constraints without needing to redeploy applications." <strong>Why it's built this way:</strong> a business rule like "refunds over $75 need manager approval" would otherwise require an engineer to find every code path that could issue a refund and hard-code the check into each one. Writing it as an NLC means a compliance team can add, edit, or tighten that rule without touching the agent's code at all — the policy engine evaluates it at runtime, against whatever the agent actually tries to do.</p>
+<pre><code># Real syntax from Google Cloud's own docs — attaching an NLC to one agent
+gcloud beta ai semantic-governance-policies create shipping-rules-policy \
+        --location=LOCATION \
+        --display-name="Semantic governance policy for ShippingAgent-1" \
+        --description="Applies to all tool calls from the Cymbal shipping assistant agent" \
+        --agent=AGENT_ID \
+        --natural-language-constraint="Always use UPS as the shipping provider for shipments within the USA. Always use DHL as the shipping provider for shipments within the EU." \
+        --project=PROJECT_ID</code></pre>
+<p>Every evaluated tool call produces a structured verdict in Cloud Logging — the docs show a logged rationale like "The action is aligned with the user's request to process a refund and complies with the constraints regarding order ID length," which is exactly the audit trail a compliance review needs: not just what was blocked, but why, in plain English.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. A user asks an agent to "summarize my calendar." The model's response tries to call a <code>send_email</code> tool instead, with no dangerous content in the email at all. Does Model Armor (Lesson 20) or semantic governance catch this?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Semantic governance catches it — this is the platform's own worked example of an intent-alignment failure. Model Armor generally would not, because there's no prompt injection, jailbreak, or sensitive-data signal to flag; the content itself is safe, it's simply the wrong action for what the user asked.</div>
+</div>
+<p>Now, before revealing: the shipping policy above only defines rules for USA and EU shipments. What does that tell you about how comprehensive an NLC-based policy needs to be to actually govern an agent?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The policy engine only enforces what it was actually told to check. An NLC covering just USA and EU says nothing about a shipment to any other destination — semantic governance doesn't invent missing business rules on its own. Comprehensive coverage is the policy author's job, not something the engine backfills.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating semantic governance as a replacement for Agent Gateway's deterministic IAM/REQUEST_AUTHZ controls, or vice versa. They answer different questions — IAM is a hard, deterministic boundary; semantic governance is an LLM-evaluated judgment layer. A zero-tolerance rule ("agents must never touch the production database") belongs in IAM, not only in an NLC — semantic governance is best suited to the nuanced calls a boolean role check structurally cannot express.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>gcloud beta ai semantic-governance-policies create My_Bad_Policy! \
+        --location=us-central1 \
+        --agent=my-shipping-agent \
+        --natural-language-constraint="Never approve refunds over $75 without manager approval." \
+        --project=my-project</code></pre>
+<p><strong>Predict first:</strong> does this command succeed as written? <strong>Observe:</strong> no — the policy ID follows the same resource-naming convention used across Google Cloud: lowercase letters, numbers, and hyphens only. <code>My_Bad_Policy!</code> fails validation before the natural language constraint is ever evaluated by the policy engine at all. The fix is a compliant ID, e.g. <code>refund-approval-policy</code> — a reminder that even an entirely natural-language governance layer still sits on top of ordinary, deterministic resource rules for the policy object itself.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> use semantic governance for the judgment calls IAM can't express — intent matching, dollar thresholds, approval workflows described in plain English — but keep any zero-tolerance constraint enforced deterministically too (IAM role, REQUEST_AUTHZ), since NLC evaluation runs through an LLM at runtime rather than a fixed boolean check. Review the Cloud Logging verdict trail regularly; a DENY with a clear rationale is exactly the evidence a compliance audit needs, and a pattern of near-miss ALLOWs is a signal your NLC wording needs tightening before it needs a real incident to prove it.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (re-verified 2026-08-06) — this is real governance competence, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "Your company has a hard rule: agents must never touch the production database directly. Would you enforce that with semantic governance alone?" <strong>A:</strong> No. Semantic governance is a natural-language layer evaluated by an LLM at runtime — well suited to nuanced business rules and intent checks, but not a substitute for a deterministic IAM or Agent Gateway REQUEST_AUTHZ rule for a zero-tolerance constraint. Use both: IAM as the hard boundary, semantic governance for the judgment calls a role check can't express.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/policies/semantic-governance-overview" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/govern/policies/semantic-governance-overview</a>, <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/policies/overview" target="_blank" rel="noopener">.../govern/policies/overview</a>, and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/policies/configure-semantic-governance" target="_blank" rel="noopener">.../govern/policies/configure-semantic-governance</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Semantic governance checks meaning, not safety — a tool call can pass Model Armor cleanly and still be denied here for not matching user intent.</li>
+    <li>IAM policies are deterministic (role grants it or doesn't); semantic governance policies are LLM-evaluated Natural Language Constraints (NLCs) — neither replaces the other.</li>
+    <li>The policy engine runs two checks per proposed tool call: intent alignment against the user's actual prompt, and compliance against NLC business rules.</li>
+    <li>Every verdict (ALLOW/DENY) logs a plain-English rationale to Cloud Logging — a real audit trail, not just a pass/fail flag.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why can a tool call pass Model Armor's screening and still get denied by semantic governance?</li>
+<li>What's the difference between an IAM policy's decision and a semantic governance policy's decision, mechanically?</li>
+<li>Why would a policy covering only two named regions leave a real gap for a third region?</li>
+<li>How would you verify, after the fact, exactly why the policy engine denied a specific tool call?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or want to sanity-check your own mental model of this architecture? Describe it back to your teacher in your own words — that's the fastest way to find a gap.</footer>
+
+<div class="lesson-nav">
+  <a href="0021-mcp-hardening-security-best-practices.html">&larr; MCP hardening &amp; security best practices</a>
+  <a href="0023-evaluation-datasets-golden-answers.html">Next: Evaluation datasets &amp; golden answers &rarr;</a>
+</div>
+
+</body>
+</html>

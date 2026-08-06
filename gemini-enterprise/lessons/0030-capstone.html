@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 30 — Capstone: Build, Govern &amp; Deploy One Agent End to End</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 30 of 30 (Capstone)</p>
+<h1>Capstone: Build, Govern &amp; Deploy One Agent End to End</h1>
+
+<p>Every lesson in this course taught one piece in isolation — a tool type, a governance control, a deployment path. This capstone has one rule: build one small, real agent and take it through every stage from Lesson 28's five-stage path yourself, using this course's own vocabulary and the exact commands verified across it. Not a bigger reading — a smaller, real build.</p>
+
+<p class="callout"><strong>Mental model:</strong> this capstone is a driving test, not another lesson in the driving manual. Every earlier lesson taught one skill in isolation — parallel parking, checking mirrors, reading a sign. A driving test doesn't ask about any one skill alone; it asks you to combine all of them, in the right order, on an actual road. This lesson is that road test for everything Phases A through H covered.</p>
+
+<h2>Where this fits — the whole course, one more time</h2>
+<pre><code>Build     agent + tool with ADK                              (Phase B)
+   │
+Govern    attach Agent Identity at deploy time                (Phase F, Lesson 27)
+   │
+Deploy    to Agent Runtime, sandbox stage only                (Lesson 27, Lesson 28)
+   │
+Verify    query the deployed agent, confirm real bytes moved  ← you are here
+   │
+Observe   check what the platform recorded about the run      (Phase G)</code></pre>
+<p>This capstone deliberately stops at the sandbox stage of Lesson 28's Deploy step — canary and production require real users and real traffic, which a learning exercise shouldn't manufacture. Everything through sandbox and Observe is genuinely yours to run.</p>
+
+<h2>The brief</h2>
+<p>Build an agent with exactly one real tool, deploy it to Agent Runtime with Agent Identity attached, query it once deployed, and confirm you can see the run afterward. That's the whole brief — small on purpose, so the point is the end-to-end path, not the agent's sophistication.</p>
+<table>
+<tr><th>Stage</th><th>What "done" looks like</th></tr>
+<tr><td>Build</td><td>An ADK agent with one function tool, tested locally with <code>async_stream_query</code></td></tr>
+<tr><td>Govern</td><td>Deployed with <code>identity_type: AGENT_IDENTITY</code> set in the create call — not added later</td></tr>
+<tr><td>Deploy</td><td>Successfully created on Agent Runtime via <code>client.agent_engines.create(...)</code></td></tr>
+<tr><td>Verify</td><td>A query sent to the <em>remote</em> agent returns a real response — not the local one</td></tr>
+<tr><td>Observe</td><td>You can find and describe the deployed resource afterward, then clean it up</td></tr>
+</table>
+
+<h2>Build it — step by step, using verified commands</h2>
+<p>These are the exact steps and code from Google's own ADK quickstart, adapted to a one-tool agent. Prerequisites: a Google Cloud project with billing enabled, the Agent Platform and Cloud Storage APIs enabled, and <code>roles/aiplatform.user</code> plus <code>roles/storage.admin</code> granted to your identity.</p>
+<pre><code>pip install --upgrade --quiet "google-cloud-aiplatform[agent_engines,adk]>=1.112"
+gcloud auth application-default login</code></pre>
+<pre><code>import vertexai
+client = vertexai.Client(project="PROJECT_ID", location="LOCATION")</code></pre>
+<p><strong>Step 1 — write one real tool.</strong> Any function with a docstring works; the docstring is what the model reads to decide when to call it.</p>
+<pre><code>def get_exchange_rate(currency_from: str = "USD", currency_to: str = "EUR", currency_date: str = "latest"):
+    """Retrieves the exchange rate between two currencies on a specified date."""
+    import requests
+    response = requests.get(
+        f"https://api.frankfurter.app/{currency_date}",
+        params={"from": currency_from, "to": currency_to},
+    )
+    return response.json()</code></pre>
+<p><strong>Step 2 — build and test the agent locally, before touching deployment at all.</strong></p>
+<pre><code>from google.adk.agents import Agent
+from vertexai import agent_engines
+
+agent = Agent(model="gemini-3.5-flash", name="capstone_agent", tools=[get_exchange_rate])
+app = agent_engines.AdkApp(agent=agent)
+
+async for event in app.async_stream_query(
+    user_id="USER_ID", message="What is the exchange rate from US dollars to SEK today?"
+):
+    print(event)</code></pre>
+<p><strong>Step 3 — deploy it, with governance attached in the same call.</strong> This is the line the whole capstone hinges on: identity isn't a step you do after deployment, it's an argument to the deploy call itself.</p>
+<pre><code>from vertexai import types
+
+remote_agent = client.agent_engines.create(
+    agent=app,
+    config={
+        "requirements": ["google-cloud-aiplatform[agent_engines,adk]"],
+        "staging_bucket": "STAGING_BUCKET",
+        "identity_type": types.IdentityType.AGENT_IDENTITY,
+    },
+)</code></pre>
+<p><strong>Step 4 — verify against the remote agent, not your local one.</strong> Same query, different object — this is the check that proves the deployment actually happened, the same principle as proving a Docker image really reached a registry.</p>
+<pre><code>async for event in remote_agent.async_stream_query(
+    user_id="USER_ID", message="What is the exchange rate from US dollars to SEK today?"
+):
+    print(event)</code></pre>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. Before you run Step 3, predict: if you forget the <code>identity_type</code> line entirely, does deployment fail outright, or does it just deploy without Agent Identity attached?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">It deploys without Agent Identity attached — the field is a configuration choice you make, not a required gate the SDK enforces. That's exactly why Lesson 27 called this out as something to attach deliberately, not something the platform forces on you.</div>
+</div>
+<p>Now actually run all four steps yourself, end to end, before revealing the cleanup command below.</p>
+<div class="quiz">
+<p>Reveal cleanup</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>remote_agent.delete(force=True)</code></pre>
+<p>Run this once you've confirmed Step 4 worked — an idle deployed agent still exists as a resource until you delete it.</p>
+</div>
+
+<h2>A controlled failure</h2>
+<pre><code># You query app (local) successfully, then assume remote_agent (deployed)
+# will behave identically without actually querying it.</code></pre>
+<p><strong>Predict first:</strong> if the local agent worked in Step 2, is querying the remote one in Step 4 just a formality? <strong>Observe:</strong> no — Step 2's local test uses in-memory sessions on your machine; Step 4 is a genuinely separate object (<code>remote_agent</code>, not <code>app</code>) running on infrastructure you don't control. A working local test proves your agent logic is sound; it proves nothing about whether the deployment itself succeeded, whether the staging bucket was reachable, or whether the deployed identity is configured correctly. Skipping Step 4 is exactly the "demo passed, never actually verified in production" mistake Lesson 28 named — just at capstone scale instead of team scale.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> everything about this capstone that a real team would add before shipping: a second tool exercising error recovery (what happens when <code>get_exchange_rate</code>'s API call fails?), an evaluation dataset per Phase G instead of one manual query, and a canary stage with real users before full production — all deliberately out of scope here so this capstone stays finishable in one sitting. Treat this build as the skeleton every one of those additions would attach to, not the finished product.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (re-checked at this lesson's write time, 2026-08-06). The strongest interview answer this whole course can produce: "I've built, governed, and deployed a real agent on this platform end to end" — supported by this capstone, not just described from reading about it.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime/quickstart-adk" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/build/runtime/quickstart-adk</a> and <a href="https://adk.dev/" target="_blank" rel="noopener">adk.dev</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>The capstone is small on purpose — one agent, one tool, through sandbox — because the point is the end-to-end path, not agent sophistication.</li>
+    <li>Governance attaches at deploy time (<code>identity_type</code> in the same call as the deploy itself), matching Lesson 27 exactly.</li>
+    <li>A working local test and a working deployed agent are different claims — always verify the remote object, never assume from the local one.</li>
+    <li>Everything left out on purpose (error-recovery tools, evaluation datasets, canary) is the real next step for turning this skeleton into an actual production agent.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Which line in Step 3 is the one governance decision this whole capstone hinges on?</li>
+<li>Why does a passing local test in Step 2 not guarantee Step 4 will work?</li>
+<li>What's the one command that proves the deployment reached real infrastructure, not just your local machine?</li>
+<li>Of the things deliberately left out of this capstone, which would you add first for a real team project, and why?</li>
+</ul>
+
+<footer class="teacher-reminder">Ran into a real error deploying your capstone agent? Paste the exact message back to your teacher — a real failure here is worth more than a clean run, and it's the last chance this course gets to debug something with you.</footer>
+
+<div class="lesson-nav">
+  <a href="0029-final-review.html">&larr; Final review &amp; cheat sheet</a>
+  <span>End of course</span>
+</div>
+
+</body>
+</html>

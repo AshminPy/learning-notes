@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 8 — Multi-Agent Systems</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 8 of 30</p>
+<h1>Multi-Agent Systems: Sequential, Loop, Parallel</h1>
+
+<p>Lesson 7 gave one agent a way to reach external tools and data through MCP. That's still one agent doing everything — planning, calling tools, and answering, all inside one prompt. Real work often splits better across several small, specialized agents than it does inside one agent that tries to do it all: a writer agent and a separate critic agent produce better drafts than one agent asked to "write and also critique your own writing." ADK's answer is a small set of deterministic <strong>template workflow agents</strong> — Sequential, Parallel, and Loop — that compose other agents into a larger system without leaving the outcome to whatever the model decides to do this time.</p>
+
+<p class="callout"><strong>Mental model:</strong> SequentialAgent is a relay race — one baton (the shared session state), one runner at a time, fixed order, each runner starts only once the last one hands off. ParallelAgent is four sprinters on separate lanes with no baton at all — they start together, run independently, and nobody sees another lane's progress until a judge at the finish line (your own aggregation code) collects every time. LoopAgent is a rep counter at the gym — same exercise repeated until either you hit a hard cap on reps, or your coach says "clean, stop." That predicts something concrete you haven't been told yet: because ParallelAgent branches share no baton, two parallel agents can't coordinate mid-run by writing to the same state key and expecting the other to see it in time — that has to be handled explicitly, or built as a separate step after all branches finish.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Gemini Enterprise Agent Platform
+ └ Agent Development Kit (ADK)        (Lesson 4 — the framework)
+     └ Agents + instructions           (Lesson 5)
+         └ Tools (function/OpenAPI/built-in)  (Lesson 6)
+             └ MCP (external tools/data)        (Lesson 7)
+                 └ Multi-agent systems  ← you are here (composing several agents)
+                     └ Graph-based orchestration (Lesson 9 — next: ADK 2.0's more flexible successor)
+                         └ Context management (Lesson 10 — the state every pattern below depends on)</code></pre>
+<p>Sequential, Parallel, and Loop are called "template" workflow agents because their execution logic is fixed by the template you pick, not decided turn-by-turn by a model. Lesson 9's graph-based workflows are the more general, ADK 2.0 successor to this same idea — but the three patterns below still cover most real multi-agent shapes without needing a full graph.</p>
+<pre><code>SequentialAgent(sub_agents=[Writer, Reviewer, Refactorer])
+   Writer runs   → writes output_key="draft" to shared session state
+      │
+      ▼
+   Reviewer runs → reads "draft", writes "review_comments"
+      │
+      ▼
+   Refactorer runs → reads "draft" + "review_comments", writes "final"
+   (one InvocationContext throughout — every step shares the same session state)
+
+ParallelAgent(sub_agents=[ResearchA, ResearchB, ResearchC])
+   ResearchA ⟶ own branch, own state view      ⎫
+   ResearchB ⟶ own branch, own state view       ⎬  all three start together, no sharing
+   ResearchC ⟶ own branch, own state view      ⎭
+      │  (you) write a synthesis step that reads each branch's own output key
+      ▼
+   Synthesis agent merges the three results
+
+LoopAgent(sub_agents=[Writer, Critic], max_iterations=5)
+   iteration 1: Writer → Critic — not satisfied yet
+   iteration 2: Writer → Critic — not satisfied yet
+   iteration 3: Writer → Critic → escalates "done" → loop exits early
+   (or: iteration 5 arrives with no escalation → max_iterations forces an exit anyway)</code></pre>
+
+<h2>SequentialAgent: one shared state, fixed order</h2>
+<p>Per ADK's own docs, SequentialAgent "executes its sub-agents in the order they are specified in a list," calling each sub-agent's run method one at a time, completing one before starting the next. The important detail underneath that: "the SequentialAgent passes the same InvocationContext to each of its sub-agents. This means they all share the same session state, including the temporary (<code>temp:</code>) namespace." That's what makes a code-writer → code-reviewer → code-refactorer pipeline work — each stage reads the previous stage's <code>output_key</code> straight out of shared state, with no manual wiring required.</p>
+
+<h2>ParallelAgent: concurrent branches, nothing shared automatically</h2>
+<p>ParallelAgent "initiates the run method of each sub-agent present in the sub_agents list concurrently" — all of them start at roughly the same time. The docs are direct about the trade-off: "there is no automatic sharing of conversation history or state between these branches during execution... if you need communication or data sharing between these agents, you must implement it explicitly," through a shared context with locking, an external store, or — the common case — a plain post-processing step once every branch finishes. This is the right tool when tasks are genuinely independent (three research angles that don't depend on each other) and you want wall-clock speed, not when steps need to react to each other mid-flight.</p>
+
+<h2>LoopAgent: iterate until done, with a safety cap</h2>
+<p>LoopAgent "executes its sub-agents in a loop for a specified number of iterations or until a termination condition is met" — and per the docs, termination is something you build, not something the framework guesses at. Two mechanisms combine: a numeric <code>max_iterations</code> safety fallback, and an explicit escalation from inside the loop — a sub-agent tool that sets <code>context.actions.escalate = true</code> once its own completion check passes (the documented example checks for an exact critique phrase like "No major issues found."). State persists across iterations, which is what lets a Writer/Critic pair actually refine a draft instead of starting from scratch every pass.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. A ParallelAgent runs three researcher sub-agents. Sub-agent B writes a value to session state that sub-agent C tries to read while B is still running. Can C reliably see it?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Not reliably. There is no automatic sharing of state between parallel branches while they run — each branch operates on its own view, and coordination has to be built explicitly (locking, an external store, or waiting until all branches finish and aggregating afterward).</div>
+</div>
+<p>Now, before revealing: you build a LoopAgent with a Critic sub-agent that's supposed to output an exact phrase when a draft is good enough, but you never set <code>max_iterations</code>. What's the real risk if the Critic never produces that exact phrase?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The loop keeps running indefinitely — termination logic is something you must implement, not something the framework enforces for you. <code>max_iterations</code> exists specifically as the safety fallback for exactly this case: a completion signal that never fires.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming ParallelAgent branches can coordinate with each other mid-run because they technically share the same process. They don't share conversation history or state automatically — treating a parallel fan-out as if it were a sequential pipeline with extra speed is how race conditions and silently-missing data creep in.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># LoopAgent(sub_agents=[WriterAgent, CriticAgent])  — no max_iterations set
+# CriticAgent is supposed to output the exact string "No major issues found."
+# when the draft is acceptable, triggering exit_loop().
+#
+# A prompt-wording change makes CriticAgent output "No major issues found!"
+# (an exclamation mark instead of a period) once the draft is actually fine.</code></pre>
+<p><strong>Predict first:</strong> does the loop still exit once the draft is genuinely good? <strong>Observe:</strong> no — completion detection in the documented pattern relies on exact string matching, and a one-character difference means the escalation condition never fires. Without a <code>max_iterations</code> cap as a second line of defense, this is a real infinite loop, not a near-miss — which is exactly why ADK's own examples pair every exact-match termination signal with a numeric fallback rather than trusting the string match alone.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> the documented ParallelAgent pattern for real fan-out work is research-then-synthesize — three independent research agents run concurrently for speed, each writing to its own state key, followed by a dedicated synthesis agent that reads all three keys and merges them. That synthesis step isn't optional glue, it's the explicit coordination point the docs say you must build yourself — skipping it doesn't make the branches share data, it just means nothing ever reads what they produced.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (re-verified 2026-08-06) — this is real orchestration competence, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "When would you reach for ParallelAgent instead of just calling three tools one after another inside a single agent?" <strong>A:</strong> When the three tasks are genuinely independent and each benefits from its own agent reasoning (not just a tool call) — ParallelAgent cuts wall-clock latency by running them concurrently, at the cost of needing an explicit synthesis step afterward, since nothing is shared automatically between branches while they run.</p>
+
+<h2>Source</h2>
+<p><a href="https://adk.dev/agents/workflow-agents/" target="_blank" rel="noopener">adk.dev/agents/workflow-agents</a>, <a href="https://adk.dev/agents/workflow-agents/parallel-agents/" target="_blank" rel="noopener">adk.dev/agents/workflow-agents/parallel-agents</a>, and <a href="https://adk.dev/agents/workflow-agents/loop-agents/" target="_blank" rel="noopener">adk.dev/agents/workflow-agents/loop-agents</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>SequentialAgent runs sub-agents in fixed order, all sharing one session state via a common InvocationContext.</li>
+    <li>ParallelAgent runs sub-agents concurrently for speed, but shares nothing automatically between branches — coordination and aggregation are on you.</li>
+    <li>LoopAgent repeats its sub-agents until an explicit escalation fires or <code>max_iterations</code> forces an exit — always set the numeric cap as a safety net.</li>
+    <li>These are "template" workflow agents — fixed, deterministic patterns. Lesson 9's graph-based workflows generalize the same idea with explicit branching.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why can a SequentialAgent's third sub-agent read the first sub-agent's output without any extra wiring?</li>
+<li>What exactly does ParallelAgent leave for you to build yourself?</li>
+<li>What are the two mechanisms that can end a LoopAgent, and why do real examples use both together?</li>
+<li>How would you decide between Sequential and Parallel for a three-step task where step 2 needs step 1's result?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or want to sanity-check your own mental model of this architecture? Describe it back to your teacher in your own words — that's the fastest way to find a gap.</footer>
+
+<div class="lesson-nav">
+  <span>Lesson 7 not yet published</span>
+  <a href="0009-graph-based-orchestration.html">Next: Graph-Based Orchestration (ADK 2.0) &rarr;</a>
+</div>
+
+</body>
+</html>

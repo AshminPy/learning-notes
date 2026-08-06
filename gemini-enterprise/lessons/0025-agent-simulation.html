@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 25 — Agent Simulation</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 25 of 30</p>
+<h1>Agent Simulation</h1>
+
+<p>Lesson 24 assumed you already had eval cases and traces to score. This lesson is where a lot of those actually come from at scale: Agent Simulation runs your agent against a synthetic, LLM-played user instead of a real one, so you can stress-test multi-turn behavior — and even backend failures — before any real customer sees it.</p>
+
+<p class="callout"><strong>Mental model:</strong> Agent Simulation is a flight simulator, not a real flight. A <strong>User Simulator</strong> plays the passenger — a synthetic user with a hidden "flight plan" (its own instructions the agent under test never sees) that drives a realistic, multi-turn conversation. <strong>Environment simulation</strong> plays bad weather — it intercepts specific tool calls and injects mocked errors (a fake HTTP 503, a latency spike) so you can see how the agent copes with a payment-API outage without ever touching a real payment API or waiting for a real outage. That predicts something concrete: you can validate "how does my agent behave when the refund tool times out" on day one, in CI, with zero real users and zero real outages — you don't have to wait for the failure to actually happen in production to test the response to it.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Evaluation dataset (Lesson 23)            — schema every simulated trace still follows
+Agent evaluation / AutoRaters (Lesson 24) — scores whatever traces simulation produces
+   │
+   ▼
+Agent Simulation   &larr; you are here
+   │
+   ├─ Step 1: generate_conversation_scenarios()   (starting prompt + hidden conversation plan)
+   │
+   ▼
+   ├─ Step 2: run_inference(..., user_simulator_config=...)   (User Simulator drives the conversation)
+   │
+   ▼
+   Traces   (same immutable record format Lesson 24's AutoRaters score)
+   │
+   ▼
+Agent Observability (Lesson 26) — the same trace format, but from real production sessions instead of simulated ones</code></pre>
+<p>Notice the two steps here are the exact same two SDK calls Lesson 24 introduced for generating synthetic test cases — <code>generate_conversation_scenarios()</code> and <code>run_inference()</code>. Agent Simulation isn't a separate system; it's what those two calls actually do once a User Simulator is driving the conversation on the far side.</p>
+
+<h2>Two-step workflow: generate, then simulate</h2>
+<pre><code>eval_dataset = client.evals.generate_conversation_scenarios(
+    agent_info=travel_agent_info,
+    config={
+        "count": 5,
+        "generation_instruction": "Generate scenarios where a user needs to change a flight after a missed connection",
+    },
+)
+
+eval_dataset_with_traces = client.evals.run_inference(
+    agent=travel_agent,
+    src=eval_dataset,
+    config={"user_simulator_config": {"max_turn": 5}},
+)</code></pre>
+<p>Step 1 produces each scenario's starting prompt (the user's opening message) and a conversation plan — hidden instructions describing how the simulated user should behave and what they're trying to accomplish. Step 2 hands that plan to the User Simulator, which uses it to generate realistic follow-up replies for up to <code>max_turn</code> turns, driving the agent through a full multi-turn conversation and recording every step as a trace.</p>
+
+<h2>Environment simulation: injecting failure on purpose</h2>
+<p>Separately from simulating the user, environment simulation lets you intercept a specific tool call the agent makes and substitute mocked data or a simulated error — an HTTP 503, a latency spike — in place of the real backend response. This validates how the agent's logic actually handles a degraded dependency (does it retry, apologize, escalate, or silently fail?) without ever touching the real production backend, and without waiting for a real outage to find out.</p>
+
+<h2>What comes out: traces, scored the same way</h2>
+<p>Both paths — a normal multi-turn User Simulator run and an environment-simulation run with an injected failure — produce the same kind of output: traces, the immutable record of model inputs, responses, and tool calls introduced in Lesson 24. Those traces feed directly into the exact same <code>client.evals.evaluate()</code> call from Lesson 24 — simulation is a way of generating traces at scale and on demand, not a separate scoring system.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. A User Simulator has a "conversation plan" the agent under test never sees. What is that plan actually for?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">It's the hidden script driving the simulated user's realistic follow-up replies across multiple turns. The agent only ever sees ordinary user messages — never the plan itself — which is exactly what makes the conversation a fair test of the agent's actual behavior.</div>
+</div>
+<p>Before revealing: write a <code>generation_instruction</code> that would specifically stress-test an angry customer demanding a refund outside the stated policy window.</p>
+<div class="quiz">
+<p>Reveal a modeled answer</p>
+<input type="text" id="q2" placeholder="type your answer">
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code>config={
+    "count": 10,
+    "generation_instruction": "Generate scenarios where an angry user demands a refund for an order placed 45 days ago, outside the 30-day policy window",
+}</code></pre>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating simulation and real-user testing as interchangeable. Simulation is for stress-testing conversational logic and failure handling cheaply, repeatably, and at scale — a User Simulator follows a written plan, so it won't surprise you in the genuinely unpredictable ways a real customer can. Simulation reduces how often real users find your bugs first; it doesn't eliminate the need to occasionally validate against real behavior.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># Skips scenario generation entirely, jumps straight to inference
+eval_dataset_with_traces = client.evals.run_inference(
+    agent=travel_agent,
+    src=some_other_dataset,
+    config={"user_simulator_config": {"max_turn": 5}},
+)</code></pre>
+<p><strong>Predict first:</strong> what happens if <code>src</code> was never produced by <code>generate_conversation_scenarios()</code> — say, a plain list of prompts with no conversation plan attached? <strong>Observe:</strong> the User Simulator has no hidden plan to work from for any of these rows. The documented workflow is two strictly ordered steps — generate scenarios, then simulate sessions — not two independent options you can call in either order. Skipping step 1 leaves step 2 with nothing to simulate a realistic multi-turn conversation against, even though it will still attempt to run.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> the value of simulation is volume and repeatability — stress-testing an agent against many synthetic interactions before it ever touches live customers. The realistic pattern is running simulation as a CI gate on every agent-instruction or tool-definition change, not just once before a big launch — a change that looks safe in isolation can shift how the agent behaves across an entire conversation plan, and simulation is what catches that before a real user does.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (confirmed 2026-08-06) — this is real pre-launch quality engineering, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "How would you test what your agent does when a downstream payment API returns a 503, without touching the real payment API?" <strong>A:</strong> Environment simulation — intercept that specific tool call and inject the mocked 503 response, then inspect the resulting trace to see exactly how the agent's logic handled the failure, with no real backend involved.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/evaluate-simulated" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/evaluation/evaluate-simulated</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Agent Simulation runs the agent against a User Simulator — a synthetic user following a hidden conversation plan the agent never sees.</li>
+    <li>The workflow is two ordered SDK calls: <code>generate_conversation_scenarios()</code>, then <code>run_inference()</code> with a <code>user_simulator_config</code> — the same calls Lesson 24 used for synthetic test generation.</li>
+    <li>Environment simulation separately intercepts specific tool calls to inject mocked errors, testing resilience without touching real backends.</li>
+    <li>Both paths produce traces, scored by the exact same AutoRaters and <code>evaluate()</code> call from Lesson 24.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What's the difference between the User Simulator and environment simulation?</li>
+<li>Why does the agent under test never see the conversation plan?</li>
+<li>Why does calling <code>run_inference()</code> without first generating scenarios fail to produce a meaningful simulation?</li>
+<li>How would you verify that a simulated failure (like an injected 503) actually reached the agent's logic, rather than being silently ignored?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or designing a simulation for your own agent's riskiest conversation? Describe the scenario to your teacher and we'll turn it into a generation_instruction together.</footer>
+
+<div class="lesson-nav">
+  <a href="0024-agent-evaluation-autoraters.html">&larr; Agent evaluation: AutoRaters, online evaluation &amp; synthetic test scenarios</a>
+  <a href="0026-agent-observability.html">Next: Agent Observability &rarr;</a>
+</div>
+
+</body>
+</html>

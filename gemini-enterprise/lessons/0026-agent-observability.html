@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 26 — Agent Observability</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 26 of 30</p>
+<h1>Agent Observability</h1>
+
+<p>Lesson 25's simulation happens before launch, against synthetic traffic you fully control. The moment a real agent is serving real users, you need the production equivalent: Agent Observability. Same underlying idea — a trace-level record you can inspect — but now for traffic you don't control and can't predict.</p>
+
+<p class="callout"><strong>Mental model:</strong> a trace is a flight's black-box recorder; the Observability dashboards are the control tower's radar screen. When one flight has a problem, you pull that one flight's recorder — a single trace, a single session. When you want to know "is the whole fleet getting slower this week," you don't listen to a thousand individual recorders one at a time — you look at the tower's aggregate view. That predicts something concrete: a spike in overall p95 latency belongs in the Overview dashboard's aggregate metrics, but "why did this one user's refund request take 12 seconds" belongs in that single trace's span list — reaching for the wrong one wastes real debugging time.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Agent Simulation (Lesson 25)              — traces from synthetic, pre-launch traffic
+Agent evaluation / AutoRaters (Lesson 24) — scores traces, simulated or real
+   │
+   ▼
+Agent Observability   &larr; you are here (same trace format, now from real production sessions)
+   │
+   ├─ Metrics   (aggregate: latency percentiles, error rate, token usage)
+   ├─ Traces    (per-session / per-request: spans — model calls, tool calls, latency, status)
+   └─ Logs      (raw, filterable, severity + timestamp)
+   │
+   ▼
+Online evaluation / Online Monitors (Lesson 24) — reads this same telemetry to score live traffic continuously</code></pre>
+
+<h2>Three signals: metrics, traces, logs</h2>
+<p>Per the platform's observability docs, agents emit telemetry in <strong>OpenTelemetry</strong> format to Google Cloud's observability storage — built-in platform components emit this automatically (Model Armor, for example, natively provides standardized telemetry for its own policy interceptions). The platform "relies heavily on the OpenTelemetry Semantic Conventions for generative AI systems to standardize how generative AI telemetry is captured, structured, and reported," which is what lets a multi-step workflow involving models, tools, and retrieval get described in one universal, vendor-agnostic format instead of a bespoke one per agent.</p>
+
+<h2>Six dashboards in the Observability tab</h2>
+<p>Selecting a specific agent from the Agent Registry opens an Observability tab with six targeted dashboards:</p>
+<ul>
+<li><strong>Overview</strong> — sessions, turns per session, invocations, token consumption (input/output), traffic volume, latency percentiles (p50/p95/p99), and error rates.</li>
+<li><strong>Evaluation</strong> — the Online Monitors from Lesson 24: response quality, safety, hallucination rate, and tool effectiveness, scored continuously on real traffic.</li>
+<li><strong>Models</strong> — per-foundation-model breakdown: p95 latency, call counts, errors, quota failures, token usage.</li>
+<li><strong>Tools</strong> — external tool latency, call frequency, error rates, and instances where no tool was invoked at all.</li>
+<li><strong>Usage</strong> — infrastructure metrics: container CPU/memory allocation and token consumption.</li>
+<li><strong>Logs</strong> — filterable raw logs with severity, timestamps, and execution summaries.</li>
+</ul>
+
+<h2>Traces: session, trace, and span views</h2>
+<p>A <strong>trace</strong> is "a factual, immutable record of the agent's behavior, including model inputs, responses, and tool calls." A trace is made of <strong>spans</strong> — individual operations like a foundation-model call, an API request, or a tool execution — each carrying its own inputs, outputs, latency, and status code. The Traces tab offers three levels: <strong>Session view</strong> (executions grouped by user session), <strong>Trace view</strong> (a single end-to-end request), and <strong>Span view</strong> (the granular list of operations inside it) — plus a separate <strong>Topology</strong> tab showing how agents depend on each other. None of this is automatic: it requires the Cloud Trace API, Cloud Logging API, and Telemetry API enabled on the project, the agent actually configured to send trace data, and IAM roles like Cloud Trace User and Logs Viewer to view it.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. You want to know whether your agent's overall error rate has been creeping up over the past week across all users. Do you check a single trace, or the Overview dashboard?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The Overview dashboard — error rate over a week, across all users, is an aggregate metric. A single trace only tells you about one specific session, not the whole fleet's trend.</div>
+</div>
+<p>Before revealing: a user reports "the agent didn't use my calendar tool at all today." Which of the six dashboards would you check first, and what would you look at next to confirm it?</p>
+<div class="quiz">
+<p>Reveal the approach</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Start with the Tools dashboard's "no tool invoked" instances metric to see if this is a pattern, not just one user. Then confirm on that specific user by pulling their Session view for the day, drilling into the relevant Trace, and checking the Span view to see whether the model actually chose not to call the tool, or called it and it silently failed.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming observability is "free" the moment an agent is deployed. It isn't automatic without the prerequisite APIs enabled and the agent configured to emit telemetry — Cloud Trace API, Cloud Logging API, Telemetry API, plus the right IAM roles. A freshly deployed agent that hasn't had these enabled will serve real traffic while producing zero traces, which looks identical to "the platform is broken" and is actually "observability was never turned on."</p>
+
+<h2>A controlled failure</h2>
+<pre><code># Agent deployed and serving real users for the past hour.
+# You open the Traces tab expecting to see today's sessions.</code></pre>
+<p><strong>Predict first:</strong> the Traces tab shows nothing for the last hour, even though the agent is definitely handling live requests — is this a platform bug? <strong>Observe:</strong> check whether Cloud Trace API, Cloud Logging API, and Telemetry API are actually enabled on the project, and whether this specific agent's deployment is configured to send trace data — none of that is automatic. There's also no retroactive backfill: traffic served before telemetry was wired up produces no historical trace, no matter how long you wait after enabling the APIs afterward.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> the six dashboards serve different roles differently — an on-call engineer watches Overview and Tools for anomalies and drills into a specific Trace to root-cause one incident; a quality or product owner watches the Evaluation dashboard's Online Monitors for drift; a platform team watches Usage for cost and capacity. Governance features you enabled earlier in this course show up here for free — Model Armor's policy interceptions (Lesson 20) emit their own standardized telemetry automatically, so a governance decision and its performance cost are visible in the same place, not two separate systems you have to cross-reference by hand.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (confirmed 2026-08-06) — this is real production-operations skill, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "A user says an agent gave a wrong answer at 2:14pm yesterday. How do you find out what actually happened, without guessing?" <strong>A:</strong> Pull that specific session in the Traces tab — Session view to find the right session, Trace view for the exact request, Span view for the precise model inputs, outputs, and tool calls recorded at that timestamp. A trace is an immutable factual record, not a reconstruction pieced together from memory or aggregate logs.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/observability/overview" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/observability/overview</a> and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/optimize/observability/traces" target="_blank" rel="noopener">.../optimize/observability/traces</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Agent Observability captures three signals — metrics, traces, and logs — in standardized OpenTelemetry format.</li>
+    <li>The Observability tab has six dashboards: Overview, Evaluation, Models, Tools, Usage, and Logs, each answering a different aggregate question.</li>
+    <li>A trace is an immutable per-session/per-request record made of spans; Session, Trace, and Span views let you zoom from "which session" to "which exact operation."</li>
+    <li>Telemetry isn't automatic — it needs the Cloud Trace, Cloud Logging, and Telemetry APIs enabled and the agent configured to emit data, with no retroactive backfill for traffic served before that.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What are the three observability signals, and which format standardizes them?</li>
+<li>Which dashboard would you check for a fleet-wide trend versus one user's specific bad experience?</li>
+<li>What has to be true before a deployed agent produces any traces at all?</li>
+<li>Why doesn't enabling the telemetry APIs later backfill traces for traffic already served?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or staring at an empty Traces tab on your own agent? Walk your teacher through what APIs and IAM roles you've actually enabled — that's usually where the gap is.</footer>
+
+<div class="lesson-nav">
+  <a href="0025-agent-simulation.html">&larr; Agent Simulation</a>
+  <span>Next lesson not yet published</span>
+</div>
+
+</body>
+</html>

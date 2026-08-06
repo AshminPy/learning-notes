@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3 — The Gemini Enterprise App: The Consumer Front Door</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 3 of 30</p>
+<h1>The Gemini Enterprise App: The Consumer Front Door</h1>
+
+<p>Lesson 1 drew a line between the Gemini Enterprise Agent Platform (the developer floor) and Gemini Enterprise, the app (the business-user floor). This lesson is the only stop this course makes on that upper floor — every lesson after this one returns to the platform side, so get a complete picture of it now while it's the whole focus.</p>
+
+<p class="callout"><strong>Mental model:</strong> think of the Gemini Enterprise app as a company intranet built around agents instead of documents. A normal intranet gives you search and folders; this one gives you Agent Designer (build an agent without code), Agent Gallery (install one someone else already built and validated), Inbox (watch and steer the ones currently running), Projects (a shared, context-scoped workspace), and Canvas (co-edit real documents with an agent). That predicts something concrete: a non-developer on your team can go from "I have a repetitive process" to "I have a working agent doing it," entirely inside this one app, without writing a line of code or touching ADK.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Gemini Enterprise Agent Platform   (Lesson 1)
+   │  the product built on top of it
+   ▼
+Gemini Enterprise (the app)   ← you are here
+   ├── Agent Designer   — no-code agent creation          (Lesson 11, deep dive)
+   ├── Agent Gallery     — validated third-party agents    (Accenture, Oracle, ServiceNow)
+   ├── Inbox             — unified hub for running agents
+   ├── Projects          — shared, context-scoped team workspace
+   └── Canvas            — co-edit Docs/Slides with an agent</code></pre>
+<p>Nothing under this box gets touched again after this lesson — Lesson 4 starts Phase B back down on the platform floor with the Agent Development Kit.</p>
+
+<h2>Agent Designer: no-code, natural language</h2>
+<p>Per Google's own announcement, Agent Designer lets users "create agents to automate complex, multi-system processes with simple, natural language." It's the app's answer to "I need an agent" for someone who has never written code — you describe the process, Agent Designer builds the agent. Lesson 11 (Phase C) goes deep on how; this lesson only needs you to know it exists and where it sits.</p>
+<p>Related to it, but a separate feature: <strong>Skills</strong>, per Google's own description, let you "formalize a specific workflow — like applying brand guidelines or formatting a report — and save it as a reusable action for your whole team," so an agent uses the right skill automatically instead of being re-explained the same context every time.</p>
+
+<h2>Agent Gallery: agents you don't have to build</h2>
+<p>Not every agent needs building from scratch. Google states: "we are launching Agent Marketplace integrated into the Agent Gallery, giving your users the ability to easily browse and request specialized third-party agents from partners like Accenture, Oracle, and ServiceNow" — a catalog of validated, partner-built agents, distinct from Agent Designer's build-your-own path.</p>
+
+<h2>Inbox: where you watch and steer running agents</h2>
+<p>Agents, especially long-running ones, need somewhere for a human to check in. Per Google: "Inbox is a central command location to monitor, guide, and securely manage all of your agent activity. Notifications are intuitively categorized into actionable groups like 'Needs your input,' 'Errors,' and 'Completed,' giving you a clear, consolidated view of ongoing agent progress."</p>
+
+<h2>Projects: a scoped, shared workspace</h2>
+<p>Projects is described as "a dynamic, highly collaborative workspace where human experts and agents actively co-create side-by-side. By unifying your shared context across various sources — Google Workspace, Microsoft OneDrive, team chats, and more — the agent acts as a dedicated expert on your specific initiative." The key word is <em>unifying</em> — an agent inside a Project only knows what that Project has connected, not your whole company's data by default.</p>
+
+<h2>Canvas: co-editing real documents</h2>
+<p>Canvas is the app's editor: "Canvas allows teams to create and edit Docs or Slides in a single pane, with rich formatting and live co-editing," and Google has added "Microsoft 365 interoperability, allowing you to export the docs and slides you've created within Canvas into common Microsoft Office formats."</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. Your team wants to use a pre-built ServiceNow integration agent someone else already validated, not build one from scratch. Which feature do they open: Agent Designer or Agent Gallery?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">Agent Gallery — the catalog of validated, partner-built agents. Agent Designer is for creating a new agent from scratch with natural language, not installing an existing one.</div>
+</div>
+<p>Now, before revealing: a long-running agent has been executing a multi-step workflow and just hit an error needing your decision. Which feature surfaces that to you — Projects, or Inbox?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Inbox. It's the unified hub for monitoring and managing running agents, categorizing exactly this kind of event under "Needs your input" or "Errors." Projects is a workspace, not a monitoring feed.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming Agent Designer and Agent Studio are the same thing because both have "Agent" and "Studio/Designer" in the name. Agent Designer is the no-code tool inside the Gemini Enterprise app, covered in this lesson. Agent Studio is a separate, code-adjacent environment on the platform side, covered in Lesson 12 alongside raw ADK — the same no-code-versus-code split as the app-versus-platform line from Lesson 1, just one level deeper.</p>
+
+<h2>A controlled failure</h2>
+<p>You open Canvas expecting a blank document editor, and ask an agent to pull last quarter's numbers straight into it — but you haven't set this up inside a Project connected to that data.</p>
+<p><strong>Predict first:</strong> does Canvas give the agent access to your company's data automatically, or does something else need to happen first? <strong>Observe:</strong> Canvas is described purely as an interactive editor for Docs and Slides — it doesn't itself grant an agent access to company data. Projects is what "unifies shared context across sources" and scopes what an agent knows. Without a Project connecting the right data source first, Canvas gives you a capable co-editor with no numbers to pull — the trap is assuming any Gemini Enterprise agent automatically knows your company's data everywhere, when Projects is specifically the feature that grants that context.</p>
+
+<p class="callout production"><strong>Production note:</strong> Agent Gallery agents come from named third parties (Accenture, Oracle, and ServiceNow, per Google's own launch announcement). Treat installing one the same way you'd treat approving any third-party integration — check what data access and scopes it requests before rolling it out company-wide. That's the same governance instinct Phase F formalizes on the platform side with Agent Identity, Agent Gateway, and Model Armor; Agent Gallery is where that instinct first matters for a non-developer clicking "install."</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (verified 2026-08-06) — this is real product knowledge for supporting business users, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "A business user says: 'I don't want to learn to code, but I need an agent that reads incoming support tickets and drafts replies.'" What's the correct app feature to point them to first? <strong>A:</strong> "Agent Designer — it's built for exactly this: no-code agent creation from a natural-language description, inside the Gemini Enterprise app."</p>
+
+<h2>Source</h2>
+<p><a href="https://cloud.google.com/blog/products/ai-machine-learning/the-new-gemini-enterprise-one-platform-for-agent-development" target="_blank" rel="noopener">cloud.google.com/blog — "The new Gemini Enterprise: one platform for agent development"</a> and <a href="https://cloud.google.com/blog/products/ai-machine-learning/whats-new-in-gemini-enterprise" target="_blank" rel="noopener">cloud.google.com/blog — "What's new in Gemini Enterprise"</a> (both published April 22, 2026) — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>The Gemini Enterprise app has five core features: Agent Designer (no-code build), Agent Gallery (install a validated third-party agent), Inbox (monitor running agents), Projects (a context-scoped shared workspace), and Canvas (co-edit Docs/Slides).</li>
+    <li>Projects, not Canvas, is what scopes an agent's access to your company's data — Canvas is just the editor.</li>
+    <li>Agent Designer (no-code, in the app) and Agent Studio (code-adjacent, on the platform — Lesson 12) are different tools, not two names for the same thing.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Which app feature would you use to install a third-party agent versus build your own?</li>
+<li>Why doesn't opening Canvas alone give an agent access to your company's data?</li>
+<li>What does Inbox actually monitor, and what are its three notification categories?</li>
+<li>How would you explain the difference between Agent Designer and Agent Studio to a coworker?</li>
+</ul>
+
+<footer class="teacher-reminder">Not sure whether something you need fits Agent Designer, Agent Gallery, or a Phase B platform build instead? Describe the task to your teacher and we'll place it correctly.</footer>
+
+<div class="lesson-nav">
+  <a href="0002-core-vocabulary-agents-tools-models.html">&larr; Core vocabulary: agents, tools, models</a>
+  <a href="0004-adk-overview.html">Next: Agent Development Kit (ADK) overview &rarr;</a>
+</div>
+
+</body>
+</html>

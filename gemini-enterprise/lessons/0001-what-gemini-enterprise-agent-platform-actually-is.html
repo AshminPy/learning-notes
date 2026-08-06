@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 — What Gemini Enterprise Agent Platform Actually Is</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 1 of 30</p>
+<h1>What Gemini Enterprise Agent Platform Actually Is</h1>
+
+<p>Ashmin's own SRE agent runs on "Google's agent infrastructure" — but that phrase now hides at least two different things Google ships under very similar names, renamed and expanded within the same few months (Google Cloud Next '26, announced April 22, 2026). Get this lesson wrong and every later lesson in this course — ADK, Agent Runtime, Agent Identity — sounds like unrelated trivia instead of one coherent platform. This lesson's only job is to draw one clear map before anything else gets built on top of it.</p>
+
+<p class="callout"><strong>Mental model:</strong> think of "Gemini Enterprise" as a company with two floors. The ground floor is <strong>Gemini Enterprise, the app</strong> — Agent Designer, Inbox, Projects, Canvas, Agent Gallery — where business users log in and use agents, no code required. The floor below is the <strong>Gemini Enterprise Agent Platform</strong> — ADK, Agent Runtime, Agent Identity, Agent Gateway — where developers actually build, run, and govern what powers that ground floor. Vertex AI used to be the label on that lower floor; the label changed and the floor got bigger, but it's the same floor. That predicts something concrete: if a coworker says "I built something in Gemini Enterprise" versus "I built something on the Gemini Enterprise Agent Platform," those are two different claims — a no-code app agent versus a developer-built platform agent — and this course lives on the lower floor for every lesson except Lesson 3.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Vertex AI   (2023-2025 name, Google's model-development platform)
+   │  Google Cloud Next '26 (announced April 22, 2026): renamed + expanded
+   ▼
+Gemini Enterprise Agent Platform   ← you are here
+   │   four pillars: Build · Scale · Govern · Optimize
+   │
+   │  the product built on top of this platform
+   ▼
+Gemini Enterprise (the app)   — Lesson 3: Agent Designer, Inbox, Projects, Canvas, Agent Gallery
+   │
+   │  agents on the platform are built with
+   ▼
+Agent Development Kit (ADK)   — Phase B, Lessons 4-10</code></pre>
+<p>Everything in Phase B (building), E (scaling), F (governing), and G (optimizing) is a detail sitting inside one of the four pillars named above. Phase C is the one detour back up to the app floor.</p>
+
+<h2>One platform, four pillars</h2>
+<p>Per Google's own announcement, Gemini Enterprise is "an end-to-end system for the agentic era, built for agents that can execute complex, multi-step work processes," combining "access to frontier AI models, an intuitive UI, a secure development framework, and the ability to successfully deploy agents at scale." Inside that, the Agent Platform specifically is described as "the central place where developers can build, scale, govern, and optimize fleets of agents" — four words that map directly onto this course's own phase structure:</p>
+<ul>
+<li><strong>Build</strong> — the Agent Development Kit (ADK), a graph-based framework for organizing networks of sub-agents, plus MCP integrations. Phase B.</li>
+<li><strong>Scale</strong> — Agent Runtime for fast, persistent agents, agent-to-agent orchestration, and Memory Bank/Memory Profiles for long-term context across sessions. Phase E.</li>
+<li><strong>Govern</strong> — Agent Identity (a cryptographic ID for traceability), Agent Gateway (secures interactions between agents and data), and Model Armor (defends against prompt injection and data leakage). Phase F.</li>
+<li><strong>Optimize</strong> — Agent Simulation for stress-testing agents against real scenarios, and Agent Observability for real-time monitoring. Phase G.</li>
+</ul>
+
+<h2>"The evolution of Vertex AI," not a replacement</h2>
+<p>Google's announcement states the Agent Platform directly: it is "the evolution of Vertex AI." That single word — evolution — matters more than it looks. It means existing Vertex AI concepts didn't get thrown out for a competing product; they got renamed and expanded in place. Practically, this shows up as a new dedicated docs home: <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform</a>, organized around Studio, Agents, Models, Notebooks, and Reasoning Engines — its own namespace, separate from generic Vertex AI reference pages, even though the platform underneath is Vertex AI's direct continuation.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. True or false: the Gemini Enterprise Agent Platform is a brand-new product built from scratch, with no relationship to Vertex AI.</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">False. Google's own announcement calls it "the evolution of Vertex AI" — an expansion and rename, not a separate competing product.</div>
+</div>
+<p>Now, before revealing: you need to find where Agent Identity lives in the platform's own structure. Which of the four pillars — Build, Scale, Govern, or Optimize — would you look under?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Govern. Agent Identity (a cryptographic ID for traceability and auditing) sits in the Govern pillar alongside Agent Gateway and Model Armor — Phase F of this course.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating "Gemini Enterprise" and "Gemini Enterprise Agent Platform" as two names for the exact same thing. They aren't — one is the no-code app business users log into (Lesson 3), the other is the developer platform underneath it (everywhere else in this course). Google's own announcement draws this line explicitly by describing the Agent Platform as where "developers" build, separate from the app-level feature list (Agent Designer, Inbox, Projects, Canvas, Agent Gallery).</p>
+
+<h2>A controlled failure</h2>
+<p>You have last year's Vertex AI documentation bookmarked, and you go looking today for its current equivalent.</p>
+<p><strong>Predict first:</strong> do you expect to land on a generic Vertex AI URL, or something else entirely? <strong>Observe:</strong> the current official docs home is a dedicated namespace — <code>docs.cloud.google.com/gemini-enterprise-agent-platform</code> — not a page nested under a generic Vertex AI path. The platform is Vertex AI's evolution conceptually, but it now has its own docs home, its own release notes, and its own product name in URLs and search results. Old bookmarks and old search habits both need updating even though nothing about the underlying relationship changed.</p>
+
+<p class="callout production"><strong>Production note:</strong> if your team already has resources built on "Vertex AI" terminology — runbooks, onboarding docs, internal wikis, even an SRE agent's own deploy-state notes — don't assume you need to rebuild anything, since Google frames this as an evolution, not a replacement. But do budget real time to re-map your team's documentation to current terminology. New hires, support tickets, and search results will all use "Gemini Enterprise Agent Platform" and its component names going forward, not the old ones — a documentation gap here causes confusion long before any technical gap does.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (verified during course planning, 2026-08-06, re-checked at each lesson's write time) — this is zero-to-hero platform competence, not exam prep.</p>
+<p><strong>Interview Q:</strong> "Your director asks: is Gemini Enterprise Agent Platform replacing Vertex AI?" <strong>A:</strong> "No — Google describes it as Vertex AI's evolution, not a separate competing product. Existing Vertex AI concepts carry forward; what changed is the name, the scope (agents, not just models), and where the docs and APIs now live."</p>
+
+<h2>Source</h2>
+<p><a href="https://cloud.google.com/blog/products/ai-machine-learning/the-new-gemini-enterprise-one-platform-for-agent-development" target="_blank" rel="noopener">cloud.google.com/blog — "The new Gemini Enterprise: one platform for agent development"</a> (published April 22, 2026), and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Gemini Enterprise Agent Platform is "the evolution of Vertex AI" — an expansion and rename, not a new competing product.</li>
+    <li>The platform organizes itself around four pillars: Build, Scale, Govern, Optimize — this course's Phases B, E, F, and G map directly onto them.</li>
+    <li>"Gemini Enterprise" (the app) and "Gemini Enterprise Agent Platform" (the developer platform) are two different things — the app is built on top of the platform, and Lesson 3 is this course's one stop on the app side.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What does Google mean by calling the Agent Platform "the evolution of Vertex AI"?</li>
+<li>Which pillar — Build, Scale, Govern, or Optimize — would you check first to find Agent Runtime?</li>
+<li>What's the actual difference between "Gemini Enterprise" and "Gemini Enterprise Agent Platform"?</li>
+<li>How would you verify, right now, whether a specific feature name from this lesson is still current?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or found a feature name that looks different from what's here? This platform moves fast — paste what you found back to your teacher and we'll square it against the current docs together.</footer>
+
+<div class="lesson-nav">
+  <span>&larr; Start</span>
+  <a href="0002-core-vocabulary-agents-tools-models.html">Next: Core vocabulary — agents, tools, models &rarr;</a>
+</div>
+
+</body>
+</html>

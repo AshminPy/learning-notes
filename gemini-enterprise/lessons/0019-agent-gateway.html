@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 19 — Agent Gateway</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 19 of 30</p>
+<h1>Agent Gateway</h1>
+
+<p>Lesson 18 gave every agent a cryptographic identity nobody can steal or impersonate. But an identity that nothing ever checks is just decoration — something has to sit in the path of every request and actually ask "does this SPIFFE identity have permission to do this specific thing?" That something is Agent Gateway, and it's the piece that turns Agent Identity from a fact about an agent into an enforced rule about what that agent is allowed to do.</p>
+
+<p class="callout"><strong>Mental model:</strong> Agent Gateway is an airport security checkpoint, not a locked door. A locked door is binary — you have the key or you don't, for the whole building. A checkpoint checks your passport (Agent Identity) against a specific boarding pass (which gate, which flight) every single time you pass through, for every direction of travel — arriving passengers and departing ones are checked separately, by different rules. That predicts something concrete: an agent trusted to receive requests from users doesn't automatically get trusted to call arbitrary external tools — ingress and egress are two separate checkpoints with two separate rule sets, covered below.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Gemini Enterprise Agent Platform
+ └ Agent Identity           (Lesson 18 — the cryptographic WHO)
+     └ Agent Gateway         ← you are here (the enforced WHAT — policy on every hop)
+         ├─ Client-to-Agent (ingress)   — who may reach this agent at all
+         └─ Agent-to-Anywhere (egress)  — what this agent may reach: tools, MCP servers, other agents
+             └ Model Armor  (Lesson 20 — next: content screening layered on top of this same path)</code></pre>
+<p>Every hop in an agentic system — user to agent, agent to tool, agent to agent — is a place a request could go somewhere it shouldn't. Agent Gateway is Google's answer to governing all of those hops centrally, instead of hoping every tool integration remembers to check permissions itself.</p>
+<pre><code>Client / another agent
+   │
+   ▼
+Agent Gateway  (regional; Identity-Aware Proxy validates the caller's Agent Identity by default)
+   │  IAM: is this principal explicitly authorized for this resource?
+   │  Service Extensions: REQUEST_AUTHZ (custom per-tool policy) + CONTENT_AUTHZ (Model Armor)
+   ▼
+Target agent, MCP server, tool, or external API
+   (observability: every hop logged to Cloud Logging + Cloud Trace)</code></pre>
+
+<h2>What problem it actually solves</h2>
+<p>Per Google Cloud's docs, "Agent Gateway is the networking component of the Gemini Enterprise Agent Platform ecosystem. It secures and governs connectivity for all agentic interactions, whether they occur between users and agents, agents and tools, or among agents themselves." Without it, every ADK developer (Phase B) would need to hand-roll mTLS, OAuth handshakes, and per-tool authorization checks inside their own agent code — and every enterprise admin would need to trust that every team did it correctly. Agent Gateway centralizes that: developers get automatic mTLS/OAuth handling across MCP, Agent-to-Agent, REST, and gRPC without touching networking code, and admins get one place to enforce least-privilege policy across every agent regardless of which runtime built it.</p>
+
+<h2>Two directions, two separate rule sets</h2>
+<p>Agent Gateway governs two distinct paths, and a policy on one doesn't imply anything about the other:</p>
+<ul>
+<li><strong>Client-to-Agent (ingress)</strong> — secures who is allowed to reach an agent at all. Supported on Agent Runtime; Gemini Enterprise itself doesn't support ingress mode.</li>
+<li><strong>Agent-to-Anywhere (egress)</strong> — secures what an agent is allowed to call outward: MCP servers, tools, other agents, external APIs. Supported on both Agent Runtime and Gemini Enterprise.</li>
+</ul>
+<p>By default, "the gateway only allows traffic for resources that have been explicitly authorized using IAM" — a deny-by-default posture, not allow-by-default with exceptions carved out.</p>
+
+<h2>REQUEST_AUTHZ: per-tool, not just per-agent</h2>
+<p>The default enforcement layer is Identity-Aware Proxy (IAP), validating the caller's Agent Identity against IAM. On top of that, Service Extensions let an organization plug in a custom authorization engine via a <code>REQUEST_AUTHZ</code> policy profile — this is what makes fine-grained, per-tool rules possible: authorization based on the specific tool name and whether the call is read-only or read-write, not just "this agent may talk to this gateway." A concrete setup looks like defining an <code>authzExtension</code> pointing at an IAP-based extension, then a matching <code>authzPolicy</code> with <code>policyProfile: REQUEST_AUTHZ</code> scoped to the gateway resource — and Google's own docs recommend deploying it first with <code>iamEnforcementMode: "DRY_RUN"</code> so you can "validate your configuration without blocking traffic" before it goes live.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. An agent is correctly authorized for Client-to-Agent ingress — users can reach it. Does that alone mean it's also authorized to call an external MCP tool on egress?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. Ingress and egress are separate governed paths with separate policies — being trusted to receive traffic says nothing about what the agent is authorized to send outward.</div>
+</div>
+<p>Now, before revealing: you've just written a brand-new REQUEST_AUTHZ policy for a production gateway. What's the recommended first deployment setting, and why?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>iamEnforcementMode: "DRY_RUN"</code> — it lets the policy evaluate and log decisions without actually blocking traffic, so a misconfigured rule is caught in logs instead of taking down live agent traffic on first deploy.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> configuring an ingress policy and assuming it also governs the agent's outbound tool calls (or vice versa). Agent-to-Anywhere and Client-to-Agent are genuinely separate governed access paths — Gemini Enterprise itself only supports the egress side at all, which is a direct sign these aren't one unified setting.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># Deploy a REQUEST_AUTHZ extension straight to enforcing mode, skipping dry-run
+metadata:
+  iamEnforcementMode: "ENFORCE"   # instead of the recommended "DRY_RUN" first</code></pre>
+<p><strong>Predict first:</strong> if your custom authorization logic has a bug that denies a legitimate tool call, what does the agent experience, and how would you know it's a policy bug rather than the tool being down? <strong>Observe:</strong> the call fails at the gateway before it ever reaches the tool — from the agent's side this looks identical to an outage, but Cloud Logging/Cloud Trace on the gateway show a REQUEST_AUTHZ denial, not a downstream error. Without having run it in <code>DRY_RUN</code> first, you find this out from a live failure instead of from logs you could review calmly beforehand — which is exactly why the dry-run step exists.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> Agent Gateway has real scale limits worth planning around, not just security defaults — each gateway instance supports up to 5,000 registered resources, it has no VPC Service Controls support, and it can't connect to destinations using self-signed certificates. For a large enterprise registering many tools and agents, that resource ceiling is a capacity-planning input, not a hypothetical edge case — plan gateway topology (how many gateways, which resources per gateway) before registering hundreds of tools onto one instance.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (re-verified 2026-08-06) — this is real governance competence, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "How does Agent Gateway enforce more than 'this agent may or may not talk to the gateway'?" <strong>A:</strong> Beyond the default IAM/Identity-Aware Proxy check on the caller's Agent Identity, Service Extensions let you attach a REQUEST_AUTHZ policy with custom logic scoped to specific tool names and read-only vs. read-write operations — deployed in dry-run first so misconfigurations show up in logs, not in a live outage.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/gateways/agent-gateway-overview" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/govern/gateways/agent-gateway-overview</a> and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/govern/gateways/set-up-agent-gateway" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/govern/gateways/set-up-agent-gateway</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Agent Gateway is the networking/policy layer that governs every agentic hop — user-to-agent, agent-to-tool, agent-to-agent — centrally, instead of relying on each integration to self-police.</li>
+    <li>Client-to-Agent (ingress) and Agent-to-Anywhere (egress) are separate governed paths with separate policies; Gemini Enterprise only supports egress.</li>
+    <li>Default enforcement is deny-by-default IAM via Identity-Aware Proxy; REQUEST_AUTHZ Service Extensions add custom, per-tool, read/write-aware policy on top.</li>
+    <li>Deploy new authorization policies in dry-run mode first — it validates without blocking live traffic.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does trusting an agent on ingress say nothing about what it's trusted to do on egress?</li>
+<li>What does a REQUEST_AUTHZ policy add on top of the default IAM/IAP check?</li>
+<li>What's the practical risk of registering hundreds of tools onto a single gateway instance?</li>
+<li>How would you verify whether a failed tool call was denied by gateway policy or actually down?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or want to sanity-check your own mental model of this architecture? Describe it back to your teacher in your own words — that's the fastest way to find a gap.</footer>
+
+<div class="lesson-nav">
+  <a href="0018-agent-identity.html">&larr; Agent Identity</a>
+  <a href="0020-model-armor.html">Next: Model Armor &rarr;</a>
+</div>
+
+</body>
+</html>

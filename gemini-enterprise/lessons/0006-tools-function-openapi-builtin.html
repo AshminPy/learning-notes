@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 6 — Tools: Function Tools, OpenAPI, Built-ins</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 6 of 30</p>
+<h1>Tools: Function Tools, OpenAPI, Built-ins</h1>
+
+<p>Lesson 2 defined a tool as "a single instrument on the desk — does exactly one thing, hands control straight back." Lesson 5 showed the <code>tools</code> field sitting on every <code>Agent</code>, without saying where those entries actually come from. There are three real answers — write one yourself, generate one from an API spec you didn't write, or use one ADK already ships — and each has a different failure mode when done carelessly.</p>
+
+<p class="callout"><strong>Mental model:</strong> think of the three tool types as three ways to staff one desk. A <strong>function tool</strong> is training a new employee yourself — you write exactly what they do. An <strong>OpenAPI tool</strong> is hiring a vendor whose job is already fully specified in a contract (the OpenAPI spec) — you don't write their job description, you just point at the contract and ADK reads it. A <strong>built-in tool</strong> is someone already on staff, hired before you got there. That predicts something concrete: the amount of code you write is inversely proportional to how standardized the capability already is — a fully custom capability needs a hand-written function; a capability some other team already exposed via a documented API needs zero hand-written schema at all.</p>
+
+<h2>Where this fits</h2>
+<pre><code>agent.tools = [ ... ]                       (Lesson 5's tools[] field, expanded)
+ ├── Function tools    ← you are here — a plain function, auto-wrapped as FunctionTool
+ ├── OpenAPI tools                          — auto-generated from an existing API spec
+ ├── Built-in tools                          — Google Search, code execution, RAG
+ └── MCP tools                                — external servers, standardized protocol (Lesson 7)</code></pre>
+
+<h2>Function tools: your function, auto-wrapped</h2>
+<p>Per ADK's own docs, when you assign a plain function to an agent's <code>tools</code> list, "the framework automatically wraps it as a <code>FunctionTool</code>." The framework inspects your function's name, docstring, parameters, type hints, and defaults to generate the schema the model actually reasons over — you never hand-write that schema yourself. Two rules matter: required parameters need a type hint with no default value; optional ones need either a default value or a <code>typing.Optional[SomeType]</code> annotation. And the docstring isn't documentation for humans — per ADK's docs, "a well-written and comprehensive docstring is crucial for the LLM to understand how to use the tool effectively," because that docstring is what the model reads to decide when and how to call it.</p>
+<pre><code>def get_weather(city: str, unit: str):
+    """Retrieves the weather for a city in the specified unit.
+
+    Args:
+        city (str): The city name.
+        unit (str): The temperature unit, either 'Celsius' or 'Fahrenheit'.
+    """</code></pre>
+<p>Return values matter too: ADK's guidance is to return a dictionary with a <code>status</code> key ("success", "error", "pending") so the model can reason about outcomes consistently across every tool. If a function returns something that isn't a dictionary, ADK wraps it automatically as <code>{"result": value}</code> — convenient, but it means you lose the ability to signal partial failure unless you return a dict yourself.</p>
+
+<h2>OpenAPI tools: generated, not written</h2>
+<p>When a capability already exists as a documented REST API, <code>OpenAPIToolset</code> generates the tools for you. Per ADK's docs, it "internally parses the spec, resolving any internal references (<code>$ref</code>) to understand the complete API structure," then creates one <code>RestApiTool</code> per operation — its name is "derived from the <code>operationId</code> in the spec (converted to snake_case, max 60 chars)," falling back to the HTTP method and path if <code>operationId</code> is missing. Parameters, request bodies, and authentication are all handled the same automatic way — global auth (API keys, OAuth) is "automatically applied to all generated <code>RestApiTool</code> instances."</p>
+<pre><code>from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_toolset import OpenAPIToolset
+
+toolset = OpenAPIToolset(spec_str=openapi_spec_json, spec_str_type="json")
+api_agent = Agent(name="api_agent", model="gemini-flash-latest", tools=[toolset])</code></pre>
+<p><strong>Why it's built this way:</strong> the moment an API's spec changes (a new field, a renamed operation), regenerating from the spec keeps the agent's tools in sync automatically — a hand-written function tool wrapping the same API would need a manual edit every time the underlying API does.</p>
+
+<h2>Built-in tools: already on staff</h2>
+<p>ADK ships "ready-to-use tools provided by the framework for common tasks" — Google Search, code execution, and Retrieval-Augmented Generation among them. These need no schema work at all; you add them to <code>tools</code> the same way as anything else, and the framework already knows their contract. They exist for the capabilities so common across agents that reimplementing them per project would be pure duplication.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. You write a function tool with a complete docstring, but forget a type hint on a required parameter. What actually breaks?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The schema ADK generates for the model — type hints are what tell the framework the parameter's expected type. Without one, the tool's schema is incomplete or wrong, even though the docstring itself is fine; the two serve different, non-substitutable purposes.</div>
+</div>
+<p>Now, before revealing: a function tool returns a plain integer instead of a dictionary. What does the calling agent actually receive?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>{"result": &lt;that integer&gt;}</code> — ADK auto-wraps any non-dictionary return value under a <code>result</code> key. Convenient, but it means you can't signal a partial failure or extra context unless you return a real dictionary with your own keys, including <code>status</code>.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> writing a function tool with a thin or missing docstring because "the code is self-explanatory." The model never sees your code — only the name, docstring, and parameter schema. A tool that's obvious to you reading the source is invisible in intent to the model deciding whether to call it, which shows up as an agent that has the right tool but never uses it correctly.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>def get_stock_price(ticker: str):
+    return current_price   # no docstring at all</code></pre>
+<p><strong>Predict first:</strong> does this function still get wrapped as a working tool, mechanically? <strong>Observe:</strong> yes — ADK still inspects the signature and wraps it as a <code>FunctionTool</code> with no error. The failure isn't mechanical, it's behavioral: with no docstring, the model has no description of what the tool does, what <code>ticker</code> means, or when to call it, so in practice the agent calls it rarely or incorrectly. This is a silent failure mode — nothing crashes, the agent just quietly underuses a tool it technically has.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> at scale, teams prefer OpenAPI tools over hand-written function tools whenever a real API spec already exists — regenerating a toolset from an updated spec is a one-line change; keeping a hand-written wrapper in sync with someone else's API is an ongoing maintenance cost every time that API changes. Reserve function tools for logic that genuinely doesn't correspond to an existing API — internal business rules, local computation, anything with no spec to generate from.</p>
+
+<table>
+<tr><th>Tool type</th><th>You write</th><th>Use when</th><th>Avoid when</th></tr>
+<tr><td>Function tool</td><td>The function + docstring</td><td>Custom logic with no existing API</td><td>An API spec already exists for it</td></tr>
+<tr><td>OpenAPI tool</td><td>Nothing — point at a spec</td><td>A documented REST API already exists</td><td>The API has no OpenAPI spec available</td></tr>
+<tr><td>Built-in tool</td><td>Nothing — just add it</td><td>A common capability ADK already ships</td><td>You need custom behavior it doesn't offer</td></tr>
+</table>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (verified 2026-08-06) — this is real day-2 skill for anyone building production agents, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "Your team needs an agent to call an internal REST API that already has OpenAPI documentation. Do you hand-write a function tool for each endpoint?" <strong>A:</strong> "No — <code>OpenAPIToolset</code> generates a tool per operation directly from the existing spec, including parameter schemas and auth. Hand-writing function tools here duplicates work the spec already does, and drifts out of sync the moment the API changes."</p>
+
+<h2>Source</h2>
+<p><a href="https://adk.dev/tools-custom/" target="_blank" rel="noopener">adk.dev/tools-custom</a>, <a href="https://adk.dev/tools-custom/function-tools/" target="_blank" rel="noopener">adk.dev/tools-custom/function-tools</a>, and <a href="https://adk.dev/tools-custom/openapi-tools/" target="_blank" rel="noopener">adk.dev/tools-custom/openapi-tools</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Function tools auto-wrap a plain function into a <code>FunctionTool</code> — type hints define the schema, the docstring defines intent for the model.</li>
+    <li>OpenAPI tools generate a <code>RestApiTool</code> per operation directly from an existing spec — no hand-written schema, and they stay in sync when the spec updates.</li>
+    <li>Built-in tools (Google Search, code execution, RAG) need no schema work at all.</li>
+    <li>A missing docstring doesn't break a function tool mechanically — it breaks it behaviorally, since the model can't tell when to use it.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What two things does ADK inspect on a plain function to build its tool schema?</li>
+<li>Why would you prefer an OpenAPI tool over hand-writing the same integration as a function tool?</li>
+<li>What actually happens to a non-dictionary return value from a function tool?</li>
+<li>How would you verify a tool's docstring is good enough, rather than just assuming it is?</li>
+</ul>
+
+<footer class="teacher-reminder">Built a tool the agent won't call correctly? Paste its docstring and signature to your teacher — that's usually where the real gap is.</footer>
+
+<div class="lesson-nav">
+  <a href="0005-agents-and-instructions.html">&larr; Agents and instructions</a>
+  <a href="0007-mcp-tools-and-data.html">Next: MCP — connecting agents to tools and data &rarr;</a>
+</div>
+
+</body>
+</html>

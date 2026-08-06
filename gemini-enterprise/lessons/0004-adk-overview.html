@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 4 — Agent Development Kit (ADK) Overview</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 4 of 30</p>
+<h1>Agent Development Kit (ADK) Overview</h1>
+
+<p>Lesson 2 gave you the vocabulary — agent, tool, model — and Lesson 3 was this course's one detour up to the no-code app floor. Both lessons promised the same thing: Phase B is where you actually build with that vocabulary, not just define it. The gap between "an agent is a model plus tools plus instructions" and a running, debuggable, deployable piece of software is exactly what a framework fills. That framework is the Agent Development Kit — everything from here through Lesson 10 is a detail sitting inside it.</p>
+
+<p class="callout"><strong>Mental model:</strong> ADK is a workbench with power tools, not a pile of raw parts. You could wire an agent by hand — call a model API directly, parse its output, decide which function to run yourself — the same way you could build furniture with no power tools at all. ADK is the framework that already built the saw, the clamps, and the measuring jig: define an agent's name, model, instruction, and tools, and ADK handles the reasoning loop, the tool-calling protocol, and (later, Phase E) how it actually runs at scale. That predicts something concrete: the same agent definition you write today can move from your laptop to Cloud Run, GKE, or Agent Runtime later (Phase E, Lesson 15) without rewriting its logic — because ADK deliberately separates "what the agent does" from "where it runs."</p>
+
+<h2>Where this fits</h2>
+<pre><code>Build pillar → Agent Development Kit (ADK)   ← you are here (Phase B, Lessons 4-10)
+   │
+   ├── Agents            — name, model, instruction, tools (Lesson 5)
+   ├── Tools              — function / OpenAPI / built-in (Lesson 6)
+   ├── MCP                — standardized tool & data connections (Lesson 7)
+   ├── Multi-agent systems — sequential, loop, parallel (Lesson 8)
+   ├── Graph orchestration — ADK 2.0 (Lesson 9)
+   └── Context management  — sessions, memory, artifacts (Lesson 10)
+   │
+   ▼
+Runs on: your laptop (this lesson) → Cloud Run / GKE / Agent Runtime (Phase E)</code></pre>
+<p>Every lesson in Phase B adds one more piece to the box on the left. This lesson only opens the box and gets one agent running.</p>
+
+<h2>What ADK actually is</h2>
+<p>Per its own documentation, ADK is "the open-source agent development framework that lets you build, debug, and deploy reliable AI agents at enterprise scale." Two words there matter more than they look: <strong>open-source</strong> means you install it as a library, not sign up for a hosted service, and <strong>enterprise scale</strong> is a deliberate contrast with toy demo frameworks — the same code path is meant to carry you from a first prototype to production. ADK ships in five languages — Python, TypeScript, Go, Java, and Kotlin — each with its own repository and install method. This course's code examples use Python for consistency, exactly as Lesson 2 flagged; the concepts hold across all five.</p>
+
+<h2>Installing ADK and running your first agent</h2>
+<p>The install is one command: <code>pip install google-adk</code> (Python 3.10+ and a virtual environment recommended). From there, <code>adk create my_agent</code> scaffolds a project with <code>agent.py</code>, <code>.env</code>, and <code>__init__.py</code>. The whole shape of an agent lives in one object:</p>
+<pre><code>from google.adk.agents.llm_agent import Agent
+
+def get_current_time(city: str) -> dict:
+    """Returns the current time in a specified city."""
+    return {"status": "success", "city": city, "time": "10:30 AM"}
+
+root_agent = Agent(
+    model='gemini-flash-latest',
+    name='root_agent',
+    description="Tells the current time in a specified city.",
+    instruction="You are a helpful assistant that tells the current time in cities.",
+    tools=[get_current_time],
+)</code></pre>
+<p>Notice this is Lesson 2's definition made literal: a model string, an instruction, and a list of tools — nothing else is required to have a real, callable agent. Set <code>GOOGLE_API_KEY</code> in <code>.env</code>, then run it with <code>adk run my_agent</code> from the terminal, or <code>adk web --port 8000</code> for a browser UI at <code>localhost:8000</code> — the same agent definition, two different ways to talk to it.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. What's the exact pip command that installs ADK, and what Python version does it require at minimum?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1"><code>pip install google-adk</code>, requiring Python 3.10 or newer.</div>
+</div>
+<p>Now, before revealing: looking at the <code>root_agent</code> code above, which single field would you change to make this same agent answer in French instead of English — without touching its tools or model?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2"><code>instruction</code>. It's the only field that shapes behavior/personality/language — the model and tools stay exactly the same, which is the whole point of separating instruction from the reasoning engine underneath it (Lesson 5 goes deep on this).</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating ADK and Agent Runtime as the same thing because both show up in the same sentence about "building and deploying agents." ADK is the framework you write code against, installed locally as a library. Agent Runtime (Phase E, Lesson 15) is one of several places that code can actually execute in production. Building with ADK doesn't mean anything is deployed yet — that's always a separate, later step.</p>
+
+<h2>A controlled failure</h2>
+<pre><code>adk create my_agent
+# ...edit agent.py to match the example above, but skip the .env step...
+adk run my_agent</code></pre>
+<p><strong>Predict first:</strong> does the agent's code have a defect if this fails, or is something else missing? <strong>Observe:</strong> without a valid <code>GOOGLE_API_KEY</code> configured in <code>.env</code>, <code>adk run</code> and <code>adk web</code> have no way to authenticate to the model backend your agent's <code>model</code> field names — the failure happens at the authentication boundary, before your instruction or tools are ever reached. The fix is setting the key and rerunning, not debugging <code>agent.py</code> — a distinction worth keeping straight once your agents get more complex and a real bug could be hiding behind a misleading first guess.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> ADK's own framing is that the exact same agent code should carry you from prototype to production — per its docs, deploying to Google Cloud via Agent Runtime, Cloud Run, or GKE gains "managed infrastructure, built-in authentication, Cloud Trace observability, and enterprise-grade security" without code changes. Practically: don't special-case your agent's logic for "the demo version" versus "the real version." If you find yourself doing that, the difference belongs in deployment configuration (Phase E), not in the agent definition itself.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (verified 2026-08-06) — this is the real day-2 skill of standing up an agent, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "When would you reach for raw ADK instead of Agent Studio?" <strong>A:</strong> "When the agent needs advanced customization, complex control-flow logic, or integration with existing systems beyond what a low-code canvas can express — Agent Studio (Lesson 12) even exports to real ADK code for exactly this handoff, so it's a graduation path, not a wall."</p>
+
+<h2>Source</h2>
+<p><a href="https://adk.dev/" target="_blank" rel="noopener">adk.dev</a> and <a href="https://adk.dev/get-started/python/" target="_blank" rel="noopener">adk.dev/get-started/python</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>ADK is an open-source framework, installed as a library (<code>pip install google-adk</code>), not a hosted service — the same code carries a prototype through to production.</li>
+    <li>An agent's whole shape is name, model, instruction, and tools — everything else is orchestration and infrastructure sitting on top of that.</li>
+    <li>ADK ships in five languages; this course uses Python for consistency.</li>
+    <li>Building with ADK and deploying it are separate steps — ADK is the framework, Agent Runtime/Cloud Run/GKE (Phase E) are where it runs.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What's the difference between what ADK is and what Agent Runtime is?</li>
+<li>Which field on an <code>Agent</code> would you change to alter its behavior without touching its tools?</li>
+<li>Why does a missing API key fail before your agent's instruction or tools are ever reached?</li>
+<li>How would you verify a fresh ADK install actually works, before writing any real agent logic?</li>
+</ul>
+
+<footer class="teacher-reminder">Got ADK installed and hit something this lesson didn't cover? Paste the exact command and error back to your teacher — that's faster than guessing.</footer>
+
+<div class="lesson-nav">
+  <a href="0003-the-gemini-enterprise-app-front-door.html">&larr; The Gemini Enterprise App: the consumer front door</a>
+  <a href="0005-agents-and-instructions.html">Next: Agents and instructions &rarr;</a>
+</div>
+
+</body>
+</html>

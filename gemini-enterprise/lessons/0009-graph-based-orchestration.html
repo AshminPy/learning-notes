@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 9 — Graph-Based Orchestration (ADK 2.0)</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 9 of 30</p>
+<h1>Graph-Based Orchestration (ADK 2.0)</h1>
+
+<p>Sequential, Parallel, and Loop (Lesson 8) cover a lot — but they're fixed shapes. None of them let you say "if the fraud check fails, go this way; otherwise, go that way," or mix a plain code function into the same pipeline as an LLM agent without wrapping it in an agent just to get it into a sub_agents list. Google's own writeup on why ADK 2.0 exists names a sharper problem too: pure prompt-based orchestration — an autonomous agent reasoning its way through an entire multi-step business process — is inconsistent by nature. Their own example: "if you ask an autonomous agent to execute a standard business process 100 times, you might get the exact desired outcome 95 times." Five failures per hundred is not a number a production workflow can absorb. ADK 2.0's graph-based workflows are Google's fix: a directed graph of nodes and edges, where deterministic code handles routing and only specific nodes invoke a model.</p>
+
+<p class="callout"><strong>Mental model:</strong> a template workflow agent (Lesson 8) is a train on a fixed track — the shape of the journey is baked in before you leave the station. A graph is a rail yard with switches: most of the track is still plain, deterministic rail (code and tools), but at specific junctions a switch operator — an LLM agent node — decides which fork to take based on what it sees. That predicts something concrete: a node that's pure data transformation never needs to be an "agent" at all, and shouldn't be — only the junctions that genuinely need judgment should cost you a model call, tokens, and latency.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Gemini Enterprise Agent Platform
+ └ Agent Development Kit (ADK)
+     └ Multi-agent systems (Lesson 8 — Sequential/Parallel/Loop, fixed shapes)
+         └ Graph-based orchestration  ← you are here (ADK 2.0 — nodes + edges, branching)
+             └ Context management (Lesson 10 — next: the state every node reads/writes)</code></pre>
+<p>Graphs don't retire Sequential/Parallel/Loop — Google's own docs still describe them as "higher-level building blocks for common patterns without assembling a graph yourself." Reach for a template workflow agent when your shape really is just "in order," "at once," or "repeat until." Reach for a graph the moment you need a branch, a mix of code and AI steps for cost control, or a pause point for a human decision.</p>
+<pre><code>START
+   │
+   ▼
+validate_order      (plain code node — no LLM, no token cost)
+   │
+   ▼
+fraud_check_agent   (LLM node — reasoning genuinely needed here)
+   │
+   ├── edge: fraud flagged  ──▶  human_review_node  (pauses for a person)
+   │                                  │
+   └── edge: looks clean    ──▶  approve_order (code node) ──▶ notify_customer (code node) ──▶ END
+                                       │
+                                       └────────────────────────────────────────────────▶ END</code></pre>
+
+<h2>Nodes and edges: the two building blocks</h2>
+<p>Per ADK's docs, a graph workflow composes "both AI-powered agents and deterministic execution nodes into a flexible execution graph that can include decision branching." A node can be an LLM-powered agent, a plain function, a tool, or even a nested workflow agent from Lesson 8. Edges connect nodes and can be a simple sequential link, a conditional route based on a node's output, or a fan-out/fan-in pattern for parallel branches inside the graph itself — the same style of code Google's own example shows: <code>Workflow(name="root_agent", edges=[("START", city_generator_agent, lookup_time_function, city_report_agent, completed_message_function)])</code>, chaining an agent and plain functions in one declared path.</p>
+
+<h2>Why mixing code and AI beats routing everything through prompts</h2>
+<p>Google's rationale post is specific about the payoff, not just the theory: in their refund-workflow example, confining LLM calls to only the two nodes that genuinely needed reasoning — instead of routing all five steps through a model — cut token usage by roughly 50% and improved latency by roughly 20%. The same separation also closes a security gap: deterministic code enforces execution boundaries a pure prompt-driven agent can't, which narrows the surface a prompt-injection attempt has to work with (a theme Lesson 21, MCP hardening, returns to later in this course).</p>
+
+<h2>Dynamic workflows: when even a graph is too rigid</h2>
+<p>For logic that's genuinely hard to lay out as a fixed graph — deep conditional branching, real loops, recursion — ADK 2.0 offers dynamic workflows: plain code, using ordinary loops and conditionals, that calls child nodes programmatically instead of declaring a static shape up front. Google's own guidance is direct about when to use which: static graphs "remain preferable for straightforward, linear, multi-step processes," while dynamic workflows are for control flow "too complex or iterative for a static graph." Dynamic workflows also carry a resume behavior worth knowing before you rely on it: an interruption can either re-run the interrupted orchestrator node (skipping already-cached child results) or hand off directly to whatever comes next, depending on how the node is configured.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. A graph node does nothing but reformat a JSON payload — no reasoning, no ambiguity. Should it be an LLM agent node or a plain code node?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">A plain code node. Graphs exist precisely so deterministic steps don't have to pay for a model call — routing a pure reformat through an LLM node adds token cost and latency for a step that needs zero judgment.</div>
+</div>
+<p>Now, before revealing: your workflow calls an external payment API inside a dynamic-workflow orchestrator node, and the process is interrupted mid-run. With the default re-entry resume behavior, what's the practical risk when it resumes?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">Re-entry mode can re-execute the interrupted orchestrator node itself, which risks re-triggering the payment call unless that node is written to be idempotent or is explicitly configured for handoff-mode resume instead — this is documented resume behavior, not an edge case you'd only hit by bad luck.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> wiring every step in a pipeline as an LLM agent node "to be safe," out of habit from single-agent design. Google's own benchmark shows the opposite habit pays off — confining model calls to the nodes that actually need reasoning cut both tokens and latency substantially in their documented example.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># A graph node performs a non-idempotent action (charges a customer's card)
+# inside a dynamic-workflow orchestrator, using the default rerun-on-resume behavior.</code></pre>
+<p><strong>Predict first:</strong> if the workflow is interrupted right after the charge succeeds but before the next node records that fact, what happens on resume with default settings? <strong>Observe:</strong> the orchestrator node may be re-executed from the start, which can mean the charge fires a second time — the fix is either making that specific action idempotent (check-then-act, or an idempotency key) or explicitly setting handoff-mode resume so the workflow routes the resumed payload to what comes next instead of re-running the node that already had its side effect.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> graph-based workflows have a documented compatibility limit worth knowing before you commit an architecture to them — they're incompatible with live streaming audio/video agents and some third-party integrations. If a workflow genuinely needs live audio/video, that's a real constraint on using graphs for that specific agent, not a bug to work around; plan which orchestration style (template, graph, or dynamic) fits each agent at design time.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (re-verified 2026-08-06) — this is real orchestration competence, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "Why would ADK 2.0's graphs beat a purely autonomous, prompt-driven agent for a standard business process?" <strong>A:</strong> A pure prompt-driven agent re-decides the whole flow every run, which Google's own data shows lands at roughly 95% consistency on a 100-run standard process — good enough for some things, not for anything with a compliance or financial cost to the missing 5%. Graphs make routing deterministic in code and reserve model calls for the specific nodes that genuinely need judgment, which is also why token usage and latency both improved in their own benchmark.</p>
+
+<h2>Source</h2>
+<p><a href="https://adk.dev/graphs/" target="_blank" rel="noopener">adk.dev/graphs</a>, <a href="https://adk.dev/2.0/" target="_blank" rel="noopener">adk.dev/2.0</a>, and <a href="https://developers.googleblog.com/why-we-built-adk-20/" target="_blank" rel="noopener">developers.googleblog.com/why-we-built-adk-20</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Graphs compose AI agent nodes and plain code nodes, connected by edges that can branch conditionally — Lesson 8's template agents are the simpler, fixed-shape special case.</li>
+    <li>Confining LLM calls to the nodes that need judgment, not every step, is what actually saves tokens and latency in Google's own benchmark — not a style preference.</li>
+    <li>Dynamic workflows trade a static graph's visual shape for plain code (loops, conditionals, recursion) when branching gets too complex to lay out statically.</li>
+    <li>Graphs don't support live streaming audio/video agents — a real constraint to check before committing an agent's architecture to this style.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does putting a pure data-transform step into an LLM agent node waste money, specifically?</li>
+<li>What real problem with prompt-only orchestration motivated ADK 2.0's graphs, with the actual number Google cited?</li>
+<li>When would you reach for a dynamic workflow instead of a static graph?</li>
+<li>What's the concrete risk of a non-idempotent action inside a dynamic-workflow node under default resume behavior?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or want to sanity-check your own mental model of this architecture? Describe it back to your teacher in your own words — that's the fastest way to find a gap.</footer>
+
+<div class="lesson-nav">
+  <a href="0008-multi-agent-systems.html">&larr; Multi-Agent Systems</a>
+  <a href="0010-context-management.html">Next: Context Management &rarr;</a>
+</div>
+
+</body>
+</html>

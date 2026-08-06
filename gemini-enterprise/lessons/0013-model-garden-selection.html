@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 13 — Model Garden and Model Selection</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Gemini Enterprise Agent Platform — Lesson 13 of 30</p>
+<h1>Model Garden and Model Selection</h1>
+
+<p>Every agent you've built so far — through Agent Designer, Agent Studio, or raw ADK — has quietly assumed "a model" powers it, without ever asking which one or why. That's fine for a first working agent. It stops being fine the moment cost, latency, or a missing capability shows up in production. <strong>Model Garden</strong> is where that choice actually gets made: a centralized hub to "discover, test, and deploy a wide variety of first-party, partner, and open-source models."</p>
+
+<p class="callout"><strong>Mental model:</strong> Model Garden is an app store for foundation models, not a single model with settings. You browse, filter by what you need, compare, and then reference one into your agent — the way you'd pick an app for a task rather than assume your phone only ever runs one. That predicts something concrete: "which model" is a per-agent, per-task decision on this platform, not a platform-wide default you set once and forget.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Three ways to build an agent (Lessons 11-12): Agent Designer, Agent Studio, Raw ADK
+   │
+   ▼
+Models layer
+   ├── Model Garden      ← you are here (pick which model powers the agent)
+   └── Grounding / RAG    (feed real data into that model — Lesson 14)
+   │
+   ▼
+Agent Runtime / deployment (Phase E)</code></pre>
+<p>Every building path from Lessons 11-12 ends up pointing at a model chosen here — Agent Designer and Agent Studio both reference Model Garden models under the hood, and raw ADK agents set a model ID directly in code.</p>
+
+<h2>Three categories, one hub</h2>
+<p>Model Garden organizes models into three groups. <strong>First-party (Google) models</strong>: Gemini variants (Pro, Flash, Flash-Lite), plus specialized models like Veo (video), Lyria (music), Virtual Try-On, and Gemini Robotics ER 2. <strong>Partner models</strong>: third-party offerings such as Claude, Grok, Mistral AI, and Llama, available through managed partnerships. <strong>Open-source models</strong>: community models like DeepSeek, Gemma, Qwen, and embedding models, available either as Model-as-a-Service (MaaS) or for self-deployment. Google frames the curated set — over 200 models — as "best in class for their category," not a single recommended default.</p>
+
+<h2>Filtering: how you actually find one</h2>
+<p>With 200+ models, browsing isn't realistic — filtering is. Model Garden lets you filter by <strong>task</strong> (what the model should perform), <strong>collection</strong> (managed by Google, a partner, or you), <strong>provider</strong>, and <strong>feature</strong> — including whether a model supports function calling or structured output. That last filter matters more than it sounds: an agent built in Lessons 4-10 that relies on tool-calling only works with a model that actually implements function calling, and not every model in Model Garden does.</p>
+
+<h2>Why model choice isn't isolated</h2>
+<p>Model Garden connects to the rest of the platform, not just to agent-building: <strong>tuning</strong> (supervised fine-tuning, reinforcement learning, preference tuning), <strong>evaluation</strong> (Phase G, Lessons 23-24), and <strong>serving</strong> — Provisioned Throughput, PayGo, batch inference, and provisioned endpoints. <strong>Why it's built this way:</strong> picking a model is really picking a point on a cost/latency/capability curve, and that curve only makes sense alongside how you'll serve it — a model chosen for its accuracy but served on the wrong tier can still be a bad production decision.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. Your agent needs to call external tools/functions reliably (Lesson 6's tool-calling pattern). Which Model Garden filter would you check first before picking a model?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The Features filter, specifically function-calling support. Not every model in the 200+ list implements it — checking this before wiring up tool-calling logic avoids building against a model that can't do it.</div>
+</div>
+<p>Now reason through it before revealing: you're building a high-volume ticket-triage agent (thousands of simple requests/day) and separately a legal-research agent (rare, high-stakes questions needing depth). Would you pick the same model and serving tier for both?</p>
+<div class="quiz">
+<p>Reveal the reasoning</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">No. The high-volume, simple-task agent is a strong fit for a smaller/faster model (like Flash-Lite) on PayGo serving — cost scales with volume, and the task doesn't need maximum reasoning depth. The rare, high-stakes agent is a better fit for a larger, more capable model, possibly on Provisioned Throughput if its latency/availability needs are strict. Same platform, same Model Garden, two different points on the cost/capability curve.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> defaulting to the largest, most capable Gemini variant for every agent "just to be safe." At production volume, that default is usually a cost and latency decision in disguise — most agent tasks don't need maximum reasoning capability, and Model Garden's filtering exists specifically so you can right-size the choice instead of over-provisioning by habit.</p>
+
+<h2>A controlled failure</h2>
+<p><strong>Predict first:</strong> you pick an open-source model from Model Garden purely because it's the cheapest option, and wire it into an ADK agent that depends on the structured tool-calling pattern from Lesson 6. You didn't check the Features filter first. What happens?</p>
+<p><strong>Reality:</strong> the agent's tool-calling step fails or silently underperforms, because function calling is a documented, filterable capability — not every model in Model Garden's 200+ list implements it, especially in the open-source category. This isn't a platform bug; it's the exact gap the Features filter exists to close, and skipping it before wiring in a model is the mistake, not the model itself.</p>
+
+<p class="callout production"><strong>Production note:</strong> a real pattern: a helpdesk platform runs Gemini Flash-Lite on PayGo serving for roughly 95% of incoming tickets — routine triage, low latency requirement, cost matters at that volume. The remaining ~5% flagged as ambiguous escalate to a larger reasoning model on Provisioned Throughput, where accuracy matters more than per-call cost. Same agent, two models, chosen deliberately per task rather than one model for everything.</p>
+
+<table>
+<tr><th>Category</th><th>Examples</th><th>Use when</th><th>Trade-off</th></tr>
+<tr><td>Google first-party</td><td>Gemini Pro/Flash/Flash-Lite</td><td>Tight platform integration, latest capabilities</td><td>Cost scales with tier chosen</td></tr>
+<tr><td>Partner</td><td>Claude, Grok, Mistral AI, Llama</td><td>A specific partner model fits the task better</td><td>Managed-partnership terms, not first-party support</td></tr>
+<tr><td>Open-source</td><td>DeepSeek, Gemma, Qwen</td><td>Cost-sensitive, willing to self-deploy or use MaaS</td><td>Feature support (e.g. function calling) varies — verify per model</td></tr>
+</table>
+
+<h2>Exam and interview notes</h2>
+<p>No certification currently exists for this platform (verified 2026-08-06).</p>
+<p><strong>Interview Q:</strong> "Why might a production agent deliberately use a smaller, cheaper model instead of the most capable one available?" <strong>A:</strong> Cost and latency at volume. Not every step in an agent's workflow needs maximum reasoning capability, and Model Garden's filtering by task/feature exists precisely so that decision can be made deliberately, per agent, instead of defaulting to the biggest model out of habit.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/model-garden/explore-models" target="_blank" rel="noopener">docs.cloud.google.com/gemini-enterprise-agent-platform/models/model-garden/explore-models</a>, <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/model-garden/use-models" target="_blank" rel="noopener">.../model-garden/use-models</a>, and <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models" target="_blank" rel="noopener">.../models</a> — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Model Garden is a centralized hub for 200+ first-party, partner, and open-source models — not a single default.</li>
+    <li>Filter by task, collection, provider, and feature (including function-calling support) before picking a model.</li>
+    <li>Model choice connects to tuning, evaluation, and serving (PayGo vs. Provisioned Throughput) — it's a cost/latency/capability decision, not just a capability one.</li>
+    <li>Production agents often use different models for different tasks within the same workflow, not one model for everything.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why is "which model" a per-agent decision rather than a platform-wide default?</li>
+<li>Which Model Garden filter would catch a tool-calling agent paired with the wrong model, before you wire it up?</li>
+<li>When would you deliberately choose a smaller/cheaper model over the most capable one?</li>
+<li>How would you verify a chosen model actually supports the capability your agent depends on, before deploying?</li>
+</ul>
+
+<footer class="teacher-reminder">Picking a model for something real? Tell your teacher the task and its volume/latency constraints — that's exactly the trade-off this lesson's decision table walks through.</footer>
+
+<div class="lesson-nav">
+  <a href="0012-agent-studio-vs-adk.html">&larr; Agent Studio vs. raw ADK</a>
+  <a href="0014-grounding-with-rag.html">Next: Grounding responses with RAG &rarr;</a>
+</div>
+
+</body>
+</html>
