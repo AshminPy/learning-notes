@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 — What Docker Actually Is</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Docker Engineering — Lesson 1 of 22 · teach2</p>
+<h1>What Docker Actually Is</h1>
+
+<p>Without Docker, shipping an app means hoping the target machine has the exact right language runtime, libraries, and OS packages your app needs — the classic "works on my machine" problem. Docker solves this by packaging an app with everything it needs into one portable unit, and running it in an isolated slice of the host's Linux kernel. But "Docker" isn't one program — it's a chain of separate pieces handing work down to each other, and almost every confusing Docker error ("cannot connect to the Docker daemon", "permission denied") is really a question of which link in that chain broke.</p>
+
+<p>This course assumes you already know <em>how</em> that isolation is actually built at the kernel level — namespaces (what a process can see) and cgroups (what it can use), covered fully in <a href="../../linux/lessons/0021-containers-linux-level.html">Linux Lesson 21 — Containers at the Linux Level</a>. This lesson doesn't re-teach that; it teaches the Docker-specific tooling built on top of it.</p>
+
+<p class="callout"><strong>Mental model:</strong> Docker Engine is a chain of remote controls, not one single tool. The <code>docker</code> CLI is the remote control in your hand. <code>dockerd</code> (the daemon) is the TV's own control board, listening for button presses. <code>containerd</code> is the tuner module the control board hands work to for each individual channel (container). <code>runc</code> is the physical switch that actually flips the picture on, using the kernel namespaces/cgroups mechanism from Linux Lesson 21. That predicts a real, unseen failure: press a button on the remote (run a <code>docker</code> command) while the TV is unplugged (the daemon isn't running), and you get silence — not because your remote is broken, but because nothing is listening on the other end.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Docker Engine  ← you are here (Lesson 1, the whole chain)
+  └ docker CLI (client)
+      └ dockerd (daemon) — manages images, containers, networks, volumes
+          └ containerd — container lifecycle (create/start/stop)
+              └ runc — OCI runtime; creates the namespaces + cgroups
+                       (the exact mechanism from Linux Lesson 21)
+
+Lesson 2 will use the CLI to actually run a container through this whole chain.
+Lesson 3 will open up "image" — the read-only template the chain above starts from.</code></pre>
+
+<pre><code>docker CLI (client)
+  │  REST API call, over a Unix socket (default) or a network interface
+  ▼
+dockerd (daemon)
+  │  delegates the actual container lifecycle
+  ▼
+containerd
+  │  uses an OCI-compliant runtime — runc by default
+  ▼
+runc
+  │  creates namespaces + cgroups for the new process (Linux Lesson 21)
+  ▼
+Isolated container process, running on the host's one shared kernel</code></pre>
+
+<h2>How it works</h2>
+<p>The Docker client and daemon talk over a REST API, normally through a Unix socket on the same machine (though the client can also point at a remote daemon over the network). The daemon itself doesn't run containers directly — it delegates that to <code>containerd</code>, which by default uses <code>runc</code> as its low-level, OCI-compliant runtime to actually create the namespaced, cgroup-bounded process.</p>
+<p><strong>Why it's built this way:</strong> early Docker (pre-1.11) was one monolithic daemon. Splitting out <code>containerd</code> as its own component meant container processes could keep running even if the Docker daemon itself restarted or upgraded — and meant other tools could reuse the exact same runtime without needing Docker at all. That's exactly why Kubernetes nodes can run <code>containerd</code> directly as their CRI runtime (<a href="../../kubernetes-cka/lessons/0018-extension-interfaces.html">Kubernetes Lesson 18 — Extension interfaces: CNI, CSI, CRI</a>) with no Docker daemon present.</p>
+
+<h2>Core vocabulary</h2>
+<table>
+<tr><th>Term</th><th>What it is</th></tr>
+<tr><td>Image</td><td>A read-only template with instructions for creating a container — layers stacked together (Lesson 3 opens this up).</td></tr>
+<tr><td>Container</td><td>A runnable instance of an image, plus whatever configuration you gave it when you started it.</td></tr>
+<tr><td>Registry</td><td>A place images are stored and distributed from. Docker Hub is the public default; private registries exist too (Lesson 18).</td></tr>
+<tr><td>Dockerfile</td><td>A text file with a simple syntax for defining the steps that build an image (Lesson 4 onward).</td></tr>
+</table>
+
+<h2>Practical example: see the two halves for yourself</h2>
+<pre><code>docker version</code></pre>
+<p>Run that now. The output splits into two clearly labeled sections: <strong>Client</strong> and <strong>Server</strong> (the "Server" section is the daemon, <code>dockerd</code>). Each has its own version number, API version, and OS/architecture line — because they really are two separate programs that happen to usually run on the same machine, exactly as the mental model above describes.</p>
+
+<div class="quiz">
+<p>Q1. If the Client section prints fine but the Server section is missing or errors out, what does that tell you about your Docker installation?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">The <code>docker</code> CLI binary itself is installed and working — but <code>dockerd</code> (the daemon) isn't running or isn't reachable. The remote control works; the TV isn't on.</div>
+</div>
+<p>Now, before revealing: run <code>docker info</code> as well. Which section of that output tells you which low-level runtime your daemon is actually using?</p>
+<div class="quiz">
+<p>Reveal the answer</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<div class="answer" id="a2">The <code>Server</code> section of <code>docker info</code> includes a <code>Runtimes</code> line (default <code>runc</code>) and a <code>containerd</code> version line — direct, on-screen proof of the containerd → runc handoff described above, not just a diagram.</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> treating "Docker" as one indivisible program. It's the CLI, the daemon, containerd, and runc — four separable pieces. Knowing which one a symptom belongs to is the actual debugging skill, not a trivia fact.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># Quit Docker Desktop (or: sudo systemctl stop docker on Linux)
+docker ps</code></pre>
+<p><strong>Predict first:</strong> does the <code>docker</code> command itself disappear, or does it still run and just fail? <strong>Observe:</strong> the command still exists and runs — it prints <code>Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?</code>. That's the client half working perfectly and reporting, accurately, that nothing answered on the other end of the socket. Restart Docker Desktop (or <code>sudo systemctl start docker</code>) and rerun <code>docker ps</code> to confirm it's back.</p>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> on real Docker hosts and CI runners, most container problems that "look like a Docker bug" are actually one specific layer — check <code>docker version</code>'s Server section first to confirm the daemon is even reachable before debugging further up the stack. And remember many production Kubernetes nodes run <code>containerd</code> directly with no Docker daemon at all (Kubernetes Lesson 18) — "no Docker installed" doesn't mean "no containers running."</p>
+
+<h2>Interview notes</h2>
+<p><strong>Interview Q:</strong> "What's the actual difference between Docker and containerd?" <strong>A:</strong> containerd is one component Docker Engine uses internally to manage container lifecycle (create/start/stop); it's also a standalone project usable without Docker at all — for example as the CRI runtime a Kubernetes node talks to directly.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.docker.com/get-started/docker-overview/" target="_blank" rel="noopener">docs.docker.com — What is Docker?</a> and <a href="https://docs.docker.com/engine/daemon/alternative-runtimes/" target="_blank" rel="noopener">docs.docker.com — Alternative runtimes</a> — official Docker documentation. Verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Docker Engine is a chain: the <code>docker</code> CLI talks to <code>dockerd</code> over a REST API; <code>dockerd</code> delegates to <code>containerd</code>; <code>containerd</code> uses <code>runc</code> to actually create the namespaced, cgroup-bounded process.</li>
+    <li><code>docker version</code> shows this split directly — a Client section (the CLI) and a Server section (the daemon).</li>
+    <li>The daemon being unreachable is a different failure than the CLI being broken — the error message tells you which one it is.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why does Docker split the CLI and the daemon into two separate programs instead of one?</li>
+<li>When would you see "Cannot connect to the Docker daemon" even though <code>docker</code> the command works fine?</li>
+<li>What happens to already-running containers if the Docker daemon restarts, given containerd manages their lifecycle?</li>
+<li>How would you verify which low-level runtime (<code>runc</code> or an alternative) your daemon is actually using?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact <code>docker version</code> output back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <span></span>
+  <span><a href="0002-installing-docker-first-container.html">Next: Installing Docker & running your first container &rarr;</a></span>
+</div>
+
+</body>
+</html>

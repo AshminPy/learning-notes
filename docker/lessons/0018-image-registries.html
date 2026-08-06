@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 18 — Image Registries</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Docker Engineering — Lesson 18 of 22</p>
+<h1>Image Registries</h1>
+
+<p>Every earlier lesson in this course ends with an image sitting on one machine. That's useless the moment a second machine — a teammate's laptop, a CI runner, a production node — needs to run the exact same thing. A <strong>registry</strong> is the piece that closes that gap: a server that stores images by name and hands them back to whoever asks, so "the image I built" and "the image that runs in production" can provably be the same bytes.</p>
+
+<p>A registry is just a name-addressed store for images. You push an image to it under a name; anyone with the right access pulls that name back and gets an identical copy, layer for layer. Docker Hub is the default registry every plain <code>docker pull nginx</code> talks to, but it's one option among several — private registries (AWS ECR, Google Artifact Registry, GitHub Container Registry, or a self-hosted one) work the same way, just with different access rules and where they physically live.</p>
+
+<p class="callout"><strong>Mental model:</strong> a registry is a shipping warehouse with labeled shelves, not a delivery truck. <code>docker build</code> makes the product; <code>docker tag</code> writes the shelf label (a name); <code>docker push</code> is the truck dropping it on that shelf; <code>docker pull</code> is anyone else's truck picking up whatever currently sits under that label. That predicts something concrete: relabeling a box (<code>docker tag</code>) never moves it anywhere — nothing leaves your machine until a push actually happens.</p>
+
+<h2>Where this fits</h2>
+<pre><code>Docker Engine   (client → dockerd → containerd → runc, Lesson 1)
+ └ Image                (built via Dockerfile, Lessons 4-11; layered filesystem, Lesson 3)
+     └ Container         (a running instance of an image, Lesson 2)
+ └ Registry              ← you are here (where images live between "built" and "run elsewhere")
+     └ Repository (namespace/name)
+         └ Tag / Digest   (Lesson 19 — next: which pointer you can actually trust in production)</code></pre>
+<p>This lesson is the first time "registry" — a word Lesson 1 only introduced as vocabulary — becomes something you actually operate. Everything before this lesson happened on one machine; this is the layer that makes an image portable across machines.</p>
+<pre><code>Local image (built via `docker build`)
+   │
+   │  docker tag  →  attaches a registry-qualified name, purely local
+   ▼
+registry-host/namespace/repo:tag
+   │
+   │  docker push   (requires docker login if the repo isn't public/writable)
+   ▼
+Registry  (Docker Hub / ECR / Artifact Registry / GHCR / self-hosted)
+   │
+   │  docker pull   (from any other machine, same name)
+   ▼
+Identical local image copy — same layers, same digests</code></pre>
+
+<h2>Image names: the four parts</h2>
+<p>Per Docker's own reference, every image name follows one structure: <code>[HOST[:PORT]/]NAMESPACE/REPOSITORY[:TAG]</code>. Each part answers one question:</p>
+<ul>
+<li><strong>HOST[:PORT]</strong> — which registry. Omit it and Docker defaults to <code>docker.io</code> (Docker Hub). A private registry needs its host written explicitly, e.g. <code>localhost:5000/...</code> or <code>123456789.dkr.ecr.us-east-1.amazonaws.com/...</code>.</li>
+<li><strong>NAMESPACE</strong> — your username or org on that registry. Docker Hub's official images (like plain <code>nginx</code>) live under the implicit namespace <code>library</code>.</li>
+<li><strong>REPOSITORY</strong> — the image's name within that namespace.</li>
+<li><strong>TAG</strong> — defaults to <code>latest</code> if you don't specify one (Lesson 19 covers why that default is a common source of production surprises).</li>
+</ul>
+<p><code>nginx</code> is really shorthand for <code>docker.io/library/nginx:latest</code> — nothing is hidden, it's just defaults filling in the parts you left out.</p>
+
+<h2>Public vs. private, and why push can fail</h2>
+<p>Docker Hub gives every account unlimited public repositories plus private repositories for restricted access. Pulling a public repo needs no authentication at all; pulling or pushing a private one requires <code>docker login</code> first. Push additionally enforces ownership: you can generally only push into a namespace you actually control (your username or an org you belong to) — this is why a beginner's first push often fails even after a successful login, covered as a controlled failure below.</p>
+<p><strong>Why it's built this way:</strong> because images are layered and content-addressed (Lesson 3), a registry doesn't need to understand what's inside an image — it just needs to store layers once and serve them by digest. That's why a push of an image sharing layers with something already on the registry reports <code>Layer already exists</code> instead of re-uploading — the registry is matching content, not blindly copying files.</p>
+
+<h2>Try it</h2>
+<div class="quiz">
+<p>Q1. You run <code>docker tag hello-world myregistry.example.com/team/hello-world:v1</code> and nothing else. Has anything left your machine?</p>
+<input type="text" id="q1" placeholder="type your answer">
+<button onclick="document.getElementById('a1').classList.add('shown')">Reveal</button>
+<div class="answer" id="a1">No. <code>docker tag</code> only creates a new local name pointing at an image you already have — purely local bookkeeping. Nothing reaches any registry until <code>docker push</code> actually runs.</div>
+</div>
+<p>Now do the full round trip yourself: run a local registry, tag a real image for it, push, then pull it back to prove the bytes really moved. Try it before revealing.</p>
+<div class="quiz">
+<p>Reveal the sequence</p>
+<button onclick="document.getElementById('a2').classList.add('shown')">Reveal</button>
+<pre class="answer" id="a2"><code># 1. Start a local registry (Docker's own official image, no account needed)
+docker run -d -p 5000:5000 --restart always --name registry registry:3
+
+# 2. Get a tiny public image, then tag it for your local registry
+docker pull hello-world
+docker tag hello-world localhost:5000/hello-world:v1
+
+# 3. Push it — this is the step that actually uploads bytes
+docker push localhost:5000/hello-world:v1
+
+# 4. Prove the round trip: remove your local copy, pull it back from the registry
+docker rmi hello-world localhost:5000/hello-world:v1
+docker pull localhost:5000/hello-world:v1
+</code></pre>
+<p>If step 4 succeeds after removing every local copy first, you've proven the image genuinely lived on the registry, not just in your local cache.</p>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> assuming a successful <code>docker login</code> means any push will succeed. Login only proves who you are — it doesn't grant write access to every namespace. Pushing to a namespace you don't own (including the bare <code>library/</code> namespace) is denied regardless of being logged in.</p>
+
+<h2>A controlled failure</h2>
+<pre><code># Build/tag an image WITHOUT a registry host prefix
+docker pull hello-world
+docker tag hello-world myapp:v1
+docker push myapp:v1</code></pre>
+<p><strong>Predict first:</strong> where does this push actually try to go, and what happens? <strong>Observe:</strong> with no host prefix, Docker defaults to <code>docker.io</code> — so this attempts to push to Docker Hub under a namespace matching your Docker Hub username (or fails outright if you're not logged in). It does <em>not</em> go to your local registry from the exercise above, even though that's what a beginner typically intends. The fix is the same lesson as the mental model: the shelf label has to name the actual warehouse. Restore intent with an explicit host:</p>
+<pre><code>docker tag hello-world localhost:5000/myapp:v1
+docker push localhost:5000/myapp:v1</code></pre>
+
+<h2>Production best practices</h2>
+<p class="callout production"><strong>Production note:</strong> Docker Hub enforces pull rate limits — 100 pulls per 6 hours per IP for anonymous access, 200 per 6 hours for an authenticated free account, unlimited on paid tiers. An unauthenticated CI runner hammering Docker Hub is a common, confusing production failure ("pulls started randomly failing") that's actually just this limit. Authenticate CI pulls, or use a private registry (ECR/Artifact Registry/GHCR/self-hosted) close to where you deploy — most cloud registries also support short-lived, role-based credentials instead of a long-lived registry password baked into CI config.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No single certification anchors this course (see MISSION.md) — this is real day-2 CI/CD skill, not exam trivia.</p>
+<p><strong>Interview Q:</strong> "Your CI pipeline's image pulls started failing intermittently with no code changes." <strong>A:</strong> Check whether pulls are unauthenticated against Docker Hub and hitting its per-IP rate limit — the fix is authenticating the pull or moving to a private/self-hosted registry, not debugging the pipeline logic.</p>
+
+<h2>Source</h2>
+<p><a href="https://docs.docker.com/docker-hub/" target="_blank" rel="noopener">docs.docker.com/docker-hub</a>, <a href="https://docs.docker.com/reference/cli/docker/image/tag/" target="_blank" rel="noopener">docs.docker.com/reference/cli/docker/image/tag</a>, <a href="https://docs.docker.com/reference/cli/docker/login/" target="_blank" rel="noopener">docs.docker.com/reference/cli/docker/login</a>, <a href="https://docs.docker.com/reference/cli/docker/image/push/" target="_blank" rel="noopener">docs.docker.com/reference/cli/docker/image/push</a>, and <a href="https://docs.docker.com/docker-hub/usage/" target="_blank" rel="noopener">docs.docker.com/docker-hub/usage</a> (rate limits) — verified 2026-08-06.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A registry stores images by name; <code>docker tag</code> is purely local, <code>docker push</code>/<code>docker pull</code> are the only steps that actually move bytes.</li>
+    <li>An image name is <code>[HOST[:PORT]/]NAMESPACE/REPOSITORY[:TAG]</code> — omit HOST and it silently means Docker Hub, which is the single most common beginner push mistake.</li>
+    <li>Login proves identity, not write access — you can only push into a namespace you control.</li>
+    <li>Docker Hub rate-limits unauthenticated and free-tier pulls; production CI should authenticate or use a private registry.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why doesn't <code>docker tag</code> alone get an image to a teammate on another machine?</li>
+<li>When would you reach for a private registry instead of Docker Hub?</li>
+<li>What happens if you push an image name with no registry host written in it?</li>
+<li>How would you verify an image on a registry is truly the same bytes as your local copy, not just the same name?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck, or got a different result than "Observe" above? Paste the exact push/pull output back to your teacher.</footer>
+
+<div class="lesson-nav">
+  <span>&larr; Previous lesson not yet published</span>
+  <a href="0019-tagging-release-strategy.html">Next: Tagging &amp; release strategy &rarr;</a>
+</div>
+
+</body>
+</html>

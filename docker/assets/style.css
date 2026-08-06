@@ -1,0 +1,22 @@
+/* docker theme — shared rules live in ../../assets/course-style.css */
+@import url("../../assets/course-style.css");
+
+:root {
+  --bg: #fdfcf9;
+  --fg: #1b1b18;
+  --muted: #6b6558;
+  --accent: #0e7c86;
+  --rule: #d9d3c4;
+  --code-bg: #e9f2f2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a;
+    --fg: #e8e5dc;
+    --muted: #9a9488;
+    --accent: #4dd0d9;
+    --rule: #3a382f;
+    --code-bg: #17282a;
+  }
+}
