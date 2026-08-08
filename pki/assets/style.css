@@ -1,0 +1,22 @@
+/* pki theme — shared rules live in ../../assets/course-style.css */
+@import url("../../assets/course-style.css");
+
+:root {
+  --bg: #fdfcf9;
+  --fg: #1b1b18;
+  --muted: #6b6558;
+  --accent: #9a2e2e;
+  --rule: #d9d3c4;
+  --code-bg: #f2e5e5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a;
+    --fg: #e8e5dc;
+    --muted: #9a9488;
+    --accent: #e8908f;
+    --rule: #3a382f;
+    --code-bg: #2a1c1c;
+  }
+}
