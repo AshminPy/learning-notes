@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 17 — Trust Stores Across Windows, Linux, macOS, Java, and Browsers</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 17 of 106</p>
+<h1>Trust Stores Across Windows, Linux, macOS, Java, and Browsers</h1>
+
+<h2>What you will learn</h2>
+<p>Why there is no single "the trust store" on a modern machine — how many independent trust stores actually exist on a typical laptop, exactly which ones Windows, Linux, macOS, Java, and each major browser read from, and the real, documented mechanism each one uses to decide which root CAs to ship and update. You'll also learn why adding a private root CA to the OS store doesn't automatically make every application on that machine trust it.</p>
+
+<h2>Why this matters</h2>
+<p>"I added the CA to the trust store and it still doesn't work" is one of the most common real support tickets in PKI, and the honest answer is almost always "which trust store?" A single Windows laptop can carry five or more independent root stores at once — the OS store, Firefox's own store, Chrome's own store (as of Chrome 105+), the JRE's <code>cacerts</code>, and possibly a container image's own <code>ca-certificates</code> bundle — each populated and updated by a completely different mechanism, governed by a different root program's policy. Deploying a private CA without knowing this leads to "it works in Chrome but not curl," "it works in the browser but not the Java service," or an internal CA rollout that silently misses every non-Windows machine.</p>
+
+<h2>Simple explanation</h2>
+<p>Think of a "trust store" as a curated guest list a piece of software checks before it lets a certificate's signer into the room. Windows keeps its own guest list. macOS keeps its own. Each Linux distro's package manager keeps one. Java keeps a completely separate one bundled inside the JRE. And critically, Firefox and — since 2022/2023 — Chrome and Edge increasingly bring their <strong>own</strong> guest list rather than reading the building's list at the front door. Adding a name to one list does not add it to the others. That's the whole lesson: trust is not one shared, OS-wide fact — it's a set of independently maintained lists, each with its own update mechanism and its own root program deciding who gets on it.</p>
+
+<h2>How it works</h2>
+
+<h3>Windows — the OS-level Trusted Root store</h3>
+<p>Windows ships and updates its root store per the <strong>Microsoft Trusted Root Certificate Program</strong>. CAs apply for inclusion through CCADB, undergo annual audits (WebTrust or ETSI), and once enrolled are subject to strict technical requirements: root certificates must be self-signed X.509 v3, valid 8–25 years, with Key Usage marked critical and <code>keyCertSign</code>/<code>cRLSign</code> set, and the CA must give Microsoft 120 days' notice before transferring ownership of an enrolled root. Locally, roots live in the <strong>Trusted Root Certification Authorities</strong> certificate store, manageable via <code>certmgr.msc</code> (current user) / <code>certlm.msc</code> (local machine), <code>certutil</code>, or Group Policy for enterprise-added private CAs.</p>
+
+<h3>Linux — no OS store, a distro-family convention instead</h3>
+<p>There is no single "Linux trust store" — each distro family ships a <code>ca-certificates</code> package that assembles one from files on disk, and the two major families use different tooling:</p>
+<ul>
+<li><strong>Debian/Ubuntu family</strong>: certificates go in <code>/usr/local/share/ca-certificates/</code> (locally added, implicitly trusted, must have a <code>.crt</code> extension) or are selected via <code>/etc/ca-certificates.conf</code> from <code>/usr/share/ca-certificates/</code>. Running <code>update-ca-certificates</code> regenerates the single bundle applications actually read: <code>/etc/ssl/certs/ca-certificates.crt</code>.</li>
+<li><strong>RHEL/Fedora family</strong>: certificates go in <code>/etc/pki/ca-trust/source/anchors/</code>, and <code>update-ca-trust extract</code> regenerates <code>/etc/pki/tls/certs/ca-bundle.crt</code> (and PEM/legacy formats alongside it).</li>
+</ul>
+<p>Any tool that links against OpenSSL/GnuTLS on that distro reads the regenerated bundle — but only after the update command has been run. A certificate simply copied into the source directory and never followed by <code>update-ca-certificates</code>/<code>update-ca-trust</code> is not yet trusted by anything.</p>
+
+<h3>macOS — Keychain</h3>
+<p>Apple runs its own root program (the <strong>Apple Root Certificate Program</strong>), with CA inclusion requests submitted through CCADB and reviewed at Apple's sole discretion, audited annually against WebTrust or ETSI criteria per certificate type (TLS, EV TLS, S/MIME, client auth). Locally, roots live in Keychain Access — the <strong>System Roots</strong> keychain holds Apple's shipped root program, while an administrator-added private CA typically goes into the <strong>System</strong> keychain with its trust setting explicitly configured (manageable via the <code>security</code> command-line tool, e.g. <code>security add-trusted-cert</code>). Apple's program is what Safari and Mail (and, per Apple's iOS/iPadOS App Store policy, other apps that must use Apple's verifier) ultimately consult.</p>
+
+<h3>Java — its own store, isolated from all of the above</h3>
+<p>The JRE/JDK ships a completely separate truststore, <code>cacerts</code>, at <code>$JAVA_HOME/lib/security/cacerts</code>, formatted as a JKS/PKCS12 keystore. It has nothing to do with the OS store — a Java application will not trust a certificate just because Windows or the distro's <code>ca-certificates</code> bundle trusts it. Its default password is <code>changeit</code> (Oracle's own documentation explicitly recommends changing it, and locking down file permissions, on installation). Managed entirely with <code>keytool</code>:</p>
+<pre><code># list everything currently trusted
+keytool -list -cacerts
+
+# add your private/internal CA
+keytool -importcert -alias my-internal-ca -file internal-ca.crt -cacerts
+
+# remove a CA you no longer trust
+keytool -delete -alias some-old-ca -cacerts</code></pre>
+
+<h3>Browsers — increasingly their own thing, not the OS's</h3>
+<p>This is where the biggest, most current source of confusion sits, and it has changed materially in the last few years:</p>
+<ul>
+<li><strong>Firefox</strong> has never used the OS store by default. It ships and maintains its own independent, NSS-based root store under the <strong>Mozilla Root Store Policy</strong> (current version 3.1, effective July 1, 2026) — a separate CCADB-driven inclusion/audit process from Microsoft's or Apple's. An OS-added private CA is <em>not</em> automatically trusted by Firefox; an administrator has to explicitly enable "Enterprise Roots" support (the <code>security.enterprise_roots.enabled</code> preference, or the <code>ImportEnterpriseRoots</code> enterprise policy) — supported on Windows and macOS only, not Linux — before Firefox will import roots from the OS's Trusted Root store.</li>
+<li><strong>Chrome</strong> has moved the same direction. Under the <strong>Chrome Root Program</strong> (current policy version 1.8, effective February 5, 2026), Chrome ships and enforces its own <strong>Chrome Root Store</strong>, built from CCADB data and Chrome's own audit/CT-logging requirements, and this is enabled by default on Windows, macOS, ChromeOS, Linux, and Android — Chrome no longer defers to the OS's default public-trust decision on those platforms. The one documented exception is <strong>iOS</strong>: Apple's App Store policy requires Chrome for iOS to use Apple's own certificate verifier and root store instead.</li>
+<li><strong>Microsoft Edge</strong> followed the same pattern starting at Edge 112 (2023): on Windows and macOS, Edge ships its own built-in certificate trust list and verifier, sourced from the Microsoft Trusted Root Certificate Program's CTL but decoupled from the OS's live verification path — while still also querying and trusting locally-installed (user/enterprise-added) roots from the OS store. As of the current Microsoft documentation, Linux and Android rollout for this same change is still "to be determined"; iOS/iPadOS continue to use Apple's store per Apple's App Store policy.</li>
+</ul>
+<p>The practical upshot: on the same Windows laptop, curl (OpenSSL against the Windows store), Edge (its own built-in CTL, sourced from Microsoft's program but not the same live check path), and Firefox (its own independent NSS store) can each reach a <em>different</em> trust verdict about the same certificate — not because any of them is broken, but because each one, by design, is consulting a different list.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>One laptop, several independent trust stores:
+
+Windows OS store            <- Microsoft Trusted Root Program (CCADB, audits)
+  read by: curl/OpenSSL apps, legacy IE, most Win32 software
+  Edge also reads locally-added roots from here (built-in CTL for its own defaults)
+
+Firefox's own NSS store     <- Mozilla Root Store Policy (v3.1, 2026-07-01)
+  independent of the OS store unless "Enterprise Roots" is explicitly enabled
+
+Chrome Root Store           <- Chrome Root Program (v1.8, 2026-02-05)
+  own store on Windows/macOS/ChromeOS/Linux/Android; Apple's store on iOS only
+
+Edge's built-in CTL         <- sourced from Microsoft's program, but its own
+  verifier since Edge 112 (Win/macOS); still trusts locally-added OS roots
+
+macOS Keychain              <- Apple Root Certificate Program
+  System Roots keychain (Apple's own) + System keychain (admin-added)
+
+$JAVA_HOME/lib/security/cacerts   <- JRE's own JKS store, fully isolated
+  keytool -list/-importcert/-delete -cacerts
+
+/etc/ssl/certs/ca-certificates.crt (Debian/Ubuntu)
+/etc/pki/tls/certs/ca-bundle.crt   (RHEL/Fedora)
+  <- assembled from local files by update-ca-certificates / update-ca-trust
+
+Adding a private root to ONE of these adds it to exactly that one.</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Root store / trust store</strong> — the set of root CA certificates a given piece of software treats as trust anchors when validating a chain.</li>
+<li><strong>Root program</strong> — the governance process (Mozilla, Apple, Microsoft, Chrome/Google) that decides which CAs get included in a specific trust store, and under what audit/compliance obligations.</li>
+<li><strong>CCADB (Common CA Database)</strong> — the shared database multiple root programs (Mozilla, Apple, Microsoft, Chrome) use for CA inclusion requests, audit evidence, and disclosure — one submission point feeding several independent decisions.</li>
+<li><strong>Enterprise Roots (Firefox)</strong> — the explicit opt-in (<code>security.enterprise_roots.enabled</code> / <code>ImportEnterpriseRoots</code> policy) that makes Firefox import roots from the Windows or macOS OS store; off unless configured.</li>
+<li><strong>cacerts</strong> — the JRE/JDK's own truststore file, isolated from the OS and from every browser's store.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>A team stands up a private internal CA, pushes the root certificate to every domain-joined Windows machine via Group Policy, and calls the rollout done. Reports trickle in over the next week: curl-based health checks and the internal admin tool (a Win32 app reading the OS store) work fine. Firefox users get "Warning: Potential Security Risk Ahead" on the same internal site, because Firefox never reads the OS store by default. A Java-based internal service making outbound calls to another internal service throws <code>PKIX path building failed</code>, because nobody imported the root into that JRE's <code>cacerts</code>. Nothing about the CA or the certificate is broken — the rollout only reached one of the five trust stores actually in use on that fleet.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Generate a private root CA, then observe how it is trusted (or not) by different local stores on your own machine:</p>
+<pre><code># Generate a throwaway private root CA
+openssl req -x509 -newkey rsa:2048 -keyout lab-root.key -out lab-root.crt \
+  -days 30 -nodes -subj "/CN=Lab Private Root CA"
+
+# Confirm it is NOT yet trusted anywhere
+openssl verify lab-root.crt   # expect: self-signed certificate error, that's expected
+
+# Import into the Java cacerts store only, and prove it's isolated
+sudo keytool -importcert -alias lab-root -file lab-root.crt -cacerts -storepass changeit -noprompt
+keytool -list -cacerts -storepass changeit | grep -i lab-root
+
+# On Linux: import at the OS level instead, and confirm cacerts is unaffected
+sudo cp lab-root.crt /usr/local/share/ca-certificates/lab-root.crt   # Debian/Ubuntu
+sudo update-ca-certificates
+grep -c "Lab Private Root CA" /etc/ssl/certs/ca-certificates.crt     # present at OS level
+keytool -list -cacerts -storepass changeit | grep -ic lab-root       # still separate
+
+# Clean up afterward
+sudo keytool -delete -alias lab-root -cacerts -storepass changeit
+sudo rm /usr/local/share/ca-certificates/lab-root.crt && sudo update-ca-certificates --fresh</code></pre>
+<p>Expected result: importing into <code>cacerts</code> makes the root visible only to <code>keytool -list -cacerts</code>, not to the OS-level bundle, and vice versa for the OS-level import — direct, hands-on proof that these are genuinely separate stores, not one shared list.</p>
+
+<h2>What can go wrong</h2>
+<p>The most common mistake is assuming "I added it to the trust store" means all of them. A close second: forgetting that adding a certificate file to a Linux <code>ca-certificates</code> source directory does nothing until <code>update-ca-certificates</code>/<code>update-ca-trust</code> actually regenerates the bundle applications read. A third, increasingly common one since Chrome 105+/Edge 112: assuming a certificate trusted by Windows is automatically trusted by every browser on that machine — Chrome and (on Windows/macOS) Edge now ship their own default trust decisions, independent of the OS store's default public-CA list, even though both still honor locally/enterprise-added roots from it.</p>
+
+<h2>Troubleshooting</h2>
+<p>When one application trusts a certificate and another on the same machine doesn't, the fix is never "reinstall the certificate" — it's identifying which trust store each application actually reads. For a Java service throwing <code>PKIX path building failed: unable to find valid certification path</code>, check <code>cacerts</code> specifically, not the OS store. For "works in curl, fails in Firefox," check whether Enterprise Roots is enabled — Firefox's independent store is very often the actual cause, not a broken certificate. For "worked before a Chrome/Edge update, fails now," check whether the browser recently moved to its own built-in root store on that platform (Chrome 105+, Edge 112+) — a certificate chaining to a root that's in the OS's Trusted Root store but not in that browser's own root list will now fail there specifically.</p>
+
+<h2>Security considerations</h2>
+<p>Every additional independent trust store is an additional place a rogue or compromised root can be planted without triggering the same detection every other store would apply — a root pushed only into an OS's Trusted Root store via a compromised management tool would not need to also fool Mozilla's or Chrome's own root program, since those browsers may not even consult it. Treat each trust store as its own attack surface with its own audit trail: know exactly which roots are present in each one on your managed fleet, and why. Never disable a browser's own root-verification path (e.g. via a "trust everything" flag) to work around a distribution gap — fix the distribution instead.</p>
+
+<h2>Production best practices</h2>
+<p>When rolling out a private/internal CA, explicitly enumerate every trust store in your actual fleet — OS store (Windows GPO / macOS profile / Linux config-management module), each JRE's <code>cacerts</code> (via configuration management, not manual <code>keytool</code> on each host), and Firefox's Enterprise Roots policy if Firefox is in use — and automate distribution to all of them, not just the OS store. For Chrome/Edge on platforms where they now use their own default store, remember that <em>locally/enterprise-added</em> roots are still honored by both, so a private CA rollout through proper OS/enterprise channels keeps working; it's only public-CA-trust decisions that moved out of the OS's hands. Re-verify trust-store rollout after any major browser version bump — Chrome 105 and Edge 112 both silently changed which store was authoritative by default, and a rollout built against the old assumption can quietly stop covering a fleet.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "I added our internal CA to Windows' trust store, but it's not trusted in Firefox. Why?" <strong>A:</strong> "Firefox ships and maintains its own independent, NSS-based root store under the Mozilla Root Store Policy — it doesn't read the Windows OS store by default. You need to either add the CA to Firefox's own store directly, or enable Enterprise Roots support so Firefox imports OS-trusted roots — that policy only works on Windows and macOS, not Linux."</p>
+<p><strong>Interview Q:</strong> "Does Chrome use the operating system's certificate store?" <strong>A:</strong> "Not for its default trust decisions anymore. Since Chrome 105+ (per the current Chrome Root Program policy), Chrome ships its own Chrome Root Store on Windows, macOS, ChromeOS, Linux, and Android — the one platform exception is iOS, where Apple's App Store policy forces Chrome to use Apple's own root store and verifier instead. Locally-added enterprise roots are still honored across these platforms."</p>
+
+<h2>Source</h2>
+<p>Mozilla, <a href="https://www.mozilla.org/en-US/about/governance/policies/security-group/certs/policy/" target="_blank" rel="noopener">Mozilla Root Store Policy</a> (version 3.1, effective July 1, 2026 — CCADB-based inclusion, sole-discretion removal) — fetched live 2026-08-08. Apple, <a href="https://www.apple.com/certificateauthority/ca_program.html" target="_blank" rel="noopener">Apple Root Certificate Program</a> (effective August 15, 2023; CCADB-based inclusion; Safari/Mail use this store) — fetched live 2026-08-08. Google, <a href="https://googlechrome.github.io/chromerootprogram/" target="_blank" rel="noopener">Chrome Root Program Policy</a> (version 1.8, updated February 5, 2026) and the <a href="https://chromium.googlesource.com/chromium/src/+/main/net/data/ssl/chrome_root_store/faq.md" target="_blank" rel="noopener">Chrome Root Store FAQ</a> (own store enabled by default on Windows/macOS/ChromeOS/Linux/Android; Apple's store used on iOS per App Store policy) — fetched live 2026-08-08. Microsoft, <a href="https://learn.microsoft.com/en-us/security/trusted-root/program-requirements" target="_blank" rel="noopener">Microsoft Trusted Root Program — Program Requirements</a> (updated April 28, 2026) — fetched live 2026-08-08. Microsoft, <a href="https://learn.microsoft.com/en-us/deployedge/microsoft-edge-security-cert-verification" target="_blank" rel="noopener">Changes to Microsoft Edge TLS server certificate verification</a> (updated June 15, 2026; own built-in CTL/verifier since Edge 112 on Windows/macOS, still trusts local OS-added roots; Linux/Android TBD; iOS/iPadOS use Apple's store) — fetched live 2026-08-08. Oracle, <a href="https://docs.oracle.com/en/java/javase/21/docs/specs/man/keytool.html" target="_blank" rel="noopener">keytool documentation (JDK 21)</a> (cacerts location, default password <code>changeit</code>, <code>-list</code>/<code>-importcert</code>/<code>-delete -cacerts</code>) — fetched live 2026-08-08. Debian, <a href="https://manpages.debian.org/bookworm/ca-certificates/update-ca-certificates.8.en.html" target="_blank" rel="noopener">update-ca-certificates(8) man page</a> (source directories and generated bundle) — fetched live 2026-08-08. Mozilla Support, <a href="https://support.mozilla.org/en-US/kb/setting-certificate-authorities-firefox" target="_blank" rel="noopener">Set up Certificate Authorities (CAs) in Firefox</a>, and Mozilla, <a href="https://firefox-admin-docs.mozilla.org/reference/policies/certificates/" target="_blank" rel="noopener">Firefox Enterprise — Certificates policy documentation</a> (Enterprise Roots / <code>ImportEnterpriseRoots</code>, Windows/macOS only) — fetched live 2026-08-08.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>There is no single OS-wide trust store — Windows, each Linux distro family, macOS, Java, and increasingly each browser all maintain independent lists under different root programs.</li>
+    <li>Firefox has always used its own NSS-based store by default (Mozilla Root Store Policy); enabling Enterprise Roots to inherit OS-trusted CAs works on Windows/macOS only, not Linux.</li>
+    <li>Chrome (105+) and Edge (112+, Windows/macOS) now ship their own default root stores rather than fully deferring to the OS — both still honor locally/enterprise-added roots from the OS store; iOS is the one platform where Apple's store/verifier is used instead.</li>
+    <li>Java's <code>cacerts</code> is completely isolated from the OS and every browser — it must be managed separately with <code>keytool</code>.</li>
+    <li>On Linux, copying a certificate into a source directory does nothing until <code>update-ca-certificates</code> (Debian/Ubuntu) or <code>update-ca-trust extract</code> (RHEL/Fedora) regenerates the actual bundle.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Name at least four independent trust stores that can exist on one Windows laptop, and which root program governs each.</li>
+<li>Why might Firefox reject a certificate that curl, on the same machine, accepts without any warning?</li>
+<li>What command actually regenerates the trusted bundle on a Debian/Ubuntu system after you add a certificate file — and what happens if you skip it?</li>
+<li>Since Chrome 105 and Edge 112, does adding a private CA to Windows' OS store still work for those browsers? Why or why not?</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's <code>keytool</code> commands prompt for a sudo/admin password unexpectedly, that's normal — <code>cacerts</code> is a protected system file by design; paste back the exact error if it's something other than a permissions prompt.</footer>
+
+<div class="lesson-nav">
+  <a href="0016-certificate-path-building-validation.html">&larr; Previous: Certificate Path Building and Validation</a>
+  <a href="0018-cross-signing-ca-transitions.html">Next: Cross-Signing and CA Transitions &rarr;</a>
+</div>
+
+</body>
+</html>

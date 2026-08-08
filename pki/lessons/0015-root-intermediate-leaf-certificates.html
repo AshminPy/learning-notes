@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 15 — Root, Intermediate, and Leaf Certificates</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 15 of 106</p>
+<h1>Root, Intermediate, and Leaf Certificates: Why Roots Don't Sign Directly</h1>
+
+<h2>What you will learn</h2>
+<p>The three-tier certificate hierarchy every real PKI uses — root, intermediate (subordinate), and leaf (end-entity) — and the specific, verifiable reason almost no root CA in existence signs a leaf certificate directly. You'll learn exactly what the <code>basicConstraints</code> extension and its <code>pathLenConstraint</code> field enforce at the byte level, how to read any certificate chain and immediately identify which tier each certificate belongs to, and what current CA/Browser Forum and Mozilla policy actually require of root and intermediate CAs today — not the simplified version most tutorials teach.</p>
+
+<h2>Why this matters</h2>
+<p>Every chain you'll inspect, build, or troubleshoot for the rest of this course is this three-tier structure. Engineers who don't understand <em>why</em> the hierarchy is shaped this way — not just that it exists — make real mistakes: assuming a root's private key gets used routinely (it doesn't, and shouldn't), assuming any certificate with a public/private key pair can sign other certificates (it can't unless <code>basicConstraints</code> says so), or panicking over an intermediate compromise as if it were a root compromise (the entire point of the hierarchy is that it isn't). Lesson 16 covers how a browser walks this chain; this lesson covers what the chain actually is and why it's built this way in the first place.</p>
+
+<h2>Simple explanation</h2>
+<p>Think of a root CA's private key like a country's master engraving plate for currency — locked in a vault, used maybe once a year in a formal ceremony, only ever to authorize a small number of regional mints (intermediates). Those regional mints do the actual day-to-day printing (issuing leaf certificates) using their own plates. If a regional mint's plate is stolen, you shut down that one mint and cut a new plate — painful, but contained. If the master plate itself is stolen, every single bill in circulation, from every mint, is suspect at once. That asymmetry — contained blast radius for an intermediate, catastrophic and slow-to-fix blast radius for a root — is the entire reason the hierarchy exists in three tiers instead of one.</p>
+
+<h2>How it works</h2>
+
+<h3>Root CA certificates</h3>
+<p>A root CA certificate is <strong>self-signed</strong> — its <code>Issuer</code> and <code>Subject</code> fields are identical, and it's signed with its own private key. It becomes a <strong>trust anchor</strong> only when a relying party (an operating system, browser, or Java trust store) explicitly ships it in a trusted root store; nothing about the certificate itself makes it trusted, only its presence in that store does. Root CA private keys are, per near-universal industry practice and current WebTrust/ETSI audit criteria, generated and stored in a hardware security module and kept <strong>offline</strong> — not connected to any network — used only during infrequent, audited, multi-person "key ceremonies," almost always solely to sign new intermediate CA certificates or issue a CRL for one.</p>
+
+<h3>Intermediate (subordinate) CA certificates</h3>
+<p>An intermediate CA certificate is signed by the root (or by another intermediate, for deeper hierarchies) and, like a root, carries <code>basicConstraints: cA=TRUE</code> — it's still permitted to sign further certificates. This is the tier that does the real, high-volume, day-to-day work: issuing leaf certificates to servers, devices, and users, often via automation (ACME, Stage 12). Because the intermediate — not the root — is exposed to that operational volume and (for many public CAs) network connectivity, it is the tier that actually carries operational risk. If an intermediate's key is compromised, the fix is to revoke that one intermediate and everything it issued, then cut a new one from the still-safe root — a contained, survivable incident.</p>
+
+<h3>Leaf (end-entity) certificates</h3>
+<p>A leaf certificate — your website's TLS certificate, a user's S/MIME certificate, a device identity certificate — has <code>basicConstraints: cA=FALSE</code> or omits the extension entirely, which per RFC 5280 §4.2.1.9 means the same thing: "If the cA boolean is not present, or if it is FALSE, then this is an end entity certificate." It cannot legally sign other certificates. A relying party that trusted a leaf certificate to sign further certificates would be trusting outside the hierarchy's design entirely — this is exactly the kind of misissuance CA/Browser Forum audits and browser root programs exist to catch.</p>
+
+<h3>basicConstraints and pathLenConstraint, precisely</h3>
+<p>RFC 5280 §4.2.1.9 defines the mechanics: "The basic constraints extension identifies whether the subject of the certificate is a CA and how deep a certification path may exist through that CA." The optional <code>pathLenConstraint</code> field, when present, "defines the maximum number of CA certificates that may follow this certificate in a certification path" — it counts <em>intermediate</em> CA certificates allowed below this one, not including the leaf. A root with <code>pathLenConstraint: 1</code> permits exactly one intermediate tier below it before a leaf; <code>pathLenConstraint: 0</code> means the certificate can sign leaf certificates only, no further intermediates. This extension must be marked <strong>critical</strong> on CA certificates — a relying party that doesn't understand it is required to reject the certificate rather than silently ignore the constraint.</p>
+
+<h3>Why roots don't sign leaf certificates directly — the actual rule</h3>
+<p>This isn't just convention; for any publicly trusted CA it's an explicit root-store policy requirement. Mozilla's Root Store Policy (current version 3.1, effective 2026-07-01) states it directly: "CA operators MUST maintain a certificate hierarchy such that an included root certificate does not directly issue end entity certificates to customers (i.e. a root certificate signs intermediate issuing certificates)." A CA that violated this in a publicly trusted hierarchy would be flagged in a WebTrust/ETSI audit and risk removal from Mozilla's, Chrome's, and Apple's root stores — a business-ending outcome for a commercial CA. Private/internal CAs (Stage 12) aren't bound by Mozilla's policy, but the same firebreak logic applies just as strongly, since the blast radius of a leaked internal root key is identical in kind.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>Root CA certificate (self-signed, cA=TRUE)
+  |  stored offline in an HSM, used rarely, in an audited ceremony
+  |  signs ONLY intermediate CA certificates
+  v
+Intermediate/Subordinate CA certificate (cA=TRUE, pathLenConstraint often 0)
+  |  online (frequently automated via ACME), does the day-to-day issuing
+  |  signs leaf (end-entity) certificates -- this is the exposed, high-volume tier
+  v
+Leaf / end-entity certificate (cA=FALSE or absent)
+  issued to a server, device, or user -- cannot sign anything further
+
+If the intermediate's key is compromised:
+  -> revoke that intermediate + everything under it, cut a new one from the root
+  -> the root itself was never touched -- contained incident
+
+If the root's key is compromised:
+  -> every certificate in the entire hierarchy is suspect
+  -> root removal from trust stores takes months/years to fully propagate
+  -> effectively unrecoverable without rebuilding the whole hierarchy</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Root CA certificate</strong> — a self-signed certificate that becomes a trust anchor only by being explicitly shipped in a trust store.</li>
+<li><strong>Trust anchor</strong> — a certificate a relying party trusts as a validation starting point without needing to verify a signature on it.</li>
+<li><strong>Intermediate / Subordinate CA certificate</strong> — a CA certificate signed by a root (or another intermediate) that does the operational, high-volume work of issuing leaf certificates.</li>
+<li><strong>Leaf / end-entity certificate</strong> — the actual certificate used by a server, device, or person; <code>cA=FALSE</code>; cannot sign further certificates.</li>
+<li><strong><code>basicConstraints</code></strong> — the critical X.509 extension (RFC 5280 §4.2.1.9) that declares whether a certificate is a CA and, via <code>pathLenConstraint</code>, how many further CA tiers may follow it.</li>
+<li><strong>Key ceremony</strong> — the formal, audited, multi-person procedure used to generate or use a root CA's private key, designed so no single individual can act alone.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>Let's Encrypt's public hierarchy is a clean, inspectable real example: the root, <strong>ISRG Root X1</strong>, is offline and signs only intermediate certificates (currently the <strong>R-series</strong>, e.g. R11/R12) — it has never directly issued a website certificate. Those intermediates, which rotate and are technically constrained, do the actual automated issuance to millions of websites via ACME (Stage 12). When you run <code>openssl s_client -connect</code> against nearly any Let's Encrypt-secured site, the chain the server presents is leaf → intermediate — the root is deliberately <em>not</em> sent (Lesson 16 explains why the root isn't included in the served chain at all). This is the exact three-tier pattern described above, running in production at internet scale.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Build a real three-tier hierarchy locally with OpenSSL and inspect the <code>basicConstraints</code> extension at each tier:</p>
+<pre><code># --- Tier 1: Root CA (self-signed, cA=TRUE, pathlen:1) ---
+openssl genrsa -out root.key 4096
+openssl req -x509 -new -key root.key -sha256 -days 3650 \
+  -subj "/CN=Lab Root CA" -addext "basicConstraints=critical,CA:TRUE,pathlen:1" \
+  -out root.crt
+
+# --- Tier 2: Intermediate CA (signed BY the root, cA=TRUE, pathlen:0) ---
+openssl genrsa -out intermediate.key 3072
+openssl req -new -key intermediate.key -subj "/CN=Lab Intermediate CA" -out intermediate.csr
+openssl x509 -req -in intermediate.csr -CA root.crt -CAkey root.key -CAcreateserial \
+  -days 1825 -sha256 -extfile &lt;(echo "basicConstraints=critical,CA:TRUE,pathlen:0") \
+  -out intermediate.crt
+
+# --- Tier 3: Leaf certificate (signed BY the intermediate, cA=FALSE) ---
+openssl genrsa -out leaf.key 2048
+openssl req -new -key leaf.key -subj "/CN=demo.local" -out leaf.csr
+openssl x509 -req -in leaf.csr -CA intermediate.crt -CAkey intermediate.key -CAcreateserial \
+  -days 397 -sha256 -extfile &lt;(echo "basicConstraints=critical,CA:FALSE") \
+  -out leaf.crt
+
+# Inspect the basicConstraints extension at every tier
+for f in root.crt intermediate.crt leaf.crt; do
+  echo "--- $f ---"; openssl x509 -in "$f" -noout -text | grep -A1 "Basic Constraints"
+done
+
+# Verify the full chain
+cat intermediate.crt root.crt > chain.pem
+openssl verify -CAfile chain.pem leaf.crt</code></pre>
+<p>Expected result: the root shows <code>CA:TRUE, pathlen:1</code>, the intermediate shows <code>CA:TRUE, pathlen:0</code>, the leaf shows <code>CA:FALSE</code>, and <code>openssl verify</code> reports <code>leaf.crt: OK</code>. Try re-issuing the leaf with <code>-extfile &lt;(echo "basicConstraints=critical,CA:TRUE")</code> by mistake — verification still succeeds locally because OpenSSL's default verify doesn't enforce every policy check a browser does, which is exactly the kind of gap Lesson 16 covers.</p>
+
+<h2>What can go wrong</h2>
+<p>A server configured to serve only its leaf certificate, omitting the intermediate, works fine in browsers that perform AIA chasing (fetching the missing intermediate automatically, Lesson 16) but fails outright in clients that don't — curl without <code>--cacert</code> pointing at the right bundle, many mobile app TLS stacks, IoT devices, and most non-browser HTTP clients — producing the classic <code>unable to get local issuer certificate</code> error. Another real misconfiguration: setting a root's <code>pathLenConstraint</code> to <code>0</code> when the design actually needs an intermediate tier, which silently makes it impossible to issue any intermediate under that root at all — the error only surfaces the first time someone tries to build the hierarchy, often long after the root ceremony already happened.</p>
+
+<h2>Troubleshooting</h2>
+<p>If <code>openssl s_client -connect host:443 -showcerts</code> shows only one certificate in the chain and clients report <code>unable to get local issuer certificate</code>, the server is not sending its intermediate — check the web server's certificate bundle configuration (it should concatenate leaf + intermediate, in that order, never the root). If <code>openssl verify</code> fails with <code>unable to get issuer certificate</code> even with the right bundle supplied via <code>-CAfile</code>, check whether the intermediate's <code>Issuer</code> field actually matches the root's <code>Subject</code> field byte-for-byte (a common hand-built-lab mistake); mismatched or reordered <code>-subj</code> strings between root and intermediate creation breaks name chaining even when every other field is correct.</p>
+
+<h2>Security considerations</h2>
+<p>A root CA's private key is the single highest-value secret in the entire hierarchy — its compromise is not "revoke and reissue," it's "every relying party in the world eventually has to distrust this root," a process that takes months to years to fully propagate through trust store update cycles. This is why root keys live in HSMs, offline, behind multi-person ceremony controls, and are used as rarely as operationally possible. Intermediates carry real risk too, but a contained, survivable kind — which is precisely why current CA/Browser Forum rules push toward narrower, more tightly scoped intermediates: from 2026-06-15, any new intermediate CA certificate disclosed to the CCADB under a Chrome-trusted root must assert the <code>serverAuth</code> Extended Key Usage only, with dual <code>serverAuth</code>+<code>clientAuth</code> intermediates being retired — reducing what a compromised intermediate could be used for even in the worst case.</p>
+
+<h2>Production best practices</h2>
+<p>Never configure a server to serve its root certificate as part of the chain it presents — relying parties either already have the root in their trust store or don't trust it at all; sending it wastes bytes on every handshake and, for some strict validators, can actually cause failures. Serve leaf + intermediate(s) only, in the correct order. Keep root keys offline in an HSM with documented, auditable key-ceremony procedures (WebTrust/ETSI-aligned even for private/internal CAs, Stage 12) and use technically constrained intermediates — narrow Extended Key Usage and, where applicable, name constraints — so that even a compromised intermediate has a bounded blast radius by design, not just by policy. Track the CA/Browser Forum's active ballots (RESOURCES.md) for anything publicly trusted; requirements like the 2026-06-15 serverAuth-only intermediate mandate change what a compliant hierarchy looks like on a fixed timeline, not a one-time design decision.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "Why doesn't a root CA sign leaf/end-entity certificates directly?" <strong>A:</strong> "Containment. A root key is the highest-value secret in the hierarchy and, once distributed to billions of trust stores, can't be quickly replaced if compromised — so it's kept offline and used only to sign a small number of intermediates. The intermediate absorbs the actual operational exposure of high-volume issuance; if it's compromised, you revoke that one intermediate and cut a new one from the still-safe root. Mozilla's Root Store Policy makes this a hard requirement for any publicly trusted CA, not just a best practice."</p>
+<p><strong>Interview Q:</strong> "What does <code>pathLenConstraint: 0</code> mean on an intermediate CA certificate?" <strong>A:</strong> "That intermediate can sign leaf/end-entity certificates only — it cannot sign any further CA certificates below it. It's part of the <code>basicConstraints</code> extension, RFC 5280 §4.2.1.9, and must be marked critical."</p>
+
+<h2>Source</h2>
+<p>IETF, <a href="https://www.rfc-editor.org/rfc/rfc5280" target="_blank" rel="noopener">RFC 5280, §4.2.1.9 "Basic Constraints"</a> (cA boolean and pathLenConstraint definitions) — fetched live 2026-08-08. Mozilla, <a href="https://www.mozilla.org/en-US/about/governance/policies/security-group/certs/policy/" target="_blank" rel="noopener">Root Store Policy, Version 3.1</a> (effective 2026-07-01; root-must-not-directly-issue-end-entity-certificates requirement, technically constrained subordinate requirement) — fetched live 2026-08-08. CA/Browser Forum, <a href="https://cabforum.org/working-groups/server/baseline-requirements/requirements/" target="_blank" rel="noopener">TLS Baseline Requirements, Version 2.2.9</a> (effective 2026-08-06) — fetched live 2026-08-08. Encryption Consulting, <a href="https://www.encryptionconsulting.com/ca-browser-forum-mandate/" target="_blank" rel="noopener">"End of Dual-EKU Certificates: CA/Browser Forum Mandate"</a> (2026-06-15 serverAuth-only intermediate deadline, 2027-03-15 leaf deadline) — fetched live 2026-08-08.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Three tiers, three jobs: root (offline trust anchor, signs only intermediates), intermediate (does the day-to-day issuing), leaf (end-entity, cannot sign anything further).</li>
+    <li><code>basicConstraints</code> (RFC 5280 §4.2.1.9) is what makes this enforceable: <code>cA=TRUE</code>/<code>FALSE</code> plus <code>pathLenConstraint</code> defines what each certificate is legally allowed to sign.</li>
+    <li>Roots don't sign leaf certificates directly by policy, not just convention — Mozilla's Root Store Policy makes it a hard requirement for publicly trusted CAs, because root compromise is effectively unrecoverable while intermediate compromise is contained.</li>
+    <li>Servers should present leaf + intermediate only, never the root, in the chain they serve.</li>
+    <li>From 2026-06-15, new publicly trusted intermediates must be <code>serverAuth</code>-only — narrower scope means a smaller blast radius even in a worst-case compromise.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why is a root CA key compromise fundamentally worse than an intermediate CA key compromise?</li>
+<li>What does <code>pathLenConstraint: 0</code> mean, and where is it defined?</li>
+<li>Why should a server never include its root certificate in the chain it presents?</li>
+<li>What does Mozilla's Root Store Policy require about which certificates a root may directly issue?</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's <code>openssl verify</code> step fails with an issuer-mismatch error, paste your three <code>-subj</code> strings back to your teacher — it's almost always a Subject/Issuer name that doesn't chain byte-for-byte between tiers, not a broken command.</footer>
+
+<div class="lesson-nav">
+  <a href="0014-pki-secrets-management-iam.html">&larr; Previous: PKI vs Secrets Management vs IAM: Where the Boundaries Are</a>
+  <a href="0016-certificate-path-building-validation.html">Next: Certificate Path Building and Validation &rarr;</a>
+</div>
+
+</body>
+</html>
