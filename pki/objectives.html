@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PKI Engineer — Zero to Hero — Course roadmap tracker</title>
+<meta name="description" content="Zero-to-hero PKI Engineer course roadmap: cryptography, X.509, chain of trust, TLS, public and private PKI, certificate lifecycle, Microsoft AD CS, automation, Kubernetes/cloud PKI, key security, troubleshooting, architecture, and post-quantum migration. Free, independent study resource.">
+<link rel="canonical" href="https://ashminpy.github.io/learning-notes/pki/objectives.html">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .domain {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 1.25rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .domain-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .domain-head h2 { margin: 0; padding: 0; border: none; font-size: 1.1rem; }
+  .domain-head p { margin: 0.2rem 0 0; font-size: 0.85rem; color: var(--muted); }
+  .count { color: var(--accent); font-weight: bold; font-size: 0.9rem; white-space: nowrap; }
+  .bar-track {
+    height: 6px;
+    background: var(--code-bg);
+    border-radius: 3px;
+    margin: 0.7rem 0 1rem;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.2s ease;
+  }
+  .item-list { list-style: none; padding: 0; margin: 0; }
+  .item-list li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.35rem 0;
+  }
+  .item-list input[type="checkbox"] { margin-top: 0.2rem; }
+  .item-list a { color: var(--fg); }
+  .item-list a:hover { color: var(--accent); }
+  .planned { color: var(--muted); font-size: 0.95rem; }
+  .planned-tag {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.05rem 0.35rem;
+  }
+  .overall {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .reset-btn {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 4px;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .reset-btn:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Zero to Hero</p>
+<h1>Course roadmap tracker</h1>
+<p>The complete planned curriculum — 106 core lessons across 24 stages (A-X), taking a
+complete beginner through cryptography, certificates, chain of trust, TLS, public and
+private PKI, certificate lifecycle management, Microsoft AD CS, automation, Kubernetes/
+cloud-native PKI, private key security, troubleshooting, architecture, and post-quantum
+migration. No single certification anchors this course — it's zero-to-hero, built for
+real production PKI engineering. Stages P and X are an optional Architect track (CA
+governance and commercial CA operations) — not required for the core "Job-Ready PKI
+Engineer" milestone. Separate from this lesson tracker: 24 hands-on labs, a 200-question
+interview bank, a 20-scenario troubleshooting exam, 17 cheat sheets, and a capstone
+project (see the course home page). Check off a lesson once you can rebuild/explain it
+from memory. Progress is saved in this browser only.</p>
+<p class="overall" id="overall"></p>
+<button class="reset-btn" id="reset-progress" type="button" aria-label="Reset PKI Engineer tracker progress">Reset progress</button>
+
+<div id="domains"></div>
+
+<div class="lesson-nav">
+  <a href="index.html">&larr; Back to course</a>
+  <span></span>
+</div>
+
+<script>
+const PHASES = [
+  {
+    key: "foundations",
+    name: "A. Security &amp; Cryptography Foundations",
+    lessons: [
+      { id: "0001", title: "Why PKI exists: identity, trust, and the Alice/Bob/Eve problem", href: null },
+      { id: "0002", title: "Cryptography fundamentals: encryption, hashing, signing, and key exchange", href: null },
+      { id: "0003", title: "Symmetric vs asymmetric encryption and public/private keys", href: null },
+      { id: "0004", title: "Digital signatures, key exchange, and randomness/entropy", href: null },
+      { id: "0005", title: "RSA vs ECC: how they work and when to use each", href: null }
+    ]
+  },
+  {
+    key: "certificates-x509",
+    name: "B. Certificates &amp; X.509",
+    lessons: [
+      { id: "0006", title: "What is a digital certificate? Anatomy of an X.509 certificate", href: null },
+      { id: "0007", title: "Inspecting certificates with OpenSSL and Windows tools", href: null },
+      { id: "0008", title: "Certificate file formats: PEM, DER, PKCS#7, PKCS#12, JKS", href: null },
+      { id: "0009", title: "Converting between certificate formats", href: null },
+      { id: "0010", title: "Certificate Signing Requests (CSRs): what's inside, what's not", href: null }
+    ]
+  },
+  {
+    key: "understanding-pki",
+    name: "C. Understanding PKI",
+    lessons: [
+      { id: "0011", title: "The PKI ecosystem: CAs, RAs, repositories, and HSMs", href: null },
+      { id: "0012", title: "Public PKI vs Private PKI", href: null },
+      { id: "0013", title: "Why google.com works instantly but internal.company.local doesn't", href: null },
+      { id: "0014", title: "PKI vs secrets management vs IAM: where the boundaries are", href: null }
+    ]
+  },
+  {
+    key: "chain-of-trust",
+    name: "D. Chain of Trust",
+    lessons: [
+      { id: "0015", title: "Root, intermediate, and leaf certificates: why roots don't sign directly", href: null },
+      { id: "0016", title: "Certificate path building and validation: what a browser actually checks", href: null },
+      { id: "0017", title: "Trust stores across Windows, Linux, macOS, Java, and browsers", href: null },
+      { id: "0018", title: "Cross-signing and CA transitions", href: null }
+    ]
+  },
+  {
+    key: "tls-https",
+    name: "E. TLS / HTTPS",
+    lessons: [
+      { id: "0019", title: "TLS fundamentals: HTTP vs HTTPS, TCP, and the handshake at a glance", href: null },
+      { id: "0020", title: "The TLS 1.3 handshake, step by step", href: null },
+      { id: "0021", title: "Cipher suites, SNI, ALPN, and forward secrecy", href: null },
+      { id: "0022", title: "Modern TLS extensions: Encrypted Client Hello and certificate compression", href: null }
+    ]
+  },
+  {
+    key: "certificate-types",
+    name: "F. Types of Certificates",
+    lessons: [
+      { id: "0023", title: "TLS server and client authentication certificates", href: null },
+      { id: "0024", title: "mTLS, machine, and device certificates", href: null },
+      { id: "0025", title: "Code-signing, document-signing, and timestamping certificates", href: null },
+      { id: "0026", title: "IoT, Kubernetes, and workload identity certificates", href: null }
+    ]
+  },
+  {
+    key: "public-issuance",
+    name: "G. Public Certificate Issuance",
+    lessons: [
+      { id: "0027", title: "DV, OV, and EV: what they actually mean today", href: null },
+      { id: "0028", title: "Domain Control Validation and ACME challenges (DNS-01, HTTP-01, TLS-ALPN-01)", href: null },
+      { id: "0029", title: "CAA records and Multi-Perspective Issuance Corroboration", href: null },
+      { id: "0030", title: "Certificate Transparency: logs, SCTs, and misissuance detection", href: null },
+      { id: "0031", title: "The complete public issuance workflow, end to end", href: null }
+    ]
+  },
+  {
+    key: "lifecycle",
+    name: "H. Certificate Lifecycle Management",
+    lessons: [
+      { id: "0032", title: "The certificate lifecycle: discovery to retirement", href: null },
+      { id: "0033", title: "Certificate inventory and ownership", href: null },
+      { id: "0034", title: "Expiration monitoring and renewal", href: null },
+      { id: "0035", title: "Rekey vs renewal vs replacement", href: null },
+      { id: "0036", title: "Automated renewal and why manual issuance doesn't scale", href: null },
+      { id: "0037", title: "Orphaned certificates and certificate-caused outages", href: null },
+      { id: "0038", title: "Practical assessment: the lifecycle of one certificate end-to-end", href: null }
+    ]
+  },
+  {
+    key: "revocation",
+    name: "I. Revocation",
+    lessons: [
+      { id: "0039", title: "Certificate Revocation Lists: base and delta CRLs", href: null },
+      { id: "0040", title: "OCSP and OCSP stapling", href: null },
+      { id: "0041", title: "How browsers actually check revocation vs. the textbook model", href: null },
+      { id: "0042", title: "CRL vs OCSP vs OCSP stapling: choosing and troubleshooting", href: null }
+    ]
+  },
+  {
+    key: "installation",
+    name: "J. Certificate Installation",
+    lessons: [
+      { id: "0043", title: "Installing certificates on IIS: bindings, SNI, and the Windows cert store", href: null },
+      { id: "0044", title: "Installing certificates on Apache", href: null },
+      { id: "0045", title: "Installing certificates on NGINX", href: null },
+      { id: "0046", title: "Installing certificates in Java: keytool, JKS, and the JVM trust store", href: null },
+      { id: "0047", title: "Certificate replacement without downtime", href: null },
+      { id: "0048", title: "Practical assessment: install and verify a full chain across two servers", href: null }
+    ]
+  },
+  {
+    key: "adcs",
+    name: "K. Microsoft AD CS",
+    lessons: [
+      { id: "0049", title: "AD CS fundamentals: Enterprise vs Standalone, Root vs Subordinate", href: null },
+      { id: "0050", title: "Designing an enterprise CA hierarchy: why the root stays offline", href: null },
+      { id: "0051", title: "Certificate templates: subject, SANs, EKUs, and permissions", href: null },
+      { id: "0052", title: "Auto-enrollment via Group Policy", href: null },
+      { id: "0053", title: "Manual, MMC, and web enrollment", href: null },
+      { id: "0054", title: "SCEP and NDES for non-domain-joined enrollment", href: null },
+      { id: "0055", title: "AD CS operations: CA database, logs, and CRL publishing", href: null },
+      { id: "0056", title: "CA certificate renewal, backup, and restore", href: null },
+      { id: "0057", title: "AD CS disaster recovery", href: null },
+      { id: "0058", title: "AD CS security: protecting CA private keys, HSMs, and least privilege", href: null },
+      { id: "0059", title: "Dangerous certificate templates and AD CS attack-path concepts (defensive)", href: null }
+    ]
+  },
+  {
+    key: "automation",
+    name: "L. Automation",
+    lessons: [
+      { id: "0060", title: "The complete ACME workflow", href: null },
+      { id: "0061", title: "Automating issuance with certbot and internal ACME", href: null },
+      { id: "0062", title: "SCEP vs EST vs ACME: choosing the right protocol", href: null },
+      { id: "0063", title: "Practical assessment: automate renewal for a certificate that keeps expiring", href: null }
+    ]
+  },
+  {
+    key: "kubernetes-cloud-native",
+    name: "M. Kubernetes &amp; Cloud-Native PKI",
+    lessons: [
+      { id: "0064", title: "Kubernetes' own internal PKI: kubeadm, etcd CA, and kubelet certs", href: null },
+      { id: "0065", title: "cert-manager: Issuer, ClusterIssuer, and the Certificate resource", href: null },
+      { id: "0066", title: "SPIFFE, SPIRE, and workload identity", href: null },
+      { id: "0067", title: "Short-lived certificates and service-to-service auth in a service mesh", href: null }
+    ]
+  },
+  {
+    key: "cloud-pki",
+    name: "N. Cloud PKI",
+    lessons: [
+      { id: "0068", title: "AWS Certificate Manager and AWS Private CA", href: null },
+      { id: "0069", title: "Google Cloud Certificate Authority Service and Certificate Manager", href: null },
+      { id: "0070", title: "Azure Key Vault certificates", href: null },
+      { id: "0071", title: "Choosing between cloud-native PKI and a self-managed CA", href: null }
+    ]
+  },
+  {
+    key: "key-security",
+    name: "O. Private Key Security",
+    lessons: [
+      { id: "0072", title: "Why the private key is the whole system: file permissions and password protection", href: null },
+      { id: "0073", title: "HSMs, TPMs, and KMS: what they actually protect against", href: null },
+      { id: "0074", title: "Smart cards, PKCS#11, and hardware-backed keys", href: null },
+      { id: "0075", title: "Key ceremonies, dual control, and key escrow", href: null },
+      { id: "0076", title: "Key backup, rotation, and destruction", href: null }
+    ]
+  },
+  {
+    key: "governance",
+    name: "P. Enterprise PKI Governance (Architect track)",
+    lessons: [
+      { id: "0077", title: "Certificate Policy (CP) and Certification Practice Statement (CPS)", href: null },
+      { id: "0078", title: "Root programs: CA/Browser Forum, WebTrust, and ETSI audits", href: null },
+      { id: "0079", title: "Separation of duties, change control, and compliance", href: null },
+      { id: "0080", title: "How a real commercial CA is audited", href: null }
+    ]
+  },
+  {
+    key: "troubleshooting",
+    name: "Q. Troubleshooting",
+    lessons: [
+      { id: "0081", title: "A systematic methodology for diagnosing TLS/certificate failures", href: null },
+      { id: "0082", title: "Incidents 1-3: date invalid, hostname mismatch, unable to get local issuer", href: null },
+      { id: "0083", title: "Incidents 4-6: unknown CA, missing intermediate, wrong certificate installed", href: null },
+      { id: "0084", title: "Incidents 7-9: key mismatch, expired intermediate, revoked certificate", href: null },
+      { id: "0085", title: "Incidents 10-12: untrusted private CA, mTLS rejection, stale cert after renewal", href: null },
+      { id: "0086", title: "Incidents 13-15: Java vs browser trust mismatch, NGINX key load failure, AD CS enrollment failure", href: null },
+      { id: "0087", title: "Practical assessment: diagnose from raw tool output only", href: null }
+    ]
+  },
+  {
+    key: "monitoring-operations",
+    name: "R. PKI Monitoring &amp; Operations",
+    lessons: [
+      { id: "0088", title: "Certificate discovery and inventory at scale", href: null },
+      { id: "0089", title: "Expiration, issuance, and revocation monitoring", href: null },
+      { id: "0090", title: "Monitoring CA/CRL/OCSP availability and Certificate Transparency logs", href: null }
+    ]
+  },
+  {
+    key: "incidents",
+    name: "S. PKI Incidents",
+    lessons: [
+      { id: "0091", title: "Private key and CA compromise: detection through recovery", href: null },
+      { id: "0092", title: "Certificate misissuance and mass replacement", href: null },
+      { id: "0093", title: "Expired-certificate and CA-unavailable outages", href: null },
+      { id: "0094", title: "Weak algorithm discovery and the postmortem process", href: null }
+    ]
+  },
+  {
+    key: "architecture",
+    name: "T. PKI Architecture",
+    lessons: [
+      { id: "0095", title: "Designing PKI for a 20,000-employee enterprise: the requirements", href: null },
+      { id: "0096", title: "Reference architecture: CA hierarchy, HSM, automation, and governance", href: null },
+      { id: "0097", title: "Practical assessment: present and defend your PKI design", href: null }
+    ]
+  },
+  {
+    key: "crypto-migration",
+    name: "U. RSA, ECC &amp; Cryptographic Migration",
+    lessons: [
+      { id: "0098", title: "Cryptographic strength, key sizes, and compatibility across RSA/ECC/ECDSA/ECDHE", href: null },
+      { id: "0099", title: "Planning an algorithm migration without breaking production", href: null }
+    ]
+  },
+  {
+    key: "post-quantum",
+    name: "V. Quantum Computing &amp; Post-Quantum PKI",
+    lessons: [
+      { id: "0100", title: "Quantum computing, Shor's algorithm, and harvest-now-decrypt-later", href: null },
+      { id: "0101", title: "NIST post-quantum standards: ML-KEM, ML-DSA, SLH-DSA", href: null },
+      { id: "0102", title: "Hybrid PQC deployment today and what it means for enterprise PKI", href: null }
+    ]
+  },
+  {
+    key: "modern-pki",
+    name: "W. Modern PKI",
+    lessons: [
+      { id: "0103", title: "Short-lived certificates, machine identity, and Zero Trust", href: null },
+      { id: "0104", title: "Crypto agility and PKI-as-a-Service", href: null }
+    ]
+  },
+  {
+    key: "commercial-ca",
+    name: "X. Commercial CA Operations (Architect track)",
+    lessons: [
+      { id: "0105", title: "How a commercial CA operates end to end", href: null },
+      { id: "0106", title: "PKI career paths: roles, skills, and interview preparation", href: null }
+    ]
+  }
+];
+
+const STORE_KEY = "pki-objectives-progress";
+const state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+
+function renderPhase(d) {
+  const built = d.lessons.filter(l => l.href);
+  const wrap = document.createElement("div");
+  wrap.className = "domain";
+
+  const head = document.createElement("div");
+  head.className = "domain-head";
+  head.innerHTML = `<div><h2>${d.name}</h2><p>${built.length} of ${d.lessons.length} lessons published</p></div><span class="count">${d.lessons.length} planned</span>`;
+  wrap.appendChild(head);
+
+  const track = document.createElement("div");
+  track.className = "bar-track";
+  const fill = document.createElement("div");
+  fill.className = "bar-fill";
+  track.appendChild(fill);
+  wrap.appendChild(track);
+
+  const list = document.createElement("ul");
+  list.className = "item-list";
+  d.lessons.forEach(l => {
+    const li = document.createElement("li");
+    if (l.href) {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!state[l.id];
+      cb.setAttribute("aria-label", `Mark Lesson ${Number(l.id)} — ${l.title} as reviewed`);
+      cb.addEventListener("change", () => {
+        state[l.id] = cb.checked;
+        save();
+        updateBar();
+        updateOverall();
+      });
+      const a = document.createElement("a");
+      a.href = l.href;
+      a.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      li.appendChild(cb);
+      li.appendChild(a);
+    } else {
+      const span = document.createElement("span");
+      span.className = "planned";
+      span.textContent = `Lesson ${l.id.replace(/^0+/, "")} — ${l.title}`;
+      const tag = document.createElement("span");
+      tag.className = "planned-tag";
+      tag.textContent = "planned";
+      li.appendChild(span);
+      li.appendChild(tag);
+    }
+    list.appendChild(li);
+  });
+  wrap.appendChild(list);
+
+  function updateBar() {
+    const done = built.filter(l => state[l.id]).length;
+    const pct = built.length ? Math.round((done / built.length) * 100) : 0;
+    fill.style.width = pct + "%";
+  }
+  updateBar();
+
+  return wrap;
+}
+
+function updateOverall() {
+  const all = PHASES.flatMap(d => d.lessons);
+  const built = all.filter(l => l.href);
+  const done = built.filter(l => state[l.id]).length;
+  document.getElementById("overall").textContent =
+    `${built.length} of ${all.length} lessons published — ${done} of ${built.length} published lessons checked off.`;
+}
+
+const container = document.getElementById("domains");
+PHASES.forEach(d => container.appendChild(renderPhase(d)));
+updateOverall();
+
+document.getElementById("reset-progress").addEventListener("click", () => {
+  if (confirm("Reset all PKI Engineer tracker progress? This only clears this tracker's checkboxes in this browser — it does not affect any other course on this site.")) {
+    localStorage.removeItem(STORE_KEY);
+    location.reload();
+  }
+});
+</script>
+
+</body>
+</html>
