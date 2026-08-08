@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 5 — RSA vs ECC</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 5 of 106</p>
+<h1>RSA vs ECC</h1>
+
+<h2>What you will learn</h2>
+<p>Enough of the math behind RSA and ECC to reason about them, how their key sizes actually compare in real security strength (not just bit counts, which aren't comparable across the two families), and why ECC has become the more common default for new deployments without RSA becoming obsolete.</p>
+
+<h2>Why this matters</h2>
+<p>Every key you generate for the rest of this course is either RSA or ECC. Picking one without understanding the real trade-off — and a common beginner mistake, comparing "2048-bit RSA" to "256-bit ECC" and assuming RSA is stronger because the number is bigger — leads directly to under- or over-provisioned security, and to confusion the first time you see a certificate authority's minimum-key-size requirement expressed differently for each algorithm family.</p>
+
+<h2>Simple explanation</h2>
+<p>RSA's security rests on a problem that's easy to state and hard to solve: given a huge number that's the product of two large prime numbers, find those two primes. ECC's security rests on a different hard problem, from the algebra of points on an elliptic curve, that happens to require a much smaller number to achieve the same difficulty. That's the whole story in one sentence: <strong>ECC needs a smaller key to be exactly as hard to break as a much larger RSA key</strong>, because it's a different, more efficient hard problem — not because ECC is "weaker but faster" or "newer and better" in some vague sense.</p>
+
+<h2>How it works</h2>
+
+<h3>RSA, conceptually</h3>
+<p>Generate two large random prime numbers and multiply them together to get a public modulus. The public key is (that modulus, a public exponent); the private key is derived from the two original primes. Encrypting/verifying uses the public exponent; decrypting/signing uses the private one. The entire security rests on the fact that multiplying two large primes together is fast, but factoring the resulting product back into its two original primes is, for large enough primes, computationally infeasible with classical computers (Stage V covers why quantum computers specifically threaten this).</p>
+
+<h3>ECC, conceptually</h3>
+<p>Elliptic-curve cryptography defines a specific curve (a mathematical equation) and a starting point on it, then uses a repeated "point addition" operation to jump to a new point on the curve a chosen number of times. Going forward (starting point + a number of jumps → ending point) is fast. Going backward (given the starting and ending points, figure out how many jumps happened) is computationally infeasible for a properly-chosen curve — this is called the <strong>elliptic-curve discrete logarithm problem</strong>, and it's a fundamentally harder problem per bit of key size than RSA's factoring problem, which is exactly why ECC keys can be so much smaller for equivalent security.</p>
+
+<h3>Real, verified key-size equivalence</h3>
+<p>Per NIST SP 800-57 (the industry-standard reference for this comparison):</p>
+<table>
+<tr><th>Security strength</th><th>RSA key size</th><th>ECC key size</th><th>Common curve</th></tr>
+<tr><td>112-bit (current legacy minimum)</td><td>2048-bit</td><td>224-bit</td><td>—</td></tr>
+<tr><td>128-bit (current common default)</td><td>3072-bit</td><td>256-bit</td><td>P-256 (prime256v1/secp256r1)</td></tr>
+<tr><td>192-bit</td><td>7680-bit</td><td>384-bit</td><td>P-384</td></tr>
+<tr><td>256-bit</td><td>15360-bit</td><td>521-bit</td><td>P-521</td></tr>
+</table>
+<p>RSA-2048 (112-bit security) is currently the accepted minimum, but NIST guidance restricts it to legacy use (decryption/verification only, not new key generation) from 2030 onward. P-256 is the most common ECC curve deployed today, offering roughly the same real security strength as RSA-3072, at a fraction of the key size and computational cost — this is the concrete reason ECC has become the default choice for new TLS deployments.</p>
+
+<h3>ECDSA and ECDH — ECC applied to signing vs. key exchange</h3>
+<p>"ECC" names the underlying math; <strong>ECDSA</strong> is ECC applied specifically to digital signatures, and <strong>ECDH</strong>/<strong>ECDHE</strong> (Lesson 4) is ECC applied specifically to key exchange. You'll see both names throughout certificate and TLS configuration — a certificate's signature algorithm might say "ecdsa-with-SHA256," which means ECDSA signing, using SHA-256 hashing, on an elliptic curve key.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>RSA:  hard problem = factor a huge number back into its 2 prime factors
+      key size needed for 128-bit security: 3072 bits
+
+ECC:  hard problem = reverse a sequence of "jumps" on an elliptic curve
+      key size needed for 128-bit security:  256 bits  (P-256)
+
+Same real-world security. Very different key sizes, because the
+underlying hard problems don't get harder at the same rate per bit.</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Modulus</strong> — the product of two large primes in RSA; part of the public key.</li>
+<li><strong>Elliptic curve</strong> — the specific mathematical curve ECC operations are performed on (e.g. P-256/prime256v1, P-384).</li>
+<li><strong>ECDSA</strong> — Elliptic Curve Digital Signature Algorithm — ECC used for signing.</li>
+<li><strong>ECDH / ECDHE</strong> — Elliptic Curve Diffie-Hellman (Ephemeral) — ECC used for key exchange (Lesson 4).</li>
+<li><strong>Security strength (in bits)</strong> — a normalized measure of how many operations an attacker needs, on average, to break a key — the correct way to compare RSA and ECC key sizes, since their raw bit counts are not directly comparable.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>Comparing "2048-bit RSA" to "256-bit ECC" and concluding RSA is 8x stronger is exactly as wrong as comparing a car's engine displacement in liters to an electric motor's power in kilowatts and concluding whichever number is bigger is the faster car. Different underlying mechanisms need different units of comparison — for keys, that unit is "security strength in bits" from the table above, not raw key length.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Compare real file sizes and generation/signing speed between RSA-3072 and P-256 ECC, both at roughly 128-bit security:</p>
+<pre><code># RSA-3072 (128-bit security)
+time openssl genrsa -out rsa3072.key 3072
+
+# ECC P-256 (also ~128-bit security)
+time openssl ecparam -name prime256v1 -genkey -noout -out ecc256.key
+
+# Compare file sizes
+ls -la rsa3072.key ecc256.key
+
+# Compare signing speed (100 iterations each)
+openssl speed rsa3072 2>/dev/null | tail -3
+openssl speed ecdsap256 2>/dev/null | tail -3</code></pre>
+<p>Expected result: the ECC key file is noticeably smaller, key generation is faster, and <code>openssl speed</code> shows meaningfully more ECDSA signing operations per second than RSA-3072 at equivalent security strength — the practical payoff of ECC's smaller keys.</p>
+
+<h2>What can go wrong</h2>
+<p>A common misconfiguration is mixing algorithm assumptions across a chain — for example, an RSA root CA issuing an ECC intermediate, or vice versa. This is technically valid (a CA's own key algorithm doesn't have to match the certificates it issues), but it surprises engineers who assume the whole chain uses one algorithm family, and it matters for compatibility with older clients that may not support ECC at all.</p>
+
+<h2>Troubleshooting</h2>
+<p>If a very old client fails to connect to a server presenting an ECC certificate, algorithm-family compatibility is the first thing to check — some legacy clients (old embedded devices, very old browsers/OS versions) never added ECC support. This is a real, current reason organizations sometimes still issue RSA certificates for specific public-facing services despite ECC's advantages elsewhere.</p>
+
+<h2>Security considerations</h2>
+<p>Never generate new RSA keys below 2048-bit or new ECC keys on curves smaller than P-256 — both fall below the current accepted minimum security strength. Avoid custom or non-standard elliptic curves; use only NIST-standardized curves (P-256, P-384, P-521) unless you have a specific, well-researched reason otherwise, since curve selection itself can introduce subtle weaknesses if done incorrectly.</p>
+
+<h2>Production best practices</h2>
+<p>Default to ECC (P-256) for new TLS server certificates where client compatibility isn't a concern — smaller keys mean faster handshakes and lower bandwidth, which compounds at scale. Keep RSA available as a fallback option or for compatibility-sensitive services. Never mix up "bits" across families when setting a security policy — specify security strength (e.g. "128-bit minimum") and let that translate to the correct key size per algorithm.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "Is RSA-2048 stronger than ECC-256 because 2048 is a bigger number?" <strong>A:</strong> "No — that comparison doesn't make sense across algorithm families. RSA-2048 provides about 112-bit security; ECC-256 (P-256) provides about 128-bit security — ECC-256 is actually stronger, using a much smaller key, because its underlying hard problem is more efficient per bit. Compare security strength in bits, never raw key length, across RSA and ECC."</p>
+<p><strong>Interview Q:</strong> "Why has ECC become the more common default?" <strong>A:</strong> "Smaller keys and signatures for equivalent security mean faster TLS handshakes, less bandwidth, and less CPU — which matters at scale. RSA hasn't become obsolete; it's still used where legacy client compatibility matters."</p>
+
+<h2>Source</h2>
+<p>NIST SP 800-57 Part 1, <a href="https://csrc.nist.gov/pubs/sp/800/57/pt1/r5/final" target="_blank" rel="noopener">"Recommendation for Key Management"</a> (security-strength equivalence table) and NIST SP 800-131A Rev. 2, <a href="https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf" target="_blank" rel="noopener">"Transitioning the Use of Cryptographic Algorithms and Key Lengths"</a> (2030 RSA-2048 legacy-use restriction) — both confirmed current via live search before writing (2026-08-08).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>RSA's security rests on the difficulty of factoring a large number into two primes; ECC's rests on the elliptic-curve discrete logarithm problem — a different, more efficient hard problem per bit.</li>
+    <li>Never compare raw RSA and ECC key sizes directly — compare security strength in bits: RSA-3072 ≈ ECC P-256 ≈ 128-bit security.</li>
+    <li>ECC's smaller keys mean faster, cheaper operations at equivalent security — the practical reason it's become the common new-deployment default.</li>
+    <li>RSA-2048 (112-bit) is the current accepted minimum, restricted to legacy use only from 2030 per NIST guidance.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why can't you directly compare "2048-bit RSA" to "256-bit ECC" and conclude which is stronger?</li>
+<li>What hard mathematical problem does RSA rely on? What does ECC rely on?</li>
+<li>What real-world advantage does ECC's smaller key size actually deliver?</li>
+<li>Why might an organization still issue RSA certificates for a specific public-facing service today?</li>
+</ul>
+
+<footer class="teacher-reminder">If your openssl speed comparison in the lab showed unexpected numbers, paste the output back to your teacher and we'll check what your specific hardware/OpenSSL build is optimized for.</footer>
+
+<div class="lesson-nav">
+  <a href="0004-signatures-key-exchange-entropy.html">&larr; Previous: Signatures, Key Exchange, and Entropy</a>
+  <a href="../objectives.html">Next: Stage B — Certificates &amp; X.509 &rarr;</a>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 3 — Symmetric vs Asymmetric Encryption and Public/Private Keys</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 3 of 106</p>
+<h1>Symmetric vs Asymmetric Encryption and Public/Private Keys</h1>
+
+<h2>What you will learn</h2>
+<p>How to actually generate a public/private key pair, why the same pair can be used two opposite ways depending on what you're trying to prove, and what "key length" really measures. This is the first lesson with a real command — every certificate for the rest of this course starts with the key pair you generate here.</p>
+
+<h2>Why this matters</h2>
+<p>Lesson 2 introduced the public/private key pair as an idea. Every remaining stage of this course — CSRs, certificates, TLS, AD CS, HSMs — is built directly on top of that one pair of files sitting on a disk somewhere. If you don't have a precise mental model of what those two files actually are and which one is allowed to leave your machine, nothing that follows will make sense operationally, only conceptually.</p>
+
+<h2>Simple explanation</h2>
+<p>A key pair is two mathematically-linked numbers, generated together, with one specific property: something locked with one key can only be unlocked with the <em>other</em> key in the same pair — never with itself, never with a key from a different pair. You keep one of the two numbers completely secret (the private key) and hand the other one out freely to anyone who asks (the public key). The math that links them is one-directional in difficulty: deriving the public key from the private key is easy; deriving the private key from the public key is, for a properly-sized key, computationally infeasible with current technology. That asymmetry — easy one way, infeasible the other — is the entire foundation public-key cryptography rests on.</p>
+
+<h2>How it works</h2>
+
+<h3>The pair is used in two opposite directions, depending on the goal</h3>
+<p>This is the single most common source of confusion once people move past Lesson 2's basics, so make it explicit:</p>
+<ul>
+<li><strong>For confidentiality</strong> (Lesson 2's encryption case): anyone encrypts <em>with your public key</em>; only <em>your private key</em> decrypts it. The public key locks, the private key unlocks.</li>
+<li><strong>For authentication</strong> (Lesson 2's signing case): you sign <em>with your private key</em>; anyone verifies <em>with your public key</em>. The private key locks (signs), the public key unlocks (verifies).</li>
+</ul>
+<p>Same two keys, opposite roles, depending on whether you're trying to keep something secret from everyone except you, or prove something came from you to everyone else. Certificates (starting Stage B) exist almost entirely to distribute the second case — a public key, bound to an identity, so anyone can verify signatures made by that identity's private key.</p>
+
+<h3>Key length measures difficulty, not size on disk</h3>
+<p>"2048-bit RSA" or "256-bit ECC" describes how large the underlying mathematical numbers are, which determines how computationally infeasible it is to derive the private key from the public one using current known methods and hardware. Larger isn't automatically better in every dimension — larger keys are also slower to use and produce larger signatures/ciphertext. Lesson 5 compares RSA and ECC key-length trade-offs directly; for now, the important fact is that key length is a tunable security/performance dial, not a fixed property of "encryption" in general.</p>
+
+<h3>Where the private key actually lives</h3>
+<p>A generated private key is, physically, a text file (in PEM format — Lesson 8 covers formats in depth) sitting on a filesystem, or inside a hardware device (Stage O covers HSMs/TPMs/smart cards). Nothing about the math forces it to be protected — the protection is entirely up to file permissions, passphrases, and physical/hardware controls you apply. This is worth internalizing now: a private key with wide-open file permissions provides zero security, regardless of whether it's RSA-4096 or anything else.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>Key pair generation (happens ONCE, together, on the SAME machine ideally)
+
+   openssl genrsa / openssl ecparam
+              │
+              ▼
+   ┌─────────────────────┐        ┌─────────────────────┐
+   │   PRIVATE KEY        │        │   PUBLIC KEY         │
+   │   (secret, stays     │◀──────▶│   (shared freely,    │
+   │   on your machine    │  math  │   embedded in your   │
+   │   or HSM, NEVER      │  link  │   certificate later) │
+   │   sent anywhere)      │        │                       │
+   └─────────────────────┘        └─────────────────────┘
+
+Confidentiality direction:  anyone  ──[encrypt with PUBLIC key]──▶  only YOU decrypt (PRIVATE key)
+Authentication direction:   YOU     ──[sign with PRIVATE key]───▶  anyone verifies (PUBLIC key)</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Key pair</strong> — a mathematically-linked public and private key, generated together.</li>
+<li><strong>Key length / key size</strong> — the size of the underlying numbers (e.g. 2048-bit RSA, 256-bit ECC), determining computational security strength.</li>
+<li><strong>PEM format</strong> — the common text-based encoding for keys and certificates (Base64 between <code>-----BEGIN/END-----</code> markers) — full detail in Lesson 8.</li>
+<li><strong>Passphrase-protected private key</strong> — a private key file encrypted with a password, adding a layer of protection if the file itself is stolen.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>A padlock you can hand out copies of, but only one specific matching key opens it, is the standard analogy for the confidentiality direction — anyone can snap the padlock (public key) shut on a box; only you have the one key (private key) that opens it. For the authentication direction, think of a unique embosser that only you own: you emboss a document (sign with your private key), and anyone who has seen your embosser's distinctive pattern before (has your public key) can confirm the impression came from your specific device — without being able to make that impression themselves.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B (no Windows needed) — this is Labs 3 and 4 from the course lab list.</em></p>
+<p><strong>Lab 3 — Generate an RSA private key:</strong></p>
+<pre><code>openssl genrsa -out rsa-private.key 2048
+openssl rsa -in rsa-private.key -pubout -out rsa-public.key
+cat rsa-private.key   # note the -----BEGIN PRIVATE KEY----- header
+cat rsa-public.key    # note the -----BEGIN PUBLIC KEY----- header</code></pre>
+<p><strong>Lab 4 — Generate an ECC private key:</strong></p>
+<pre><code>openssl ecparam -name prime256v1 -genkey -noout -out ecc-private.key
+openssl ec -in ecc-private.key -pubout -out ecc-public.key</code></pre>
+<p><strong>Verify the mathematical link</strong> (the modulus of a private and its matching public key must match for RSA):</p>
+<pre><code>openssl rsa -in rsa-private.key -noout -modulus | openssl md5
+openssl rsa -in rsa-public.key -pubin -noout -modulus | openssl md5</code></pre>
+<p>Expected result: the two MD5 sums match, proving these two files are one linked pair — not two unrelated keys. Now generate a second, independent RSA key pair and repeat the check across the two different pairs: the sums will not match, because they're mathematically unrelated.</p>
+
+<h2>What can go wrong</h2>
+<p>Generating a key pair with predictable or low-entropy randomness produces a private key that can be guessed or derived despite a "correct" key length — this has caused real, documented incidents (e.g. embedded devices reusing the same weak random seed across thousands of units, producing identical or easily-related key pairs). Always generate keys using your system's cryptographically secure random number generator (which <code>openssl genrsa</code>/<code>ecparam</code> use by default) — never a custom or "simple" random source.</p>
+
+<h2>Troubleshooting</h2>
+<p>"Certificate and private key do not match" (Stage Q, Incident 7) is this lesson's concept showing up as a production failure — it means the public key embedded in a certificate doesn't mathematically link to the private key a server is trying to use with it, usually because the wrong key file was installed, or a certificate was reissued against a new key pair without updating the paired private key on the server. The modulus-comparison command above is the direct diagnostic for this exact incident.</p>
+
+<h2>Security considerations</h2>
+<p>File permissions on a private key file matter as much as the key length. On Linux, a private key should be readable only by the account/process that needs it (commonly <code>chmod 600</code>), never world-readable. A private key generated correctly with a strong algorithm but left with loose file permissions provides no real security — Stage O covers this class of control in full depth.</p>
+
+<h2>Production best practices</h2>
+<p>Generate key pairs directly on the machine (or HSM) that will use the private key, rather than generating elsewhere and transferring the private key over a network — every transfer is an opportunity for exposure. Use at minimum RSA 2048-bit or ECC P-256 for anything currently issued; Lesson 5 covers the current recommended minimums and why ECC has become the more common default for new deployments.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "If Alice's private key can decrypt something, does that mean her private key was used to create it?" <strong>A:</strong> "No — the opposite. If Alice's private key can decrypt it, it means someone used Alice's <em>public</em> key to encrypt it. Her private key is only ever used by her — to decrypt things sent to her, or to sign things she sends. Mixing up which key does which operation in which direction is the single most common conceptual error at this stage."</p>
+
+<h2>Source</h2>
+<p>NIST SP 800-57 Part 1, <a href="https://csrc.nist.gov/pubs/sp/800/57/pt1/r5/final" target="_blank" rel="noopener">"Recommendation for Key Management"</a> — defines key-pair generation and length/strength concepts used throughout this lesson; confirmed current against the live NIST publication before writing.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A key pair is generated together; deriving one key from the other is computationally infeasible for a properly-sized key.</li>
+    <li>The same pair is used in opposite directions for confidentiality (encrypt with public, decrypt with private) vs. authentication (sign with private, verify with public).</li>
+    <li>Key length is a tunable security/performance trade-off, not a fixed property — Lesson 5 compares RSA vs. ECC directly.</li>
+    <li>A private key's real-world security depends entirely on file permissions, passphrase protection, and where it's stored — the math alone doesn't protect a poorly-guarded key file.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why can you hand out your public key freely but never your private key?</li>
+<li>Which key do you encrypt with, and which do you decrypt with, for confidentiality? Which for authentication?</li>
+<li>What does a larger key length actually improve, and what does it cost?</li>
+<li>What real-world failure does a modulus mismatch between a certificate and a private key indicate?</li>
+</ul>
+
+<footer class="teacher-reminder">If your two openssl md5 sums in the lab didn't match and you expected them to, paste your exact commands back to your teacher and we'll find where the pairing broke.</footer>
+
+<div class="lesson-nav">
+  <a href="0002-cryptography-fundamentals.html">&larr; Previous: Cryptography Fundamentals</a>
+  <a href="0004-signatures-key-exchange-entropy.html">Next: Digital signatures, key exchange, and entropy &rarr;</a>
+</div>
+
+</body>
+</html>
