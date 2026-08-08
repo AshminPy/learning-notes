@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 4 — Digital Signatures, Key Exchange, and Entropy</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 4 of 106</p>
+<h1>Digital Signatures, Key Exchange, and Entropy</h1>
+
+<h2>What you will learn</h2>
+<p>How to actually sign and verify data with OpenSSL, what "forward secrecy" means and why ECDHE key exchange provides it, and why the randomness used to generate a key matters as much as the algorithm itself — including a real, documented incident where weak randomness broke thousands of keys that were otherwise generated "correctly."</p>
+
+<h2>Why this matters</h2>
+<p>Lessons 2 and 3 explained signatures and key exchange conceptually. This lesson makes both hands-on and adds the piece that quietly underlies every key you've generated so far: where does the randomness actually come from, and what happens when there isn't enough of it? This question has caused real, large-scale security failures — not hypothetical ones.</p>
+
+<h2>Simple explanation</h2>
+<p>Signing is "prove I made this, unaltered." Key exchange is "let's agree on a secret, in public, that an eavesdropper watching us can't reconstruct." Entropy is the raw unpredictability that everything above secretly depends on — a key generated from a predictable source is like a padlock combination chosen by always picking a family birthday: the lock mechanism can be flawless, and the combination is still guessable.</p>
+
+<h2>How it works</h2>
+
+<h3>Forward secrecy — why key exchange matters even when you already have certificates</h3>
+<p>You might reasonably ask: if Bob already has a certificate proving his identity via a public/private key pair, why does TLS also do a separate key-exchange step (Lesson 2's Diffie-Hellman/ECDHE) instead of just encrypting everything directly with that key pair? The answer is <strong>forward secrecy</strong>: if a connection uses ECDHE to generate a fresh, temporary (<strong>ephemeral</strong> — the "E" in ECDHE) shared secret for each session, then even if an attacker later steals the server's long-term private key, they cannot decrypt <em>previously recorded</em> traffic — each past session's key is already gone, never stored, and can't be recomputed from the long-term key alone. Without ephemeral key exchange, a single future key compromise would retroactively expose every past conversation that was ever recorded and stored by an attacker (a real strategy called <strong>harvest-now-decrypt-later</strong>, which Stage V's post-quantum lessons return to).</p>
+
+<h3>Entropy: the randomness your keys are built from</h3>
+<p>Every key generation command you ran in Lesson 3 pulled randomness from your operating system's cryptographically secure random number generator (on Linux, ultimately <code>/dev/urandom</code>, seeded from real hardware/environmental noise). If that pool of randomness is predictable — because a system just booted and hasn't gathered enough entropy yet, because a bug feeds it the same seed repeatedly, or because a virtual machine template gets cloned before generating its own fresh entropy — then keys "generated correctly" by a correct algorithm can still be guessable, or even identical across supposedly-independent machines.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>Diffie-Hellman / ECDHE key exchange (ephemeral, per-session)
+
+  Alice generates a temporary  ─────────▶  public value A
+  (ephemeral) key pair, session-only
+
+                                 Bob generates a temporary
+                    public value B  ◀───── (ephemeral) key pair, session-only
+
+  Alice combines: (her ephemeral private key) + B  ──▶  shared secret
+  Bob   combines: (his ephemeral private key)  + A  ──▶  SAME shared secret
+
+  Eve saw only A and B (public) — cannot derive the shared secret.
+  Session ends → ephemeral keys are discarded → secret is gone forever,
+  even if Alice's and Bob's LONG-TERM certificate keys are stolen later.</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Forward secrecy</strong> (also "perfect forward secrecy," PFS) — past sessions stay secure even if a long-term private key is later compromised.</li>
+<li><strong>Ephemeral key</strong> — a temporary key generated fresh for one session/purpose, then discarded — the "E" in ECDHE.</li>
+<li><strong>Entropy</strong> — a measure of true unpredictability available to seed random number generation.</li>
+<li><strong>CSPRNG</strong> — cryptographically secure pseudo-random number generator; the specific class of random source safe to use for key generation (never a general-purpose, non-cryptographic random function).</li>
+<li><strong>Harvest-now-decrypt-later</strong> — an attacker records encrypted traffic today, betting on breaking the encryption later (e.g. with future quantum computers) — Stage V covers this in depth.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>In 2008, a change to Debian's OpenSSL package accidentally removed most of the sources feeding its random number generator, without anyone noticing for about two years. Every key generated on an affected Debian or Ubuntu system during that window came from a pool of only around 32,768 possible values instead of astronomically many — meaning an attacker could simply generate and check every possible key in that tiny space. Tens of thousands of real, deployed keys (SSH keys, TLS certificates) had to be identified and reissued. The algorithms (RSA, DSA) were never broken — the randomness feeding them was, which is exactly this lesson's point: algorithm strength and entropy quality are two separate requirements, and a failure in either one breaks the whole system.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B (no Windows needed).</em> Sign a file and verify the signature, using the RSA key pair from Lesson 3:</p>
+<pre><code># Sign a file with your private key
+openssl dgst -sha256 -sign rsa-private.key -out message.sig message.txt
+
+# Verify the signature with the matching public key
+openssl dgst -sha256 -verify rsa-public.key -signature message.sig message.txt
+# Expected output: Verified OK
+
+# Now tamper with the file and re-verify
+echo "extra line" >> message.txt
+openssl dgst -sha256 -verify rsa-public.key -signature message.sig message.txt
+# Expected output: Verification Failure</code></pre>
+<p>This is Lesson 2's signing/verification model made concrete: the signature is tied to the exact byte content of the file at signing time, not to the file's name or location.</p>
+
+<h2>What can go wrong</h2>
+<p>Verification silently fails (or is skipped entirely) when the wrong public key is used — for example, verifying against a different key pair than the one that actually signed the data. OpenSSL will report "Verification Failure" clearly, but application code that doesn't check the return value of a verification call, or that logs a failure without stopping processing, effectively accepts unsigned or forged data while believing it's protected.</p>
+
+<h2>Troubleshooting</h2>
+<p>If a verification that should succeed keeps failing, check in order: (1) is the exact same file/byte content being verified as what was signed — even trailing whitespace or line-ending differences (CRLF vs LF) will break it, (2) is the public key actually the match for the private key that signed it (Lesson 3's modulus check), (3) is the same hash algorithm being used on both ends (a SHA-256 signature won't verify against a SHA-1 hash of the same content).</p>
+
+<h2>Security considerations</h2>
+<p>Never generate long-term keys on a freshly-booted system, a container image baked before boot-time entropy gathering, or a cloned VM template without confirming fresh entropy — this is precisely the failure class the Debian incident represents, and cloud/container environments can reintroduce the same risk if images are cloned improperly. Modern Linux kernels (5.x+) block key-generation-relevant randomness calls until sufficient entropy is available specifically to prevent this class of bug, but older or embedded systems may not.</p>
+
+<h2>Production best practices</h2>
+<p>Prefer cipher suites and TLS configurations that mandate ephemeral (ECDHE) key exchange over static key exchange, specifically for the forward-secrecy property — Stage E's TLS lessons show how to verify which mode a given connection actually negotiated. For entropy, trust your operating system's CSPRNG rather than rolling custom randomness, and be cautious about key generation immediately after provisioning a new VM or container from a template.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "What is forward secrecy, and why does it matter?" <strong>A:</strong> "Forward secrecy means that even if an attacker later steals a server's long-term private key, they can't decrypt past sessions they recorded earlier. It works because each session uses a fresh, ephemeral key exchange (ECDHE) that's discarded afterward and never derivable from the long-term key. Without it, one future key compromise retroactively exposes every past recorded session."</p>
+<p><strong>Interview Q:</strong> "Can a correctly-implemented algorithm still produce a breakable key?" <strong>A:</strong> "Yes — if the randomness used to generate it is weak or predictable. The 2008 Debian OpenSSL incident is the canonical example: correct algorithms, broken entropy, tens of thousands of guessable keys."</p>
+
+<h2>Source</h2>
+<p><a href="https://www.debian.org/security/2008/dsa-1571" target="_blank" rel="noopener">Debian Security Advisory DSA-1571-1</a> (the 2008 OpenSSL predictable-randomness incident) and NIST SP 800-90A, <a href="https://csrc.nist.gov/pubs/sp/800/90/a/r1/final" target="_blank" rel="noopener">"Recommendation for Random Number Generation Using Deterministic Random Bit Generators"</a> — both confirmed current against live sources before writing.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Ephemeral (ECDHE) key exchange provides forward secrecy: past sessions stay safe even if a long-term key is stolen later.</li>
+    <li>Signing ties data to an exact byte-for-byte content — any change, even whitespace, breaks verification.</li>
+    <li>Entropy quality is a separate requirement from algorithm correctness — a correct algorithm fed weak randomness still produces breakable keys, as the 2008 Debian incident showed at real scale.</li>
+    <li>Never generate long-term keys on freshly-booted or freshly-cloned systems without confirming adequate entropy.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What specifically does forward secrecy protect against?</li>
+<li>Why does changing even one whitespace character break a signature verification?</li>
+<li>What went wrong in the 2008 Debian OpenSSL incident, and what didn't go wrong (which algorithms stayed intact)?</li>
+<li>What's the practical risk of generating a long-term key immediately on a freshly-cloned VM?</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's tampered-file verification didn't fail the way you expected, paste your exact commands back to your teacher and we'll trace through what actually got signed vs. verified.</footer>
+
+<div class="lesson-nav">
+  <a href="0003-symmetric-asymmetric-keys.html">&larr; Previous: Symmetric vs Asymmetric Keys</a>
+  <a href="0005-rsa-vs-ecc.html">Next: RSA vs ECC &rarr;</a>
+</div>
+
+</body>
+</html>

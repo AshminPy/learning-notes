@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 2 — Cryptography Fundamentals</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 2 of 106</p>
+<h1>Cryptography Fundamentals: Encryption, Hashing, Signing, and Key Exchange</h1>
+
+<h2>What you will learn</h2>
+<p>Four operations that get confused constantly — encryption, hashing, signing, and key exchange — solve four different problems, use different math, and are not interchangeable. You'll also meet symmetric vs. asymmetric encryption, the algorithms behind them (AES, RSA, ECC), and why a public/private key pair is the single idea the rest of this course is built on.</p>
+
+<h2>Why this matters</h2>
+<p>Lesson 1 ended with four problems: confidentiality, integrity, authentication, non-repudiation. This lesson gives you the actual tools that solve them — and if you mix up which tool solves which problem, every later lesson (CSRs, certificate fields, TLS handshakes, AD CS templates) will feel like memorized trivia instead of a coherent system. Get this one distinction right and the rest of the course clicks into place.</p>
+
+<h2>Simple explanation</h2>
+<p>Imagine four completely different physical actions: <strong>locking</strong> a box so only someone with the right key can open it (encryption), <strong>taking a fingerprint</strong> of a document so any change to it is detectable (hashing), <strong>signing</strong> a document with a seal only you could have made (digital signature), and <strong>agreeing on a secret handshake</strong> with someone in full view of a crowd without the crowd learning the handshake (key exchange). All four use "keys" and "math," which is exactly why people conflate them — but they answer different questions, and you can do any one without the others.</p>
+
+<h2>How it works</h2>
+
+<h3>Symmetric vs. asymmetric encryption</h3>
+<p><strong>Symmetric encryption</strong> uses one shared key for both locking and unlocking — fast, but both parties need the same secret key already, which brings back Lesson 1's problem (how do two strangers agree on a secret over an insecure channel?). <strong>AES</strong> is the standard symmetric algorithm in use today.</p>
+<p><strong>Asymmetric (public-key) encryption</strong> uses a mathematically linked <em>pair</em> of keys: whatever the <strong>public key</strong> locks, only the matching <strong>private key</strong> can unlock, and the private key is never shared. This solves the "strangers with no prior secret" problem — Alice can publish her public key anywhere, and anyone can encrypt a message to her that only she can decrypt. <strong>RSA</strong> and <strong>ECC</strong> (elliptic-curve cryptography) are the two dominant asymmetric families; Lesson 5 compares them directly.</p>
+<p>In practice, TLS uses <em>both</em>: asymmetric crypto to solve the identity/key-exchange problem, then switches to fast symmetric encryption (AES) for the actual bulk data — you'll see this exact handoff in Stage E's TLS handshake lessons.</p>
+
+<h3>Hash functions</h3>
+<p>A <strong>hash function</strong> takes any input and produces a fixed-length fingerprint. Change one character of the input, and the fingerprint changes completely and unpredictably. Hashing is <em>one-way</em> — you can't reverse a hash back into its original input — and it uses no keys at all. Hashing alone proves a message wasn't altered; it proves nothing about who sent it. <strong>SHA-2</strong> and <strong>SHA-3</strong> are the current standard hash families (SHA-1 is broken and obsolete — never use it for anything security-relevant).</p>
+
+<h3>Digital signatures</h3>
+<p>A digital signature combines hashing with asymmetric encryption to solve authentication <em>and</em> integrity <em>and</em> non-repudiation at once: the sender hashes the message, then encrypts that hash with their <em>private</em> key. Anyone with the sender's <em>public</em> key can decrypt the signature back into the hash, independently hash the message themselves, and compare. If they match, three things are proven simultaneously: the message wasn't altered (integrity), it came from whoever holds that private key (authentication), and the sender can't credibly deny sending it (non-repudiation) — because only they hold that private key.</p>
+
+<h3>Key exchange</h3>
+<p><strong>Key exchange</strong> solves a narrower, specific problem: how do two parties agree on a shared symmetric key, in full view of an eavesdropper, without ever transmitting that key itself? <strong>Diffie-Hellman</strong> (and its elliptic-curve variant, <strong>ECDH</strong>/<strong>ECDHE</strong>) solves this using math where each side can compute the same shared secret from public information, but an eavesdropper watching the exchange cannot. This is a distinct operation from encrypting a message or signing one — it produces a shared secret, not a locked message or a signature.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>ENCRYPTION (confidentiality)
+  Alice's message ──[locked with Bob's PUBLIC key]──▶ only Bob's PRIVATE key opens it
+
+HASHING (integrity only — no keys, no identity)
+  Document ──[hash function]──▶ fixed-length fingerprint
+  Change 1 byte ──[hash function]──▶ completely different fingerprint
+
+SIGNING (integrity + authentication + non-repudiation)
+  Alice: hash(message) ──[encrypt hash with Alice's PRIVATE key]──▶ signature
+  Bob:   decrypt signature with Alice's PUBLIC key ──▶ compare to his own hash(message)
+         match ──▶ proves Alice sent it, unaltered
+
+KEY EXCHANGE (agreeing on a shared secret, in public)
+  Alice: public info A ───────────────▶
+                          ◀─────────── Bob: public info B
+  Alice computes secret from (A, her private value, B)
+  Bob   computes secret from (B, his private value, A)
+  Both arrive at the SAME shared secret — Eve, watching A and B, cannot</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Symmetric encryption</strong> — one shared key, both directions (e.g. AES).</li>
+<li><strong>Asymmetric encryption</strong> — a public/private key pair; what one locks, only the other unlocks (e.g. RSA, ECC).</li>
+<li><strong>Public key</strong> — safe to share with anyone.</li>
+<li><strong>Private key</strong> — never shared, ever (Stage O covers this in depth).</li>
+<li><strong>Hash function</strong> — one-way fingerprint, no keys involved (SHA-2, SHA-3).</li>
+<li><strong>Digital signature</strong> — a hash, encrypted with the signer's private key.</li>
+<li><strong>Key exchange</strong> — two parties deriving the same shared secret in public (Diffie-Hellman, ECDH/ECDHE).</li>
+<li><strong>Entropy</strong> — the unpredictability that makes a key hard to guess; keys generated from a weak or predictable random source are breakable regardless of algorithm strength.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>A wax seal on an old letter is a physical digital-signature analogy: the sender presses a unique signet ring (their "private key") into wax. Anyone who has seen the seal before (knows the "public key" — what the seal looks like) can verify the letter came from that sender and wasn't reopened and altered. But the wax seal doesn't keep the letter's <em>contents</em> secret from anyone who intercepts it — that's a separate problem (encryption), solved by a different action (sealing the envelope itself, or writing in a cipher).</p>
+
+<h2>Hands-on lab</h2>
+<p>Compute a hash and observe the avalanche effect (no keys needed yet — key generation starts in Lesson 5):</p>
+<pre><code># Hash a short string
+echo -n "Alice pays Bob $100" | openssl dgst -sha256
+
+# Change one character and hash again
+echo -n "Alice pays Bob $900" | openssl dgst -sha256</code></pre>
+<p>Compare the two outputs. Expected result: completely different hashes, with no visible relationship to each other, despite the input differing by a single character. This is the property that makes hashing useful for detecting tampering — a forged message can't be quietly patched to also produce the original valid hash.</p>
+
+<h2>What can go wrong</h2>
+<p>The most common conceptual mistake: assuming a hash proves who sent something. It doesn't — hashing has no keys and no identity attached to it at all. A hash only proves a message matches a specific fingerprint; anyone (including an attacker) can compute the hash of anything, including a forged message. Only a <em>signature</em> (a hash encrypted with a private key) ties a message to an identity.</p>
+
+<h2>Troubleshooting</h2>
+<p>If two systems disagree on whether a signature is valid, the fault almost always traces to one of: the wrong public key being used to verify (mismatched key pair), the message being altered even slightly after signing (changes the hash, breaks the match), or a hash/signature algorithm mismatch between signer and verifier. Stage Q's Incident 7 ("certificate and private key do not match") is this same category of failure applied specifically to certificates.</p>
+
+<h2>Security considerations</h2>
+<p>Never reuse a symmetric key across unrelated purposes, and never treat a hash as a substitute for a signature when authentication matters — a checksum-only integrity check (common in older or poorly-designed systems) can be silently regenerated by an attacker who modifies both the message and its accompanying hash together. Only a signature, verified with a public key the verifier already trusts, resists this.</p>
+
+<h2>Production best practices</h2>
+<p>Use current, unbroken algorithms only: AES for symmetric encryption, RSA or ECC for asymmetric operations, SHA-2/SHA-3 for hashing, ECDHE for key exchange when forward secrecy matters (Stage E explains why). Never use SHA-1 or MD5 for anything security-relevant — both are cryptographically broken, a fact worth stating explicitly since older documentation and legacy systems still reference them as if current.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "What's the difference between encryption, hashing, and signing?" <strong>A:</strong> "Encryption is reversible and provides confidentiality — you can decrypt it back to the original. Hashing is one-way and provides integrity only — no keys, no identity, just a fingerprint. Signing combines hashing with asymmetric encryption to prove integrity, authentication, and non-repudiation all at once, using the signer's private key. They solve three different problems and none of them substitutes for another."</p>
+<p><strong>Interview Q:</strong> "Why do we need key exchange if asymmetric encryption already lets two strangers communicate?" <strong>A:</strong> "Asymmetric encryption is computationally expensive for bulk data. Key exchange lets two parties agree on a fast symmetric key using asymmetric math, then switch to symmetric encryption for the actual traffic — this is exactly what happens in a TLS handshake."</p>
+
+<h2>Source</h2>
+<p>NIST FIPS 197 (<a href="https://csrc.nist.gov/pubs/fips/197/final" target="_blank" rel="noopener">AES</a>), NIST FIPS 180-4 (<a href="https://csrc.nist.gov/pubs/fips/180-4/upd1/final" target="_blank" rel="noopener">SHA-2</a>), and NIST SP 800-56A (<a href="https://csrc.nist.gov/pubs/sp/800/56/a/r3/final" target="_blank" rel="noopener">key-establishment schemes including Diffie-Hellman/ECDH</a>) — foundational algorithm standards, confirmed current against live NIST publications before writing.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Encryption (reversible, confidentiality), hashing (one-way, integrity only, no keys), signing (hash + private-key encryption, proves identity), and key exchange (agreeing on a shared secret in public) are four distinct operations.</li>
+    <li>Symmetric encryption (AES) is fast but requires a pre-shared key; asymmetric encryption (RSA/ECC) solves that using a public/private key pair.</li>
+    <li>A digital signature proves integrity, authentication, and non-repudiation together — a plain hash proves none of those beyond "the content matches."</li>
+    <li>TLS uses asymmetric crypto to establish identity and a shared key, then symmetric crypto for the actual data — this pairing shows up throughout the rest of this course.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why doesn't a hash alone prove who sent a message?</li>
+<li>What three things does a digital signature prove simultaneously?</li>
+<li>Why does TLS use both asymmetric and symmetric encryption instead of just one?</li>
+<li>What specific problem does key exchange solve that asymmetric encryption alone doesn't?</li>
+</ul>
+
+<footer class="teacher-reminder">If the encryption/hashing/signing/key-exchange distinction still feels blurry, describe a scenario back to your teacher (e.g. "does X prove Y?") and we'll trace through which operation actually applies.</footer>
+
+<div class="lesson-nav">
+  <a href="0001-why-pki-exists.html">&larr; Previous: Why PKI Exists</a>
+  <a href="0003-symmetric-asymmetric-keys.html">Next: Symmetric vs asymmetric encryption and keys &rarr;</a>
+</div>
+
+</body>
+</html>

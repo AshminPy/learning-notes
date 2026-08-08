@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 — Why PKI Exists</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 1 of 106</p>
+<h1>Why PKI Exists</h1>
+
+<h2>What you will learn</h2>
+<p>Why passwords alone can't secure a conversation between two strangers on the internet, and what four specific problems (identity, confidentiality, integrity, non-repudiation) have to be solved before "secure communication" means anything concrete.</p>
+
+<h2>Why this matters</h2>
+<p>Alice wants to send Bob her bank account number over the internet. Eve is on the same network and can read every packet. Bob has never met Alice in person. Before you can understand a single certificate field, OCSP responder, or AD CS template later in this course, you need to feel — not just recite — why this exact situation is unsolvable with a password alone. Every remaining stage of this course is machinery built to solve this one problem.</p>
+
+<h2>Simple explanation</h2>
+<p>Say Alice and Bob agree on a secret password over the phone, then use it to "lock" messages between them online. That stops a random stranger from reading the messages — as long as nobody else learns the password. But it silently assumes something huge: that the phone call itself wasn't being listened to, and that nobody can trick Bob into using the wrong password with the wrong person. A password scheme protects a secret <em>after</em> both sides already trust each other and share it. It does nothing to establish that trust in the first place, and it does nothing if Alice and Bob have never spoken before at all — which describes almost every connection you make online. You didn't call your bank to agree on a password before opening its website.</p>
+
+<h2>How it works</h2>
+<p>Break "secure communication" into four separate problems, because treating them as one problem is where most confusion about PKI starts:</p>
+<ul>
+<li><strong>Confidentiality</strong> — can Eve read the message? (Encryption solves this — Lesson 2.)</li>
+<li><strong>Integrity</strong> — did Eve change the message in transit without Bob noticing? (Hashing/signatures solve this — Lesson 2.)</li>
+<li><strong>Authentication / Identity</strong> — is Bob actually talking to Alice, or to Eve pretending to be Alice? (This is the one encryption alone does <em>not</em> solve, and it's what PKI exists for.)</li>
+<li><strong>Non-repudiation</strong> — if Alice later denies sending the message, can Bob prove she did? (Digital signatures — Lesson 2.)</li>
+</ul>
+<p>Encrypting a channel between two parties is a solved, comparatively easy problem. Knowing <em>who</em> you just encrypted a channel with is the hard problem — you can have a perfectly encrypted, perfectly private conversation with Eve while believing she's Bob. This is called a <strong>man-in-the-middle attack</strong>, and it's the specific failure PKI's chain of trust (Stage D) exists to prevent.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>Without PKI:
+  Alice ────────────── "Hi, I'm Bob" ──────────────▶ (someone)
+         Eve intercepts, replies as "Bob"
+  Alice ◀───────────── "Hi Alice, send the account number" ──── Eve (pretending to be Bob)
+  Alice sends her real bank details, encrypted... to Eve.
+  The encryption worked perfectly. The identity check never happened.
+
+With PKI:
+  Alice ─────── "Prove you're Bob" ───────────────▶ Bob
+  Bob   ─────── presents a certificate, signed by ──▶ Alice
+                a CA Alice already trusts
+  Alice checks: does this signature actually trace back
+                to a CA I trust? ── yes ──▶ NOW encrypt and send</code></pre>
+<p>A certificate doesn't replace encryption — it answers the one question encryption can't: who, exactly, is on the other end of this encrypted channel.</p>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Alice / Bob / Eve</strong> — the standard cryptography convention: Alice and Bob are the two parties trying to communicate; Eve ("eavesdropper") is the attacker listening in. You'll see these names throughout PKI and cryptography literature.</li>
+<li><strong>Confidentiality</strong> — only the intended recipient can read the message.</li>
+<li><strong>Integrity</strong> — the message wasn't altered in transit.</li>
+<li><strong>Authentication</strong> — proof of who you're actually communicating with.</li>
+<li><strong>Non-repudiation</strong> — the sender can't credibly deny having sent it.</li>
+<li><strong>Trust</strong> — in PKI, this is never absolute — it's always trust in a specific, named third party (a Certificate Authority), not trust in the abstract.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>You already solve this problem offline without thinking about it. A passport doesn't just claim "this is Alice" — it's issued by a government authority that a border agent already trusts, has a photo bound to the claim, an expiration date, and tamper-evident physical security features. The agent doesn't know Alice personally; they trust the issuing authority, and the document's own construction makes forgery difficult to hide. A digital certificate is the same idea: a passport-shaped answer to "prove who you are," issued by an authority (a CA) the relying party already trusts, bound to a specific identity, with an expiration date and a tamper-evident cryptographic signature instead of a hologram.</p>
+
+<h2>Hands-on lab</h2>
+<p>No tooling needed yet — this lesson is conceptual scaffolding for everything that follows. Your first real hands-on lab (generating keys and a CSR) starts in Lesson 5 once RSA/ECC and the private/public key relationship are covered. For now, do this on paper: write down, in your own words, what specifically goes wrong in the "Without PKI" diagram above if Eve is on Alice's home Wi-Fi network. Then write down the exact moment a certificate would have stopped it. If you can't point to one exact moment, re-read "How it works" above before continuing to Lesson 2.</p>
+
+<h2>What can go wrong</h2>
+<p>The most common real failure isn't a broken algorithm — it's skipping the identity check entirely because encryption alone "feels secure." A surprising amount of internal company tooling encrypts traffic (TLS is on) while accepting any certificate, or no certificate at all, from the other side — which is functionally identical to the "Without PKI" diagram above, just with a padlock icon in the address bar giving false confidence.</p>
+
+<h2>Troubleshooting</h2>
+<p>There's no tool output to troubleshoot yet at this conceptual stage — but the diagnostic habit starts here: whenever you see "the connection is encrypted" treated as equivalent to "the connection is secure," ask the question this lesson is built around: encrypted with <em>whom</em>? That question is the seed of every certificate-validation troubleshooting flow later in this course (Stage Q).</p>
+
+<h2>Security considerations</h2>
+<p>Confidentiality without authentication is a common, dangerous half-measure. An attacker performing a man-in-the-middle attack doesn't need to break any encryption algorithm — they just need the victim to skip or misconfigure the identity check. This is why later lessons spend so much more time on certificate <em>validation</em> (Stage D) than on the encryption math itself (Stage A) — validation is where real-world PKI actually fails in practice.</p>
+
+<h2>Production best practices</h2>
+<p>When evaluating whether a system is "secure," always ask the four-problem question from this lesson separately: is it encrypted, is it tamper-evident, is the other party's identity actually verified, and can actions be attributed non-repudiably? A system that only answers "yes" to the first one is not secure — it's private between you and whoever is actually on the other end.</p>
+
+<h2>Exam and interview notes</h2>
+<p>No certification anchors this zero-to-hero course, but this exact distinction is one of the most common PKI interview questions in practice.</p>
+<p><strong>Interview Q:</strong> "If a connection is encrypted, is it secure?" <strong>A:</strong> "Not by itself. Encryption gives you confidentiality — Eve can't read the traffic. It says nothing about whether you're actually talking to who you think you are. Without authentication, you can have a perfectly encrypted conversation with an attacker. That's exactly what PKI's chain of trust exists to prevent."</p>
+
+<h2>Source</h2>
+<p>NIST SP 800-32, <a href="https://csrc.nist.gov/pubs/sp/800/32/final" target="_blank" rel="noopener">"Introduction to Public Key Technology and the Federal PKI Infrastructure"</a> — Section 2 defines the same four security services (confidentiality, integrity, authentication, non-repudiation) this lesson builds from. These are foundational, stable definitions, not fast-moving facts, and are unlikely to change; still confirmed current against the live NIST publication before writing.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>"Secure" splits into four separable problems: confidentiality, integrity, authentication, non-repudiation.</li>
+    <li>Encryption alone solves confidentiality — it does not prove who you're encrypting a channel with.</li>
+    <li>A man-in-the-middle attack succeeds specifically when identity/authentication is skipped, even if encryption is working perfectly.</li>
+    <li>PKI exists to solve the authentication problem at internet scale, between parties who have never met, using a trusted third party (a CA) instead of a shared secret.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>Why doesn't encryption alone stop a man-in-the-middle attack?</li>
+<li>What are the four security services this lesson splits "secure" into?</li>
+<li>How is a certificate similar to a passport, and where does the analogy break down?</li>
+<li>What question should you always ask when someone says a connection is "encrypted"?</li>
+</ul>
+
+<footer class="teacher-reminder">Stuck on the Alice/Bob/Eve scenario, or want to try a variation? Describe it back to your teacher and we'll work through where the attack would actually succeed or fail.</footer>
+
+<div class="lesson-nav">
+  <span>&larr; Start</span>
+  <a href="0002-cryptography-fundamentals.html">Next: Cryptography fundamentals &rarr;</a>
+</div>
+
+</body>
+</html>
