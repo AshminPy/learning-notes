@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 13 — Why google.com Works Instantly but internal.company.local Doesn't</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 13 of 106</p>
+<h1>Why google.com Works Instantly but internal.company.local Doesn't</h1>
+
+<h2>What you will learn</h2>
+<p>Why "it doesn't work" for an internal hostname is almost always two separate failures bundled into one complaint — a DNS resolution failure and a certificate trust failure — and why they have completely different causes and fixes. You'll learn why public names like <code>google.com</code> resolve and get trusted certificates instantly everywhere, why internal names like <code>internal.company.local</code> can never get a publicly-trusted certificate at all (a hard policy rule, not a technical gap), and why the <code>.local</code> suffix specifically carries an extra trap most engineers don't know about.</p>
+
+<h2>Why this matters</h2>
+<p>This is the single most common "PKI 101" confusion in real support tickets: someone sees a browser error on an internal site and assumes it's the same kind of problem as a public site not loading. It isn't. DNS resolution (can the name be looked up at all) and certificate trust (is the certificate presented at that address signed by something the client trusts) are two independent systems. Internal names typically fail the first because they live in a private DNS zone, and they can never pass the second with a publicly-trusted certificate because of an explicit CA/Browser Forum rule — which is exactly why every organization running internal services needs a private CA (Lesson 12) and a plan to distribute its trust into every device that needs it.</p>
+
+<h2>Simple explanation</h2>
+<p>Think of it as two separate doors a connection has to pass through. <strong>Door 1 (DNS):</strong> can your computer even find the address for this name? <strong>Door 2 (trust):</strong> does your computer trust the certificate presented at that address? <code>google.com</code> passes both doors instantly and everywhere — it's in the public DNS system anyone can query, and its certificate chains up to a root CA that's already baked into your OS and browser. <code>internal.company.local</code> usually fails door 1 outright (it's not in public DNS, only in your company's private DNS), and even if it somehow passed door 1, it would still fail door 2 with a publicly-trusted certificate — because public CAs are contractually forbidden from ever issuing one for a name like that.</p>
+
+<h2>How it works</h2>
+
+<h3>Door 1 — DNS resolution</h3>
+<p><code>google.com</code> resolves through the public DNS hierarchy: any resolver anywhere in the world can walk from the root servers to the <code>.com</code> TLD servers to Google's authoritative name servers and get an answer, with no special configuration. <code>internal.company.local</code> typically lives in a private/split-horizon DNS zone — often Active Directory-integrated DNS — that only answers queries from devices whose resolver is pointed at the company's internal DNS servers (on the corporate network, over VPN, or via a configured internal resolver). Outside that path, the name simply doesn't exist as far as DNS is concerned: <code>NXDOMAIN</code>, not a certificate error.</p>
+
+<h3>Door 2 — certificate trust, and why .local can never pass it</h3>
+<p><code>google.com</code>'s certificate is issued by a CA that's a member of every major root program (Chrome, Mozilla, Apple, Microsoft), and those roots ship pre-installed in every OS and browser trust store — zero extra configuration needed for trust to work. <code>internal.company.local</code> can never get that same treatment with a publicly-trusted certificate, because the CA/Browser Forum's Baseline Requirements explicitly prohibit publicly-trusted CAs from issuing certificates containing "Internal Server Names" or "Reserved IP Addresses" — names and addresses that aren't publicly resolvable and can't be domain-validated, and which different organizations could claim to own internally at the same time. This has been a hard issuance prohibition since <strong>November 11, 2015</strong>, with any certificates that already existed required to be revoked by <strong>October 1, 2016</strong>. It is a policy rule enforced by every public root program, not a technical limitation you can work around by asking a CA nicely or waiting.</p>
+<p>The <code>.local</code> suffix specifically has a second, independent problem: RFC 6762 (Multicast DNS) reserves the entire <code>.local</code> domain as a link-local special-use name — resolved via multicast (mDNS, the protocol behind Bonjour/Avahi), not ordinary unicast DNS, and meaningful only on the local network segment where the query originated. That means a name like <code>internal.company.local</code> can collide with mDNS resolution behavior on some devices, producing intermittent or confusing results that have nothing to do with your company's actual DNS zone — on top of the certificate-trust problem, which would exist even if you'd picked a suffix with no mDNS conflict at all.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>google.com                                internal.company.local
+-----------                                -----------------------
+DOOR 1 — DNS resolution
+  Public DNS hierarchy                       Private/split-horizon DNS zone
+  (root -> .com TLD -> authoritative)         (only answered by internal resolvers)
+  Works from anywhere, no config.             NXDOMAIN off the corporate network/VPN.
+
+DOOR 2 — certificate trust
+  Cert issued by a publicly-trusted CA        Can NEVER get a publicly-trusted cert:
+  (root already in every OS/browser           CA/Browser Forum bans issuance for
+  trust store — zero config needed)           Internal Server Names (since 2015-11-11)
+                                               Needs a PRIVATE CA (Lesson 12) whose
+                                               root must be manually distributed to
+                                               every trusting device (GPO/MDM/config mgmt)
+
+Extra trap for the ".local" suffix specifically:
+  RFC 6762 reserves .local for multicast DNS (mDNS) — link-local only,
+  can be intercepted by Bonjour/Avahi instead of your intended DNS zone.</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Public DNS hierarchy</strong> — the globally queryable root → TLD → authoritative name server chain that resolves names like <code>google.com</code> from anywhere.</li>
+<li><strong>Split-horizon / private DNS zone</strong> — a DNS zone (often Active Directory-integrated) that only answers queries from resolvers configured to reach it, typically inside the corporate network or VPN.</li>
+<li><strong>Internal Server Name / Reserved IP Address</strong> — CA/Browser Forum terms for names and addresses that aren't publicly resolvable or assignable; publicly-trusted CAs are banned from issuing certificates for either.</li>
+<li><strong>Root program</strong> — the audited process (Chrome, Mozilla, Apple, Microsoft) by which a CA's root certificate gets pre-installed as trusted in an OS or browser.</li>
+<li><strong>mDNS (Multicast DNS)</strong> — RFC 6762's link-local name resolution protocol that reserves the entire <code>.local</code> domain, independent of ordinary unicast DNS.</li>
+<li><strong>Trust-store distribution</strong> — the act of pushing a private CA's root certificate into devices' trust stores (GPO, MDM, configuration management) so their certificates become trusted — this never happens automatically the way public root programs do it.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>An engineer stands up <code>internal.company.local</code> and tries to request a certificate from a public CA for it. The request is refused outright — not because of a paperwork issue, but because CA/Browser Forum policy makes it impossible: the name can't be publicly domain-validated and is explicitly banned from public certificates. The team instead deploys a private CA (Lesson 12) and pushes its root certificate to every corporate-managed laptop via Group Policy. A new hire's personal, unmanaged laptop later connects to the same site over VPN — DNS resolves fine, the page loads, but the browser shows an untrusted-certificate warning, because that laptop never received the internal root CA. Same site, same certificate, two different outcomes — because trust-store distribution, not DNS, is the variable that changed.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Compare a public name's instant DNS + trust against a private name where you control (and initially don't have) trust:</p>
+<pre><code># 1. Public DNS resolves instantly, no config
+dig +short google.com
+
+# 2. A name like internal.company.local won't resolve at all
+#    unless your resolver is pointed at a private DNS zone
+dig +short internal.company.local
+
+# 3. Inspect google.com's real certificate chain (works with zero setup)
+openssl s_client -connect google.com:443 -showcerts &lt;/dev/null 2&gt;/dev/null \
+  | openssl x509 -noout -issuer -subject
+
+# 4. Build a tiny private CA + leaf cert for a name that could NEVER be public
+openssl req -x509 -newkey rsa:2048 -keyout ca.key -out ca.crt -days 3650 \
+  -subj "/CN=Company Internal Root CA" -noenc
+
+openssl req -newkey rsa:2048 -keyout internal.key -out internal.csr \
+  -subj "/CN=internal.company.local" -noenc \
+  -addext "subjectAltName=DNS:internal.company.local"
+
+openssl x509 -req -in internal.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -out internal.crt -days 365 -copy_extensions copy
+
+# 5. Verify WITHOUT trusting the private CA (simulates a fresh, undistributed laptop)
+openssl verify internal.crt
+
+# 6. Verify again, explicitly trusting the private CA (simulates GPO/MDM distribution)
+openssl verify -CAfile ca.crt internal.crt</code></pre>
+<p>Expected result: step 2 returns nothing (or your shell's resolver error) unless you have a private zone configured, while step 1 always returns an IP. Step 5 fails with something like <code>error 20 at 0 depth lookup: unable to get local issuer certificate</code> — exactly what a browser shows a device that never got the internal root. Step 6 reports <code>internal.crt: OK</code> — nothing about the certificate changed between steps 5 and 6, only whether the verifier was told to trust the issuing CA. That's the whole lesson in two command outputs.</p>
+
+<h2>What can go wrong</h2>
+<p>Assuming a private suffix like <code>.local</code>, <code>.internal</code>, or <code>.corp</code> will eventually get a publicly-trusted certificate if you just ask the right CA — it won't; it's a hard policy prohibition enforced by every root program, not a technical limitation with a workaround. Using <code>.local</code> specifically for an internal DNS zone and being surprised when resolution behaves inconsistently across devices — that inconsistency is RFC 6762's mDNS reservation colliding with your intended unicast DNS zone. Treating "DNS resolves" and "certificate is trusted" as the same signal — a site can resolve perfectly and still show a trust error, or (less commonly) fail to resolve while a cached/pinned trust decision elsewhere makes it look like a "certificate problem."</p>
+
+<h2>Troubleshooting</h2>
+<p>When someone reports "internal.company.local doesn't work," isolate which door failed before touching anything. Run <code>dig</code>/<code>nslookup</code> for the name from the affected machine: if it's <code>NXDOMAIN</code>, the problem is DNS resolver configuration (is the device pointed at internal DNS, connected to VPN/corporate network) — not a certificate issue at all. If the name resolves but the browser shows a trust/certificate warning, the problem is almost always that this specific device's trust store never received the internal CA's root certificate — check the GPO/MDM/config-management distribution status for that device, not the certificate itself (which is likely fine).</p>
+
+<h2>Security considerations</h2>
+<p>Never try to route around the public-CA prohibition by reusing a publicly-trusted certificate issued for a legitimate public name (e.g. <code>mail.company.com</code>) on an internal name it wasn't issued for — beyond the obvious SAN mismatch, every publicly-trusted certificate is logged in Certificate Transparency logs, which would expose your internal naming and network structure publicly. Protect a private CA's root key with the same rigor as any root CA (offline storage, Stage O key security) — anyone who can get a device onto the internal trust-distribution path can have that device trust certificates impersonating any internal name the CA is willing to sign.</p>
+
+<h2>Production best practices</h2>
+<p>Run a real private CA (Lesson 12) for internal names, with trust distribution automated — Group Policy for domain-joined Windows devices, MDM profiles for managed endpoints, configuration management (Ansible/Chef/Puppet) for servers — rather than manually installing root certificates machine by machine. Avoid the <code>.local</code> suffix for any DNS zone you intend to resolve over ordinary unicast DNS; prefer a suffix like <code>.corp</code> or a subdomain of a domain you actually own and don't publicly delegate (e.g. <code>internal.example.com</code>) to sidestep the RFC 6762 mDNS collision entirely. Document exactly which device populations receive the internal root distribution, so an "untrusted certificate" warning on an unmanaged or offboarded device is recognized as expected security behavior, not treated as a bug to fix.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "Why can't I just get a public CA to issue a certificate for my internal server name?" <strong>A:</strong> "CA/Browser Forum Baseline Requirements have banned publicly-trusted CAs from issuing certificates for Internal Server Names or Reserved IP Addresses since November 11, 2015 — any that existed had to be revoked by October 1, 2016. It's a hard policy rule enforced across every root program, because those names can't be publicly domain-validated and could be claimed internally by more than one organization."</p>
+<p><strong>Interview Q:</strong> "A colleague says DNS resolution and certificate trust are basically the same problem. Are they right?" <strong>A:</strong> "No — they're two independent systems. DNS resolution answers 'can this name be looked up at all'; certificate trust answers 'do I trust the signer of the certificate presented at that address.' A name can resolve perfectly and still fail trust, or fail to resolve while trust would have been fine — diagnosing which one actually failed determines whether the fix is a DNS/resolver change or a trust-store distribution gap."</p>
+
+<h2>Source</h2>
+<p>CA/Browser Forum, <a href="https://cabforum.org/working-groups/server/internal-names/" target="_blank" rel="noopener">"Guidance on Internal Names"</a> (issuance prohibited from 2015-11-11; forced revocation by 2016-10-01) — fetched live 2026-08-08. IETF RFC 6762, <a href="https://www.rfc-editor.org/rfc/rfc6762" target="_blank" rel="noopener">"Multicast DNS"</a> (reserves <code>.local</code> as a link-local special-use domain, resolved via mDNS not unicast DNS) — fetched live 2026-08-08.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>"Doesn't work" for an internal name is usually two separate failures: DNS resolution and certificate trust — diagnose which one before touching anything.</li>
+    <li>Public names resolve via the public DNS hierarchy and get certificates from CAs whose roots are pre-installed in every trust store — zero extra config.</li>
+    <li>Internal names typically live in a private/split-horizon DNS zone, and can never get a publicly-trusted certificate — CA/Browser Forum has banned issuance for Internal Server Names since 2015-11-11, a hard policy rule.</li>
+    <li>The <code>.local</code> suffix adds a second, independent trap: RFC 6762 reserves it for multicast DNS (mDNS), which can collide with your intended unicast DNS zone.</li>
+    <li>Private names need a private CA (Lesson 12) plus deliberate trust-store distribution (GPO/MDM/config management) to every device that must trust them.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What are the two independent "doors" a connection to a hostname must pass, and which one does a plain <code>dig</code>/<code>nslookup</code> test?</li>
+<li>Since what date has the CA/Browser Forum banned issuance of publicly-trusted certificates for internal server names, and by when did existing ones have to be revoked?</li>
+<li>What extra problem does the <code>.local</code> suffix specifically introduce, separate from the certificate-trust issue?</li>
+<li>If a site resolves fine but a browser shows an untrusted-certificate warning, what's the most likely root cause — and what is it not?</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's step 6 (<code>openssl verify -CAfile ca.crt internal.crt</code>) doesn't return OK, paste the exact command and output back to your teacher — it's almost always a mismatched CA file or a missing <code>-copy_extensions copy</code> flag when signing, not a conceptual mistake.</footer>
+
+<div class="lesson-nav">
+  <a href="0012-public-pki-private-pki.html">&larr; Previous: Public PKI vs Private PKI</a>
+  <a href="0014-pki-secrets-management-iam.html">Next: PKI vs Secrets Management vs IAM &rarr;</a>
+</div>
+
+</body>
+</html>
