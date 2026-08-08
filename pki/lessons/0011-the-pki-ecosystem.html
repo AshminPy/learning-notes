@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 11 — The PKI Ecosystem: CAs, RAs, Repositories, and HSMs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 11 of 106</p>
+<h1>The PKI Ecosystem: CAs, RAs, Repositories, and HSMs</h1>
+
+<h2>What you will learn</h2>
+<p>The four core components that make up any real PKI deployment — the Certification Authority (CA), the Registration Authority (RA), the repository, and the Hardware Security Module (HSM) — what each one is actually responsible for per the standards that define them, how they hand work off to each other, and why conflating any two of them (a very common beginner mistake) causes real design and audit problems later in this course.</p>
+
+<h2>Why this matters</h2>
+<p>Every stage from here on — public issuance (Stage G), AD CS (Stage K), key security (Stage O), architecture (Stage T) — assumes you already know that "the CA" is not one monolithic thing. A CA doesn't necessarily verify identity itself (that can be an RA's job), doesn't necessarily hold its own signing key in software (that's the HSM's job), and doesn't necessarily publish revocation status itself (that's the repository's job). Engineers who think "CA" means "the one server that does everything" struggle the moment they meet a real deployment — a public CA with a Delegated Third Party doing domain validation, or an enterprise CA whose private key lives in a separate HSM appliance it doesn't administer.</p>
+
+<h2>Simple explanation</h2>
+<p>Think of getting a passport. The <strong>RA</strong> is the passport office counter clerk who checks your ID and application — they verify who you are, but they don't print the passport. The <strong>CA</strong> is the passport-issuing authority that actually approves and signs your passport once the clerk's verification comes back clean. The <strong>HSM</strong> is the vault where the government's official signing die/seal is kept, physically locked away — the CA sends data to the vault to be stamped, but the stamp itself never leaves the vault. The <strong>repository</strong> is the public directory anyone can query to check "is this passport number still valid, or has it been reported lost/revoked?" Four different jobs, four different trust boundaries, and in a real deployment often four different pieces of software run by different teams.</p>
+
+<h2>How it works</h2>
+
+<h3>Certification Authority (CA)</h3>
+<p>Per RFC 3647 (the standard framework for certificate policies), a CA is defined simply as "the entities that issue certificates" — and precisely: "A CA is the issuing CA with respect to the certificates it issues and is the subject CA with respect to the CA certificate issued to it." That second half matters: every CA except a root is simultaneously an issuer (to the certificates below it) and a subject (of the certificate issued to it by the CA above it) — this is the chain-of-trust relationship Stage D covers in depth. The CA's core job is narrow: take a request that's already been vetted, decide whether to approve it per policy, and produce a signed certificate.</p>
+
+<h3>Registration Authority (RA)</h3>
+<p>The CA/Browser Forum's TLS Baseline Requirements (current version 2.2.9, effective 2026-08-06) define an RA precisely: "Any Legal Entity that is responsible for identification and authentication of subjects of Certificates, but is not a CA, and hence does not sign or issue Certificates." An RA can be a fully separate organization (the Baseline Requirements call this a <strong>Delegated Third Party</strong> — "a natural person or Legal Entity that is not the CA... but is authorized by the CA to assist in the Certificate Management Process") or it can just be a function performed inside the CA's own systems. The critical point either way: <strong>the RA verifies, the CA decides and signs</strong> — RA approval is an input to the CA, never a certificate itself.</p>
+
+<h3>Repository</h3>
+<p>The repository is where a CA publishes what relying parties need to check trust after the fact: issued certificates, intermediate certificates, and — critically — revocation information (CRLs and/or OCSP responses, Stage I). Mozilla's Root Store Policy (current version 3.1, effective 2026-07-01) requires CAs to maintain this as a live, continuously available service, not a static download: CRLs for end-entity certificates "MUST be updated and reissued at least every seven days," and if a CA offers OCSP, that service "MUST update... at least every four days." Public CAs also publish into the <strong>CCADB</strong> (Common CA Database) — the centralized cross-root-program repository of intermediate certificate metadata that browsers and OSes pull from.</p>
+
+<h3>Hardware Security Module (HSM)</h3>
+<p>An HSM is a dedicated, tamper-resistant hardware device that generates and stores private keys and performs signing operations inside itself — the private key material never leaves the device in plaintext, even to the CA software that's requesting the signature. NIST FIPS 140-3, <em>"Security Requirements for Cryptographic Modules"</em> (final, 2019-03-22, superseding FIPS 140-2), defines four increasing security levels for exactly this kind of module: Level 1 (software-only, correct algorithm implementation, no physical protection), Level 2 (adds tamper-evidence and role-based authentication), Level 3 (adds tamper-<em>resistance</em> and identity-based authentication, with stricter separation of interfaces), and Level 4 (tamper-<em>active</em>, self-erasing on detected physical attack). Production CA root keys are the textbook case for Level 3 hardware. This is also where the CA's most sensitive act — the <strong>key generation ceremony</strong> — happens: root and often intermediate CA keys are generated inside the HSM, in front of auditor witnesses, following a scripted, recorded procedure, precisely because that key must never exist outside the module in a form anyone could copy.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>Subscriber (you)
+     |
+     |  1. submits identity info + CSR (Lesson 10)
+     v
+Registration Authority (RA)
+     |  verifies identity/domain control -- does NOT sign anything
+     |  2. approved request forwarded to the CA
+     v
+Certification Authority (CA)
+     |  3. sends the to-be-signed certificate data to the HSM
+     v
+Hardware Security Module (HSM)
+     |  private key never leaves the device; signs inside itself
+     |  4. returns the signature to the CA
+     v
+Certification Authority (CA)
+     |  5. assembles + publishes the finished certificate
+     v
+Repository (CRL / OCSP / CCADB / public directory)
+     |
+     v
+Relying party -- fetches the cert chain + checks revocation status here,
+                 independently, whenever it validates the certificate</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Certification Authority (CA)</strong> — the entity that decides to approve a request and signs the resulting certificate (RFC 3647).</li>
+<li><strong>Registration Authority (RA)</strong> — verifies identity/domain control on the CA's behalf; cannot sign or issue certificates itself (CA/Browser Forum Baseline Requirements).</li>
+<li><strong>Delegated Third Party</strong> — the CA/Browser Forum's formal term for an external organization performing an RA (or other delegated) function under contract to a CA.</li>
+<li><strong>Repository</strong> — the published, continuously-updated location where certificates and revocation status (CRL/OCSP) can be checked by anyone relying on the certificate.</li>
+<li><strong>HSM (Hardware Security Module)</strong> — tamper-resistant hardware that generates and holds private keys and performs signing inside itself; rated by FIPS 140-3 security level.</li>
+<li><strong>Key generation ceremony</strong> — the scripted, witnessed, recorded procedure for generating a CA's private key inside an HSM.</li>
+<li><strong>CCADB (Common CA Database)</strong> — the shared cross-root-program database public CAs disclose their intermediate certificates and audit data into.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>A public CA like DigiCert or Sectigo doesn't necessarily perform every domain-control check with its own staff — much of that validation work can run through automated systems that function as the RA layer, while the CA's own signing infrastructure — kept separate, HSM-backed, and heavily access-controlled — only ever sees an already-approved request. On the private side, Microsoft's Active Directory Certificate Services (AD CS, Stage K) collapses several of these roles into one Windows Server role by design: it acts as CA and (via domain-joined identity data) largely its own RA, since "existing endpoint identity information in Active Directory is used to register certificates" automatically (Microsoft Learn, updated 2026-05-12) — which is exactly why AD CS is fast to stand up for internal use, but why a badly-secured AD CS root (software key, no HSM, no ceremony) is a much bigger single point of failure than the same mistake would be for a public CA under root-program scrutiny.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> A real certificate's <code>X509v3 extensions</code> physically encode where its repository lives — the CA telling relying parties exactly where to check trust. Inspect a real one:</p>
+<pre><code># Fetch a real public leaf certificate directly from the server
+openssl s_client -connect www.google.com:443 -servername www.google.com \
+  </dev/null 2>/dev/null | openssl x509 -noout -text > google-cert.txt
+
+# Find the repository pointers the CA published inside the certificate
+grep -A2 "Authority Information Access" google-cert.txt
+grep -A2 "CRL Distribution Points" google-cert.txt</code></pre>
+<p>Expected result: <strong>Authority Information Access</strong> lists an OCSP URI (the live repository endpoint a browser queries for revocation status) and often a CA Issuers URI (where to fetch the intermediate certificate itself, for chain building — Stage D). <strong>CRL Distribution Points</strong>, if present, lists a URL serving the CRL. These are not abstract concepts — they're literal URLs the CA's repository serves, embedded by the CA at issuance time so every relying party knows where to look, without ever having to contact the CA's issuance systems directly.</p>
+
+<h2>What can go wrong</h2>
+<p>The most common design mistake is treating RA approval as if it were already trust — for example, an internal team builds an automated onboarding tool that verifies an employee's identity and then has it call the CA API directly with elevated issuance rights, blurring the line between "verified the request" and "is now allowed to sign anything." A second, common in smaller private PKI deployments: running the CA's private key in software on the same server that also handles requests, with no HSM at all — collapsing the CA and HSM boundary entirely, so a single server compromise yields the signing key.</p>
+
+<h2>Troubleshooting</h2>
+<p>If a chain-building failure ("unable to get local issuer certificate," Stage Q) traces back to a missing intermediate, check the CA's repository — specifically the Authority Information Access CA Issuers URI from the lab above — before assuming the client is misconfigured; a repository that's slow, unreachable, or serving a stale intermediate is a CA-side infrastructure problem, not a client bug. If OCSP responses are timing out or stale, check the repository's OCSP responder uptime and update cadence against the CA's disclosed policy (per Mozilla's four-day maximum update interval for CAs that offer OCSP) before assuming the client's revocation-checking logic is broken.</p>
+
+<h2>Security considerations</h2>
+<p>The HSM boundary is the single most consequential security control in the whole ecosystem: if a CA's private key ever exists outside the HSM in extractable form, every certificate that CA has ever issued or will issue is only as trustworthy as that one exposure event. Never let RA-level identity verification double as CA-level authorization — a compromised or careless RA should be able to submit bad requests, but a properly designed CA still enforces its own policy checks before signing, so an RA failure doesn't automatically become a CA failure. Repository availability is itself a security property, not just an operational one — relying parties that can't reach the repository to check revocation status will, per client policy, either fail closed (safer, more outages) or fail open (fewer outages, more risk) — Stage I and Stage Q cover this trade-off in depth.</p>
+
+<h2>Production best practices</h2>
+<p>Never run a production CA — public or private — with its private key in software; use an HSM rated for the CA's risk level (FIPS 140-3 Level 3 is the realistic production baseline for anything issuing certificates other people rely on) and perform root/intermediate key generation as a documented, witnessed ceremony, even for an internal-only private CA. Keep RA functions logically and, ideally, physically separate from CA signing infrastructure, so a compromise of the identity-verification layer doesn't hand an attacker signing capability. Treat repository uptime (CRL/OCSP) as a monitored production SLA (Stage R) — a CA that can issue certificates but can't reliably answer "is this one still valid" has effectively broken trust for everything it's issued.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "What's the difference between a CA and an RA?" <strong>A:</strong> "The RA verifies who's asking — identity or domain control — but can't sign or issue anything itself. The CA is the only entity that actually signs; it takes the RA's verified request as an input, applies its own policy, and produces the certificate. They're often separate organizations by design, precisely so identity verification and signing authority aren't the same trust boundary."</p>
+<p><strong>Interview Q:</strong> "Why does a CA's private key live in an HSM instead of on disk?" <strong>A:</strong> "Because the CA's entire trust model rests on that one key never being exposed — an HSM performs the signing operation internally and never releases the private key in usable form, even to the software requesting the signature. FIPS 140-3 defines the security levels these devices are rated against; a production root or issuing CA key is the textbook Level 3 use case."</p>
+
+<h2>Source</h2>
+<p>IETF RFC 3647, <a href="https://www.rfc-editor.org/rfc/rfc3647" target="_blank" rel="noopener">"Internet X.509 Public Key Infrastructure Certificate Policy and Certification Practices Framework"</a> (CA/RA participant definitions, Section 4.1.3) — fetched live 2026-08-08. CA/Browser Forum, <a href="https://cabforum.org/working-groups/server/baseline-requirements/requirements/" target="_blank" rel="noopener">TLS Baseline Requirements v2.2.9</a>, effective 2026-08-06 (RA and Delegated Third Party definitions, Publicly-Trusted Certificate definition) — fetched live 2026-08-08. Mozilla, <a href="https://www.mozilla.org/en-US/about/governance/policies/security-group/certs/policy/" target="_blank" rel="noopener">Root Store Policy v3.1</a>, effective 2026-07-01 (repository/CRL/OCSP update-interval requirements, CCADB) — fetched live 2026-08-08. NIST, <a href="https://csrc.nist.gov/pubs/fips/140-3/final" target="_blank" rel="noopener">FIPS 140-3, "Security Requirements for Cryptographic Modules"</a>, final 2019-03-22 (HSM security levels 1-4) — fetched live 2026-08-08. Microsoft Learn, <a href="https://learn.microsoft.com/en-us/windows-server/identity/ad-cs/active-directory-certificate-services-overview" target="_blank" rel="noopener">"What is Active Directory Certificate Services in Windows Server?"</a>, updated 2026-05-12 — fetched live 2026-08-08.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A CA signs; an RA verifies identity/domain control but never signs or issues anything itself — collapsing that boundary is a real, common design mistake.</li>
+    <li>A repository is the live, continuously-updated location (CRL/OCSP/CCADB) relying parties check for revocation status and intermediate certificates — its uptime is itself a security property.</li>
+    <li>An HSM performs signing inside tamper-resistant hardware so the CA's private key never exists outside it in usable form — rated by FIPS 140-3 security level, with Level 3 the realistic production baseline.</li>
+    <li>Root/intermediate key generation happens as a witnessed, scripted key ceremony inside the HSM — this is true for a properly-run private CA too, not just public ones.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What can an RA do, and what is it explicitly not allowed to do?</li>
+<li>What two things does a CA's repository need to keep continuously available for relying parties?</li>
+<li>Why does a private key inside an HSM never "leave" the device, even when it's being used to sign something?</li>
+<li>Why is a badly-secured private/internal CA arguably a bigger risk than the same mistake at a public CA?</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's <code>grep</code> against a real certificate doesn't show an "Authority Information Access" section, try a different public site — some leaf certificates omit the OCSP URI when the CA relies solely on CRLs or on client-side revocation mechanisms like CRLSets (Stage I covers exactly why). Paste back the full <code>openssl x509 -text</code> output and we'll find it together.</footer>
+
+<div class="lesson-nav">
+  <a href="0010-certificate-signing-requests.html">&larr; Previous: Certificate Signing Requests (CSRs)</a>
+  <a href="0012-public-pki-private-pki.html">Next: Public PKI vs Private PKI &rarr;</a>
+</div>
+
+</body>
+</html>

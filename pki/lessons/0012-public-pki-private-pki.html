@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 12 — Public PKI vs Private PKI</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 12 of 106</p>
+<h1>Public PKI vs Private PKI</h1>
+
+<h2>What you will learn</h2>
+<p>The real, structural difference between public PKI (certificates trusted automatically by strangers' browsers and operating systems) and private PKI (certificates you trust only because you chose to install the root yourself) — who governs each, what rules apply to each, what each can and can't be used for, and why picking the wrong one for a given hostname is a common, entirely avoidable production mistake.</p>
+
+<h2>Why this matters</h2>
+<p>By Lesson 11 you know the components (CA, RA, repository, HSM) that make up any PKI. This lesson is about the decision every engineer eventually has to make: does this certificate need to be trusted by anyone on the internet, or only by systems I control? Getting this wrong in either direction causes real incidents — requesting a public certificate for a purely internal hostname that a public CA is contractually forbidden to issue, or exposing an internal-only trust boundary to third parties by mistake. Stage 13 covers the specific DNS-trust failure mode this creates; this lesson is the architectural decision that sits underneath it.</p>
+
+<h2>Simple explanation</h2>
+<p>Public PKI is trust you borrow. Every operating system and browser ships with a pre-installed list of root certificates from CAs that have passed independent scrutiny (audits, disclosure, technical requirements) — when your certificate chains up to one of those roots, every stranger's device already trusts it, with zero setup on their end. Private PKI is trust you build. You run your own CA, and it's trusted only by the specific machines where you've deliberately installed your root certificate — nobody outside your organization trusts it, and nobody outside your organization is supposed to.</p>
+
+<h2>How it works</h2>
+
+<h3>Public PKI: governed, audited, narrow in what it can certify</h3>
+<p>A "Publicly-Trusted Certificate" has a precise, current definition from the CA/Browser Forum's TLS Baseline Requirements (v2.2.9, effective 2026-08-06): "A Certificate that is trusted by virtue of the fact that its corresponding Root Certificate is distributed as a trust anchor in widely-available application software." Getting a root into that "widely-available application software" list means passing a specific root program's requirements — Mozilla's, Chrome's, Apple's, Microsoft's — each independently. Mozilla's Root Store Policy (v3.1, effective 2026-07-01) requires, among other things, annual WebTrust- or ETSI-standard audits covering the CA "from key generation until the certificate is no longer trusted," a published CP/CPS following the RFC 3647 structure, and disclosure of every intermediate certificate into the CCADB within seven days of creation. In exchange for that scrutiny, a publicly-trusted certificate is instantly trusted by essentially every browser and OS on the internet.</p>
+<p>That trust comes with a hard boundary: public CAs are contractually forbidden from certifying names or addresses that aren't globally, publicly resolvable. The CA/Browser Forum deprecated issuing certificates for reserved IP addresses and internal server names starting 2015-11-01, and by 2016-10-01 all such certificates still in circulation were revoked or blocked by browser software — <code>server.internal</code>, <code>10.0.0.5</code>, or any name that isn't a real, publicly-registered domain simply cannot get a publicly-trusted certificate, by design, permanently.</p>
+
+<h3>Private PKI: self-governed, no external audit requirement, no scope limit</h3>
+<p>A private (or "internal" / "enterprise") CA is not distributed in any root program's trust list — nothing outside your organization trusts it automatically. Nothing in the CA/Browser Forum's Baseline Requirements even applies to it: their scope is explicitly limited to Publicly-Trusted Certificates, meaning enterprises "operate their own Public Key Infrastructure for internal purposes only, where the Root CA Certificate is not distributed by any Application Software Supplier" are outside its rules entirely. That means no mandatory external audit, no CCADB disclosure, no CT logging requirement, no restriction on internal names, and no imposed validity-period ceiling — a private CA can issue a 10-year certificate for <code>db-primary.corp.internal</code> if that's what the organization's own policy allows. Microsoft's Active Directory Certificate Services (AD CS, Stage K) is the canonical example: a Windows Server role built specifically to run this kind of internal-only CA, distributing trust via Group Policy/Active Directory rather than a public root program (Microsoft Learn, updated 2026-05-12).</p>
+
+<h3>The trade-off in one line</h3>
+<p>Public PKI trades governance and scope restrictions for automatic, universal trust. Private PKI trades automatic trust (you must distribute your root yourself, to every relying device) for full control over scope, validity periods, and internal naming — with zero external body checking whether you're doing it safely, which means the safety has to come from you.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>PUBLIC PKI                                  PRIVATE PKI
+-----------                                 -----------
+Root CA cert pre-installed in               Root CA cert installed ONLY on
+every OS/browser trust store                machines you deliberately configure
+        |                                           |
+Governed externally:                        Governed internally (or not at all):
+  CA/Browser Forum Baseline Requirements       no external audit required
+  root program audits (Mozilla/Chrome/etc)     no CCADB / CT requirement
+  CT logging required                          no scope restriction
+  max validity: 200 days (2026-03-15,           validity period: your own policy
+    dropping to 100 then 47 days)
+        |                                           |
+Can certify: real, publicly resolvable      Can certify: anything -- internal
+  domain names ONLY (no internal names,        hostnames, internal IPs, arbitrary
+  no reserved IPs, since 2015/2016)             names -- your organization decides
+        |                                           |
+Trusted by: everyone, automatically         Trusted by: only devices where you
+                                               installed the root yourself</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Root program</strong> — a browser/OS vendor's (Mozilla, Chrome, Apple, Microsoft) formal process and policy for deciding which CA roots it will trust by default.</li>
+<li><strong>Publicly-Trusted Certificate</strong> — a certificate whose root is distributed as a trust anchor in widely-available application software (CA/Browser Forum definition).</li>
+<li><strong>Internal name</strong> — a hostname that isn't a publicly-registered, resolvable domain (e.g. <code>server.local</code>, <code>app.corp</code>) — permanently ineligible for a publicly-trusted certificate.</li>
+<li><strong>Enterprise CA / internal CA</strong> — a privately-operated CA, trusted only by machines where its root has been deliberately installed; not subject to CA/Browser Forum rules.</li>
+<li><strong>CCADB (Common CA Database)</strong> — the shared disclosure database public CAs must publish into; private CAs have no equivalent obligation.</li>
+<li><strong>Trust anchor</strong> — a root certificate a relying party has decided, by whatever mechanism, to trust as a starting point for chain validation (Stage D).</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>A typical mid-size company runs both at once, deliberately. Its public-facing website (<code>www.example.com</code>) gets a certificate from a public CA (DigiCert, Let's Encrypt, Sectigo, etc.) — it must, because customer browsers need automatic trust with zero setup. Its internal service mesh, domain controllers, and employee laptop authentication run on an AD CS-based internal CA (Stage K) whose root was pushed to every domain-joined machine via Group Policy — because those names (<code>dc01.corp.internal</code>, internal service hostnames) could never get a public certificate anyway, and because the company wants full control over validity periods and template-based issuance policy (Lesson 51) that no public CA would offer. Neither PKI is "better" — they solve different trust problems for different audiences.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Build a minimal private root CA, then compare its self-signed root to a real public leaf certificate's issuer chain — the structural difference is visible immediately:</p>
+<pre><code># Create a private root CA key and a self-signed root certificate
+openssl genrsa -out private-root.key 4096
+openssl req -x509 -new -key private-root.key -sha256 -days 3650 \
+  -subj "/CN=Example Corp Internal Root CA/O=Example Corp" \
+  -out private-root.crt
+
+# Inspect it: notice it is self-issued (Issuer == Subject) and NOT
+# chained to anything -- nobody trusts this until you tell them to
+openssl x509 -in private-root.crt -noout -issuer -subject
+
+# Compare against a real public certificate's issuer chain
+openssl s_client -connect www.google.com:443 -servername www.google.com \
+  </dev/null 2>/dev/null | openssl x509 -noout -issuer -subject</code></pre>
+<p>Expected result: your private root shows an identical issuer and subject (it signed itself, and nothing outside a trust store you personally configure will ever trust it). The public certificate shows a different issuer than subject — signed by a CA whose root already sits in your OS/browser trust store, which is why your terminal accepted the connection without you doing anything.</p>
+
+<h2>What can go wrong</h2>
+<p>The most common mistake in this decision is requesting (or expecting to request) a publicly-trusted certificate for an internal-only name — it will always fail, permanently, by design, since the 2016 deprecation; there is no appeal or exception path for a reserved IP or internal server name under the current Baseline Requirements. The opposite mistake also happens: standing up a private CA for something that's actually public-facing, forcing every external user to manually install a root certificate they have no reason to trust — a broken experience that public PKI exists specifically to avoid. A third, subtler mistake: assuming a private CA is automatically "safer" because it's internal — nothing in the CA/Browser Forum's rules or a root program's audit applies to it, so a private CA with a weak or unaudited key-management practice (Lesson 11) can be a larger, less-scrutinized risk than a public one.</p>
+
+<h2>Troubleshooting</h2>
+<p>If a browser or client reports "unknown CA" / "self-signed certificate" for an internal service, the near-universal cause is that the private root certificate was never installed into that specific device's trust store — this is a per-device, deliberate action (via GPO, MDM, or manual install), not something that happens automatically the way it does for public CAs. If a request for a certificate covering an internal hostname or private IP gets rejected by a public CA, that's not a bug or a misconfiguration on either side — it's the 2016 internal-names deprecation working as intended; the fix is either to use a real public subdomain instead, or to switch that hostname to a private CA.</p>
+
+<h2>Security considerations</h2>
+<p>Because nothing external audits a private CA by default, the burden of doing what a root program would otherwise enforce — HSM-backed keys, a documented key ceremony, access control, monitored issuance — falls entirely on the operating organization (Lesson 11). Never assume "internal only" means "lower stakes": a compromised internal root CA can issue trusted-looking certificates for every internal service an attacker wants to impersonate, and because there's no CT log requirement for private PKI, that misuse may never surface the way a public CA's misissuance eventually would via Certificate Transparency monitoring (Stage G). Distribute a private root only through a controlled mechanism (GPO, MDM, imaging) — never by asking users to manually accept or install it themselves, which trains people to click through exactly the kind of warning that's supposed to stop a real attack.</p>
+
+<h2>Production best practices</h2>
+<p>Default to public PKI for anything a third party (customer, partner, the general internet) needs to trust without setup. Default to private PKI for internal-only names, service-to-service/mTLS traffic (Stage F), and any case where you need validity periods, naming, or template control a public CA won't offer. Never try to work around the internal-names restriction by requesting a public certificate for a name you plan to only resolve internally — use a private CA, or use a real subdomain of a domain you control if you specifically need public-CA-style automation (e.g. ACME, Stage L) for an internal service. Apply the same key-security rigor (HSM, ceremony, least privilege) to a private root as you would expect from a public one, precisely because nobody is external­ly checking that you did.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "Can you get a publicly-trusted certificate for an internal hostname like <code>db01.corp.local</code>?" <strong>A:</strong> "No — the CA/Browser Forum deprecated issuing certificates for internal server names and reserved IP addresses, effective 2015-11-01, with all such certificates revoked or blocked by 2016-10-01. It's permanent and has no exception path. Use a private/internal CA for that hostname instead."</p>
+<p><strong>Interview Q:</strong> "Why would a company run its own internal CA instead of just using a public one everywhere?" <strong>A:</strong> "Three reasons: internal hostnames can't get public certificates at all; a private CA gives full control over validity periods and issuance policy via templates, which public CAs don't offer; and it avoids exposing internal naming/service topology to the public Certificate Transparency logs that public CAs are required to publish into."</p>
+
+<h2>Source</h2>
+<p>CA/Browser Forum, <a href="https://cabforum.org/working-groups/server/baseline-requirements/requirements/" target="_blank" rel="noopener">TLS Baseline Requirements v2.2.9</a>, effective 2026-08-06 (Publicly-Trusted Certificate definition, scope limited to publicly-trusted issuance) — fetched live 2026-08-08. CA/Browser Forum, <a href="https://cabforum.org/working-groups/server/internal-names/" target="_blank" rel="noopener">Guidance on Internal Names</a> (internal server name / reserved IP address deprecation: prohibited from issuance 2015-11-01, revoked/blocked by browsers 2016-10-01) — fetched live 2026-08-08. Mozilla, <a href="https://www.mozilla.org/en-US/about/governance/policies/security-group/certs/policy/" target="_blank" rel="noopener">Root Store Policy v3.1</a>, effective 2026-07-01 (audit, CP/CPS, and CCADB disclosure requirements for public CAs) — fetched live 2026-08-08. Microsoft Learn, <a href="https://learn.microsoft.com/en-us/windows-server/identity/ad-cs/active-directory-certificate-services-overview" target="_blank" rel="noopener">"What is Active Directory Certificate Services in Windows Server?"</a>, updated 2026-05-12 (AD CS as an internal/private CA platform) — fetched live 2026-08-08. TLS max-validity figure (200 days, current since 2026-03-15) per this course's MISSION.md, verified 2026-08-06/08 against CA/Browser Forum Ballot SC-081v3.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Public PKI = trust you borrow — a root already installed in everyone's browser/OS, in exchange for external audits (WebTrust/ETSI), CCADB disclosure, and a hard restriction to real, publicly-resolvable names only.</li>
+    <li>Private PKI = trust you build — no external audit or scope restriction, but nothing trusts your root until you deliberately install it on every relying device.</li>
+    <li>Internal server names and reserved IP addresses have been permanently ineligible for publicly-trusted certificates since the CA/Browser Forum's 2015-11-01/2016-10-01 deprecation — there's no exception path.</li>
+    <li>A private CA carries the same security responsibilities (HSM, key ceremony, access control) as a public one — just without anyone external checking that you met them.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What makes a certificate "publicly trusted," precisely?</li>
+<li>Why can't <code>server.local</code> or <code>10.0.0.5</code> ever get a certificate from a public CA?</li>
+<li>What external requirements apply to a private/internal CA that don't apply to a public one? (Trick question — think carefully.)</li>
+<li>Why might a company deliberately choose to run both a public and a private PKI at the same time?</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's private root and the public Google certificate look confusingly similar in structure (both are just X.509 certificates, after all), that's expected and is exactly the point of this lesson — the difference isn't in the certificate's format, it's entirely in who already trusts the root before you ever see the cert. Ask your teacher to walk through the issuer field of each side by side if that distinction still feels fuzzy.</footer>
+
+<div class="lesson-nav">
+  <a href="0011-the-pki-ecosystem.html">&larr; Previous: The PKI Ecosystem: CAs, RAs, Repositories, and HSMs</a>
+  <a href="0013-public-vs-internal-dns-trust.html">Next: Why google.com Works Instantly but internal.company.local Doesn't &rarr;</a>
+</div>
+
+</body>
+</html>
