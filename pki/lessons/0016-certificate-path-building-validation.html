@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 16 — Certificate Path Building and Validation</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 16 of 106</p>
+<h1>Certificate Path Building and Validation: What a Browser Actually Checks</h1>
+
+<h2>What you will learn</h2>
+<p>The difference between two problems engineers routinely conflate — <strong>path building</strong> (finding a chain from a leaf certificate up to a trusted root) and <strong>path validation</strong> (proving every certificate in that chain is actually valid) — and exactly what real browsers check, in what order, on every TLS connection: signature chaining, validity periods, <code>basicConstraints</code>/<code>pathLenConstraint</code> enforcement, key usage, hostname identity per the current spec (RFC 9525, not the older RFC 6125 rules most tutorials still teach), and how revocation checking actually works in shipping browsers today versus the textbook OCSP model.</p>
+
+<h2>Why this matters</h2>
+<p>Lesson 15 covered what the root/intermediate/leaf hierarchy is. This lesson covers what a relying party does with it — and the gap between the RFC 5280 textbook algorithm and real browser behavior is exactly where most "why does this work in Chrome but not in curl" and "why did this expired-looking chain still validate" incidents come from. Two concrete examples you'll be able to explain by the end of this lesson: why a server that forgot to send its intermediate certificate still works fine in desktop Chrome but breaks in most other clients, and why using a certificate's CommonName for hostname matching is not just old-fashioned but explicitly disallowed by the current spec.</p>
+
+<h2>Simple explanation</h2>
+<p>Picture a delivery driver (the browser) who receives a package (the leaf certificate) claiming it came, ultimately, from a warehouse the driver already trusts (a root in the trust store). <strong>Path building</strong> is figuring out the actual route the package traveled — which intermediate distribution centers it passed through — sometimes by asking around (fetching missing certificates) if the shipping label is incomplete. <strong>Path validation</strong> is a completely separate step: once the route is known, checking that every single handoff along it was legitimate — correct signatures, nobody's ID had expired at the time of handoff, nobody exceeded what they were authorized to handle. A browser does both, every single connection, usually in milliseconds.</p>
+
+<h2>How it works</h2>
+
+<h3>Step 1 — Path building: finding a chain to a trusted root</h3>
+<p>The server sends the leaf certificate and, ideally, its intermediate(s) during the TLS handshake. If the chain the server sent is complete and terminates at a certificate already in the trust store, path building is trivial. If it's incomplete — a common misconfiguration, Lesson 15 — some clients recover automatically via <strong>AIA chasing</strong>: desktop Chrome and desktop Edge read the Authority Information Access extension's <code>caIssuers</code> field on the leaf certificate (RFC 5280 §4.2.2.1 describes it as the mechanism for "how to access information and services for the issuer of the certificate"), fetch the missing intermediate over HTTP from the URL it points to, and complete the chain themselves. This is real, current, verified Chrome/Edge desktop behavior — but it is not universal: most non-browser TLS clients (raw <code>curl</code>, many mobile app stacks, embedded/IoT devices) do <em>not</em> perform AIA chasing and will simply fail if the server didn't send a complete chain.</p>
+
+<h3>Step 2 — Path validation: proving the chain is actually valid</h3>
+<p>Once a candidate path exists, RFC 5280 §6 defines the certification path validation algorithm relying parties implement (with real-world variations). Per the RFC, "a trusted certification path includes a trusted public key and a set of certificates to be processed," and validation walks the chain checking, for every certificate in it:</p>
+<ul>
+<li><strong>Signature verification</strong> — each certificate's signature is verified using the public key of the certificate that issued it, walking link by link up to the trust anchor.</li>
+<li><strong>Validity period</strong> — every certificate in the chain (not just the leaf) must fall within its own <code>notBefore</code>/<code>notAfter</code> window at the time of validation.</li>
+<li><strong>Name chaining</strong> — "performed by matching the issuer distinguished name in one certificate with the subject name in a CA certificate" at each step; a break here means the chain doesn't actually connect.</li>
+<li><strong><code>basicConstraints</code> / <code>pathLenConstraint</code> enforcement</strong> — every CA certificate in the path must actually be allowed to sign the certificate below it, and the path length must not exceed what any <code>pathLenConstraint</code> in the chain permits (Lesson 15).</li>
+<li><strong>Key usage</strong> — a CA certificate's public key "MUST NOT be used to verify signatures on certificates or CRLs unless the corresponding <code>keyCertSign</code> ... bit is set" in its Key Usage extension.</li>
+<li><strong>Certificate policy processing</strong> — evaluating the certificate policies extension where the relying party requires specific issuance policies (used more by enterprise/EV validation than by a typical browser default check).</li>
+</ul>
+
+<h3>Step 3 — Hostname / identity checking (the current spec, not the old one)</h3>
+<p>Chain validity alone doesn't prove the certificate belongs to the site you're connecting to — that's a separate check, and it's governed today by <strong>RFC 9525</strong> (2023), which formally obsoletes RFC 6125. RFC 9525 is explicit and leaves no ambiguity: "The Common Name RDN MUST NOT be used to identify a service because it is not strongly typed ... and therefore suffers from ambiguities in interpretation," and the server's identity "can only be expressed in the subjectAltNames extension; it is no longer valid to use the commonName RDN." A relying party doing this correctly today checks the hostname exclusively against <code>subjectAltName</code> entries (DNS-ID, IP-ID, and, less commonly, SRV-ID/URI-ID) — a certificate whose only identity is in its CommonName, with no matching SAN, is not a valid match under the current spec, regardless of what CN says.</p>
+
+<h3>Step 4 — Revocation checking (what actually happens, not the textbook model)</h3>
+<p>The textbook model is OCSP (RFC 6960): the client sends the certificate's serial number and issuer identity to an OCSP responder, which returns a signed <code>good</code>, <code>revoked</code>, or <code>unknown</code> status. In practice, real browsers mostly don't do a live, per-connection OCSP lookup against every certificate's own responder — that would leak browsing history to CAs and add latency to every handshake. Instead: <strong>Chrome uses CRLSet</strong>, a curated, push-updated list of revocations covering only high-impact cases — a small fraction of total revocations, functioning as an emergency block-list rather than comprehensive coverage. <strong>Firefox uses CRLite</strong>, which periodically compresses the full set of revocations gathered from Certificate Transparency-logged CAs' CRLs into a compact local filter, updated roughly every 12 hours and queried locally per connection with no live network call to a CA. Both approaches trade some completeness/freshness for speed and privacy compared to live OCSP — a deliberate, documented design choice, not an oversight.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>TLS handshake: server sends leaf cert (+ ideally its intermediate(s))
+        |
+        v
+[1] PATH BUILDING
+    - chain complete and reaches a trust-anchor root already? -> done
+    - chain incomplete? some clients (desktop Chrome/Edge) auto-fetch the
+      missing intermediate via the AIA "caIssuers" URL on the leaf cert
+    - other clients (curl, many mobile/IoT stacks): NO auto-fetch -> fail
+        |
+        v
+[2] PATH VALIDATION  (RFC 5280 section 6, walked per certificate in the chain)
+    - signature verifies against the issuer's public key
+    - notBefore/notAfter valid right now
+    - issuer DN of cert N matches subject DN of cert N+1 (name chaining)
+    - basicConstraints cA=TRUE + pathLenConstraint respected
+    - keyCertSign bit set on every signing CA cert
+        |
+        v
+[3] HOSTNAME CHECK  (RFC 9525 -- SAN only, CommonName is NOT valid)
+    - does any subjectAltName DNS-ID/IP-ID match the hostname connected to?
+        |
+        v
+[4] REVOCATION CHECK  (real-world, not textbook OCSP-per-connection)
+    - Chrome: CRLSet (curated, push-updated, emergency-scale coverage)
+    - Firefox: CRLite (compressed, ~12h-updated, queried locally)
+        |
+        v
+    ACCEPT (padlock) or REJECT (interstitial warning / connection refused)</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Path building</strong> — finding a candidate chain of certificates from the leaf to a trusted root, including fetching missing intermediates if needed.</li>
+<li><strong>Path validation</strong> — proving every certificate in a built path is actually valid (signatures, dates, constraints, key usage) per RFC 5280 §6.</li>
+<li><strong>AIA chasing</strong> — a client automatically fetching a missing intermediate certificate from the <code>caIssuers</code> URL in the leaf's Authority Information Access extension.</li>
+<li><strong>Name chaining</strong> — matching one certificate's Issuer DN against the next certificate's Subject DN to confirm they connect.</li>
+<li><strong>SAN / DNS-ID</strong> — a <code>subjectAltName</code> entry; per RFC 9525, the only field permitted for hostname identity matching.</li>
+<li><strong>CRLSet / CRLite</strong> — Chrome's and Firefox's respective real-world revocation-distribution mechanisms, distinct from a live per-connection OCSP query.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>A team misconfigures their web server to serve only the leaf certificate, omitting the intermediate (the exact Lesson 15 misconfiguration). Internal QA opens the site in desktop Chrome — it works perfectly, padlock and all, because Chrome's AIA chasing quietly fetched the missing intermediate and completed the chain. The team ships it. A mobile app using a strict TLS library, and a partner's server-to-server integration using plain <code>curl</code>, both start failing with chain-incomplete errors the same day — because neither performs AIA chasing. The root cause was never a "browser bug" or "certificate problem" in the abstract; it was that path building silently masked a real server misconfiguration in one client while path building's absence exposed it immediately in others. This is exactly why "it works in Chrome" is not evidence of a correctly configured chain.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Reproduce the exact gap between path-building-tolerant and path-building-strict clients, and see RFC 9525's SAN-only rule enforced directly:</p>
+<pre><code># Reuse the 3-tier hierarchy from Lesson 15's lab (root.crt, intermediate.crt, leaf.crt)
+
+# 1) Serve ONLY the leaf certificate (the common real misconfiguration)
+openssl s_server -cert leaf.crt -key leaf.key -accept 8443 -www &
+
+# 2) A strict client (no AIA chasing) -- this is what curl/most non-browser
+#    clients experience against an incomplete chain
+curl -v --cacert root.crt https://localhost:8443/ 2>&1 | grep -i "unable to get\|verify"
+
+# 3) OpenSSL's own strict verify shows the same gap explicitly
+openssl verify -CAfile root.crt leaf.crt
+# Expect: "unable to get local issuer certificate" -- the intermediate is missing,
+# and unlike desktop Chrome, openssl verify does NOT fetch it for you
+
+# 4) Now verify correctly, WITH the intermediate supplied
+cat intermediate.crt root.crt > chain.pem
+openssl verify -CAfile chain.pem leaf.crt
+# Expect: leaf.crt: OK
+
+# 5) RFC 9525 in action: check the SAN, not the CN
+openssl x509 -in leaf.crt -noout -ext subjectAltName
+# If this prints nothing, the certificate has NO valid SAN --
+# a spec-correct client (RFC 9525) will refuse to match it to any hostname
+# even though the CommonName field says "demo.local"
+
+kill %1</code></pre>
+<p>Expected result: step 3 fails exactly the way a real non-AIA-chasing client fails against a misconfigured server; step 4 succeeds once the intermediate is explicitly supplied; step 5 demonstrates that the leaf certificate built in Lesson 15's lab likely has <em>no</em> SAN at all (only a CN), which means it would actually fail hostname validation under RFC 9525 in any spec-correct modern client — try adding <code>-addext "subjectAltName=DNS:demo.local"</code> when reissuing the leaf and re-run step 5 to see the difference.</p>
+
+<h2>What can go wrong</h2>
+<p>Relying on AIA chasing instead of fixing the server's certificate bundle — it works for the clients that happen to support it and fails silently, in production, for every client that doesn't, often discovered only when a partner integration or mobile app breaks. Issuing internal certificates with only a CommonName and no <code>subjectAltName</code> — under RFC 9525 this is not a valid identity match at all, and modern OS-level TLS stacks (not just browsers) increasingly reject CN-only certificates outright. Assuming a padlock means live revocation status was freshly checked against the certificate's own OCSP responder — in most real browser configurations today, it means CRLSet/CRLite coverage, which is fast and private but not the same as a guaranteed real-time check of every certificate.</p>
+
+<h2>Troubleshooting</h2>
+<p>Browser error <code>ERR_CERT_AUTHORITY_INVALID</code> or curl's <code>unable to get local issuer certificate</code> — first check with <code>openssl s_client -connect host:443 -showcerts</code> whether the server is actually sending its intermediate; if it's sending only the leaf, that's the root cause, not a client bug. Browser error <code>ERR_CERT_COMMON_NAME_INVALID</code> or a hostname-mismatch failure despite the CN "looking right" — check <code>openssl x509 -in cert.pem -noout -ext subjectAltName</code>; per RFC 9525 the CN is not consulted at all, so a missing or wrong SAN is the actual cause even when CN matches the hostname. If a certificate that should be revoked still validates without warning, remember that's expected under CRLSet's intentionally partial coverage or CRLite's up-to-~12-hour update lag — confirm against the CA's own OCSP/CRL directly (<code>openssl ocsp</code>) before treating it as a client defect.</p>
+
+<h2>Security considerations</h2>
+<p>Live OCSP checking has a well-known weakness: most clients historically "soft-fail" — if the OCSP responder is unreachable, the connection proceeds anyway rather than being blocked, because hard-failing on every network hiccup would break the web for users behind flaky networks or captive portals. CRLSet and CRLite were built specifically to reduce dependence on that fragile live-OCSP path while also removing the privacy leak of a client asking a CA "have you seen this exact certificate serial number, from this IP, right now" on every site visit. Neither CRLSet nor CRLite claims to be a complete, real-time, 100%-guaranteed revocation channel — treat "the certificate validated" as "no revocation was detected via this browser's specific mechanism," not as an absolute real-time guarantee, especially for high-assurance internal systems where OCSP stapling (server-supplied, timestamped, signed status) is the stronger design.</p>
+
+<h2>Production best practices</h2>
+<p>Always serve the complete chain (leaf + all intermediates, correctly ordered, root omitted) from every server regardless of whether some of your clients happen to support AIA chasing — treat AIA chasing as a client-side safety net, never as a substitute for correct server configuration. Always issue certificates with a complete <code>subjectAltName</code> covering every hostname the certificate needs to match — never rely on CommonName for identity, per RFC 9525. Monitor chain completeness and expiry continuously (SSL Labs, `testssl.sh`, or automated cert-expiry monitoring, Lesson 37) rather than trusting that "it worked when I checked it in a browser once." For services where revocation freshness genuinely matters, prefer OCSP stapling so the server supplies a signed, timestamped status directly during the handshake instead of depending entirely on the client's own revocation-checking mechanism.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "What's the difference between path building and path validation?" <strong>A:</strong> "Path building is finding a candidate chain from the leaf certificate to a trusted root — including fetching missing intermediates via AIA chasing if the server didn't send a complete chain. Path validation is a separate step: proving every certificate in that found chain is actually valid per RFC 5280 section 6 — signatures, validity dates, basicConstraints/pathLenConstraint, and key usage. A chain can be successfully built and still fail validation, or fail to build at all if a client doesn't support AIA chasing."</p>
+<p><strong>Interview Q:</strong> "Is it still valid to match a hostname against a certificate's CommonName?" <strong>A:</strong> "No. RFC 9525, which obsoletes RFC 6125, explicitly states the CommonName RDN MUST NOT be used to identify a service — identity must be expressed and checked only via the subjectAltName extension. A certificate with a correct-looking CN but no matching SAN is not a valid identity match under the current spec."</p>
+
+<h2>Source</h2>
+<p>IETF, <a href="https://www.rfc-editor.org/rfc/rfc5280" target="_blank" rel="noopener">RFC 5280, §6 "Certification Path Validation" and §4.2.2.1 "Authority Information Access"</a> — fetched live 2026-08-08. IETF, <a href="https://www.rfc-editor.org/info/rfc9525/" target="_blank" rel="noopener">RFC 9525, "Service Identity in TLS"</a> (obsoletes RFC 6125; SAN-only identity, CommonName prohibited) — fetched live 2026-08-08. IETF, <a href="https://www.rfc-editor.org/rfc/rfc6960" target="_blank" rel="noopener">RFC 6960, "OCSP"</a> (request/response model, good/revoked/unknown statuses) — fetched live 2026-08-08. Chromium, <a href="https://groups.google.com/a/chromium.org/g/net-dev/c/H-ysp5UM_rk" target="_blank" rel="noopener">net-dev mailing list, "AIA fetching in Chrome"</a> (desktop Chrome/Edge AIA-chasing behavior) — fetched live 2026-08-08. Mozilla Hacks, <a href="https://hacks.mozilla.org/2025/08/crlite-fast-private-and-comprehensive-certificate-revocation-checking-in-firefox/" target="_blank" rel="noopener">"CRLite: Fast, private, and comprehensive certificate revocation checking in Firefox"</a> — fetched live 2026-08-08.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Path building (finding a chain to a trusted root, sometimes via AIA chasing) and path validation (proving that chain is actually valid per RFC 5280 §6) are two separate steps — a chain can build successfully and still fail validation.</li>
+    <li>AIA chasing is a real desktop Chrome/Edge behavior, but not universal — never rely on it instead of serving a complete server-side chain.</li>
+    <li>Hostname identity checking today uses <code>subjectAltName</code> only, per RFC 9525 — CommonName-based matching is explicitly disallowed by the current spec, not just outdated practice.</li>
+    <li>Real browser revocation checking is CRLSet (Chrome, curated/partial) or CRLite (Firefox, compressed/periodic) — not a live per-connection OCSP query against every certificate's own responder.</li>
+    <li>A validated, padlocked connection means "no problem detected by this specific mechanism," not an absolute real-time guarantee — OCSP stapling is the stronger design where revocation freshness genuinely matters.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What's the difference between path building and path validation, in one sentence each?</li>
+<li>Why does a misconfigured server with an incomplete chain sometimes work in Chrome but fail in curl?</li>
+<li>What does RFC 9525 say about using CommonName for hostname matching?</li>
+<li>How does Chrome's CRLSet differ from a live, per-connection OCSP check?</li>
+</ul>
+
+<footer class="teacher-reminder">If step 3 of your lab doesn't produce the expected "unable to get local issuer certificate" error, paste your exact <code>openssl s_server</code> and <code>curl</code> commands back to your teacher — it's usually the background server process not having started before the client request, not a conceptual mismatch.</footer>
+
+<div class="lesson-nav">
+  <a href="0015-root-intermediate-leaf-certificates.html">&larr; Previous: Root, Intermediate, and Leaf Certificates</a>
+  <a href="0017-trust-stores-across-platforms.html">Next: Trust Stores Across Windows, Linux, macOS, Java, and Browsers &rarr;</a>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 18 — Cross-Signing and CA Transitions</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 18 of 106</p>
+<h1>Cross-Signing and CA Transitions</h1>
+
+<h2>What you will learn</h2>
+<p>What cross-signing actually is at the certificate level, why a CA deliberately gets one root signed by another CA's root, and the three real reasons this happens in production: bootstrapping a new root's trust before it's widely distributed, keeping compatibility with old clients that lack a newer root, and forced migration when a root program distrusts a CA outright. You'll walk through two real, documented incidents — Let's Encrypt/IdenTrust and the 2024 Entrust distrust — that show both the successful and the painful side of this.</p>
+
+<h2>Why this matters</h2>
+<p>A certificate chain isn't always one straight line from leaf to a single universally-trusted root. A CA can be cross-signed by more than one root at once, present different chains to different clients, and quietly change which chain it serves as older roots expire or get distrusted. Engineers who don't understand cross-signing get blindsided twice: once when an "unrelated" root's expiration breaks TLS on old devices they thought had nothing to do with their certificate, and again when a browser distrust decision forces an emergency re-issuance across an entire fleet with weeks of notice, not months.</p>
+
+<h2>Simple explanation</h2>
+<p>Cross-signing means one CA's root or intermediate certificate is signed not only by itself, but <em>also</em> by a second, already-trusted CA — producing two valid certificates for the same public key, each with a different issuer. A client that already trusts the second CA's root can build a valid chain through the cross-sign even if it has never heard of the first CA at all. It's like a brand-new bank getting a well-established bank to formally co-sign its charter: customers who've never heard of the new bank but already trust the established one can trust the new bank's checks too, until the new bank is well-known enough to stand on its own signature.</p>
+
+<h2>How it works</h2>
+
+<h3>The mechanical difference from a normal chain</h3>
+<p>A normal certificate has exactly one issuer. A cross-signed root has <strong>two separate, independently valid certificates sharing the same public key</strong> — one self-signed (issuer = subject), one cross-signed (issuer = the other CA). Both are real, verifiable certificates for that root. A server can be configured to serve either chain, and different clients validating the exact same leaf certificate may build entirely different, equally valid paths depending on which root each one already trusts — this is the "multiple valid paths" case that Lesson 16's path-building coverage introduces, and cross-signing is the most common real reason it happens.</p>
+
+<h3>Reason 1 — bootstrapping a brand-new root</h3>
+<p>A newly created root CA isn't in anyone's trust store yet, and getting included in every major root program (Mozilla, Apple, Microsoft, Chrome) takes real time — each has its own CCADB-based application, audit, and review process. A cross-sign from an already-trusted CA lets the new CA issue working certificates immediately, while its own root inclusion applications work through each root program in parallel.</p>
+
+<h3>Reason 2 — legacy client compatibility</h3>
+<p>Even once a new root is included in current root stores, older devices that never receive OS/trust-store updates (old Android versions, embedded devices, some IoT and set-top hardware) will never get it. A long-running cross-sign from an older, already-widely-distributed root keeps those devices working without requiring the CA to wait for its own root to reach the same distribution as the older one.</p>
+
+<h3>Reason 3 — forced transition after a root-program distrust</h3>
+<p>Root programs can and do remove trust from a CA outright — for repeated compliance failures, mis-issuance, or loss of confidence in the CA's operations — and when that happens, every certificate chaining to that CA's root stops being trusted on the distrust program's schedule, regardless of the individual certificate's own validity. This is a CA transition forced on every customer of that CA at once, not a planned migration on the CA's own timeline.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>Cross-signing, mechanically:
+
+  ISRG Root X1 (new root)
+    |
+    +-- self-signed cert:   Issuer = ISRG Root X1, Subject = ISRG Root X1
+    |     trusted only once included in a root store directly
+    |
+    +-- cross-signed cert:  Issuer = DST Root CA X3, Subject = ISRG Root X1
+          trusted by ANY client that already trusts DST Root CA X3,
+          even before ISRG Root X1 is in that client's own store
+
+Same public key, two different valid certificates, two different issuers.
+A server can present either chain -- clients pick whichever one they can
+build a trusted path through.
+
+Forced transition (root-program distrust), mechanically:
+
+  Entrust root  --previously trusted by Chrome/Firefox/Apple--
+    |
+    June 27, 2024: Chrome Root Program announces distrust
+    Nov 1, 2024:   Chrome 127+ stops trusting NEW Entrust certs
+                   (existing certs valid until their own expiry)
+    -> every Entrust customer must re-issue from a DIFFERENT CA
+       on the root program's timeline, not their own renewal schedule</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Cross-signing</strong> — a CA's root or intermediate certificate signed by a second, independent CA, producing two separate valid certificates for the same key pair.</li>
+<li><strong>Root transition / rollover</strong> — moving certificate issuance from an older root to a newer one, whether planned (algorithm/security upgrade) or forced (distrust).</li>
+<li><strong>Distrust</strong> — a root program's decision to stop treating a CA's root as trusted, applied on the program's own schedule (often keyed to the certificate's Signed Certificate Timestamp date, not its issuance date).</li>
+<li><strong>Chain of trust ambiguity / multiple valid paths</strong> — when more than one valid certificate chain exists for the same leaf certificate, because of cross-signing; different clients may build different paths to the same leaf.</li>
+<li><strong>CCADB</strong> — the shared Common CA Database multiple root programs use for CA disclosure, audit evidence, and inclusion/removal decisions (Lesson 17).</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>Let's Encrypt's own root, <strong>ISRG Root X1</strong>, was cross-signed by IdenTrust's long-established <strong>DST Root CA X3</strong> from the start, specifically so that older Android devices (pre-7.1.1, which never received ISRG Root X1 directly and never will) could still validate Let's Encrypt certificates. IdenTrust's cross-sign was deliberately structured to remain valid <em>even after</em> DST Root CA X3's own self-signed certificate expired — exploiting the fact that Android intentionally does not enforce expiration dates on trust anchors. That cross-sign has since been retired (superseded as ISRG Root X1 reached sufficient direct distribution on its own), and Let's Encrypt today issues from a small set of actively rotating intermediates under its own root.</p>
+<p>Contrast that planned, engineered transition with the forced kind: on June 27, 2024, the Chrome Root Program announced it would distrust Entrust's roots over a documented pattern of compliance failures. Starting with Chrome 127 on November 1, 2024, Chrome stopped trusting <em>new</em> TLS certificates from Entrust (certificates issued before the cutoff kept working until their own expiry); Apple and Mozilla announced their own distrust dates within weeks of Chrome's. Every organization with an Entrust-issued certificate had to identify a new CA and re-issue on a deadline set by three independent root programs — not on their own renewal calendar.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Inspect a real cross-signed chain and see the "two certificates, one key" structure directly:</p>
+<pre><code># Pull the current live chain for a Let's Encrypt-issued site
+echo | openssl s_client -connect valid-isrg.letsencrypt.org:443 -showcerts 2>/dev/null \
+  | awk '/BEGIN CERT/,/END CERT/{print > ("chain" ++n ".pem")}'
+
+# Inspect each certificate's Issuer vs Subject to see the chain relationship
+for f in chain*.pem; do
+  echo "== $f =="
+  openssl x509 -in "$f" -noout -subject -issuer
+done
+
+# Compare that to a locally built self-signed root vs a cross-signed one:
+# generate two independent "root" key pairs
+openssl req -x509 -newkey rsa:2048 -keyout rootA.key -out rootA.crt -days 30 -nodes -subj "/CN=Root A (new, unknown)"
+openssl req -newkey rsa:2048 -keyout rootB.key -out rootB.csr -nodes -subj "/CN=Root A (new, unknown)"
+openssl req -x509 -newkey rsa:2048 -keyout trustedRoot.key -out trustedRoot.crt -days 30 -nodes -subj "/CN=Already-Trusted Root"
+
+# cross-sign Root A's key/subject using the already-trusted root
+openssl x509 -req -in rootB.csr -CA trustedRoot.crt -CAkey trustedRoot.key -CAcreateserial \
+  -out rootA-crosssigned.crt -days 30
+
+# Now compare: rootA.crt is self-signed (Issuer=Subject); rootA-crosssigned.crt
+# has the SAME subject but Issuer = Already-Trusted Root
+openssl x509 -in rootA.crt -noout -subject -issuer
+openssl x509 -in rootA-crosssigned.crt -noout -subject -issuer</code></pre>
+<p>Expected result: the live Let's Encrypt chain shows Issuer/Subject pairs linking leaf → intermediate → ISRG Root X1. In the local exercise, <code>rootA.crt</code> and <code>rootA-crosssigned.crt</code> share the exact same Subject but have different Issuer fields — concrete proof that cross-signing produces two independently valid certificates for the same identity/key, trusted through two completely different paths.</p>
+
+<h2>What can go wrong</h2>
+<p>The best-documented real incident: Sectigo's (formerly Comodo's) <strong>AddTrust External CA Root</strong> expired on May 30, 2020. It had been used purely to cross-sign Sectigo's newer roots (COMODO RSA Certification Authority, USERTrust RSA Certification Authority) for legacy compatibility. Most modern clients simply built a path through the newer, unexpired root and never noticed — but some older TLS libraries, notably <strong>OpenSSL 1.0.x and GnuTLS</strong>, failed anyway, producing real outages on systems that had a perfectly valid, unexpired path available but didn't reliably choose it. A second common failure: forgetting that a cross-sign has its own expiration, independent of the root it's bootstrapping — a certificate chain that works today can fail on a specific future date that has nothing to do with the leaf certificate's own validity period, if nobody tracked the cross-sign's separate expiry.</p>
+
+<h2>Troubleshooting</h2>
+<p>If a certificate suddenly stops validating on some clients but not others, and nothing about the certificate itself changed, check whether an unrelated root the chain depends on for legacy compatibility just expired or was distrusted — this is exactly what happened industry-wide in the AddTrust case, and it looks like "random," unrelated client failures until someone checks the full chain, not just the leaf. If a server was recently reconfigured to serve a different chain (e.g. dropping an expired cross-signed root), verify with <code>openssl s_client -showcerts</code> exactly which certificates are being sent, in what order, and cross-check each Issuer/Subject pair against what current root stores (Lesson 17) actually trust — don't assume the server operator's intended fix matches what's actually being served.</p>
+
+<h2>Security considerations</h2>
+<p>A CA distrust event (like Entrust in 2024) is a real, current example of why certificate lifecycle automation (Stage L/M) isn't optional at scale — an organization with hundreds of Entrust certificates and no automation had weeks, not months, to identify every affected certificate and re-issue from a different CA before browsers stopped trusting them. Never assume "my certificate is valid until its own expiry date" is the only failure mode to plan for — a root program's compliance decision about your CA, entirely outside your control, can invalidate trust on a schedule you don't set. Treat CA diversification and automated, CA-agnostic reissuance tooling as a genuine resilience requirement, not just convenience.</p>
+
+<h2>Production best practices</h2>
+<p>Track the expiration and distrust status of every root your chain depends on, not just your leaf certificate's own <code>notAfter</code> date — a cross-signed legacy root can expire on a date completely disconnected from your own renewal cycle. When evaluating a CA, treat root-program compliance history as a real risk factor (per Mozilla's own policy, root removal can happen "at any time and for any reason" at the program's sole discretion) — the Entrust distrust was preceded by years of publicly-documented incident reports most customers never read until it was urgent. Build re-issuance automation (ACME or equivalent) that is genuinely CA-agnostic, so a forced CA transition is a configuration change, not an emergency manual project across every certificate in the fleet.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "What is cross-signing and why would a CA do it?" <strong>A:</strong> "It's getting a CA's own root or intermediate signed by a second, already-trusted CA, producing two valid certificates for the same key. CAs do it for three reasons: to bootstrap trust for a brand-new root before it's in every trust store, to keep working on legacy clients that will never receive the new root directly, and — less voluntarily — because a root program forced a transition by distrusting the CA's previous root."</p>
+<p><strong>Interview Q:</strong> "Walk me through a real CA transition incident." <strong>A:</strong> "Chrome, then Apple and Mozilla, announced in mid-2024 they'd stop trusting Entrust roots over a multi-year pattern of compliance failures — Chrome 127+ stopped trusting new Entrust certificates from November 1, 2024, with existing certificates grandfathered until their own expiry. Every Entrust customer had to identify and re-issue every affected certificate from a different CA on that timeline, which is exactly the scenario that makes CA-agnostic issuance automation a real operational requirement, not a nice-to-have."</p>
+
+<h2>Source</h2>
+<p>Let's Encrypt, <a href="https://letsencrypt.org/2020/12/21/extending-android-compatibility.html" target="_blank" rel="noopener">"Extending Android Device Compatibility for Let's Encrypt Certificates"</a> (IdenTrust/DST Root CA X3 cross-sign structure, Android trust-anchor expiration behavior) — fetched live 2026-08-08. Let's Encrypt, <a href="https://letsencrypt.org/certificates/" target="_blank" rel="noopener">"Certificates"</a> (current ISRG Root X1 status, DST Root CA X3 cross-sign now retired, current active intermediates) — fetched live 2026-08-08. Sectigo, <a href="https://www.sectigo.com/knowledge-base/detail/Sectigo-AddTrust-External-CA-Root-Expiring-May-30-2020" target="_blank" rel="noopener">"Sectigo AddTrust External CA Root Expiring May 30, 2020"</a> — fetched live 2026-08-08. SSL.com, <a href="https://www.ssl.com/blogs/addtrust-external-ca-root-expired-may-30-2020/" target="_blank" rel="noopener">"AddTrust External CA Root Expired May 30, 2020"</a> (OpenSSL 1.0.x and GnuTLS clients affected despite a valid alternate path) — fetched live 2026-08-08. Google, <a href="https://security.googleblog.com/2024/06/sustaining-digital-certificate-security.html" target="_blank" rel="noopener">"Sustaining Digital Certificate Security — Entrust Certificate Distrust"</a> (Google Online Security Blog, June 27, 2024 announcement; corroborated via contemporaneous industry reporting — Red Sift, Sectigo, Keyfactor, AppViewX — for the November 1, 2024 Chrome 127+ cutoff date and Apple/Mozilla's separate distrust dates) — verified 2026-08-08. Mozilla, <a href="https://www.mozilla.org/en-US/about/governance/policies/security-group/certs/policy/" target="_blank" rel="noopener">Mozilla Root Store Policy</a> (v3.1, sole-discretion removal language) — fetched live 2026-08-08.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Cross-signing produces two independently valid certificates for the same root/key — one self-signed, one issued by another, already-trusted CA — so a client can trust a new CA before its own root is widely distributed.</li>
+    <li>Three real reasons for cross-signing: bootstrapping a new root, legacy client compatibility, and forced transition after a root-program distrust.</li>
+    <li>Let's Encrypt/IdenTrust is the model successful case; the AddTrust External CA Root expiration (May 30, 2020) shows a cross-sign's own expiry can break old clients (OpenSSL 1.0.x, GnuTLS) even with a valid alternate path available.</li>
+    <li>The 2024 Chrome/Apple/Mozilla distrust of Entrust is a current, real example of a forced CA transition on a root program's timeline, not the certificate owner's.</li>
+    <li>Because a chain can depend on a root you don't control, CA-agnostic reissuance automation is a resilience requirement, not a convenience.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What are the three real reasons a CA gets cross-signed, and which one is not voluntary?</li>
+<li>Why did some clients break when the AddTrust External CA Root expired in 2020, even though a valid unexpired chain existed?</li>
+<li>What happened to Entrust-issued certificates in Chrome starting November 1, 2024, and on whose timeline was that forced?</li>
+<li>Why can a certificate's chain fail on a date that has nothing to do with the leaf certificate's own expiration?</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's <code>openssl s_client</code> connection to the Let's Encrypt test host fails or times out, that's a network/firewall issue, not a conceptual one — swap in any HTTPS site you know is Let's Encrypt-issued and rerun the same Issuer/Subject inspection.</footer>
+
+<div class="lesson-nav">
+  <a href="0017-trust-stores-across-platforms.html">&larr; Previous: Trust Stores Across Windows, Linux, macOS, Java, and Browsers</a>
+  <a href="../objectives.html">Next: Stage E — TLS / HTTPS &rarr;</a>
+</div>
+
+</body>
+</html>
