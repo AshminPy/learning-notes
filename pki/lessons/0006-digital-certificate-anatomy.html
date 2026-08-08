@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 6 — X.509 Certificate Anatomy</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 6 of 106</p>
+<h1>What Is a Digital Certificate? Anatomy of an X.509 Certificate</h1>
+
+<h2>What you will learn</h2>
+<p>What a digital certificate actually is (a signed statement, not a secret), the exact field-by-field structure of an X.509 v3 certificate as defined by RFC 5280, and which fields you'll actually use day-to-day versus which exist mostly for edge cases.</p>
+
+<h2>Why this matters</h2>
+<p>Every troubleshooting session, every <code>openssl x509 -text</code> dump, every "why did this certificate fail validation" incident comes down to reading these fields correctly. If you don't know that <strong>Subject Alternative Name</strong>, not the Subject Common Name, is what browsers actually check for hostname matching (Lesson 16 covers validation in full; RFC 9525 made this official in 2023), you will misdiagnose real outages. This lesson is the map you'll reference for the rest of the course.</p>
+
+<h2>Simple explanation</h2>
+<p>A digital certificate is a <strong>public statement, signed by someone else, that says "this public key belongs to this identity."</strong> It contains no secrets — a certificate is safe to hand to anyone, post publicly, or attach to every TLS handshake, because it only ever contains a <em>public</em> key plus metadata about who that key belongs to and who's vouching for that claim. The private key that matches it never appears in the certificate at all. X.509 is simply the standard, structured format almost every certificate on the internet uses to say all of this.</p>
+
+<h2>How it works</h2>
+
+<h3>The two-part structure</h3>
+<p>A certificate has two conceptual halves: the part that got signed (<code>TBSCertificate</code> — "to be signed certificate"), and the signature itself, covering everything in that first part:</p>
+<pre><code>Certificate  ::=  SEQUENCE  {
+    tbsCertificate       TBSCertificate,
+    signatureAlgorithm   AlgorithmIdentifier,
+    signatureValue       BIT STRING  }</code></pre>
+<p>This matters because it explains <em>why</em> tampering with a certificate is detectable: change one byte of <code>tbsCertificate</code> and the <code>signatureValue</code> no longer validates against it. That's the entire integrity guarantee.</p>
+
+<h3>Fields inside TBSCertificate (RFC 5280, Section 4.1.2)</h3>
+<ul>
+<li><strong>version</strong> — almost always v3 (encoded as integer 2); v3 is required if any extensions are present, and virtually every certificate issued today uses extensions.</li>
+<li><strong>serialNumber</strong> — a positive integer, unique per issuing CA, up to 20 octets. This is what a CRL or OCSP responder uses to identify exactly which certificate is being revoked.</li>
+<li><strong>signature</strong> — the algorithm identifier the CA used to sign (e.g. <code>sha256WithRSAEncryption</code>, <code>ecdsa-with-SHA256</code>); must match the outer <code>signatureAlgorithm</code>.</li>
+<li><strong>issuer</strong> — the distinguished name (DN) of the CA that signed this certificate. Never empty.</li>
+<li><strong>validity</strong> — a <code>notBefore</code> / <code>notAfter</code> pair (UTCTime or GeneralizedTime). Everything about certificate lifetimes (Lesson 32-38, and the 200-day CA/Browser Forum maximum from Ballot SC-081v3) traces back to this one field.</li>
+<li><strong>subject</strong> — the DN of the entity the certificate identifies. Can be an empty sequence if <code>subjectAltName</code> is present and marked critical — a detail that surprises people reading raw ASN.1 for the first time.</li>
+<li><strong>subjectPublicKeyInfo</strong> — the actual payload: the algorithm identifier plus the subject's public key bits. This is the one thing every certificate exists to carry.</li>
+<li><strong>issuerUniqueID</strong> / <strong>subjectUniqueID</strong> — optional, v2/v3 only, explicitly "not recommended" by RFC 5280. You will almost never see these populated in practice.</li>
+<li><strong>extensions</strong> — v3 only, a sequence of typed, optionally-critical extensions. This is where almost all the interesting, modern behavior lives (next section).</li>
+</ul>
+
+<h3>The extensions that actually matter (RFC 5280, Section 4.2)</h3>
+<table>
+<tr><th>Extension</th><th>RFC 5280 §</th><th>What it controls</th></tr>
+<tr><td>basicConstraints</td><td>4.2.1.9</td><td>Is this a CA certificate (<code>CA:TRUE</code>) allowed to sign other certificates, or an end-entity leaf?</td></tr>
+<tr><td>keyUsage</td><td>4.2.1.3</td><td>What cryptographic operations the key may perform — <code>digitalSignature</code>, <code>keyCertSign</code>, <code>cRLSign</code>, <code>keyEncipherment</code>, etc.</td></tr>
+<tr><td>extendedKeyUsage</td><td>4.2.1.12</td><td>Application-level purpose — <code>serverAuth</code>, <code>clientAuth</code>, <code>codeSigning</code>, <code>timeStamping</code>.</td></tr>
+<tr><td>subjectAltName (SAN)</td><td>4.2.1.6</td><td>DNS names, IPs, emails, URIs the certificate is actually valid for. This is what hostname checking uses today — not the Subject CN (RFC 9525, 2023).</td></tr>
+<tr><td>authorityKeyIdentifier</td><td>4.2.1.1</td><td>Identifies which of the issuing CA's keys signed this certificate — needed when a CA has rotated keys.</td></tr>
+<tr><td>subjectKeyIdentifier</td><td>4.2.1.2</td><td>A hash identifying this certificate's own public key — used by the next certificate down the chain as its authorityKeyIdentifier.</td></tr>
+<tr><td>CRL Distribution Points</td><td>4.2.1.13</td><td>URL(s) where a revocation list for this certificate can be fetched (Lesson 39).</td></tr>
+<tr><td>Authority Information Access</td><td>4.2.2.1</td><td>URL(s) for the OCSP responder and/or the issuing CA's own certificate (Lesson 40).</td></tr>
+</table>
+
+<h2>Architecture / diagram</h2>
+<pre><code>Certificate
+├── tbsCertificate                     (this whole block gets signed)
+│   ├── version               → v3
+│   ├── serialNumber          → unique per CA
+│   ├── signature             → alg CA used to sign
+│   ├── issuer                → CA's distinguished name
+│   ├── validity               → notBefore / notAfter
+│   ├── subject                → entity's distinguished name
+│   ├── subjectPublicKeyInfo  → the actual public key (the payload)
+│   └── extensions[]
+│         ├── basicConstraints        (CA or leaf?)
+│         ├── keyUsage / extendedKeyUsage
+│         ├── subjectAltName          (real hostname-matching field)
+│         ├── authorityKeyIdentifier / subjectKeyIdentifier  (chain-linking)
+│         ├── CRL Distribution Points
+│         └── Authority Information Access (OCSP)
+├── signatureAlgorithm                 (must match tbsCertificate.signature)
+└── signatureValue                     (signature OVER tbsCertificate only)</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>DN (Distinguished Name)</strong> — a structured name like <code>CN=example.com, O=Example Inc, C=US</code> identifying the subject or issuer.</li>
+<li><strong>TBSCertificate</strong> — "to be signed certificate": everything the CA's signature actually covers.</li>
+<li><strong>Critical extension</strong> — an extension flagged such that a client <em>must</em> reject the certificate if it doesn't understand that extension, rather than silently ignore it.</li>
+<li><strong>SAN (Subject Alternative Name)</strong> — the extension holding the actual list of DNS names/IPs a certificate is valid for.</li>
+<li><strong>ASN.1 / DER</strong> — the abstract syntax notation and binary encoding rules a certificate is actually built from under the hood (Lesson 8 covers the file formats built on top of this).</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>When you visit a website and your browser shows a padlock, the certificate it just received in the TLS handshake is being read exactly like the diagram above: is <code>subjectAltName</code> a match for the hostname you typed? Is <code>notAfter</code> still in the future? Does <code>basicConstraints</code> on the CA certificate above it actually say <code>CA:TRUE</code>? Every one of those checks is reading one specific field from this structure — there is no separate "trust database" beyond the certificate's own signed fields plus the trust store (Lesson 17).</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Generate a self-signed certificate and map every field back to what you just learned:</p>
+<pre><code># Generate a throwaway key + self-signed cert in one step
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+  -keyout self.key -out self.pem -days 30 -noenc \
+  -subj "/CN=lab.example.com" \
+  -addext "subjectAltName=DNS:lab.example.com,DNS:www.lab.example.com"
+
+# Dump every field, human-readable
+openssl x509 -in self.pem -noout -text</code></pre>
+<p>Expected result: in the output, find and identify — the version (should read <code>3 (0x2)</code>), the serial number, the validity dates, the Subject DN, the two hostnames under <code>X509v3 Subject Alternative Name</code>, and <code>X509v3 Basic Constraints: CA:FALSE</code> (this is a leaf certificate, not a CA). Confirm you can point to each one without re-reading this lesson.</p>
+
+<h2>What can go wrong</h2>
+<p>A common beginner mistake: assuming the Subject <code>CN</code> field is what browsers check for the hostname. Since RFC 9525 obsoleted RFC 6125 in November 2023, CN-based hostname matching is no longer valid per spec — clients must use <code>subjectAltName</code> only. A certificate with a correct CN but no matching SAN entry will fail hostname validation in every modern client, even though the CN "looks right" to a human reading it.</p>
+
+<h2>Troubleshooting</h2>
+<p>If a certificate is rejected with a hostname-mismatch error but the Subject line looks correct, the first command to run is <code>openssl x509 -in cert.pem -noout -text | grep -A1 "Subject Alternative Name"</code> — check the SAN list, not the Subject DN. This single check resolves a large share of "but the name is right!" tickets.</p>
+
+<h2>Security considerations</h2>
+<p>Because a certificate is entirely public (it contains no secret material), it is always safe to log, share, or attach to a bug report in full — never treat a <code>.crt</code>/<code>.pem</code> certificate file itself as sensitive. The private key is the only part that requires protection (Lesson 72), and it is never present inside a certificate's own structure.</p>
+
+<h2>Production best practices</h2>
+<p>When issuing certificates, always set <code>basicConstraints</code> correctly (<code>CA:FALSE</code> for leaf certificates — never leave this to a template default without checking), always populate <code>subjectAltName</code> with every hostname the certificate needs to serve, and never rely on Subject CN alone. These three checks catch the majority of real-world misissuance problems before they reach production.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "What's the difference between the Subject CN and the SAN, and which one actually matters?" <strong>A:</strong> "SAN is what matters — per RFC 9525 (obsoleting RFC 6125 in 2023), CN-based hostname matching is no longer valid. CN is still often set for human readability and legacy compatibility, but a modern client validates the hostname against subjectAltName entries only."</p>
+<p><strong>Interview Q:</strong> "What does a certificate's signature actually cover?" <strong>A:</strong> "The entire TBSCertificate structure — version, serial number, issuer, validity, subject, public key, and all extensions. Change any one byte of that structure and the signature no longer validates."</p>
+
+<h2>Source</h2>
+<p>IETF RFC 5280, <a href="https://www.rfc-editor.org/rfc/rfc5280" target="_blank" rel="noopener">"Internet X.509 Public Key Infrastructure Certificate and Certificate Revocation List (CRL) Profile"</a>, Section 4.1.2 (TBSCertificate fields) and Section 4.2 (standard extensions) — fetched and confirmed live (2026-08-08). RFC Editor, <a href="https://www.rfc-editor.org/info/rfc9525/" target="_blank" rel="noopener">RFC 9525 info page</a> (obsoletes RFC 6125, Nov 2023, SAN-only hostname checking) — confirmed live (2026-08-08).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A certificate is a public, signed statement binding a public key to an identity — it contains no secrets and is always safe to share.</li>
+    <li>The signature covers the entire TBSCertificate block: version, serial number, issuer, validity, subject, public key, and extensions.</li>
+    <li>Extensions carry the fields that actually matter day-to-day: basicConstraints (CA or leaf), keyUsage/EKU (allowed operations), and subjectAltName (real hostname matching, per RFC 9525).</li>
+    <li>Subject CN is not used for hostname validation by modern clients — only subjectAltName is, since RFC 9525 obsoleted RFC 6125 in 2023.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What exactly does a certificate's signature cover — the whole file, or just part of it?</li>
+<li>Which field does a modern browser actually check for hostname matching, and which RFC made this official?</li>
+<li>What does <code>basicConstraints: CA:TRUE</code> mean, and why does it matter that a leaf certificate has <code>CA:FALSE</code>?</li>
+<li>Name two extensions used for chain-linking (connecting a certificate to its issuer's certificate).</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's <code>openssl x509 -text</code> output looks different from what's described here (missing SAN, wrong version), paste it back to your teacher — a mismatch here usually means the <code>-addext</code> flag or OpenSSL version behaved differently than expected.</footer>
+
+<div class="lesson-nav">
+  <a href="0005-rsa-vs-ecc.html">&larr; Previous: RSA vs ECC</a>
+  <a href="0007-inspecting-certificates.html">Next: Inspecting Certificates with OpenSSL and Windows Tools &rarr;</a>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 7 — Inspecting Certificates</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 7 of 106</p>
+<h1>Inspecting Certificates with OpenSSL and Windows Tools</h1>
+
+<h2>What you will learn</h2>
+<p>The exact commands to read every field from Lesson 6 out of a real certificate file or a live server, on both OpenSSL (Linux/macOS/Windows) and native Windows tooling — plus how automated linters like zlint and certlint check a certificate against RFC 5280 and CA/Browser Forum requirements instead of you eyeballing the output by hand.</p>
+
+<h2>Why this matters</h2>
+<p>You cannot troubleshoot what you cannot read. Every incident in Stage Q ("date invalid," "hostname mismatch," "unable to get local issuer") starts with pulling up the actual certificate and reading its fields — not guessing from a browser error message. This is the single most-used skill in this entire course; you'll run these commands dozens of times per week in a real PKI role.</p>
+
+<h2>Simple explanation</h2>
+<p>There are three ways to look inside a certificate: <strong>read a file you already have</strong> (<code>openssl x509</code>, or Windows <code>certutil</code>), <strong>pull one live off a running server</strong> (<code>openssl s_client</code>), or <strong>run an automated linter against it</strong> (zlint/certlint) that checks hundreds of RFC 5280 and CA/Browser Forum rules for you in seconds. Learn all three — each solves a different problem.</p>
+
+<h2>How it works</h2>
+
+<h3>OpenSSL: reading a certificate file</h3>
+<p>The core command is <code>openssl x509</code>. By default it reads and re-outputs PEM; the flags below change what it shows instead:</p>
+<pre><code># Full human-readable dump
+openssl x509 -in cert.pem -noout -text
+
+# Just the parts you usually need
+openssl x509 -in cert.pem -noout -subject -issuer -dates -serial
+
+# SHA-256 fingerprint (used to compare a cert against a known-good copy)
+openssl x509 -in cert.pem -noout -fingerprint -sha256
+
+# If the file is DER (binary), not PEM
+openssl x509 -in cert.der -inform DER -noout -text</code></pre>
+<p><code>-noout</code> is the flag that trips people up first: without it, <code>openssl x509</code> re-prints the PEM certificate itself after whatever else you asked for, which is almost never what you want when you're just inspecting.</p>
+
+<h3>OpenSSL: pulling a certificate straight off a live server</h3>
+<p>You don't need the file at all if the server is reachable — this is usually the fastest path during an incident:</p>
+<pre><code># Connect, show the full handshake and cert chain, then exit immediately
+echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -text
+
+# Just check the dates without a full dump
+echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -dates</code></pre>
+<p><code>-servername</code> sets SNI — without it, some servers hosting multiple certificates will hand back the wrong one, which is a real, common false alarm during troubleshooting.</p>
+
+<h3>Windows: certutil and PowerShell</h3>
+<p><em>Track A.</em> Windows ships its own certificate inspection tooling that doesn't require OpenSSL at all:</p>
+<pre><code># Dump a certificate file's contents (equivalent to openssl x509 -text)
+certutil -dump cert.cer
+
+# Dump a PKCS#12/.pfx bundle's structure
+certutil -dumpPFX bundle.pfx
+
+# PowerShell equivalent for a quick look
+Get-PfxCertificate -FilePath .\cert.cer | Format-List *</code></pre>
+<p>certutil also doubles as the primary command-line tool for interacting with AD CS itself (submitting requests, managing the CA database) — Stage K covers that side. For this lesson, <code>-dump</code> and <code>-dumpPFX</code> are the two you'll use most for pure inspection. The Windows GUI equivalent is the Certificates MMC snap-in (<code>certmgr.msc</code> for the current user store, <code>certlm.msc</code> for the local machine store) — double-click any certificate to see the same fields in a dialog.</p>
+
+<h3>Automated linting: zlint and certlint</h3>
+<p>Reading fields by hand doesn't scale, and it doesn't catch subtle CA/Browser Forum Baseline Requirements violations a human reviewer would miss. Two purpose-built linters exist for this:</p>
+<ul>
+<li><strong>zlint</strong> (Go, ZMap project) — checks a certificate against RFC 5280 and CA/Browser Forum rules, organized into "lint sources" you can include/exclude:
+<pre><code>zlint mycert.pem
+zlint -excludeSources=ETSI_ESI mycert.pem
+zlint -list-lints-source</code></pre>
+</li>
+<li><strong>certlint</strong> (Ruby, maintained by Rob Stradling at Sectigo, originally written by Peter Bowen) — a similar RFC 5280 / BR conformance checker, invoked via <code>ruby -I lib:ext bin/certlint cert.pem</code>. Output is one line per finding, prefixed by severity: <strong>B</strong>ug, <strong>I</strong>nformation, <strong>N</strong>otice, <strong>W</strong>arning, <strong>E</strong>rror, <strong>F</strong>atal.</li>
+</ul>
+<p>In practice, public CAs and CT-log monitoring pipelines run both together — zlint and certlint don't check exactly the same rule set, so agreement between them is stronger evidence of a compliant certificate than either alone.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>Have a file?             openssl x509 -in cert.pem -noout -text
+                          certutil -dump cert.cer            (Windows)
+
+Have a live server?      openssl s_client -connect host:443 -servername host
+                            | openssl x509 -noout -text
+
+Need automated,          zlint mycert.pem
+RFC/BR compliance        ruby bin/certlint cert.pem
+checking?                 → pass/warn/error/fatal per rule, not manual reading</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>SNI (Server Name Indication)</strong> — the hostname a TLS client sends during the handshake so a multi-certificate server returns the right one; set with <code>-servername</code> in openssl s_client.</li>
+<li><strong>Fingerprint</strong> — a hash (commonly SHA-256) of the DER-encoded certificate, used to verify two copies are byte-identical without comparing the whole file.</li>
+<li><strong>zlint / certlint</strong> — automated X.509 conformance linters checking a certificate against RFC 5280 and CA/Browser Forum Baseline Requirements.</li>
+<li><strong>MMC (Microsoft Management Console)</strong> — the Windows GUI framework hosting the Certificates snap-in (<code>certmgr.msc</code> / <code>certlm.msc</code>).</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>A user reports "the site's certificate looks wrong." Instead of trusting the browser's summary, pull the live certificate directly: <code>echo | openssl s_client -connect thesite.com:443 -servername thesite.com 2>/dev/null | openssl x509 -noout -subject -issuer -dates</code>. In one line you get the actual subject, the actual issuer, and the actual validity window — ground truth, not a paraphrase.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Practice all three inspection methods against a real, live certificate:</p>
+<pre><code># 1. Pull a live cert and dump it fully
+echo | openssl s_client -connect www.google.com:443 -servername www.google.com 2>/dev/null \
+  | openssl x509 -noout -text > google-cert.txt
+
+# 2. Extract just the fields you'd check first during an incident
+openssl x509 -in google-cert.txt -noout -subject -issuer -dates 2>/dev/null || \
+echo | openssl s_client -connect www.google.com:443 -servername www.google.com 2>/dev/null \
+  | openssl x509 -noout -subject -issuer -dates
+
+# 3. Save the cert as PEM and lint it (if zlint is installed)
+echo | openssl s_client -connect www.google.com:443 -servername www.google.com 2>/dev/null \
+  | openssl x509 -out google-cert.pem
+zlint google-cert.pem 2>/dev/null | head -20 || echo "zlint not installed — see https://github.com/zmap/zlint"</code></pre>
+<p>Expected result: you can identify the certificate's real subject, issuer, and expiry date without opening a browser, and (if zlint is installed) see it pass the great majority of RFC 5280 / BR lint checks, since it's a certificate from a major public CA.</p>
+
+<h2>What can go wrong</h2>
+<p>Forgetting <code>-servername</code> on <code>openssl s_client</code> against a server using SNI-based virtual hosting is the single most common mistake here — you'll pull back a default/wrong certificate and misdiagnose a perfectly healthy certificate as broken. Always set <code>-servername</code> to match the hostname you're actually trying to reach.</p>
+
+<h2>Troubleshooting</h2>
+<p>If <code>openssl x509 -in file -noout -text</code> fails with an error about the input, the file is very likely DER, not PEM (or vice versa) — try again with <code>-inform DER</code>, or check the first line of the file: a genuine PEM file starts with <code>-----BEGIN CERTIFICATE-----</code>. Lesson 8 covers format identification and conversion in depth.</p>
+
+<h2>Security considerations</h2>
+<p>Every command in this lesson only ever reads public certificate data — none of them touch a private key, so there's no secret-handling risk in running them, including against production servers. That said, avoid running unfamiliar third-party inspection tools against certificates from systems you don't control without checking what they send elsewhere first.</p>
+
+<h2>Production best practices</h2>
+<p>Build the habit of pulling live certificates directly (<code>openssl s_client</code>) rather than trusting a browser's or monitoring tool's summary during an incident — summaries can be stale, cached, or simplified in ways that hide the actual field values you need. In CI/CD pipelines that issue certificates, run zlint or certlint automatically on every newly issued certificate before it's deployed; catching a Baseline Requirements violation before deployment is far cheaper than after a CA is caught issuing non-compliant certificates.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "How would you check a certificate's expiry on a remote server without opening a browser?" <strong>A:</strong> "<code>echo | openssl s_client -connect host:443 -servername host 2>/dev/null | openssl x509 -noout -dates</code> — connects, retrieves the live certificate, and prints notBefore/notAfter directly."</p>
+<p><strong>Interview Q:</strong> "What's the difference between zlint and certlint?" <strong>A:</strong> "Both are RFC 5280 / CA-Browser Forum conformance linters, but different implementations with different rule sets — zlint is Go, from the ZMap project; certlint is Ruby, maintained by Sectigo. Public CAs commonly run both, since they don't check identically overlapping rules."</p>
+
+<h2>Source</h2>
+<p>OpenSSL, <a href="https://docs.openssl.org/master/man1/openssl-x509/" target="_blank" rel="noopener">"openssl-x509" manual page</a> — confirmed live (2026-08-08). Microsoft Learn, <a href="https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/certutil" target="_blank" rel="noopener">"certutil"</a> (updated 2025-05-01, fetched live 2026-08-08). ZMap Project, <a href="https://github.com/zmap/zlint" target="_blank" rel="noopener">zlint README</a> — confirmed live (2026-08-08). Sectigo/Rob Stradling, <a href="https://github.com/certlint/certlint" target="_blank" rel="noopener">certlint README</a> — confirmed live (2026-08-08).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li><code>openssl x509 -in file -noout -text</code> reads a certificate file; always include <code>-noout</code> or you'll get the PEM re-printed too.</li>
+    <li><code>openssl s_client -connect host:443 -servername host</code> pulls a live certificate straight off a server — always set <code>-servername</code> to avoid getting the wrong certificate on SNI-based hosting.</li>
+    <li>Windows has its own native tools — <code>certutil -dump</code> / <code>-dumpPFX</code>, PowerShell's <code>Get-PfxCertificate</code>, and the Certificates MMC snap-in — no OpenSSL required.</li>
+    <li>zlint and certlint automate RFC 5280 / CA-Browser Forum compliance checking; public CAs commonly run both since their rule sets don't fully overlap.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What flag do you need on <code>openssl x509</code> to stop it re-printing the PEM certificate itself?</li>
+<li>Why does forgetting <code>-servername</code> on <code>openssl s_client</code> sometimes pull back the wrong certificate?</li>
+<li>Name two native Windows tools for inspecting a certificate without OpenSSL.</li>
+<li>What do zlint and certlint check that manually reading fields does not scale to?</li>
+</ul>
+
+<footer class="teacher-reminder">If zlint isn't installed in your lab environment and you want to try it, tell your teacher — installing it (Go toolchain required) is a short detour worth taking before Stage G's public-issuance labs.</footer>
+
+<div class="lesson-nav">
+  <a href="0006-digital-certificate-anatomy.html">&larr; Previous: Anatomy of an X.509 Certificate</a>
+  <a href="0008-certificate-file-formats.html">Next: Certificate File Formats &rarr;</a>
+</div>
+
+</body>
+</html>

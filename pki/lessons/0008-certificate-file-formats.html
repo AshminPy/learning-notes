@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 8 — Certificate File Formats</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 8 of 106</p>
+<h1>Certificate File Formats: PEM, DER, PKCS#7, PKCS#12, JKS</h1>
+
+<h2>What you will learn</h2>
+<p>The five container formats you'll meet constantly in real PKI work — what each one actually holds (public data only, or public plus private?), how to tell them apart on sight, and which tool reads/writes each one.</p>
+
+<h2>Why this matters</h2>
+<p>"The file format is a container, not the certificate" trips up more beginners than almost anything else in PKI. A <code>.pfx</code> file containing a private key and a <code>.p7b</code> file containing zero private keys can both be handed to you as "the certificate" — confusing the two, or not knowing which one a given server expects, is one of the most common causes of a failed certificate installation (Stage J).</p>
+
+<h2>Simple explanation</h2>
+<p>Think of the certificate itself (the signed X.509 structure from Lesson 6) as the letter, and these five formats as different kinds of envelopes: some hold just one letter as readable text, some hold it as raw bytes, some hold a whole stack of letters, and one specific envelope type is the only one ever allowed to also contain the matching private key.</p>
+
+<h2>How it works</h2>
+
+<h3>PEM — the readable, everywhere format</h3>
+<p>Base64-encoded text wrapped in <code>-----BEGIN ...-----</code> / <code>-----END ...-----</code> markers. Extensions vary (<code>.pem</code>, <code>.crt</code>, <code>.cer</code>, <code>.key</code>) but the content structure is identical — this is why extension alone is never reliable proof of what's inside; you always look at the actual header line.</p>
+<pre><code>-----BEGIN CERTIFICATE-----
+MIIDXTCCAkWgAwIBAgIJAJC1...
+-----END CERTIFICATE-----</code></pre>
+<p>PEM is the default format OpenSSL reads and writes, and it's the one you can safely paste into an email, a chat message, or a config file, since it's plain text.</p>
+
+<h3>DER — the binary encoding underneath</h3>
+<p>DER (Distinguished Encoding Rules) is the raw binary ASN.1 encoding of a certificate. A PEM file is, literally, DER bytes base64-encoded with header/footer lines added — there is no information difference between a PEM and its equivalent DER, only a text-vs-binary difference. Windows tooling (IIS, certutil, the Windows cert store) commonly defaults to DER, often with a <code>.cer</code> or <code>.der</code> extension — the same <code>.cer</code> extension PEM sometimes uses, which is exactly why you check content, not extension.</p>
+<pre><code># Convert PEM to DER
+openssl x509 -in cert.pem -outform DER -out cert.der
+
+# Convert DER to PEM
+openssl x509 -in cert.der -inform DER -outform PEM -out cert.pem</code></pre>
+
+<h3>PKCS#7 (.p7b / .p7c) — a bundle of certificates, never a private key</h3>
+<p>PKCS#7 (per IETF RFC 2315, which is what OpenSSL's <code>pkcs7</code> command implements) is a container for a <em>chain</em> of certificates — typically a leaf plus its intermediates — with no private key ever included. It's the format Windows and Java tooling commonly use to hand over "the certificate plus its chain" as one file, and it's Base64 (PEM-style) or binary (DER-style) just like a single certificate.</p>
+<pre><code># View what certificates are inside a .p7b bundle
+openssl pkcs7 -in bundle.p7b -inform DER -print_certs -noout
+
+# Convert PEM p7b to individual PEM certs
+openssl pkcs7 -in bundle.p7b -print_certs -out certs.pem</code></pre>
+
+<h3>PKCS#12 (.pfx / .p12) — the one format that can hold the private key</h3>
+<p>PKCS#12 is a password-protected binary container that can hold a certificate, its full chain, <em>and</em> the matching private key together — this is the only format in this lesson where that combination is normal and expected. It's what you hand to IIS, or export from one server to move a certificate+key pair to another, and it always deserves the same handling care as a raw private key file, because functionally it is one.</p>
+<pre><code># Create a .p12 from a PEM cert + key
+openssl pkcs12 -export -in cert.pem -inkey key.pem -out bundle.p12 -name "my-cert"
+
+# Inspect a .p12's structure without exporting anything
+openssl pkcs12 -in bundle.p12 -info -noout
+
+# Extract everything back out to PEM
+openssl pkcs12 -in bundle.p12 -out extracted.pem -noenc</code></pre>
+
+<h3>JKS — the Java-specific keystore format</h3>
+<p>JKS (Java KeyStore) is Oracle's own proprietary keystore format, historically the default for Java/Tomcat deployments. Since JDK 9, PKCS#12 is Java's <em>default</em> keystore type, but JKS remains widely deployed in older and existing systems. JKS keystores (and PKCS#12 ones) are managed with Java's own <code>keytool</code>, not OpenSSL:</p>
+<pre><code># List everything in a JKS keystore
+keytool -list -keystore mykeystore.jks -storetype jks
+
+# Import a CA certificate as a trusted entry
+keytool -importcert -alias myCA -file ca-cert.cer \
+  -keystore mykeystore.jks -storetype jks -trustcacerts
+
+# List one entry in full detail
+keytool -list -alias mykey -keystore mykeystore.jks -storetype jks -v</code></pre>
+
+<h2>Architecture / diagram</h2>
+<pre><code>Format        Holds private key?   Encoding         Typical tool
+────────────────────────────────────────────────────────────────────
+PEM           no                   text (base64)    openssl (default)
+DER           no                   binary            openssl -inform/-outform DER
+PKCS#7 (.p7b) no  (chain only)     text or binary    openssl pkcs7
+PKCS#12 (.pfx/.p12)  YES           binary, encrypted openssl pkcs12
+JKS (.jks)    optional (keystore)  binary, proprietary  keytool
+
+Only PKCS#12 and JKS are ever expected to contain a private key.
+PEM, DER, and PKCS#7 hold public certificate data only.</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>ASN.1</strong> — the abstract data structure notation X.509 certificates are defined in; DER is one binary encoding of it.</li>
+<li><strong>Base64</strong> — the text encoding PEM uses to represent binary DER bytes as printable characters.</li>
+<li><strong>Keystore</strong> — a container (PKCS#12 or JKS) that can hold private keys plus certificates together, always password-protected.</li>
+<li><strong>Truststore</strong> — a keystore used to hold only trusted CA certificates (no private keys) — often the same file format (JKS or PKCS#12) used for a different purpose.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>A common real handoff: a public CA emails you a <code>.p7b</code> bundle containing your new leaf certificate plus the intermediate chain — no private key, because the CA never had your private key to begin with (you generated the CSR yourself, Lesson 10). You then combine that <code>.p7b</code>'s certificates with your own private key (which you've had locally the whole time) into a <code>.pfx</code>, because that's the one format IIS needs for import. Understanding which format holds what makes this two-step handoff obvious instead of confusing.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Build a certificate, then move it through every format in this lesson:</p>
+<pre><code># 1. Generate a cert + key (from Lesson 6's pattern)
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+  -keyout lab.key -out lab.pem -days 30 -noenc -subj "/CN=lab.example.com"
+
+# 2. PEM -> DER and back
+openssl x509 -in lab.pem -outform DER -out lab.der
+openssl x509 -in lab.der -inform DER -outform PEM -out lab-roundtrip.pem
+diff lab.pem lab-roundtrip.pem && echo "PEM round-trip: identical"
+
+# 3. Bundle into PKCS#7 and view it
+openssl crl2pkcs7 -nocrl -certfile lab.pem -out lab.p7b
+openssl pkcs7 -in lab.p7b -print_certs -noout
+
+# 4. Bundle cert+key into PKCS#12
+openssl pkcs12 -export -in lab.pem -inkey lab.key -out lab.p12 -name "lab-cert" -passout pass:labpass123
+openssl pkcs12 -in lab.p12 -info -noout -passin pass:labpass123
+
+# 5. Import into a JKS keystore (requires a JDK's keytool)
+keytool -importcert -alias lab -file lab.pem -keystore lab.jks -storetype jks \
+  -storepass labpass123 -noprompt
+keytool -list -keystore lab.jks -storetype jks -storepass labpass123</code></pre>
+<p>Expected result: the PEM round-trip is byte-identical; <code>openssl pkcs7 -print_certs</code> shows your certificate's subject; <code>openssl pkcs12 -info</code> shows both a certificate bag and a (shrouded, encrypted) key bag; <code>keytool -list</code> shows one trusted certificate entry with a SHA-256 fingerprint.</p>
+
+<h2>What can go wrong</h2>
+<p>Assuming a <code>.cer</code> file is always PEM (or always DER) is a common, real mistake — that extension is used for both encodings by different tools (Windows tends toward DER, many Linux/OpenSSL workflows toward PEM). Always check the file's actual header, or just try both <code>-inform PEM</code> and <code>-inform DER</code>, rather than guessing from the extension.</p>
+
+<h2>Troubleshooting</h2>
+<p>If a tool rejects a certificate file with a parse or "unable to load" error, run <code>file cert.cer</code> or open it in a text editor first — if you see <code>-----BEGIN CERTIFICATE-----</code>, it's PEM; if it opens as unreadable binary, it's DER (or a PKCS#7/#12 container). Matching <code>-inform</code>/<code>-outform</code> to what's actually in the file resolves the large majority of "OpenSSL won't read my certificate" issues.</p>
+
+<h2>Security considerations</h2>
+<p>Treat any <code>.pfx</code>/<code>.p12</code> file, and any JKS keystore holding a private-key entry, with the same care as a raw private key — because functionally it is one, just password-wrapped. Never email a <code>.pfx</code>/<code>.p12</code> file without an equally secure, separate channel for its password, and never commit one to source control (this applies even in a personal lab — build the habit now).</p>
+
+<h2>Production best practices</h2>
+<p>Standardize on PEM for anything text-based/version-controlled-adjacent (configs, automation) and PKCS#12 for anything that needs to move a private key between systems — avoid JKS for new deployments where PKCS#12 is equally supported, since JDK 9+ already defaults to PKCS#12 and it isn't Java-proprietary. Always verify a converted file with an inspection command (Lesson 7) immediately after conversion — never assume a format conversion succeeded silently.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "What's the difference between PEM and DER?" <strong>A:</strong> "No information difference — DER is the binary ASN.1 encoding, PEM is that same binary data Base64-encoded as text with BEGIN/END header lines. Same certificate, two encodings."</p>
+<p><strong>Interview Q:</strong> "Which of these formats can contain a private key?" <strong>A:</strong> "PKCS#12 (.pfx/.p12) always can and usually does; JKS keystores can hold key entries too. PEM, DER, and PKCS#7 (.p7b) are certificate-only formats — a private key should never be found inside a .p7b."</p>
+
+<h2>Source</h2>
+<p>OpenSSL, <a href="https://docs.openssl.org/master/man1/openssl-pkcs12/" target="_blank" rel="noopener">"openssl-pkcs12" manual page</a> and <a href="https://docs.openssl.org/master/man1/openssl-pkcs7/" target="_blank" rel="noopener">"openssl-pkcs7" manual page</a> (RFC 2315 PKCS#7 v1.5) — confirmed live (2026-08-08). Oracle, <a href="https://docs.oracle.com/en/java/javase/21/docs/specs/man/keytool.html" target="_blank" rel="noopener">"keytool" manual, Java SE 21</a> (JKS proprietary format, PKCS#12 as JDK 9+ default) — confirmed live (2026-08-08).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>PEM and DER are the same certificate data — text (Base64) vs. binary encoding — with no information difference between them.</li>
+    <li>PKCS#7 (.p7b) bundles a certificate chain but never a private key; PKCS#12 (.pfx/.p12) is the one format that normally carries cert + chain + private key together, password-protected.</li>
+    <li>JKS is Java's own proprietary keystore format, managed with <code>keytool</code>; PKCS#12 has been Java's default keystore type since JDK 9.</li>
+    <li>Never trust a file extension alone to identify format — check the actual header/content, since <code>.cer</code> is used ambiguously for both PEM and DER.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What's the actual difference in information content between a PEM and a DER file of the same certificate?</li>
+<li>Which one format in this lesson is expected to contain a private key, and which tool manages it?</li>
+<li>Why can't you trust a <code>.cer</code> extension alone to tell you whether a file is PEM or DER?</li>
+<li>Since JDK 9, what is Java's default keystore type, and why does that reduce the need for JKS in new deployments?</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's <code>keytool</code> step fails because no JDK is installed, tell your teacher — a JRE/JDK install is a one-time setup worth doing now, since keytool reappears in Stage J's Java installation lesson.</footer>
+
+<div class="lesson-nav">
+  <a href="0007-inspecting-certificates.html">&larr; Previous: Inspecting Certificates with OpenSSL and Windows Tools</a>
+  <a href="0009-converting-certificate-formats.html">Next: Converting Between Certificate Formats &rarr;</a>
+</div>
+
+</body>
+</html>

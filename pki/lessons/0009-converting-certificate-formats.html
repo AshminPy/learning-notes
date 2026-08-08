@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 9 — Converting Between Certificate Formats</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 9 of 106</p>
+<h1>Converting Between Certificate Formats</h1>
+
+<h2>What you will learn</h2>
+<p>How to convert a certificate, private key, or certificate chain between PEM, DER, PKCS#7, and PKCS#12 using OpenSSL, plus PKCS#12-to-JKS conversion for Java targets with <code>keytool</code>. You'll also learn the specific failure modes each conversion direction produces, and why "just convert it" is sometimes the wrong instinct.</p>
+
+<h2>Why this matters</h2>
+<p>Lesson 8 taught you the four container formats exist because different platforms expect different ones — IIS and Windows generally want PKCS#12, Java wants JKS or PKCS#12, Apache/NGINX want PEM, and some legacy Windows import flows want PKCS#7. In real work, a CA almost never hands you the certificate in the exact format your target server needs. You will convert formats constantly — and get it wrong at least once by converting a certificate without realizing the private key didn't come along, or by picking the wrong <code>-inform</code>/<code>-outform</code> and getting a cryptic "unable to load certificate" error.</p>
+
+<h2>Simple explanation</h2>
+<p>Converting between certificate formats is not cryptography — nothing about the key material changes, and no new trust is created or destroyed. You are only repackaging the same bytes: PEM is DER wrapped in Base64 text with <code>-----BEGIN/END-----</code> markers; DER is the raw binary ASN.1 encoding; PKCS#7 is a binary envelope for bundling certificates and CRLs together (no private key, ever); PKCS#12 is an encrypted binary container that can bundle a certificate, its private key, and the chain, protected by a password. Conversion tools just unwrap one container and repack the same bytes into another.</p>
+
+<h2>How it works</h2>
+
+<h3>PEM &harr; DER (openssl x509)</h3>
+<pre><code># PEM to DER
+openssl x509 -in cert.pem -inform PEM -out cert.der -outform DER
+
+# DER to PEM
+openssl x509 -in cert.der -inform DER -out cert.pem -outform PEM</code></pre>
+<p><code>-inform</code> tells OpenSSL what the input actually is; <code>-outform</code> tells it what to produce. Get <code>-inform</code> wrong and OpenSSL fails to parse the file — it does not silently guess correctly in every case.</p>
+
+<h3>PEM &harr; PKCS#7 (openssl pkcs7)</h3>
+<pre><code># PKCS#7 (.p7b) to PEM, printing the certificates it contains
+openssl pkcs7 -inform DER -in chain.p7b -outform PEM -out chain.pem -print_certs
+
+# PEM to PKCS#7
+openssl pkcs7 -inform PEM -in chain.pem -outform DER -out chain.p7b</code></pre>
+<p>PKCS#7 never contains a private key, so this direction is always safe to hand to someone else or store less carefully than a PKCS#12 file. <code>openssl pkcs7</code> only understands PKCS#7 v1.5 per RFC 2315 — it cannot parse the newer CMS (RFC 5652) format, which looks similar but is a different structure.</p>
+
+<h3>PEM &harr; PKCS#12 (openssl pkcs12)</h3>
+<pre><code># Bundle cert + key + chain into a PKCS#12 (.p12/.pfx)
+openssl pkcs12 -export -in cert.pem -inkey key.pem -certfile chain.pem \
+  -name "my-server-cert" -out bundle.p12
+
+# Extract everything back out to PEM (cert + key together)
+openssl pkcs12 -in bundle.p12 -out bundle.pem -noenc
+
+# Extract only the certificate (no private key)
+openssl pkcs12 -in bundle.p12 -clcerts -nokeys -out cert.pem
+
+# Extract only the CA chain
+openssl pkcs12 -in bundle.p12 -cacerts -nokeys -out chain.pem</code></pre>
+<p>PKCS#12 is the only one of these four formats that routinely carries a private key, which is why it's always password-protected — the export password is not optional decoration, it's the only thing standing between that file and full key compromise if it leaks.</p>
+
+<h3>PKCS#12 &rarr; JKS (keytool, for Java targets)</h3>
+<pre><code>keytool -importkeystore \
+  -srckeystore bundle.p12 -srcstoretype PKCS12 -srcstorepass changeit \
+  -destkeystore bundle.jks -deststoretype JKS -deststorepass changeit</code></pre>
+<p>Modern practice (and modern Java itself, since JDK 9) treats PKCS#12 as the preferred keystore format even for Java — JKS is a legacy, Java-only format. You'll still meet older applications and deployment scripts that hard-require <code>.jks</code>, which is why this conversion path exists.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>            openssl x509 (-inform/-outform)
+   PEM  &lt;-----------------------------------&gt;  DER
+    |                                            |
+    | openssl pkcs7                              | (DER is also PKCS#7's
+    v                                            |  and PKCS#12's wire encoding)
+  PKCS#7 (.p7b)  --- certs/CRLs only, no key ----+
+    |
+    | openssl pkcs12 -export  (needs the private key too)
+    v
+  PKCS#12 (.p12/.pfx)  --- cert + key + chain, password-protected
+    |
+    | keytool -importkeystore
+    v
+  JKS (.jks)  --- legacy Java-only keystore</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Encoding vs. container</strong> — PEM/DER is an <em>encoding</em> question (text vs. binary ASN.1); PKCS#7/PKCS#12 is a <em>container/bundling</em> question (what's packed together). It's possible to have DER-encoded PKCS#7 and PEM-encoded PKCS#7 — the two axes are independent.</li>
+<li><strong><code>-inform</code> / <code>-outform</code></strong> — OpenSSL flags telling the tool what format to read/write; get the input one wrong and parsing fails.</li>
+<li><strong>Friendly name</strong> — the human-readable label (<code>-name</code>) stored inside a PKCS#12 file, shown by import wizards.</li>
+<li><strong>Legacy provider</strong> — an OpenSSL 3.x+ module needed to read/write older PKCS#12 files that use RC2-40-CBC or 3DES-CBC encryption, common from old Windows/Java tooling; invoked with <code>-legacy</code>.</li>
+<li><strong>Proof of possession</strong> — not a conversion concept, but relevant context: converting a certificate's format never re-proves anything about the key; that only happens at CSR generation (Lesson 10).</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>A private CA issues a certificate as a PEM file plus a separate PEM chain. The target is an IIS server, which needs a single PKCS#12 file to import through its certificate wizard. The engineer runs <code>openssl pkcs12 -export -in cert.pem -inkey key.pem -certfile chain.pem -out bundle.p12</code>, sets a strong export password, transfers the .p12 file to the Windows box over an already-encrypted channel (not email), and deletes the local unencrypted PEM copy of the private key afterward. This exact PEM-to-PKCS#12 handoff is one of the most common real conversions a PKI engineer performs.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Generate a self-signed cert and key, then walk it through every conversion direction covered above:</p>
+<pre><code># Set up a test cert + key (self-signed, for lab purposes only)
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
+  -days 30 -noenc -subj "/CN=lab.local"
+
+# PEM -> DER -> PEM round trip
+openssl x509 -in cert.pem -outform DER -out cert.der
+openssl x509 -in cert.der -inform DER -outform PEM -out cert-roundtrip.pem
+diff cert.pem cert-roundtrip.pem && echo "PEM round-trip: identical"
+
+# PEM -> PKCS#7 -> PEM (certs only, no key involved)
+openssl crl2pkcs7 -nocrl -certfile cert.pem -out cert.p7b -outform DER
+openssl pkcs7 -inform DER -in cert.p7b -outform PEM -out cert-from-p7b.pem -print_certs
+
+# PEM cert+key -> PKCS#12 -> back out
+openssl pkcs12 -export -in cert.pem -inkey key.pem -name "lab-cert" -out bundle.p12
+openssl pkcs12 -in bundle.p12 -info -noout   # inspect what's inside, prompts for the export password
+openssl pkcs12 -in bundle.p12 -clcerts -nokeys -out cert-from-p12.pem</code></pre>
+<p>Expected result: the PEM round-trip file is byte-identical to the original; the PKCS#7 file contains only the certificate (confirm with <code>-print_certs</code>, no key present); the PKCS#12 <code>-info</code> output lists both a certificate bag and a (encrypted) key bag, proving the key traveled with it — the one format here that actually carries key material.</p>
+
+<h2>What can go wrong</h2>
+<p>The most common mistake is converting only the certificate and assuming the private key came along — PEM and DER conversions of a certificate never touch the key at all, because a certificate file doesn't contain one. A second common mistake: exporting a PKCS#12 with no password (some tools allow an empty password) and then treating the file as safe to email — it isn't, since an unprotected .p12 is a plaintext private key with extra steps. A third: hitting old PKCS#12 files from legacy Windows Server or old Java tooling that use RC2-40-CBC, which recent OpenSSL 3.x+ builds refuse to read without the <code>-legacy</code> flag.</p>
+
+<h2>Troubleshooting</h2>
+<p><strong>"unable to load certificate"</strong> from <code>openssl x509</code> almost always means <code>-inform</code> doesn't match the actual file — a DER file was fed in without <code>-inform DER</code>, or vice versa; <code>file cert.xyz</code> at the shell (binary vs. ASCII text) is a fast way to tell them apart before guessing. <strong>"Mac verify error: invalid password?"</strong> from <code>openssl pkcs12</code> means either the export password is wrong, or (on OpenSSL 3.x+) the file uses a legacy cipher and needs the <code>-legacy</code> flag before OpenSSL will even attempt to check the password. If a converted PKCS#12 imports on one server but silently shows "no private key" on another, re-run <code>openssl pkcs12 -in bundle.p12 -info -noout</code> and confirm a key bag is actually present — the export step may have been run without <code>-inkey</code>.</p>
+
+<h2>Security considerations</h2>
+<p>Any conversion path that produces an unencrypted PEM private key on disk (extracting from PKCS#12 with <code>-noenc</code>, for example) creates a window where that key sits in plaintext — delete it immediately after use, and never leave it in a shell history, temp directory, or backup. Treat PKCS#12 export passwords with the same care as the key itself; a weak or shared export password defeats the whole point of encrypting the container. Never transfer an unencrypted private key (PEM or otherwise) over email, chat, or an unencrypted channel — only ever move it inside an already-encrypted transport, and prefer generating the key directly on the target system via a CSR (Lesson 10) so it never has to travel at all.</p>
+
+<h2>Production best practices</h2>
+<p>Automate format conversion as part of your issuance/deployment pipeline rather than doing it by hand repeatedly — a script that always uses the same flags removes the "did I get <code>-inform</code> right this time" class of error. Keep the CA-issued PEM as your source of truth and treat every other format as a derived, regenerable artifact — never treat a converted PKCS#12 as the canonical copy. Always verify a converted file before deploying it (<code>-text -noout</code> for certs, <code>-info -noout</code> for PKCS#12) rather than assuming the conversion succeeded because the command exited 0.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "You're given a PEM certificate and need to install it on an IIS server. What do you do?" <strong>A:</strong> "IIS needs PKCS#12. Export it with <code>openssl pkcs12 -export -in cert.pem -inkey key.pem -certfile chain.pem -out bundle.p12</code>, set a strong password, transfer it over an encrypted channel, and delete any unencrypted key copies afterward."</p>
+<p><strong>Interview Q:</strong> "What's the difference between PKCS#7 and PKCS#12?" <strong>A:</strong> "PKCS#7 bundles certificates (and CRLs) only — never a private key, so it's relatively low-risk to move around. PKCS#12 can bundle a certificate, its private key, and the chain in one encrypted, password-protected file — treat it like key material because it can contain key material."</p>
+
+<h2>Source</h2>
+<p>OpenSSL documentation, <a href="https://docs.openssl.org/master/man1/openssl-x509/" target="_blank" rel="noopener">openssl-x509</a>, <a href="https://docs.openssl.org/master/man1/openssl-pkcs7/" target="_blank" rel="noopener">openssl-pkcs7</a>, and <a href="https://docs.openssl.org/master/man1/openssl-pkcs12/" target="_blank" rel="noopener">openssl-pkcs12</a> man pages (command syntax, <code>-legacy</code> flag behavior, PKCS#7 v1.5/RFC 2315 scope) — fetched live 2026-08-08. Oracle, <a href="https://docs.oracle.com/en/java/javase/21/docs/specs/man/keytool.html" target="_blank" rel="noopener">keytool documentation</a> (JDK 21) for <code>-importkeystore</code> syntax — fetched live 2026-08-08.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Conversion never changes cryptographic content — it only repackages the same bytes into a different encoding (PEM/DER) or container (PKCS#7/PKCS#12).</li>
+    <li>Only PKCS#12 carries a private key among these four formats — treat any PKCS#12 file, and any unencrypted PEM key extracted from one, as key material requiring key-grade protection.</li>
+    <li><code>-inform</code>/<code>-outform</code> mismatches are the single most common conversion error, producing "unable to load certificate" errors.</li>
+    <li>Old PKCS#12 files (RC2-40-CBC, 3DES-CBC) need the <code>-legacy</code> flag on modern OpenSSL 3.x+ builds to even open.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What's the difference between an encoding conversion (PEM/DER) and a container conversion (PKCS#7/PKCS#12)?</li>
+<li>Which of the four formats can carry a private key, and how does that change how you handle the file?</li>
+<li>What does <code>-inform</code> control, and what error do you get when it's wrong?</li>
+<li>Why might an old PKCS#12 file fail to open on a modern OpenSSL install, and what flag fixes it?</li>
+</ul>
+
+<footer class="teacher-reminder">If your <code>openssl pkcs12 -info</code> output in the lab looks different from what's described here (missing a key bag, different bag types), paste it back to your teacher before moving on — that's a real signal something in the export step was wrong.</footer>
+
+<div class="lesson-nav">
+  <a href="0008-certificate-file-formats.html">&larr; Previous: Certificate File Formats</a>
+  <a href="0010-certificate-signing-requests.html">Next: Certificate Signing Requests (CSRs) &rarr;</a>
+</div>
+
+</body>
+</html>
