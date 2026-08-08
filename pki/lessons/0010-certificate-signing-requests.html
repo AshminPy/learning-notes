@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 10 — Certificate Signing Requests (CSRs)</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 10 of 106</p>
+<h1>Certificate Signing Requests (CSRs): What's Inside, What's Not</h1>
+
+<h2>What you will learn</h2>
+<p>The exact structure of a Certificate Signing Request (CSR) per its governing standard, PKCS#10 (RFC 2986) — what fields it contains, what it deliberately omits, and why. You'll generate and inspect real CSRs with OpenSSL, including the SAN-request pattern every modern CA expects, and learn what a CA is and isn't obligated to honor from what you send it.</p>
+
+<h2>Why this matters</h2>
+<p>Every certificate you'll ever obtain — public or private, TLS server, client auth, code-signing — starts as a CSR. Engineers who've never read the actual structure tend to assume a CSR is "basically a certificate" and get confused when a CA changes or drops fields they requested, or when a CSR built with CN-only (no SAN) gets rejected outright by modern browsers per RFC 9525 (Lesson 16 covers chain validation in depth; the SAN requirement is introduced here because it's a CSR-time decision). Knowing precisely what's in a CSR — and what only the CA adds later — removes an entire category of "why doesn't my cert have X" confusion.</p>
+
+<h2>Simple explanation</h2>
+<p>A CSR is a formal request, not a certificate. It says: "here is my public key, here is who I claim to be, and here is proof — a signature made with the matching private key — that I actually hold that key." It has no expiry date, no serial number, no issuer, and no CA signature, because none of those exist yet — they're the CA's job to add when (and if) it approves the request. Think of it as filling out a form and notarizing your own signature on it; the notary (the CA) still has to review it, decide what to actually issue, and sign the real document.</p>
+
+<h2>How it works</h2>
+
+<h3>The CertificationRequestInfo structure</h3>
+<p>Per RFC 2986 (PKCS#10), a CSR's core data — <code>CertificationRequestInfo</code> — has exactly four fields:</p>
+<ul>
+<li><strong>version</strong> — a fixed value (0), present only for future-format compatibility.</li>
+<li><strong>subject</strong> — the distinguished name (DN) of the entity requesting the certificate (e.g. <code>CN=example.com</code>).</li>
+<li><strong>subjectPKInfo</strong> — the public key being certified, plus the algorithm it uses (RSA, ECDSA, etc.).</li>
+<li><strong>attributes</strong> — an optional set of additional claims about the subject — in practice, this is where requested X.509v3 extensions live, most importantly the <strong>Subject Alternative Name (SAN)</strong> list, via the <code>extensionRequest</code> attribute.</li>
+</ul>
+<p>That whole structure is then signed once, by the requester's own private key, and wrapped with the signature algorithm and signature value to form the complete <code>CertificationRequest</code>. That self-signature is the "proof of possession" — it proves whoever built this CSR controls the private key matching the public key inside it. It is <strong>not</strong> a trust signal to anyone else; it proves key possession, nothing about identity.</p>
+
+<h3>What's explicitly not in a CSR</h3>
+<p>RFC 2986 is direct about this: a certification request "does not include issuer name, serial number, or validity period." Compare that to an issued X.509 v3 certificate's <code>tbsCertificate</code> (RFC 5280), which has all of those plus a CA-assigned <code>signatureAlgorithm</code> and <code>signatureValue</code> that a CSR never has:</p>
+<table>
+<tr><th>Field</th><th>In a CSR?</th><th>In an issued certificate?</th></tr>
+<tr><td>subject (DN)</td><td>Yes — as requested</td><td>Yes — as the CA finalized it (may differ)</td></tr>
+<tr><td>subjectPublicKeyInfo</td><td>Yes</td><td>Yes — copied from the CSR unchanged</td></tr>
+<tr><td>Requested extensions (e.g. SAN)</td><td>Yes — as an <em>attribute</em>, a request only</td><td>Yes/No — CA decides what to honor</td></tr>
+<tr><td>issuer</td><td>No</td><td>Yes — the CA's own DN</td></tr>
+<tr><td>serialNumber</td><td>No</td><td>Yes — CA-assigned</td></tr>
+<tr><td>validity (notBefore/notAfter)</td><td>No</td><td>Yes — CA-assigned, per current CA/Browser Forum limits</td></tr>
+<tr><td>CA's signatureAlgorithm / signatureValue</td><td>No (only the requester's own self-signature exists)</td><td>Yes — this is what makes it a trusted certificate</td></tr>
+</table>
+
+<h3>Attributes are requests, not guarantees</h3>
+<p>This is the detail engineers most often get wrong: everything in the <code>attributes</code> field — SANs, key usage, extended key usage, anything else — is a <em>request</em>. A CA (or, in AD CS, a certificate template — Lesson 51) is free to ignore, override, or reject any of it. If your CSR requests <code>DNS:app.internal.local</code> and <code>DNS:app.external.com</code> but the template or CA policy only permits internal names, the issued certificate simply won't have the external SAN — with no error, unless the CA is configured to reject the whole request instead.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>CSR (PKCS#10 / RFC 2986)                 Issued certificate (X.509 v3 / RFC 5280)
+------------------------                 ---------------------------------------
+version                                   version
+subject (requested DN)          --------> subject (as CA finalized it)
+subjectPKInfo (public key)      --------> subjectPublicKeyInfo (copied unchanged)
+attributes:
+  extensionRequest (SAN, etc.)  -request->  extensions (CA decides what's honored)
+[self-signature: proves the                issuer            (CA adds — not in CSR)
+ requester holds the private key]          serialNumber      (CA adds — not in CSR)
+                                            validity          (CA adds — not in CSR)
+                                            signatureAlgorithm + signatureValue
+                                              (the CA's real signature — not in CSR)</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Distinguished Name (DN)</strong> — the structured identity string (CN, O, OU, C, etc.) identifying the subject.</li>
+<li><strong>subjectPKInfo / subjectPublicKeyInfo</strong> — the public key plus its algorithm identifier; the same structure name is used in both the CSR and the final certificate because it's carried through unchanged.</li>
+<li><strong>Proof of possession</strong> — the CSR's self-signature, proving the requester holds the matching private key. Not an identity or trust claim.</li>
+<li><strong>extensionRequest attribute</strong> — the specific PKCS#10 attribute used to carry requested X.509v3 extensions (SAN, key usage, EKU) inside a CSR.</li>
+<li><strong>PKCS#10</strong> — the format standard for CSRs, defined in RFC 2986; distinct from PKCS#7 and PKCS#12 (Lessons 8-9), which are certificate/key container formats, not requests.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>An engineer generates a CSR with only <code>CN=app.example.com</code> and no SAN, because that used to be enough. The CA issues the certificate exactly as requested — no SAN, CN only. The certificate installs fine. Every browser then rejects the connection with a name-mismatch error, because RFC 9525 (superseding RFC 6125, November 2023) requires SAN-based identity checking — CommonName-based hostname matching is no longer valid per spec, and current browsers enforce that. The CSR wasn't technically wrong; it just requested something no longer sufficient. The fix is always to request SAN explicitly (including the primary hostname as a SAN entry, not just the CN) — never rely on CN alone.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Generate a private key and a CSR requesting a SAN, then inspect and self-verify it:</p>
+<pre><code># Generate a private key
+openssl genrsa -out app.key 2048
+
+# Generate a CSR requesting a SAN via -addext (no config file needed)
+openssl req -new -key app.key -out app.csr \
+  -subj "/CN=app.example.com" \
+  -addext "subjectAltName=DNS:app.example.com,DNS:www.app.example.com"
+
+# Inspect the CSR: confirm subject, public key, and requested extensions
+openssl req -in app.csr -text -noout
+
+# Verify the CSR's self-signature (proof of possession)
+openssl req -in app.csr -verify -noout</code></pre>
+<p>Expected result: the <code>-text -noout</code> output shows a "Requested Extensions" section listing your SAN entries under <code>attributes</code>, and no issuer, serial number, or validity fields anywhere in the output — because a CSR has none. <code>-verify</code> should report the signature verifies OK, confirming the CSR was actually signed by the private key whose public half it carries.</p>
+
+<h2>What can go wrong</h2>
+<p>The most common real-world CSR mistake is exactly the one in the example above: no SAN, or a SAN list that doesn't include every hostname the certificate needs to serve — CN alone is not sufficient under current standards. A second: generating the CSR against a weak or wrong-algorithm key (Lesson 5) that doesn't meet the issuing CA's minimum requirements, discovered only at submission time. A third: assuming a requested extension will definitely appear in the issued certificate — as covered above, attributes are requests the CA (or template) can silently drop.</p>
+
+<h2>Troubleshooting</h2>
+<p>If <code>openssl req -in file.csr -verify -noout</code> reports a signature failure, the file is either corrupted or was tampered with after signing — regenerate it from the original key rather than trying to repair it. If a CA rejects a CSR outright, check the requested key algorithm and size first — most issuance failures at this stage are minimum-key-size or algorithm policy violations, not something wrong with the DN or SAN syntax. If an issued certificate is missing a SAN entry you're certain you requested, re-run <code>-text -noout</code> on your original CSR to confirm it was actually present in the request — a surprising number of "the CA dropped my SAN" reports turn out to be a CSR that never requested it correctly in the first place.</p>
+
+<h2>Security considerations</h2>
+<p>The private key never leaves the machine generating the CSR — only the public key travels inside it, which is the entire point of the CSR model. Never accept a CSR-and-key pair generated somewhere else and sent to you together; a private key that has already traveled over any channel should be considered potentially exposed. Because a CSR's attributes are just a request, never rely on a CSR alone as an access-control or policy boundary — the CA/template enforcement is what actually matters, and it must be configured correctly independent of what any given CSR asks for.</p>
+
+<h2>Production best practices</h2>
+<p>Always generate the key and CSR together, on the target system (or via automation that does the same), and always request SAN explicitly — never CN-only — including every hostname the certificate must serve. Standardize CSR generation through a script or automation tool (Stage L) so the subject format, key algorithm, and SAN list are consistent across the organization instead of hand-typed each time. Verify every CSR with <code>-text -noout</code> before submitting it, to catch a missing SAN or wrong DN before it becomes a support ticket after issuance.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "What's the difference between a CSR and a certificate?" <strong>A:</strong> "A CSR is an unsigned-by-the-CA request: a public key, a claimed identity, and requested extensions, self-signed only to prove key possession. It has no issuer, serial number, or validity period. A certificate is what the CA produces after review — it adds its own issuer name, a serial number, a validity period, and its own signature, which is what actually creates trust."</p>
+<p><strong>Interview Q:</strong> "If you submit a CSR requesting five SAN entries, are you guaranteed to get a certificate with all five?" <strong>A:</strong> "No — SAN is carried as a requested attribute (extensionRequest) in the CSR. The CA or certificate template decides what to actually honor; it can drop or reject entries without that being a bug in the CSR itself."</p>
+
+<h2>Source</h2>
+<p>IETF RFC 2986, <a href="https://www.rfc-editor.org/rfc/rfc2986" target="_blank" rel="noopener">"PKCS #10: Certification Request Syntax Specification"</a> (CertificationRequestInfo structure, explicit exclusion of issuer/serialNumber/validity) — fetched live 2026-08-08. IETF RFC 5280, <a href="https://www.rfc-editor.org/rfc/rfc5280" target="_blank" rel="noopener">"Internet X.509 Public Key Infrastructure Certificate and CRL Profile"</a> (tbsCertificate fields, for comparison) — fetched live 2026-08-08. OpenSSL documentation, <a href="https://docs.openssl.org/master/man1/openssl-req/" target="_blank" rel="noopener">openssl-req</a> man page (<code>-new</code>, <code>-addext</code>, <code>-verify</code> syntax) — fetched live 2026-08-08. RFC Editor, <a href="https://www.rfc-editor.org/rfc/rfc9525" target="_blank" rel="noopener">RFC 9525</a> (SAN-only service identity, obsoletes RFC 6125, Nov 2023) — per this course's design-review-verified facts (MISSION.md, verified 2026-08-06/08).</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>A CSR (PKCS#10 / RFC 2986) contains only version, subject, subjectPKInfo, and requested attributes — self-signed once to prove key possession, nothing more.</li>
+    <li>Issuer, serial number, validity period, and the CA's own signature do not exist in a CSR — the CA adds all of them when it issues the actual certificate.</li>
+    <li>Requested extensions (like SAN) are attributes, not guarantees — a CA or template can drop or override them.</li>
+    <li>Always request SAN explicitly, including the primary hostname — CN-only identity checking is no longer valid per RFC 9525.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What four fields make up a CSR's CertificationRequestInfo?</li>
+<li>Name three fields present in an issued certificate that are never present in a CSR.</li>
+<li>What does a CSR's self-signature actually prove — and what does it not prove?</li>
+<li>Why is CN-only (no SAN) no longer sufficient in a CSR for a browser-trusted TLS certificate?</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's <code>-text -noout</code> output doesn't show a "Requested Extensions" section after using <code>-addext</code>, paste the exact command you ran back to your teacher — that's almost always a quoting or OpenSSL-version syntax issue, not a conceptual mistake.</footer>
+
+<div class="lesson-nav">
+  <a href="0009-converting-certificate-formats.html">&larr; Previous: Converting Between Certificate Formats</a>
+  <a href="../objectives.html">Next: Stage C — Understanding PKI &rarr;</a>
+</div>
+
+</body>
+</html>
