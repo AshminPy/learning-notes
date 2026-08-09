@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 22 — Modern TLS Extensions: Encrypted Client Hello and Certificate Compression</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 22 of 106</p>
+<h1>Modern TLS Extensions: Encrypted Client Hello and Certificate Compression</h1>
+
+<h2>What you will learn</h2>
+<p>Why cleartext SNI (Lesson 21) is a real, current privacy leak, how Encrypted Client Hello (ECH — standardized as RFC 9849, published March 3, 2026) closes that leak using an outer/inner ClientHello split and Hybrid Public Key Encryption (HPKE), what ECH actually requires to work in practice (a published DNS HTTPS/SVCB record, DNS-over-HTTPS or DNS-over-TLS), and separately, how TLS certificate compression (RFC 8879) shrinks the certificate message using zlib/brotli/zstd to cut handshake bytes and round trips. You'll also get the honest, current deployment picture for both — including the real gaps, not just the standards.</p>
+
+<h2>Why this matters</h2>
+<p>Lesson 21 established that SNI is sent in cleartext by default — anyone observing network traffic (an ISP, a network operator, a state-level censor) can see exactly which hostname a client is connecting to, even over an otherwise fully-encrypted HTTPS connection. That's not a theoretical gap; it's the single biggest remaining metadata leak in modern TLS, and it's exactly why ECH exists. Certificate compression is a smaller, more mundane win — but on a large certificate chain (multiple intermediates, big SANs lists) it can meaningfully shrink handshake size and remove round trips, which matters at mobile-network scale. Both are stage-relevant because you'll be asked, in real production reviews, "do we support ECH?" and "is certificate compression worth enabling?" — and the honest answer to both, as of this lesson, is "yes, but check these specific prerequisites first."</p>
+
+<h2>Simple explanation</h2>
+<p>Think of a normal TLS handshake's ClientHello as a postcard: most of it (including the SNI hostname) is readable by anyone who intercepts it in transit, even though the actual conversation that follows is fully encrypted. <strong>ECH is putting that postcard in a sealed envelope</strong> — the truly sensitive fields (the real hostname you want, ALPN preferences, etc.) go inside an encrypted "inner" ClientHello, while a mostly-generic "outer" ClientHello (with a decoy/cover name) is what actually travels in cleartext. Only the server holding the matching private key can open the envelope and see the real request. <strong>Certificate compression</strong> is a much simpler idea: certificates and their chains are just data, and data compresses — so instead of sending the raw certificate bytes over the wire every handshake, compress them first (like zipping a file before emailing it) and decompress on arrival.</p>
+
+<h2>How it works</h2>
+
+<h3>Encrypted Client Hello — the outer/inner split</h3>
+<p>RFC 9849 (published as a Proposed Standard on March 3, 2026, authored by E. Rescorla, K. Oku, N. Sullivan, and C. A. Wood) defines ECH as a mechanism for "encrypting a ClientHello message under a server public key." The handshake now involves two ClientHello structures in one flight:</p>
+<ul>
+<li><strong>ClientHelloOuter</strong> — sent in cleartext, contains a generic/cover server name (often the CDN or hosting provider's own shared name, not the site the user actually wants), and carries the encrypted payload.</li>
+<li><strong>ClientHelloInner</strong> — encrypted, contains the real values: actual SNI hostname, actual ALPN preferences, and everything else that would normally be sensitive.</li>
+</ul>
+<p>The encryption uses <strong>HPKE (Hybrid Public Key Encryption)</strong>: the client performs an HPKE <code>SetupBaseS()</code> operation using the server's ECH public key (published in DNS, see below) and a fixed info string, <code>"tls ech" || 0x00 || ECHConfig</code>; the server performs the matching <code>SetupBaseR()</code> to decrypt. If the server can decrypt and process the inner ClientHello, it proceeds using those real values; if it can't (e.g. it doesn't support ECH, or the config is stale), it falls back to treating the outer ClientHello as the real request — which is what lets ECH degrade gracefully instead of hard-failing against non-supporting middleboxes.</p>
+
+<h3>ECHConfig — how the client gets the server's public key</h3>
+<p>The client needs the server's HPKE public key <em>before</em> it can encrypt anything — this is published as an <strong>ECHConfig</strong> structure (bundled into an <code>ECHConfigList</code> if multiple configs are offered), containing the HPKE public key, a config identifier, the supported HPKE cipher suites, a maximum name length, and the "client-facing" server's DNS name (the one used for the outer ClientHello's cover name). This is distributed via DNS <strong>HTTPS/SVCB resource records</strong> — a separate, companion specification (RFC 9848, "Bootstrapping TLS Encrypted ClientHello with DNS Service Bindings") defines exactly how. This dependency is the single biggest practical constraint on ECH: <strong>the client has to fetch that DNS record over an encrypted DNS channel</strong> (DNS-over-HTTPS or DNS-over-TLS) for ECH to have any real privacy value — fetching the ECHConfig over plain, unencrypted DNS would leak the very thing ECH is trying to hide.</p>
+
+<h3>TLS Certificate Compression — the compress_certificate extension</h3>
+<p>RFC 8879 defines a ClientHello/CertificateRequest extension, <code>compress_certificate(27)</code>, through which a peer advertises which decompression algorithms it can handle: <strong>zlib</strong> (algorithm 1, per RFC 1950), <strong>brotli</strong> (algorithm 2, per RFC 7932), and <strong>zstd</strong> (algorithm 3, per RFC 8478). If both sides support a common algorithm, the sender replaces the normal TLS 1.3 <code>Certificate</code> message with a <code>CompressedCertificate</code> message: an algorithm identifier, the declared uncompressed length (so the receiver can detect a mismatch and abort — this guards against decompression-bomb-style attacks), and the compressed payload itself. This mechanism is TLS 1.3-and-later only, specifically to avoid the middlebox-compatibility problems that plagued earlier TLS extensions when deployed against TLS 1.2 infrastructure.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>Without ECH (Lesson 21's cleartext SNI):
+  ClientHello (cleartext) --- server_name: "secret-internal-app.company.com" ---> [observable on the wire]
+
+With ECH (RFC 9849):
+  Step 0 (prerequisite): client resolves target's HTTPS/SVCB DNS record
+                          over DoH/DoT -> gets ECHConfig (server's HPKE public key)
+
+  ClientHelloOuter (cleartext):
+    server_name: "cover-name.cdn-provider.com"      <- generic, not the real target
+    encrypted_client_hello extension: [HPKE-encrypted blob]
+
+  ClientHelloInner (only visible after HPKE decryption by the server):
+    server_name: "secret-internal-app.company.com"  <- the REAL request, hidden
+    alpn: [...]
+
+  Server: has the matching HPKE private key -> decrypts inner CH -> proceeds
+          with the real request. An observer only ever sees the cover name.
+
+Certificate compression (RFC 8879), TLS 1.3 only:
+  Normal:     Certificate message  = [raw cert chain bytes, e.g. 4-8 KB]
+  Compressed: CompressedCertificate = [algorithm][uncompressed_length][compressed bytes]
+              -> fewer bytes on the wire, meaningful on high-latency/mobile links</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>ECH (Encrypted Client Hello)</strong> — RFC 9849; encrypts the sensitive fields of the ClientHello (real SNI, ALPN preferences) using HPKE, so only the intended server can read them.</li>
+<li><strong>ClientHelloOuter / ClientHelloInner</strong> — the cleartext cover request and the HPKE-encrypted real request that together make up an ECH-enabled handshake.</li>
+<li><strong>HPKE (Hybrid Public Key Encryption)</strong> — the public-key encryption framework ECH uses to encrypt the inner ClientHello under the server's published public key.</li>
+<li><strong>ECHConfig / ECHConfigList</strong> — the structure containing a server's HPKE public key and related metadata, published via DNS so clients can encrypt to it.</li>
+<li><strong>HTTPS/SVCB DNS records</strong> — the DNS record types (per RFC 9848) used to publish ECHConfig; require DoH/DoT to be fetched safely for ECH to actually hide anything.</li>
+<li><strong>compress_certificate extension (27)</strong> — the RFC 8879 extension through which peers negotiate certificate-message compression (zlib, brotli, or zstd), TLS 1.3+ only.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>Cloudflare has enabled ECH for connections to origins across its network, and — because Cloudflare also operates the widely-used 1.1.1.1 DNS-over-HTTPS resolver — it controls both halves of the prerequisite chain (DoH resolution and ECH-capable TLS termination) for a very large share of the sites it fronts. On the client side, Firefox enabled ECH by default starting with Firefox 119 (October 2023) for users who have DNS-over-HTTPS active, Safari followed with default-on support in Safari 17/iOS 17.4/macOS 14.4 (also gated on DoH/DoT being active), and Chrome has ECH enabled by default as of 2026 with support gated on the same DNS-over-HTTPS prerequisite and gradual, server-support-dependent rollout. On the certificate compression side, Chrome has supported brotli-based certificate compression since Chrome 69, and Safari supports the zlib variant — meaning a meaningful share of real-world HTTPS handshakes to well-configured servers are already sending compressed certificate chains today, even though this extension gets far less attention than ECH.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Inspect whether a live site advertises ECH support via DNS, and check certificate-compression negotiation:</p>
+<pre><code># Check for an HTTPS/SVCB DNS record advertising ECH support
+# (look for an "ech=" parameter in the answer)
+dig +short HTTPS cloudflare.com
+dig +short HTTPS www.cloudflare.com
+
+# Compare a domain that does NOT publish ECH -- most sites still won't
+dig +short HTTPS example.com
+
+# Confirm your OpenSSL build's certificate-compression capability
+# (requires a build with RFC 8879 support; not all distro builds include it)
+openssl version
+openssl s_client -connect www.cloudflare.com:443 -tls1_3 </dev/null 2>&1 \
+  | grep -i "compress"
+
+# Inspect the raw Certificate vs CompressedCertificate message size difference
+# conceptually, by comparing chain size to what a compressor achieves locally:
+echo | openssl s_client -connect www.cloudflare.com:443 -showcerts 2>/dev/null \
+  | awk '/BEGIN CERT/,/END CERT/{print > ("chain" ++n ".pem")}'
+cat chain*.pem > full_chain.pem
+wc -c full_chain.pem
+gzip -9 -c full_chain.pem | wc -c
+brotli -q 11 -c full_chain.pem 2>/dev/null | wc -c || echo "install brotli to compare"</code></pre>
+<p>Expected result: <code>dig +short HTTPS</code> against an ECH-supporting domain shows an <code>ech=...</code> parameter (a base64 ECHConfigList) in its answer; a typical domain without ECH shows no such parameter, or no HTTPS record at all. The gzip/brotli comparison shows real compression savings on the certificate chain bytes — directly demonstrating why RFC 8879 is worth enabling on servers presenting long chains.</p>
+
+<h2>What can go wrong</h2>
+<p>The most common real ECH failure mode isn't a bug — it's an unmet prerequisite: a client has ECH support in its browser, but the network's default DNS resolver doesn't support DoH/DoT, so the ECHConfig is either never fetched or fetched over plaintext DNS (which defeats the entire privacy purpose, since an observer of that DNS query sees the real domain anyway). A second gap, confirmed as of 2026: most sites still don't publish an HTTPS/SVCB record with an ECH configuration at all, so even a fully ECH-capable client silently falls back to cleartext SNI against the vast majority of the web — ECH's protection only applies to the specific origins that have actually published it. For certificate compression, the failure mode is usually silent non-negotiation: if either side lacks support (older OpenSSL builds, some enterprise TLS middleboxes/inspection proxies), the handshake proceeds completely normally with the uncompressed Certificate message — there's no error, just a missed optimization, which makes it easy to assume it's working when it never actually negotiated.</p>
+
+<h2>Troubleshooting</h2>
+<p>If ECH appears "enabled" in a browser but traffic captures still show a real (non-cover) SNI value in cleartext, check the DNS resolution path first — confirm DoH/DoT is actually active for that client and that the target domain's HTTPS/SVCB record actually carries an <code>ech=</code> parameter with <code>dig +short HTTPS &lt;domain&gt;</code>; if either is missing, ECH cannot activate for that connection regardless of browser support. If a corporate network-inspection proxy breaks connections to ECH-enabled sites, that's a known, real interaction — some TLS-inspecting middleboxes can't parse or don't expect the ECH extension structure; this is a legitimate reason some enterprise environments explicitly disable ECH via policy (e.g. Chrome's <code>EncryptedClientHelloEnabled</code> enterprise policy) rather than a sign anything is broken on the server side. For certificate compression, if you expect it but don't see a <code>CompressedCertificate</code> message in a capture, check both endpoints' actual library versions and build flags before assuming misconfiguration — many OpenSSL distribution builds and older TLS libraries simply never wired in RFC 8879 support, so the absence is capability, not configuration.</p>
+
+<h2>Security considerations</h2>
+<p>ECH is a genuine privacy improvement for the specific metadata it covers (SNI, ALPN, and other inner ClientHello fields), but don't oversell it in a design review: it does not hide the destination IP address, connection timing, or traffic volume/pattern — all still-usable traffic-analysis signals independent of ECH. It also introduces a real new dependency: your privacy protection is now only as strong as your DNS resolution path, so recommending ECH without also recommending DoH/DoT is an incomplete answer. For certificate compression, the built-in <code>uncompressed_length</code> check exists specifically to prevent decompression-bomb attacks (a tiny compressed blob expanding to an enormous, resource-exhausting output) — any implementation you build or evaluate should be verified to actually enforce that check and abort on mismatch, not just log it.</p>
+
+<h2>Production best practices</h2>
+<p>If you operate public-facing TLS endpoints and control both DNS and TLS termination (directly, or via a CDN like Cloudflare that already supports it), publishing an ECH-capable HTTPS/SVCB record is now a real, standards-track option worth adopting — not an experimental draft anymore, since RFC 9849's Proposed Standard status. Pair it with DoH/DoT guidance for clients, since one without the other provides no real protection. For certificate compression, enabling brotli or zstd support costs little and helps most on chains with multiple intermediates or large SAN lists — verify it's actually negotiating in production with a real packet capture, not just assumed from library version numbers. Don't treat either extension as a substitute for the fundamentals from earlier lessons (correct chain, correct SNI-to-certificate mapping, forward-secret cipher suites) — they're real but incremental improvements layered on top of a correctly configured TLS 1.3 baseline.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "What problem does Encrypted Client Hello solve, and what does it NOT solve?" <strong>A:</strong> "It encrypts the sensitive fields of the ClientHello — most importantly the real SNI hostname — using HPKE, inside an inner ClientHello, while a generic outer ClientHello with a cover name travels in cleartext. It does not hide the destination IP address, connection timing, or traffic volume. It also depends entirely on the client fetching the server's ECHConfig via encrypted DNS (DoH/DoT); over plaintext DNS, the real domain leaks in the DNS query anyway."</p>
+<p><strong>Interview Q:</strong> "Is TLS certificate compression widely deployed today?" <strong>A:</strong> "Partially — Chrome has supported it (brotli) since Chrome 69, and Safari supports zlib. It's TLS 1.3-only by design, to avoid middlebox compatibility problems. It negotiates silently: if either side lacks support, the handshake just proceeds uncompressed with no error, so you have to verify negotiation with a real capture rather than assume it from stated library support."</p>
+
+<h2>Source</h2>
+<p>IETF, <a href="https://www.rfc-editor.org/rfc/rfc9849" target="_blank" rel="noopener">RFC 9849, "TLS Encrypted Client Hello"</a> (Proposed Standard, published March 3, 2026; ECHConfig, HPKE SetupBaseS/SetupBaseR, ClientHelloOuter/ClientHelloInner structure) — fetched live 2026-08-08. IETF Datatracker, <a href="https://datatracker.ietf.org/doc/rfc9848/" target="_blank" rel="noopener">RFC 9848, "Bootstrapping TLS Encrypted ClientHello with DNS Service Bindings"</a> (HTTPS/SVCB record mechanism for publishing ECHConfig) — confirmed live 2026-08-08. IETF, <a href="https://www.rfc-editor.org/rfc/rfc8879" target="_blank" rel="noopener">RFC 8879, "TLS Certificate Compression"</a> (compress_certificate extension 27, zlib/brotli/zstd algorithms, CompressedCertificate message, TLS 1.3-only scope) — fetched live 2026-08-08. Mozilla Support, <a href="https://support.mozilla.org/en-US/kb/faq-encrypted-client-hello" target="_blank" rel="noopener">"Encrypted Client Hello (ECH) — Frequently asked questions"</a> (Firefox 119 default-on with DoH) — cross-checked via live search 2026-08-08. Chrome Enterprise, <a href="https://chromeenterprise.google/policies/encrypted-client-hello-enabled/" target="_blank" rel="noopener">"EncryptedClientHelloEnabled" policy documentation</a> (Chrome's default ECH rollout, DoH dependency, enterprise disable option) — cross-checked via live search 2026-08-08. Chrome Platform Status, <a href="https://chromestatus.com/feature/6196703843581952" target="_blank" rel="noopener">"TLS Encrypted Client Hello (ECH)"</a> feature entry — cross-checked via live search 2026-08-08, corroborating Chrome 69+ certificate-compression (brotli) support cited across multiple independent sources including the Chromium blink-dev "Intent to Ship: TLS 1.3 certificate compression with Brotli" thread.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>Cleartext SNI (Lesson 21) leaks the real hostname a client is connecting to on every ordinary TLS handshake — a real, current metadata exposure.</li>
+    <li>ECH (RFC 9849, Proposed Standard, published March 3, 2026) fixes this by HPKE-encrypting the sensitive fields inside a ClientHelloInner, hidden behind a cleartext ClientHelloOuter carrying a generic cover name.</li>
+    <li>ECH needs the server's public key published via a DNS HTTPS/SVCB record (RFC 9848) and needs that record fetched over encrypted DNS (DoH/DoT) — without both, it provides no real protection.</li>
+    <li>Firefox 119+, Safari 17+/iOS 17.4+, and Chrome (2026) all support ECH by default when DoH is active; Cloudflare is the largest current server-side deployer, but most of the web still doesn't publish an ECH-capable DNS record.</li>
+    <li>Certificate compression (RFC 8879) is a separate, TLS 1.3-only extension that shrinks the Certificate message using zlib/brotli/zstd — supported by Chrome (brotli, since Chrome 69) and Safari (zlib), and negotiates silently with no error if either side lacks support.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What's the difference between ClientHelloOuter and ClientHelloInner, and which one carries the real SNI hostname?</li>
+<li>What two prerequisites does ECH depend on to provide any actual privacy protection?</li>
+<li>What does ECH NOT hide, even when fully working?</li>
+<li>Why is certificate compression's failure mode silent, and what does that mean for how you'd verify it's actually working in production?</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's <code>dig +short HTTPS</code> query returns nothing at all for a domain, that's most likely a resolver or dig-version limitation, not proof the domain lacks an HTTPS record — try <code>dig HTTPS &lt;domain&gt; +short @1.1.1.1</code> explicitly against Cloudflare's resolver before concluding anything, and paste the output back to your teacher if it's still unclear.</footer>
+
+<div class="lesson-nav">
+  <a href="0021-cipher-suites.html">&larr; Previous: Cipher Suites, SNI, ALPN, and Forward Secrecy</a>
+  <a href="../objectives.html">Next: Stage F — Types of Certificates &rarr;</a>
+</div>
+
+</body>
+</html>
