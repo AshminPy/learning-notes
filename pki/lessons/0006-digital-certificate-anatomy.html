@@ -91,14 +91,18 @@
 <h2>Hands-on lab</h2>
 <p><em>Track B.</em> Generate a self-signed certificate and map every field back to what you just learned:</p>
 <pre><code># Generate a throwaway key + self-signed cert in one step
+# (the basicConstraints addext is required here — OpenSSL's default config
+# applies its [v3_ca] section to any -x509 self-signed cert, which sets
+# CA:TRUE unless you override it, even for a "leaf" lab cert like this one)
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
   -keyout self.key -out self.pem -days 30 -noenc \
   -subj "/CN=lab.example.com" \
-  -addext "subjectAltName=DNS:lab.example.com,DNS:www.lab.example.com"
+  -addext "subjectAltName=DNS:lab.example.com,DNS:www.lab.example.com" \
+  -addext "basicConstraints=critical,CA:FALSE"
 
 # Dump every field, human-readable
 openssl x509 -in self.pem -noout -text</code></pre>
-<p>Expected result: in the output, find and identify — the version (should read <code>3 (0x2)</code>), the serial number, the validity dates, the Subject DN, the two hostnames under <code>X509v3 Subject Alternative Name</code>, and <code>X509v3 Basic Constraints: CA:FALSE</code> (this is a leaf certificate, not a CA). Confirm you can point to each one without re-reading this lesson.</p>
+<p>Expected result: in the output, find and identify — the version (should read <code>3 (0x2)</code>), the serial number, the validity dates, the Subject DN, the two hostnames under <code>X509v3 Subject Alternative Name</code>, and <code>X509v3 Basic Constraints: CA:FALSE</code> (this is a leaf certificate, not a CA). Confirm you can point to each one without re-reading this lesson. If you ever drop the <code>basicConstraints</code> addext from a similar command, don't be surprised to see <code>CA:TRUE</code> instead — that's OpenSSL quietly applying its default self-signed-cert template, not a mistake in your command.</p>
 
 <h2>What can go wrong</h2>
 <p>A common beginner mistake: assuming the Subject <code>CN</code> field is what browsers check for the hostname. Since RFC 9525 obsoleted RFC 6125 in November 2023, CN-based hostname matching is no longer valid per spec — clients must use <code>subjectAltName</code> only. A certificate with a correct CN but no matching SAN entry will fail hostname validation in every modern client, even though the CN "looks right" to a human reading it.</p>

@@ -39,12 +39,22 @@ openssl x509 -in cert.der -inform DER -noout -text</code></pre>
 
 <h3>OpenSSL: pulling a certificate straight off a live server</h3>
 <p>You don't need the file at all if the server is reachable — this is usually the fastest path during an incident:</p>
-<pre><code># Connect, show the full handshake and cert chain, then exit immediately
+<pre><code># Connect and pull just the LEAF (server) certificate, then exit immediately
 echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -text
 
 # Just check the dates without a full dump
-echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -dates</code></pre>
+echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -dates
+
+# See the FULL chain the server actually sent — leaf + every intermediate
+echo | openssl s_client -connect example.com:443 -servername example.com -showcerts 2>/dev/null</code></pre>
 <p><code>-servername</code> sets SNI — without it, some servers hosting multiple certificates will hand back the wrong one, which is a real, common false alarm during troubleshooting.</p>
+<p><strong>Correction to a common assumption:</strong> the first command above does <em>not</em> show "the full chain" — <code>openssl x509 -noout -text</code> only ever reads the <em>first</em> PEM block it's given, so piping <code>s_client</code>'s output into it always shows the leaf certificate only, whether or not <code>-showcerts</code> was used. What <code>-showcerts</code> actually changes is <code>s_client</code>'s own output: without it, you only get a short text summary of the chain (depth, subject, issuer, one block per certificate, no full detail); with it, you get the complete PEM body of every certificate the server sent, leaf first. Straight from the OpenSSL manual, <code>-showcerts</code> "displays the server certificate list as sent by the server... it is <strong>not</strong> a verified chain" — that phrase is the whole lesson in miniature. Three different things, easy to blur together:</p>
+<ul>
+<li><strong>Leaf certificate</strong> — the actual server/domain certificate, depth 0. What both commands above give you at minimum.</li>
+<li><strong>Intermediates the server sent</strong> — depth 1, 2, ... Only visible with <code>-showcerts</code> (or the short summary <code>s_client</code> prints by default even without it). This is what the server is <em>presenting</em> — not proof anything actually trusts it.</li>
+<li><strong>The root CA certificate</strong> — almost never sent by the server at all. Per RFC 8446 (TLS 1.3) §4.4.2, a certificate that specifies a trust anchor "MAY be omitted from the chain, provided that supported peers are known to possess any omitted certificates" — every well-configured server relies on the root already sitting in the client's local trust store instead of transmitting it.</li>
+</ul>
+<p>Keep this mental model: <strong>"certificate presented" (what <code>-showcerts</code> shows you) is not the same thing as "certificate trusted."</strong> A server can present a complete-looking set of certificates and still fail validation, because trust is decided locally, against whatever root store the verifying client is using — never by anything the server itself sends.</p>
 
 <h3>Windows: certutil and PowerShell</h3>
 <p><em>Track A.</em> Windows ships its own certificate inspection tooling that doesn't require OpenSSL at all:</p>
@@ -75,7 +85,11 @@ zlint -list-lints-source</code></pre>
                           certutil -dump cert.cer            (Windows)
 
 Have a live server?      openssl s_client -connect host:443 -servername host
-                            | openssl x509 -noout -text
+                            | openssl x509 -noout -text   (leaf cert only)
+
+Need the FULL chain       openssl s_client -connect host:443 -servername host
+the server sent?            -showcerts                   (leaf + intermediates,
+                                                            NOT the root, NOT verified)
 
 Need automated,          zlint mycert.pem
 RFC/BR compliance        ruby bin/certlint cert.pem
@@ -114,6 +128,13 @@ zlint google-cert.pem 2>/dev/null | head -20 || echo "zlint not installed — se
 
 <h2>Troubleshooting</h2>
 <p>If <code>openssl x509 -in file -noout -text</code> fails with an error about the input, the file is very likely DER, not PEM (or vice versa) — try again with <code>-inform DER</code>, or check the first line of the file: a genuine PEM file starts with <code>-----BEGIN CERTIFICATE-----</code>. Lesson 8 covers format identification and conversion in depth.</p>
+<p>The other troubleshooting scenario you'll hit constantly: a client reports "unable to get local issuer certificate" or a general chain/trust error, even though the leaf certificate itself is valid and unexpired. Before assuming the certificate is broken, run <code>-showcerts</code> against the server and look at exactly what it sent — this is almost always one of three things:</p>
+<ul>
+<li><strong>Missing intermediate</strong> — the server sends only the leaf (depth 0), nothing else. Most non-browser clients (curl, server-to-server calls, custom TLS libraries, mobile apps) won't go fetch a missing intermediate on their own; the fix is loading the correct intermediate bundle into the server's TLS config.</li>
+<li><strong>Wrong intermediate</strong> — the server sends an intermediate, but it doesn't actually certify the leaf — compare the leaf's <code>Issuer</code> line against the intermediate's <code>Subject</code> line; they must match exactly. This commonly happens right after a CA rotates its issuing intermediates and the server config wasn't updated.</li>
+<li><strong>Incomplete chain</strong> — the server sends some but not all of the required intermediates (e.g. skips a cross-signed link some older clients still need).</li>
+</ul>
+<p>This is exactly why a certificate can "work fine in Chrome" while failing in curl or a Java client: Chrome (and other Chromium-based browsers) will silently fetch a missing intermediate itself via the leaf's Authority Information Access (AIA) URL if the server didn't send it — Firefox deliberately does not do this (Mozilla closed the request as WONTFIX, citing privacy concerns over the added network call), and most non-browser clients don't either. "It loads fine in my browser" is never proof the server's chain is actually complete — always verify with <code>-showcerts</code>, not a browser tab.</p>
 
 <h2>Security considerations</h2>
 <p>Every command in this lesson only ever reads public certificate data — none of them touch a private key, so there's no secret-handling risk in running them, including against production servers. That said, avoid running unfamiliar third-party inspection tools against certificates from systems you don't control without checking what they send elsewhere first.</p>
@@ -124,15 +145,17 @@ zlint google-cert.pem 2>/dev/null | head -20 || echo "zlint not installed — se
 <h2>Exam and interview notes</h2>
 <p><strong>Interview Q:</strong> "How would you check a certificate's expiry on a remote server without opening a browser?" <strong>A:</strong> "<code>echo | openssl s_client -connect host:443 -servername host 2>/dev/null | openssl x509 -noout -dates</code> — connects, retrieves the live certificate, and prints notBefore/notAfter directly."</p>
 <p><strong>Interview Q:</strong> "What's the difference between zlint and certlint?" <strong>A:</strong> "Both are RFC 5280 / CA-Browser Forum conformance linters, but different implementations with different rule sets — zlint is Go, from the ZMap project; certlint is Ruby, maintained by Sectigo. Public CAs commonly run both, since they don't check identically overlapping rules."</p>
+<p><strong>Interview Q:</strong> "A certificate works in Chrome but a curl request against the same host fails with 'unable to get local issuer certificate.' What's actually happening, and how would you confirm it?" <strong>A:</strong> "Almost always a missing, wrong, or incomplete intermediate — the server isn't sending a full chain, and Chrome is quietly papering over it by fetching the missing intermediate itself via the certificate's AIA URL, something curl and most non-browser clients won't do. I'd confirm with <code>openssl s_client -connect host:443 -servername host -showcerts</code>, compare the leaf's <code>Issuer</code> against each intermediate's <code>Subject</code>, and fix it by loading the correct intermediate bundle on the server — not by touching the certificate itself."</p>
 
 <h2>Source</h2>
-<p>OpenSSL, <a href="https://docs.openssl.org/master/man1/openssl-x509/" target="_blank" rel="noopener">"openssl-x509" manual page</a> — confirmed live (2026-08-08). Microsoft Learn, <a href="https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/certutil" target="_blank" rel="noopener">"certutil"</a> (updated 2025-05-01, fetched live 2026-08-08). ZMap Project, <a href="https://github.com/zmap/zlint" target="_blank" rel="noopener">zlint README</a> — confirmed live (2026-08-08). Sectigo/Rob Stradling, <a href="https://github.com/certlint/certlint" target="_blank" rel="noopener">certlint README</a> — confirmed live (2026-08-08).</p>
+<p>OpenSSL, <a href="https://docs.openssl.org/master/man1/openssl-x509/" target="_blank" rel="noopener">"openssl-x509" manual page</a> — confirmed live (2026-08-08). OpenSSL, <a href="https://docs.openssl.org/master/man1/openssl-s_client/" target="_blank" rel="noopener">"openssl-s_client" manual page</a> ("-showcerts" and "-multi" options) — confirmed live (2026-08-08). IETF, <a href="https://www.rfc-editor.org/rfc/rfc8446.html#section-4.4.2" target="_blank" rel="noopener">RFC 8446 (TLS 1.3) §4.4.2, "Certificate"</a> (trust-anchor certificates MAY be omitted from the sent chain) — confirmed live (2026-08-08). Mozilla, <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=399324" target="_blank" rel="noopener">Bugzilla #399324</a> (Firefox's decision not to do AIA chasing, RESOLVED WONTFIX) — confirmed live (2026-08-08). Microsoft Learn, <a href="https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/certutil" target="_blank" rel="noopener">"certutil"</a> (updated 2025-05-01, fetched live 2026-08-08). ZMap Project, <a href="https://github.com/zmap/zlint" target="_blank" rel="noopener">zlint README</a> — confirmed live (2026-08-08). Sectigo/Rob Stradling, <a href="https://github.com/certlint/certlint" target="_blank" rel="noopener">certlint README</a> — confirmed live (2026-08-08).</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
     <li><code>openssl x509 -in file -noout -text</code> reads a certificate file; always include <code>-noout</code> or you'll get the PEM re-printed too.</li>
-    <li><code>openssl s_client -connect host:443 -servername host</code> pulls a live certificate straight off a server — always set <code>-servername</code> to avoid getting the wrong certificate on SNI-based hosting.</li>
+    <li><code>openssl s_client -connect host:443 -servername host</code> piped into <code>openssl x509 -noout -text</code> only ever shows the <strong>leaf</strong> certificate — add <code>-showcerts</code> to <code>s_client</code> to see every certificate the server actually sent (leaf + intermediates); the root is almost never sent and comes only from the local trust store. Always set <code>-servername</code> too, to avoid getting the wrong certificate on SNI-based hosting.</li>
+    <li>"Certificate presented" (what <code>-showcerts</code> shows) and "certificate trusted" (what the local trust store decides) are two different things — a server can present a complete-looking chain and still fail validation.</li>
     <li>Windows has its own native tools — <code>certutil -dump</code> / <code>-dumpPFX</code>, PowerShell's <code>Get-PfxCertificate</code>, and the Certificates MMC snap-in — no OpenSSL required.</li>
     <li>zlint and certlint automate RFC 5280 / CA-Browser Forum compliance checking; public CAs commonly run both since their rule sets don't fully overlap.</li>
   </ul>
@@ -142,6 +165,7 @@ zlint google-cert.pem 2>/dev/null | head -20 || echo "zlint not installed — se
 <ul>
 <li>What flag do you need on <code>openssl x509</code> to stop it re-printing the PEM certificate itself?</li>
 <li>Why does forgetting <code>-servername</code> on <code>openssl s_client</code> sometimes pull back the wrong certificate?</li>
+<li>What does <code>-showcerts</code> add that plain <code>openssl s_client</code> doesn't show, and why does piping into <code>openssl x509 -noout -text</code> still only show the leaf even with <code>-showcerts</code> on?</li>
 <li>Name two native Windows tools for inspecting a certificate without OpenSSL.</li>
 <li>What do zlint and certlint check that manually reading fields does not scale to?</li>
 </ul>

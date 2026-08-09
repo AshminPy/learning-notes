@@ -31,7 +31,8 @@
 <p>A <strong>hash function</strong> takes any input and produces a fixed-length fingerprint. Change one character of the input, and the fingerprint changes completely and unpredictably. Hashing is <em>one-way</em> — you can't reverse a hash back into its original input — and it uses no keys at all. Hashing alone proves a message wasn't altered; it proves nothing about who sent it. <strong>SHA-2</strong> and <strong>SHA-3</strong> are the current standard hash families (SHA-1 is broken and obsolete — never use it for anything security-relevant).</p>
 
 <h3>Digital signatures</h3>
-<p>A digital signature combines hashing with asymmetric encryption to solve authentication <em>and</em> integrity <em>and</em> non-repudiation at once: the sender hashes the message, then encrypts that hash with their <em>private</em> key. Anyone with the sender's <em>public</em> key can decrypt the signature back into the hash, independently hash the message themselves, and compare. If they match, three things are proven simultaneously: the message wasn't altered (integrity), it came from whoever holds that private key (authentication), and the sender can't credibly deny sending it (non-repudiation) — because only they hold that private key.</p>
+<p>A digital signature combines hashing with asymmetric cryptography to solve authentication <em>and</em> integrity <em>and</em> support non-repudiation at once. The general rule, true for every signature algorithm (RSA, ECDSA, EdDSA — Lesson 5 compares them): the sender hashes the message, then uses their <em>private</em> key to <strong>generate a signature</strong> over that hash. Anyone with the sender's <em>public</em> key can <strong>verify</strong> the signature against their own independently-computed hash of the message. If it checks out, three things are shown: the message wasn't altered (integrity), it was signed by whoever holds that private key (authentication), and — depending on how well that private key was actually protected — it supports non-repudiation, making it harder for the sender to credibly deny signing it.</p>
+<p><strong>An RSA-only shortcut, and where it breaks:</strong> you'll often see signing explained as "encrypt the hash with the private key" and verifying as "decrypt it with the public key." That's a simplification that happens to work for RSA, because RSA signing reuses the same underlying math (modular exponentiation) as RSA decryption — though even for RSA it's not literally the same operation: RFC 8017 (PKCS#1) defines separate padding for signatures (PSS or PKCS#1 v1.5) than for encryption (OAEP or PKCS#1 v1.5). It does <em>not</em> work at all for ECDSA or EdDSA (NIST FIPS 186-5) — those algorithms don't encrypt anything to sign; they do elliptic-curve arithmetic over the hash and a private value, and there's no ciphertext to decrypt when verifying. Learn the general rule as "private key generates/signs, public key verifies" rather than "private key encrypts" — the first is correct for every algorithm, the second quietly breaks the moment you meet ECDSA.</p>
 
 <h3>Key exchange</h3>
 <p><strong>Key exchange</strong> solves a narrower, specific problem: how do two parties agree on a shared symmetric key, in full view of an eavesdropper, without ever transmitting that key itself? <strong>Diffie-Hellman</strong> (and its elliptic-curve variant, <strong>ECDH</strong>/<strong>ECDHE</strong>) solves this using math where each side can compute the same shared secret from public information, but an eavesdropper watching the exchange cannot. This is a distinct operation from encrypting a message or signing one — it produces a shared secret, not a locked message or a signature.</p>
@@ -44,10 +45,10 @@ HASHING (integrity only — no keys, no identity)
   Document ──[hash function]──▶ fixed-length fingerprint
   Change 1 byte ──[hash function]──▶ completely different fingerprint
 
-SIGNING (integrity + authentication + non-repudiation)
-  Alice: hash(message) ──[encrypt hash with Alice's PRIVATE key]──▶ signature
-  Bob:   decrypt signature with Alice's PUBLIC key ──▶ compare to his own hash(message)
-         match ──▶ proves Alice sent it, unaltered
+SIGNING (integrity + authentication + supports non-repudiation)
+  Alice: hash(message) ──[sign hash with Alice's PRIVATE key]──▶ signature
+  Bob:   verify signature with Alice's PUBLIC key ──▶ compare to his own hash(message)
+         match ──▶ shows Alice's private key signed it, message unaltered
 
 KEY EXCHANGE (agreeing on a shared secret, in public)
   Alice: public info A ───────────────▶
@@ -63,7 +64,7 @@ KEY EXCHANGE (agreeing on a shared secret, in public)
 <li><strong>Public key</strong> — safe to share with anyone.</li>
 <li><strong>Private key</strong> — never shared, ever (Stage O covers this in depth).</li>
 <li><strong>Hash function</strong> — one-way fingerprint, no keys involved (SHA-2, SHA-3).</li>
-<li><strong>Digital signature</strong> — a hash, encrypted with the signer's private key.</li>
+<li><strong>Digital signature</strong> — a hash, signed with the signer's private key and checked with the signer's public key. (Not literally "encryption" as a general rule — that's an RSA-specific shortcut; ECDSA/EdDSA sign without encrypting anything. See "How it works" above.)</li>
 <li><strong>Key exchange</strong> — two parties deriving the same shared secret in public (Diffie-Hellman, ECDH/ECDHE).</li>
 <li><strong>Entropy</strong> — the unpredictability that makes a key hard to guess; keys generated from a weak or predictable random source are breakable regardless of algorithm strength.</li>
 </ul>
@@ -81,7 +82,7 @@ echo -n "Alice pays Bob $900" | openssl dgst -sha256</code></pre>
 <p>Compare the two outputs. Expected result: completely different hashes, with no visible relationship to each other, despite the input differing by a single character. This is the property that makes hashing useful for detecting tampering — a forged message can't be quietly patched to also produce the original valid hash.</p>
 
 <h2>What can go wrong</h2>
-<p>The most common conceptual mistake: assuming a hash proves who sent something. It doesn't — hashing has no keys and no identity attached to it at all. A hash only proves a message matches a specific fingerprint; anyone (including an attacker) can compute the hash of anything, including a forged message. Only a <em>signature</em> (a hash encrypted with a private key) ties a message to an identity.</p>
+<p>The most common conceptual mistake: assuming a hash proves who sent something. It doesn't — hashing has no keys and no identity attached to it at all. A hash only proves a message matches a specific fingerprint; anyone (including an attacker) can compute the hash of anything, including a forged message. Only a <em>signature</em> (a hash signed with a private key) ties a message to an identity.</p>
 
 <h2>Troubleshooting</h2>
 <p>If two systems disagree on whether a signature is valid, the fault almost always traces to one of: the wrong public key being used to verify (mismatched key pair), the message being altered even slightly after signing (changes the hash, breaks the match), or a hash/signature algorithm mismatch between signer and verifier. Stage Q's Incident 7 ("certificate and private key do not match") is this same category of failure applied specifically to certificates.</p>
@@ -93,18 +94,19 @@ echo -n "Alice pays Bob $900" | openssl dgst -sha256</code></pre>
 <p>Use current, unbroken algorithms only: AES for symmetric encryption, RSA or ECC for asymmetric operations, SHA-2/SHA-3 for hashing, ECDHE for key exchange when forward secrecy matters (Stage E explains why). Never use SHA-1 or MD5 for anything security-relevant — both are cryptographically broken, a fact worth stating explicitly since older documentation and legacy systems still reference them as if current.</p>
 
 <h2>Exam and interview notes</h2>
-<p><strong>Interview Q:</strong> "What's the difference between encryption, hashing, and signing?" <strong>A:</strong> "Encryption is reversible and provides confidentiality — you can decrypt it back to the original. Hashing is one-way and provides integrity only — no keys, no identity, just a fingerprint. Signing combines hashing with asymmetric encryption to prove integrity, authentication, and non-repudiation all at once, using the signer's private key. They solve three different problems and none of them substitutes for another."</p>
+<p><strong>Interview Q:</strong> "What's the difference between encryption, hashing, and signing?" <strong>A:</strong> "Encryption is reversible and provides confidentiality — you can decrypt it back to the original, using the public key to encrypt and the private key to decrypt. Hashing is one-way and provides integrity only — no keys, no identity, just a fingerprint. Signing combines hashing with asymmetric cryptography — the private key generates the signature, the public key verifies it — to prove integrity and authentication and support non-repudiation, all at once. They solve different problems and none of them substitutes for another."</p>
+<p><strong>Interview Q:</strong> "Is signing just 'encrypting the hash with your private key'?" <strong>A:</strong> "That's a common shortcut, and it's only really true for RSA — where signing and decryption happen to use the same underlying math, just with different padding (RFC 8017 separates signature padding from encryption padding). It's not true in general: ECDSA and EdDSA don't encrypt anything at all when signing. The rule that holds for every algorithm is 'private key generates the signature, public key verifies it' — not 'private key encrypts.'"</p>
 <p><strong>Interview Q:</strong> "Why do we need key exchange if asymmetric encryption already lets two strangers communicate?" <strong>A:</strong> "Asymmetric encryption is computationally expensive for bulk data. Key exchange lets two parties agree on a fast symmetric key using asymmetric math, then switch to symmetric encryption for the actual traffic — this is exactly what happens in a TLS handshake."</p>
 
 <h2>Source</h2>
-<p>NIST FIPS 197 (<a href="https://csrc.nist.gov/pubs/fips/197/final" target="_blank" rel="noopener">AES</a>), NIST FIPS 180-4 (<a href="https://csrc.nist.gov/pubs/fips/180-4/upd1/final" target="_blank" rel="noopener">SHA-2</a>), and NIST SP 800-56A (<a href="https://csrc.nist.gov/pubs/sp/800/56/a/r3/final" target="_blank" rel="noopener">key-establishment schemes including Diffie-Hellman/ECDH</a>) — foundational algorithm standards, confirmed current against live NIST publications before writing.</p>
+<p>NIST FIPS 197 (<a href="https://csrc.nist.gov/pubs/fips/197/final" target="_blank" rel="noopener">AES</a>), NIST FIPS 180-4 (<a href="https://csrc.nist.gov/pubs/fips/180-4/upd1/final" target="_blank" rel="noopener">SHA-2</a>), and NIST SP 800-56A (<a href="https://csrc.nist.gov/pubs/sp/800/56/a/r3/final" target="_blank" rel="noopener">key-establishment schemes including Diffie-Hellman/ECDH</a>) — foundational algorithm standards, confirmed current against live NIST publications before writing. NIST FIPS 186-5 (<a href="https://csrc.nist.gov/pubs/fips/186-5/final" target="_blank" rel="noopener">Digital Signature Standard</a>, covering RSA, ECDSA, and EdDSA signatures) and RFC 8017 (<a href="https://www.rfc-editor.org/rfc/rfc8017" target="_blank" rel="noopener">PKCS #1: RSA Cryptography Specifications</a>, which defines RSA signature padding — RSASSA-PSS/PKCS1-v1_5 — separately from RSA encryption padding — RSAES-OAEP/PKCS1-v1_5) — confirmed current before writing, and support this lesson's point that "signing = encrypting the hash with the private key" is an RSA-specific shortcut, not the general signature model.</p>
 
 <div class="recap">
   <strong>Recap</strong>
   <ul>
-    <li>Encryption (reversible, confidentiality), hashing (one-way, integrity only, no keys), signing (hash + private-key encryption, proves identity), and key exchange (agreeing on a shared secret in public) are four distinct operations.</li>
+    <li>Encryption (reversible, confidentiality), hashing (one-way, integrity only, no keys), signing (private key generates the signature, public key verifies it, proves identity), and key exchange (agreeing on a shared secret in public) are four distinct operations.</li>
     <li>Symmetric encryption (AES) is fast but requires a pre-shared key; asymmetric encryption (RSA/ECC) solves that using a public/private key pair.</li>
-    <li>A digital signature proves integrity, authentication, and non-repudiation together — a plain hash proves none of those beyond "the content matches."</li>
+    <li>A digital signature proves integrity and authentication, and supports non-repudiation — a plain hash proves none of those beyond "the content matches." "Signing = encrypting the hash" is an RSA-only shortcut, not the general rule (ECDSA/EdDSA don't encrypt anything to sign).</li>
     <li>TLS uses asymmetric crypto to establish identity and a shared key, then symmetric crypto for the actual data — this pairing shows up throughout the rest of this course.</li>
   </ul>
 </div>
@@ -112,7 +114,7 @@ echo -n "Alice pays Bob $900" | openssl dgst -sha256</code></pre>
 <p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
 <ul>
 <li>Why doesn't a hash alone prove who sent a message?</li>
-<li>What three things does a digital signature prove simultaneously?</li>
+<li>What does a digital signature actually prove, what does it only support (and why), and why does "private key encrypts" break down for ECDSA/EdDSA?</li>
 <li>Why does TLS use both asymmetric and symmetric encryption instead of just one?</li>
 <li>What specific problem does key exchange solve that asymmetric encryption alone doesn't?</li>
 </ul>
