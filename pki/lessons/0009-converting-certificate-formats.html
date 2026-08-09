@@ -30,13 +30,13 @@ openssl x509 -in cert.pem -inform PEM -out cert.der -outform DER
 openssl x509 -in cert.der -inform DER -out cert.pem -outform PEM</code></pre>
 <p><code>-inform</code> tells OpenSSL what the input actually is; <code>-outform</code> tells it what to produce. Get <code>-inform</code> wrong and OpenSSL fails to parse the file — it does not silently guess correctly in every case.</p>
 
-<h3>PEM &harr; PKCS#7 (openssl pkcs7)</h3>
+<h3>PEM &harr; PKCS#7 (openssl crl2pkcs7 / openssl pkcs7)</h3>
 <pre><code># PKCS#7 (.p7b) to PEM, printing the certificates it contains
 openssl pkcs7 -inform DER -in chain.p7b -outform PEM -out chain.pem -print_certs
 
-# PEM to PKCS#7
-openssl pkcs7 -inform PEM -in chain.pem -outform DER -out chain.p7b</code></pre>
-<p>PKCS#7 never contains a private key, so this direction is always safe to hand to someone else or store less carefully than a PKCS#12 file. <code>openssl pkcs7</code> only understands PKCS#7 v1.5 per RFC 2315 — it cannot parse the newer CMS (RFC 5652) format, which looks similar but is a different structure.</p>
+# PEM to PKCS#7 — building a NEW PKCS#7 bundle from plain certificates
+openssl crl2pkcs7 -nocrl -certfile chain.pem -out chain.p7b -outform DER</code></pre>
+<p>This corner of OpenSSL trips people up: <code>openssl pkcs7</code> only reads and converts an <em>existing</em> PKCS#7 structure — its <code>-in</code> file has to already be PKCS#7. Feed it a plain PEM certificate chain and it fails immediately with "unable to load PKCS7 object", because a bare certificate isn't PKCS#7-shaped data. To build a brand-new PKCS#7 bundle out of ordinary PEM certificates, use <code>openssl crl2pkcs7</code> instead — it takes one or more certificates (and optionally a CRL) and wraps them into a PKCS#7 "certificates only" structure; <code>-nocrl</code> just means "don't include a CRL." PKCS#7 never contains a private key, so this direction is always safe to hand to someone else or store less carefully than a PKCS#12 file. <code>openssl pkcs7</code> only understands PKCS#7 v1.5 per RFC 2315 — it cannot parse the newer CMS (RFC 5652) format, which looks similar but is a different structure.</p>
 
 <h3>PEM &harr; PKCS#12 (openssl pkcs12)</h3>
 <pre><code># Bundle cert + key + chain into a PKCS#12 (.p12/.pfx)
@@ -63,8 +63,8 @@ openssl pkcs12 -in bundle.p12 -cacerts -nokeys -out chain.pem</code></pre>
 <pre><code>            openssl x509 (-inform/-outform)
    PEM  &lt;-----------------------------------&gt;  DER
     |                                            |
-    | openssl pkcs7                              | (DER is also PKCS#7's
-    v                                            |  and PKCS#12's wire encoding)
+    | openssl crl2pkcs7 (build) /                | (DER is also PKCS#7's
+    | openssl pkcs7 (read/convert)               |  and PKCS#12's wire encoding)
   PKCS#7 (.p7b)  --- certs/CRLs only, no key ----+
     |
     | openssl pkcs12 -export  (needs the private key too)
@@ -125,7 +125,7 @@ openssl pkcs12 -in bundle.p12 -clcerts -nokeys -out cert-from-p12.pem</code></pr
 <p><strong>Interview Q:</strong> "What's the difference between PKCS#7 and PKCS#12?" <strong>A:</strong> "PKCS#7 bundles certificates (and CRLs) only — never a private key, so it's relatively low-risk to move around. PKCS#12 can bundle a certificate, its private key, and the chain in one encrypted, password-protected file — treat it like key material because it can contain key material."</p>
 
 <h2>Source</h2>
-<p>OpenSSL documentation, <a href="https://docs.openssl.org/master/man1/openssl-x509/" target="_blank" rel="noopener">openssl-x509</a>, <a href="https://docs.openssl.org/master/man1/openssl-pkcs7/" target="_blank" rel="noopener">openssl-pkcs7</a>, and <a href="https://docs.openssl.org/master/man1/openssl-pkcs12/" target="_blank" rel="noopener">openssl-pkcs12</a> man pages (command syntax, <code>-legacy</code> flag behavior, PKCS#7 v1.5/RFC 2315 scope) — fetched live 2026-08-08. Oracle, <a href="https://docs.oracle.com/en/java/javase/21/docs/specs/man/keytool.html" target="_blank" rel="noopener">keytool documentation</a> (JDK 21) for <code>-importkeystore</code> syntax — fetched live 2026-08-08.</p>
+<p>OpenSSL documentation, <a href="https://docs.openssl.org/master/man1/openssl-x509/" target="_blank" rel="noopener">openssl-x509</a>, <a href="https://docs.openssl.org/master/man1/openssl-pkcs7/" target="_blank" rel="noopener">openssl-pkcs7</a>, <a href="https://docs.openssl.org/master/man1/openssl-crl2pkcs7/" target="_blank" rel="noopener">openssl-crl2pkcs7</a>, and <a href="https://docs.openssl.org/master/man1/openssl-pkcs12/" target="_blank" rel="noopener">openssl-pkcs12</a> man pages (command syntax, <code>-legacy</code> flag behavior, PKCS#7 v1.5/RFC 2315 scope, and confirmation that <code>openssl pkcs7</code> only reads existing PKCS#7 structures while <code>openssl crl2pkcs7</code> builds new ones from plain certificates) — fetched live 2026-08-08. Oracle, <a href="https://docs.oracle.com/en/java/javase/21/docs/specs/man/keytool.html" target="_blank" rel="noopener">keytool documentation</a> (JDK 21) for <code>-importkeystore</code> syntax and PKCS12-as-default-keystore-since-JDK-9 — fetched live 2026-08-08.</p>
 
 <div class="recap">
   <strong>Recap</strong>

@@ -32,12 +32,12 @@
 <p>Per NIST SP 800-57 (the industry-standard reference for this comparison):</p>
 <table>
 <tr><th>Security strength</th><th>RSA key size</th><th>ECC key size</th><th>Common curve</th></tr>
-<tr><td>112-bit (current legacy minimum)</td><td>2048-bit</td><td>224-bit</td><td>—</td></tr>
+<tr><td>112-bit (current accepted minimum)</td><td>2048-bit</td><td>224-bit</td><td>—</td></tr>
 <tr><td>128-bit (current common default)</td><td>3072-bit</td><td>256-bit</td><td>P-256 (prime256v1/secp256r1)</td></tr>
 <tr><td>192-bit</td><td>7680-bit</td><td>384-bit</td><td>P-384</td></tr>
 <tr><td>256-bit</td><td>15360-bit</td><td>521-bit</td><td>P-521</td></tr>
 </table>
-<p>RSA-2048 (112-bit security) is currently the accepted minimum, but NIST guidance restricts it to legacy use (decryption/verification only, not new key generation) from 2030 onward. P-256 is the most common ECC curve deployed today, offering roughly the same real security strength as RSA-3072, at a fraction of the key size and computational cost — this is the concrete reason ECC has become the default choice for new TLS deployments.</p>
+<p>RSA-2048 (112-bit security) is currently the accepted minimum, and NIST's own transition table (SP 800-57 Part 1 Rev. 5, Table 4) says it stays fully "acceptable" — for generating new keys/signatures and for verifying/decrypting — <strong>through the end of 2030</strong>. Starting <strong>January 1, 2031</strong>, 112-bit moves to NIST's "legacy use" category: you can still process data that was already protected at that strength (decrypt old ciphertext, verify old signatures), but NIST says not to apply it to anything new (new keys, new certificates, new signatures) from that point on — the table calls that "disallowed" for new use. That's a scheduled policy transition, not RSA-2048 becoming cryptographically broken on that date; NIST is simply moving the recommended floor for new work up to 128-bit security (RSA-3072 or P-256) ahead of any real weakening. P-256 is the most common ECC curve deployed today, offering roughly the same real security strength as RSA-3072, at a fraction of the key size and computational cost — this is the concrete reason ECC has become the default choice for new TLS deployments.</p>
 
 <h3>ECDSA and ECDH — ECC applied to signing vs. key exchange</h3>
 <p>"ECC" names the underlying math; <strong>ECDSA</strong> is ECC applied specifically to digital signatures, and <strong>ECDH</strong>/<strong>ECDHE</strong> (Lesson 4) is ECC applied specifically to key exchange. You'll see both names throughout certificate and TLS configuration — a certificate's signature algorithm might say "ecdsa-with-SHA256," which means ECDSA signing, using SHA-256 hashing, on an elliptic curve key.</p>
@@ -97,7 +97,7 @@ openssl speed ecdsap256 2>/dev/null | tail -3</code></pre>
 <p><strong>Interview Q:</strong> "Why has ECC become the more common default?" <strong>A:</strong> "Smaller keys and signatures for equivalent security mean faster TLS handshakes, less bandwidth, and less CPU — which matters at scale. RSA hasn't become obsolete; it's still used where legacy client compatibility matters."</p>
 
 <h2>Source</h2>
-<p>NIST SP 800-57 Part 1, <a href="https://csrc.nist.gov/pubs/sp/800/57/pt1/r5/final" target="_blank" rel="noopener">"Recommendation for Key Management"</a> (security-strength equivalence table) and NIST SP 800-131A Rev. 2, <a href="https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf" target="_blank" rel="noopener">"Transitioning the Use of Cryptographic Algorithms and Key Lengths"</a> (2030 RSA-2048 legacy-use restriction) — both confirmed current via live search before writing (2026-08-08).</p>
+<p>NIST SP 800-57 Part 1 Rev. 5, <a href="https://csrc.nist.gov/pubs/sp/800/57/pt1/r5/final" target="_blank" rel="noopener">"Recommendation for Key Management"</a> — Table 2 (security-strength/key-size equivalence) and Table 4, Section 5.6.3 (the exact "through 2030 acceptable / 2031-and-beyond disallowed-for-new, legacy-use-for-processing" transition for 112-bit strength). NIST SP 800-131A Rev. 2, <a href="https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-131Ar2.pdf" target="_blank" rel="noopener">"Transitioning the Use of Cryptographic Algorithms and Key Lengths"</a>, confirms the same 2030 date but explicitly defers the detailed transition table to SP 800-57 Part 1. Both PDFs fetched and read directly (not paraphrased from a secondary source) on 2026-08-08.</p>
 
 <div class="recap">
   <strong>Recap</strong>
@@ -105,7 +105,7 @@ openssl speed ecdsap256 2>/dev/null | tail -3</code></pre>
     <li>RSA's security rests on the difficulty of factoring a large number into two primes; ECC's rests on the elliptic-curve discrete logarithm problem — a different, more efficient hard problem per bit.</li>
     <li>Never compare raw RSA and ECC key sizes directly — compare security strength in bits: RSA-3072 ≈ ECC P-256 ≈ 128-bit security.</li>
     <li>ECC's smaller keys mean faster, cheaper operations at equivalent security — the practical reason it's become the common new-deployment default.</li>
-    <li>RSA-2048 (112-bit) is the current accepted minimum, restricted to legacy use only from 2030 per NIST guidance.</li>
+    <li>RSA-2048 (112-bit) is the current accepted minimum and stays fully acceptable through 2030; per NIST's own table, from 2031 onward it's disallowed for anything new but still fine as legacy use for processing data already protected with it — not a sign it's cryptographically broken.</li>
   </ul>
 </div>
 
