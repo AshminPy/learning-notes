@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 19 — TLS Fundamentals</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 19 of 106</p>
+<h1>TLS Fundamentals: HTTP vs HTTPS, TCP, and the Handshake at a Glance</h1>
+
+<h2>What you will learn</h2>
+<p>What actually changes when a URL goes from <code>http://</code> to <code>https://</code>, where TLS sits relative to TCP and HTTP in the stack, what a TCP three-way handshake is and why TLS needs it to happen first, and a high-level map of what a TLS handshake accomplishes — the foundation Lesson 20 builds on with the full step-by-step TLS 1.3 message flow.</p>
+
+<h2>Why this matters</h2>
+<p>Everything from Stage F onward — server certificates, mTLS, cipher suites, SNI, ALPN — only makes sense once you know exactly where in the connection lifecycle TLS operates and what problem it's solving. Engineers who skip this layer confuse TCP-level failures ("connection refused," "connection reset") with TLS-level failures ("handshake failure," "unknown CA") and waste time debugging the wrong layer. This lesson draws that line clearly before Lesson 20 goes deep on the handshake itself.</p>
+
+<h2>Simple explanation</h2>
+<p>HTTP is a plaintext request/response protocol — every byte, including headers, cookies, and body, travels in the clear. HTTPS is the exact same HTTP, unchanged, but run inside a TLS-encrypted, TLS-authenticated tunnel instead of a raw TCP socket. TLS itself doesn't know or care that HTTP is inside it — it's a general-purpose secure-transport layer that anything can run over (SMTP, database connections, gRPC). Before any of that can happen, though, TCP has to establish a plain connection first: TLS cannot begin until TCP has finished its own handshake, because TLS's very first message has to be sent over an already-connected socket.</p>
+
+<h2>How it works</h2>
+
+<h3>The stack, top to bottom</h3>
+<p>A browser loading <code>https://example.com</code> builds three layers, strictly in order, each one running only after the layer below it is ready:</p>
+<pre><code>HTTP           application data: GET /, headers, cookies, response body
+  |            (identical whether it's HTTP or HTTPS — HTTP doesn't change)
+TLS            encryption + server authentication + integrity, added on top
+  |            (TLS record layer wraps HTTP bytes once the handshake is done)
+TCP            reliable, ordered, connection-oriented byte stream
+  |            (TLS's own handshake messages travel as TCP payload too)
+IP              routing</code></pre>
+<p>Nothing above TCP can send a single byte until TCP's own three-way handshake finishes. That's true for plain HTTP (port 80) and just as true for HTTPS (port 443) — TLS doesn't replace or skip the TCP handshake, it runs a second handshake on top of it.</p>
+
+<h3>The TCP three-way handshake, briefly</h3>
+<p>Per <a href="https://www.rfc-editor.org/rfc/rfc9293.html" target="_blank" rel="noopener">RFC 9293</a> (the current TCP specification, obsoleting the original 1981 RFC 793), a TCP connection is established with exactly three packets before either side can send application data:</p>
+<table>
+<tr><th>Step</th><th>Direction</th><th>Packet</th><th>Purpose</th></tr>
+<tr><td>1</td><td>Client → Server</td><td><strong>SYN</strong></td><td>Client proposes an initial sequence number, requests a connection.</td></tr>
+<tr><td>2</td><td>Server → Client</td><td><strong>SYN-ACK</strong></td><td>Server acknowledges the client's sequence number and proposes its own.</td></tr>
+<tr><td>3</td><td>Client → Server</td><td><strong>ACK</strong></td><td>Client acknowledges the server's sequence number. Connection is now open.</td></tr>
+</table>
+<p>Only after step 3 completes can the client send its first TLS message (the ClientHello, covered in full in Lesson 20). This is why a "connection refused" or "connection timed out" error is a TCP-layer problem (nothing is listening, or a firewall is dropping packets) and is a completely different failure class from a TLS "handshake failure" or "certificate unknown" error, which means TCP succeeded and the two sides are now negotiating — or failing to negotiate — the secure layer on top of it.</p>
+
+<h3>What HTTPS actually adds over HTTP</h3>
+<p>Three guarantees, all provided by TLS, none of which plain HTTP has at all:</p>
+<ul>
+<li><strong>Confidentiality</strong> — everything after the handshake is encrypted; an eavesdropper on the network sees ciphertext, not headers, cookies, or body content.</li>
+<li><strong>Authentication</strong> — the client verifies the server's identity via its certificate and the chain of trust (Stage D), so the client knows it's actually talking to the domain it requested, not an impersonator.</li>
+<li><strong>Integrity</strong> — every record is authenticated (AEAD, covered in Lesson 21), so tampering in transit is detected and the connection is torn down rather than silently accepting modified data.</li>
+</ul>
+<p>HTTP has none of these three properties on its own — anyone on the network path (a shared Wi-Fi network, a compromised router, an ISP) can read or modify plaintext HTTP traffic undetected.</p>
+
+<h3>Ports and how a browser decides which protocol to use</h3>
+<p>By convention, HTTP defaults to TCP port 80 and HTTPS defaults to TCP port 443 — but this is a default, not a protocol requirement; either can run on any port if both ends agree. The scheme in the URL (<code>http://</code> vs <code>https://</code>) is what tells the client which port to default to and whether to run the TLS handshake at all before speaking HTTP.</p>
+
+<h3>TLS version history, briefly</h3>
+<p>TLS is the successor to the older SSL protocol (SSL 2.0 and 3.0, both now considered broken and obsolete). TLS 1.0 and 1.1 were formally deprecated by the IETF in <a href="https://www.rfc-editor.org/rfc/rfc8996.html" target="_blank" rel="noopener">RFC 8996</a> (March 2021) — both are now Historic status and should not be enabled anywhere. TLS 1.2 remains widely deployed and supported. TLS 1.3, defined in <a href="https://www.rfc-editor.org/rfc/rfc8446" target="_blank" rel="noopener">RFC 8446</a> (published August 2018), is the current version and the one this stage focuses on — Lesson 20 covers its full handshake in detail, including exactly what changed from TLS 1.2 and why.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>Client                                          Server
+  |                                                |
+  |------------------- TCP SYN ------------------->|   \
+  |<----------------- TCP SYN-ACK ------------------|    } TCP handshake
+  |------------------- TCP ACK -------------------->|   /  (RFC 9293)
+  |                                                |
+  |          [ TCP connection now open — ]        |
+  |          [ zero bytes of TLS or HTTP  ]        |
+  |          [ have been sent yet         ]        |
+  |                                                |
+  |----------------- TLS ClientHello -------------->|   \
+  |<---- TLS ServerHello + cert + Finished ---------|    } TLS handshake
+  |----------------- TLS Finished ------------------>|   /  (Lesson 20 — full detail)
+  |                                                |
+  |          [ Secure tunnel now established ]     |
+  |                                                |
+  |---------- HTTP GET / (encrypted) -------------->|   \
+  |<--------- HTTP 200 OK + body (encrypted) --------|    } HTTP over the
+  |                                                |   /  TLS tunnel
+
+Total before the first byte of an HTTP response: 1 TCP round trip
+                                                 + 1 TLS round trip (1.3)
+                                                 + 1 HTTP round trip</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>TCP three-way handshake</strong> — the SYN / SYN-ACK / ACK exchange (RFC 9293) that opens a reliable TCP connection before any application data, including TLS, can flow.</li>
+<li><strong>TLS record layer</strong> — the part of TLS that wraps application data (like HTTP) into encrypted, authenticated records once the handshake is complete.</li>
+<li><strong>Round trip (RTT)</strong> — one full send-and-receive cycle between client and server; a major factor in perceived page-load latency, and a big part of why TLS 1.3's handshake round-trip reduction (Lesson 20) mattered.</li>
+<li><strong>Port</strong> — the TCP endpoint number a service listens on; 80 for HTTP and 443 for HTTPS by convention, not by protocol requirement.</li>
+<li><strong>SSL vs TLS</strong> — SSL is TLS's deprecated predecessor; "SSL certificate" is still common informal usage for what is actually a TLS/X.509 certificate — you'll hear both terms used interchangeably in the industry despite SSL itself being obsolete.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>When you type a URL with no scheme into most modern browsers, the browser now defaults to attempting HTTPS first and only falls back to HTTP if HTTPS genuinely isn't available — a reversal from years ago when HTTP was the silent default and HTTPS had to be explicitly requested or forced via HSTS (Stage covered later in this course). This shift reflects the same three-guarantee gap above: browser vendors treat unencrypted HTTP as the exception needing justification, not the default needing an upgrade.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Watch the TCP handshake and TLS handshake happen as two distinct, sequential phases using <code>curl</code>'s verbose output:</p>
+<pre><code># Plain HTTP -- no TLS phase at all, just TCP then HTTP
+curl -v http://example.com/ 2>&1 | head -20
+
+# HTTPS -- notice the TCP connect line, THEN a separate TLS handshake
+# block, THEN the HTTP request/response
+curl -v https://example.com/ 2>&1 | head -30
+
+# Isolate just the TLS handshake using openssl s_client -- this opens
+# the TCP connection, performs the TLS handshake, and shows you the
+# negotiated protocol version and cipher before you type anything
+echo | openssl s_client -connect example.com:443 -tls1_3 2>/dev/null | grep -E "Protocol|Cipher"</code></pre>
+<p>Expected result: the plain HTTP <code>curl -v</code> output shows only a <code>* Connected to</code> line (TCP) followed immediately by the HTTP request. The HTTPS <code>curl -v</code> output shows the same TCP connect line, then a distinct block of TLS negotiation lines (<code>* TLSv1.3</code>, cipher suite, certificate details) <em>before</em> the HTTP request appears — visible, separate proof that TCP and TLS are two sequential handshakes, not one combined step.</p>
+
+<h2>What can go wrong</h2>
+<p>A very common beginner confusion is treating "connection refused" and "SSL/TLS handshake failed" as the same category of problem. They are not: "connection refused" means TCP itself never completed — nothing is listening on that port, or a firewall/security group is blocking it — and TLS was never even attempted. A TLS handshake failure means TCP succeeded fine and the failure is specific to certificate trust, protocol version mismatch, or cipher suite negotiation. Debugging the wrong layer (e.g. checking certificate validity when the real problem is a security group rule) wastes real troubleshooting time — Stage Q's incident lessons return to this distinction repeatedly.</p>
+
+<h2>Troubleshooting</h2>
+<p>When a connection fails, check layer order, not randomly: first confirm TCP itself connects at all (<code>nc -zv host 443</code> or <code>telnet host 443</code> — success just means the TCP handshake completed, nothing about TLS yet). If TCP connects but the browser or client still errors, the problem is in the TLS layer or above — move to <code>openssl s_client -connect host:443</code> to see exactly how far the TLS handshake gets and where it fails. Only once TLS completes cleanly does an HTTP-level error (404, 500) become the relevant layer to investigate.</p>
+
+<h2>Security considerations</h2>
+<p>Never assume "it's on port 443" means a connection is actually using modern, secure TLS — a server can be misconfigured to still accept TLS 1.0 or 1.1 on port 443, or to accept plaintext HTTP on port 443 by mistake (rare, but it happens with misconfigured load balancers). Confirm the actual negotiated protocol version, not just the port number, when auditing a service's security posture — <code>openssl s_client -tls1_3</code> vs <code>-tls1</code> against the same host will tell you exactly what the server actually accepts, which is the only reliable answer.</p>
+
+<h2>Production best practices</h2>
+<p>Disable TLS 1.0 and TLS 1.1 everywhere per RFC 8996's deprecation — there is no remaining legitimate reason to keep them enabled, and doing so only expands attack surface for no compatibility benefit worth keeping in 2026. Redirect all plain HTTP traffic to HTTPS at the edge (load balancer or web server config) rather than relying on applications to enforce it individually, and pair that redirect with HSTS so browsers stop even attempting the insecure HTTP request on repeat visits. Treat "TCP connects" and "TLS handshake succeeds" as two separate health checks in monitoring — a service that passes a raw TCP port check can still be completely broken at the TLS layer.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "What's the actual difference between HTTP and HTTPS?" <strong>A:</strong> "HTTPS is the identical HTTP protocol, unchanged, run inside a TLS-encrypted and TLS-authenticated tunnel instead of a raw TCP socket. TLS adds confidentiality, server authentication via certificates, and integrity — none of which plain HTTP has on its own."</p>
+<p><strong>Interview Q:</strong> "Why can't TLS start before TCP finishes its handshake?" <strong>A:</strong> "TLS's first message, the ClientHello, has to be sent as payload over an already-open TCP connection — TCP's own three-way handshake (SYN, SYN-ACK, ACK, per RFC 9293) has to complete first, because TLS has no way to establish a connection of its own; it relies entirely on TCP for that."</p>
+<p><strong>Interview Q:</strong> "A client gets 'connection refused' connecting to an HTTPS service — is that a TLS problem?" <strong>A:</strong> "No — 'connection refused' is TCP failing before TLS is ever attempted, meaning nothing is listening on that port or it's being actively blocked. A TLS-specific error (handshake failure, unknown CA) would mean TCP succeeded and the failure is in certificate trust or protocol negotiation instead."</p>
+
+<h2>Source</h2>
+<p>IETF, <a href="https://www.rfc-editor.org/rfc/rfc9293.html" target="_blank" rel="noopener">RFC 9293, "Transmission Control Protocol (TCP)"</a> (current TCP specification, obsoleting RFC 793; three-way handshake mechanics) — fetched live 2026-08-08. IETF, <a href="https://www.rfc-editor.org/rfc/rfc8446" target="_blank" rel="noopener">RFC 8446, "The Transport Layer Security (TLS) Protocol Version 1.3"</a> (published August 2018) — fetched live 2026-08-08. IETF, <a href="https://www.rfc-editor.org/rfc/rfc8996.html" target="_blank" rel="noopener">RFC 8996, "Deprecating TLS 1.0 and TLS 1.1"</a> (March 2021, both moved to Historic status) — fetched live 2026-08-08. Cloudflare, <a href="https://blog.cloudflare.com/rfc-8446-aka-tls-1-3/" target="_blank" rel="noopener">"RFC 8446, aka TLS 1.3"</a> (practical handshake/round-trip explanation) — fetched live 2026-08-08.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>HTTPS is unmodified HTTP run inside a TLS-encrypted, TLS-authenticated tunnel — TLS is a general-purpose secure-transport layer, not an HTTP-specific feature.</li>
+    <li>TCP's three-way handshake (SYN, SYN-ACK, ACK, per RFC 9293) must complete before any TLS or HTTP byte can be sent — they are two sequential handshakes, not one.</li>
+    <li>TLS adds three guarantees plain HTTP lacks entirely: confidentiality, server authentication, and integrity.</li>
+    <li>TLS 1.0 and 1.1 are formally deprecated (RFC 8996, March 2021); TLS 1.3 (RFC 8446, 2018) is current and the focus of Lesson 20.</li>
+    <li>"Connection refused" is a TCP-layer failure before TLS is ever attempted; a handshake failure means TCP succeeded and the problem is in TLS negotiation or certificate trust — different debugging paths entirely.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What three things does TLS add on top of plain HTTP that HTTP has none of on its own?</li>
+<li>Why must the TCP three-way handshake finish before the first TLS message can be sent?</li>
+<li>If a client gets "connection refused," has TLS even been attempted yet? Why or why not?</li>
+<li>What happened to TLS 1.0 and 1.1, and what RFC formalized it?</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's <code>curl -v</code> or <code>openssl s_client</code> output looks different from what's described (e.g. no separate TLS block, or a TLS version you didn't expect), paste the exact output back to your teacher — the layering itself is a hard rule, so a mismatch is worth checking, not skipping past.</footer>
+
+<div class="lesson-nav">
+  <a href="0018-cross-signing-ca-transitions.html">&larr; Previous: Cross-Signing and CA Transitions</a>
+  <a href="0020-tls-13-handshake.html">Next: The TLS 1.3 Handshake, Step by Step &rarr;</a>
+</div>
+
+</body>
+</html>

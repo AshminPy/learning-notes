@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 21 — Cipher Suites, SNI, ALPN, and Forward Secrecy</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 21 of 106</p>
+<h1>Cipher Suites, SNI, ALPN, and Forward Secrecy</h1>
+
+<h2>What you will learn</h2>
+<p>What a TLS 1.3 cipher suite actually negotiates now that key exchange and authentication were pulled out of it, the exact five cipher suites RFC 8446 defines and which ones are mandatory to implement, how Server Name Indication (SNI) lets one IP address serve certificates for many hostnames, how Application-Layer Protocol Negotiation (ALPN) picks HTTP/2 vs HTTP/1.1 without an extra round trip, and precisely what "forward secrecy" guarantees — and the one real exception (0-RTT early data) where TLS 1.3 does not give you that guarantee.</p>
+
+<h2>Why this matters</h2>
+<p>Every TLS handshake you'll ever inspect in a log or a Wireshark capture shows a negotiated cipher suite, an SNI hostname, and often an ALPN protocol — and every one of those fields is a decision point where a misconfigured server, an old client, or a security scanner finding will point straight at you. Engineers who don't understand that TLS 1.3 cipher suites no longer name a key-exchange algorithm get confused reading a suite list; engineers who don't understand SNI can't explain why one server IP can serve ten different companies' certificates; and "forward secrecy" is one of the most commonly *misused* terms in security questionnaires — claiming it without understanding the 0-RTT exception is a real, checkable gap in a vendor security review.</p>
+
+<h2>Simple explanation</h2>
+<p>A <strong>cipher suite</strong> in TLS 1.3 is just the symmetric encryption algorithm plus the hash function used once the handshake's own key exchange and authentication are done — the key exchange algorithm (always an ephemeral Diffie-Hellman variant) and the certificate's signature algorithm are negotiated separately, through different extensions. <strong>SNI</strong> is the client saying, in cleartext, at the very start of the handshake, "I'm trying to reach <code>example.com</code>" — so a server (or a CDN in front of thousands of servers) knows which certificate to present before the handshake even gets to the certificate step. <strong>ALPN</strong> is the client and server agreeing, inside that same first round trip, which application protocol (HTTP/2, HTTP/1.1) they'll speak once TLS is up, so there's no separate negotiation afterward. <strong>Forward secrecy</strong> means: even if an attacker steals the server's long-term private key next year, they still can't decrypt a recording of this year's traffic — because each session used a fresh, temporary key that no one kept.</p>
+
+<h2>How it works</h2>
+
+<h3>Cipher suites, redefined in TLS 1.3</h3>
+<p>In TLS 1.2 and earlier, a cipher suite name like <code>TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256</code> bundled four decisions into one string: key exchange (ECDHE), authentication (RSA), bulk encryption (AES-128-GCM), and hash (SHA256). TLS 1.3 split this apart. A TLS 1.3 cipher suite names only the symmetric AEAD (Authenticated Encryption with Associated Data) algorithm and the hash used in the handshake's key schedule. Per RFC 8446, there are exactly five defined:</p>
+<table>
+<tr><th>Cipher suite</th><th>AEAD algorithm</th><th>Hash</th><th>Status</th></tr>
+<tr><td>TLS_AES_128_GCM_SHA256</td><td>AES-128-GCM</td><td>SHA-256</td><td><strong>MUST</strong> implement</td></tr>
+<tr><td>TLS_AES_256_GCM_SHA384</td><td>AES-256-GCM</td><td>SHA-384</td><td>SHOULD implement</td></tr>
+<tr><td>TLS_CHACHA20_POLY1305_SHA256</td><td>ChaCha20-Poly1305</td><td>SHA-256</td><td>SHOULD implement</td></tr>
+<tr><td>TLS_AES_128_CCM_SHA256</td><td>AES-128-CCM</td><td>SHA-256</td><td>optional</td></tr>
+<tr><td>TLS_AES_128_CCM_8_SHA256</td><td>AES-128-CCM-8</td><td>SHA-256</td><td>optional</td></tr>
+</table>
+<p>Every one of these is an AEAD cipher — RFC 8446 states plainly that the list of symmetric algorithms "has been pruned of all algorithms that are considered legacy," meaning no more CBC-mode ciphers, no RC4, no static RSA or plain Diffie-Hellman key exchange bundled into the suite name. Key exchange is negotiated through the <code>supported_groups</code> and <code>key_share</code> extensions instead — the mandatory-to-implement groups are <strong>secp256r1</strong> (P-256) and <strong>x25519</strong>, and the mandatory-to-implement signature algorithms for authenticating the handshake are <code>rsa_pss_rsae_sha256</code>, <code>rsa_pss_pss_sha256</code>, and <code>ecdsa_secp256r1_sha256</code>.</p>
+
+<h3>SNI — Server Name Indication</h3>
+<p>RFC 6066 defines SNI as a ClientHello extension, type <code>server_name(0)</code>. The client sends a <code>ServerNameList</code> containing exactly one entry per RFC's constraint (no more than one name of the same type) — a <code>host_name</code> type, ASCII-encoded, no trailing dot, prefixed by a 16-bit length. This is sent <em>before</em> the server has picked a certificate, which is the entire point: a single IP address (very often a CDN or load balancer edge) can host thousands of unrelated TLS sites, each with its own certificate, and SNI is how the server knows which one to present for this specific connection. If the server recognizes and accepts the name, it echoes an empty <code>server_name</code> extension back in its ServerHello — it doesn't repeat the hostname, it just confirms it used it.</p>
+
+<h3>ALPN — Application-Layer Protocol Negotiation</h3>
+<p>RFC 7301 defines ALPN as extension type <code>application_layer_protocol_negotiation(16)</code>. The client's ClientHello carries a <code>ProtocolNameList</code> — IANA-registered, opaque byte strings like <code>h2</code> (HTTP/2) or <code>http/1.1</code> — in preference order. The server picks exactly one and returns it in the ServerHello's ALPN extension; if none of the client's offered protocols are acceptable, the server sends a fatal <code>no_application_protocol</code> alert and the connection fails. The entire point of ALPN is avoiding a second round trip: without it, a client would have to complete TLS first, then separately probe or upgrade to figure out whether the server speaks HTTP/2 — ALPN settles that inside the handshake itself.</p>
+
+<h3>Forward secrecy — and its one real exception</h3>
+<p>TLS 1.3 removed static RSA and static (finite-field) Diffie-Hellman key exchange entirely. RFC 8446 states this directly: "all public-key based key exchange mechanisms now provide forward secrecy." Every full TLS 1.3 handshake uses an ephemeral (EC)DHE key exchange — a fresh key pair generated per-connection and discarded afterward — so recording encrypted traffic today and later stealing the server's long-term certificate private key does not let an attacker decrypt that recording. <strong>The one real exception is 0-RTT early data during session resumption.</strong> 0-RTT lets a returning client send application data in its very first flight, encrypted under a key derived from a previously-established PSK (pre-shared key) from an earlier session — before any fresh ephemeral key exchange has happened for this connection. That early data is only as safe as the PSK itself, is not forward-secret, and can be replayed by a network attacker who captured it, because there's no fresh randomness protecting it yet. TLS 1.3 restores forward secrecy for the rest of the resumed session by combining that PSK with a fresh (EC)DHE exchange (PSK-with-(EC)DHE mode) — but the 0-RTT payload itself never gets that protection. This is exactly why 0-RTT is recommended only for idempotent requests (cached page loads), never for anything like a login or a payment submission.</p>
+
+<h2>Architecture / diagram</h2>
+<pre><code>ClientHello (cleartext, sent first):
+  server_name extension (SNI)       -> "which cert do I need?"
+  application_layer_protocol_negotiation (ALPN) -> ["h2", "http/1.1"]
+  supported_groups: x25519, secp256r1        -> possible key-exchange groups
+  key_share: x25519 ephemeral public value   -> the actual DH share, sent optimistically
+  cipher_suites: TLS_AES_128_GCM_SHA256, ...  -> symmetric algorithm choices only
+
+ServerHello (server responds):
+  key_share: server's own ephemeral public value  -> fresh, discarded after this session
+  cipher_suite: TLS_AES_128_GCM_SHA256 (picked one)
+  server_name: (empty -- just confirms SNI was used)
+  alpn: "h2" (picked one)
+
+Result: both sides now derive a session key from a key exchange that
+        used ephemeral values -> forward secrecy for this handshake.
+
+Exception -- 0-RTT resumption:
+  ClientHello carries "early_data" + PSK identity from a PRIOR session
+  -> app data sent immediately, encrypted under a key derived from
+     that PSK, BEFORE any fresh key_share exchange for this connection
+  -> NOT forward secret, and replayable -> idempotent requests only</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>Cipher suite (TLS 1.3)</strong> — names only the AEAD symmetric algorithm and hash; key exchange and signature algorithms are negotiated separately.</li>
+<li><strong>AEAD</strong> — Authenticated Encryption with Associated Data — a cipher mode providing both confidentiality and integrity in one operation (e.g. AES-GCM, ChaCha20-Poly1305).</li>
+<li><strong>SNI (Server Name Indication)</strong> — a ClientHello extension (RFC 6066) that tells the server which hostname the client is trying to reach, in cleartext, before certificate selection.</li>
+<li><strong>ALPN (Application-Layer Protocol Negotiation)</strong> — a ClientHello/ServerHello extension (RFC 7301) that negotiates the application protocol (h2, http/1.1) inside the TLS handshake, avoiding a separate round trip.</li>
+<li><strong>Forward secrecy (a.k.a. perfect forward secrecy)</strong> — the property that compromising a server's long-term private key cannot decrypt previously recorded sessions, because those sessions used ephemeral, discarded key-exchange values.</li>
+<li><strong>0-RTT / early data</strong> — TLS 1.3's fastest resumption mode; application data sent in the client's first flight under a PSK-derived key, before forward secrecy is established for that connection — and therefore replayable.</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>Cloudflare, Fastly, and every major CDN rely on SNI to terminate TLS for millions of unrelated customer domains on a small, shared pool of edge IP addresses — without SNI, each distinct certificate would functionally need its own IP address, which is exactly how HTTPS hosting worked before SNI became universal in modern clients. On the ALPN side, every browser-to-server HTTP/2 connection you've ever made was negotiated via ALPN inside the TLS handshake — that's literally how a browser and server agree to speak HTTP/2 instead of falling back to HTTP/1.1, with zero extra round trips. And forward secrecy's practical stakes were proven, not theoretical: 2014's "Heartbleed" vulnerability let attackers extract server private keys from memory, and organizations that had used static RSA key exchange (pre-TLS-1.3-mandate) faced the real possibility that any previously recorded traffic to a since-compromised server could be decrypted retroactively — the exact failure mode forward secrecy exists to prevent, and the reason TLS 1.3 doesn't allow static key exchange as an option at all anymore.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Inspect real negotiated cipher suite, SNI, and ALPN values, and see what your OpenSSL build supports:</p>
+<pre><code># List the TLS 1.3 cipher suites your local OpenSSL supports
+openssl ciphers -s -tls1_3 -v
+
+# Connect to a live site and show the negotiated cipher suite + ALPN protocol
+# (-alpn requests h2; -servername sends SNI explicitly)
+openssl s_client -connect www.cloudflare.com:443 \
+  -tls1_3 -alpn h2,http/1.1 -servername www.cloudflare.com </dev/null 2>&1 \
+  | grep -E "Cipher|ALPN|Protocol"
+
+# Force TLS 1.2 against the same host to see the OLD-style suite naming
+# (key exchange + auth + cipher + hash all in one string) for comparison
+openssl s_client -connect www.cloudflare.com:443 \
+  -tls1_2 -servername www.cloudflare.com </dev/null 2>&1 | grep "Cipher"
+
+# Prove SNI matters: connect WITHOUT sending SNI against a multi-tenant host
+# and compare which certificate comes back
+openssl s_client -connect www.cloudflare.com:443 </dev/null 2>&1 \
+  | openssl x509 -noout -subject 2>/dev/null || echo "no cert / default cert returned"</code></pre>
+<p>Expected result: the TLS 1.3 connection shows a short suite name like <code>TLS_AES_128_GCM_SHA256</code> and an ALPN protocol of <code>h2</code>; the TLS 1.2 connection shows the older four-part suite name (e.g. <code>ECDHE-RSA-AES128-GCM-SHA256</code>); and omitting SNI on a shared/multi-tenant host often returns a different (default or error) certificate than the one you get by sending the correct hostname.</p>
+
+<h2>What can go wrong</h2>
+<p>A common real misconfiguration is a load balancer or reverse proxy terminating TLS without forwarding SNI correctly to backend servers in a multi-tenant setup — the client's handshake succeeds against the edge, but the wrong backend certificate (or none) gets served, producing a hostname-mismatch failure that looks like a certificate problem when the real cause is SNI routing. On the cipher suite side, a security scanner flagging "weak cipher suites supported" against a server that also supports TLS 1.2 is common — TLS 1.3's own five suites are all strong by design, but a server still offering TLS 1.2 CBC-mode suites for compatibility will get flagged for those, not for anything TLS-1.3-specific. On forward secrecy, the most common real gap is a security questionnaire answer of "yes, we support forward secrecy" that's actually only true for full handshakes — nobody checked whether 0-RTT early data is enabled and, if so, whether it's restricted to idempotent requests.</p>
+
+<h2>Troubleshooting</h2>
+<p>If a client reports "wrong certificate" or a hostname mismatch against a server you know has the right certificate configured, check whether SNI was actually sent and whether the terminating proxy/load balancer is routing on it correctly — <code>openssl s_client -servername &lt;host&gt;</code> vs. omitting <code>-servername</code> is the fastest way to reproduce this locally. If ALPN negotiation is failing (client falls back to HTTP/1.1 unexpectedly, or gets a hard connection failure), verify the server actually has HTTP/2 support wired into its TLS stack and lists <code>h2</code> in what it's willing to negotiate — some reverse proxy configurations terminate TLS but weren't configured to advertise <code>h2</code> even though the backend supports it. If a compliance scan flags "missing forward secrecy," check the actual negotiated cipher suite and TLS version in the scan output — this almost always traces to an old TLS 1.0/1.1/1.2 configuration still permitting static RSA or non-ephemeral DH suites, not to TLS 1.3 itself, which cannot be configured without forward secrecy for its full handshakes.</p>
+
+<h2>Security considerations</h2>
+<p>Prefer TLS 1.3-only configurations where client compatibility allows it — it removes the entire category of non-forward-secret key exchange as a configuration option, rather than relying on operators to correctly disable weak suites in TLS 1.2. If 0-RTT is enabled for performance, explicitly restrict it to idempotent operations at the application layer — TLS itself does not know or enforce which requests are safe to replay, that's the server application's responsibility. Note plainly that classic (unencrypted) SNI leaks the hostname you're connecting to in cleartext to anyone observing the network — this is a real, current privacy and traffic-analysis exposure, and it's exactly what Lesson 22's Encrypted Client Hello addresses.</p>
+
+<h2>Production best practices</h2>
+<p>Set an explicit, minimal cipher suite policy rather than "whatever the library defaults to" — for TLS 1.3 that means confirming you're not needlessly re-enabling the optional CCM suites without a specific embedded/constrained-device reason, and for any TLS 1.2 fallback you still support, explicitly disable static RSA and non-ephemeral DH suites. Always terminate TLS somewhere that correctly reads and routes on SNI in multi-tenant/CDN architectures, and verify it with a real multi-hostname test, not just a single default-domain check. Enable ALPN and confirm <code>h2</code> is actually negotiated in production, not just supported in theory — a surprising number of deployments silently run HTTP/1.1 over TLS 1.3 because a proxy layer was never configured to advertise HTTP/2 support.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "What does a TLS 1.3 cipher suite actually specify, compared to TLS 1.2?" <strong>A:</strong> "Only the symmetric AEAD algorithm and hash — e.g. TLS_AES_128_GCM_SHA256. Key exchange (always ephemeral (EC)DHE) and the signature algorithm used to authenticate the handshake are negotiated through separate extensions. TLS 1.2 suite names bundled all four decisions into one string; TLS 1.3 split them apart and removed non-ephemeral key exchange entirely."</p>
+<p><strong>Interview Q:</strong> "Does TLS 1.3 always guarantee forward secrecy?" <strong>A:</strong> "For full handshakes, yes — static RSA/DH key exchange was removed entirely. The one exception is 0-RTT early data during session resumption: that data is encrypted under a PSK-derived key before any fresh key exchange happens for the new connection, so it isn't forward-secret and can be replayed — which is why 0-RTT should be limited to idempotent requests."</p>
+
+<h2>Source</h2>
+<p>IETF, <a href="https://www.rfc-editor.org/rfc/rfc8446" target="_blank" rel="noopener">RFC 8446, "The Transport Layer Security (TLS) Protocol Version 1.3"</a> (cipher suite list and MTI requirements in Section 9.1 / Appendix B.4, removal of static RSA/DH and forward-secrecy guarantee, MTI groups secp256r1/x25519 and signature algorithms) — fetched live 2026-08-08. IETF, <a href="https://www.rfc-editor.org/rfc/rfc6066" target="_blank" rel="noopener">RFC 6066, "Transport Layer Security (TLS) Extensions: Extension Definitions"</a> (Server Name Indication, Section 3) — fetched live 2026-08-08. IETF, <a href="https://www.rfc-editor.org/rfc/rfc7301" target="_blank" rel="noopener">RFC 7301, "Transport Layer Security (TLS) Application-Layer Protocol Negotiation Extension"</a> — fetched live 2026-08-08. IETF Datatracker / eprint.iacr.org research summary corroborating 0-RTT's replay and forward-secrecy exception, and TLS 1.3's PSK-with-(EC)DHE mode restoring forward secrecy for the resumed session as a whole — cross-checked via live search 2026-08-08 against RFC 8446 Section 2.3's own description of 0-RTT and its "Security Considerations" caveats on early data replay.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>TLS 1.3 cipher suites name only the AEAD algorithm + hash (5 total, TLS_AES_128_GCM_SHA256 is the only MUST-implement one) — key exchange and signature algorithms moved to separate extensions.</li>
+    <li>SNI (RFC 6066) sends the target hostname in cleartext in the ClientHello, letting one IP serve many certificates — this cleartext exposure is exactly what Encrypted Client Hello (Lesson 22) fixes.</li>
+    <li>ALPN (RFC 7301) negotiates the application protocol (h2 vs http/1.1) inside the same handshake, avoiding an extra round trip.</li>
+    <li>TLS 1.3 removed static RSA/DH entirely, so every full handshake is forward-secret by design — except 0-RTT early data, which uses a PSK-derived key before any fresh key exchange and is therefore replayable and not forward-secret.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What does a TLS 1.3 cipher suite name specify, and what does it deliberately leave out compared to TLS 1.2?</li>
+<li>Why does SNI need to be sent before the server picks a certificate, and what does it expose in cleartext?</li>
+<li>What problem does ALPN solve, and why does solving it inside the handshake matter?</li>
+<li>Under what specific circumstance does TLS 1.3 NOT provide forward secrecy, and why?</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's <code>openssl ciphers -s -tls1_3 -v</code> shows fewer than the five RFC 8446 suites, that's your OpenSSL build's own limitation (some builds omit the CCM suites by default) — not a sign anything is misconfigured. Paste the output back to your teacher if you want it interpreted.</footer>
+
+<div class="lesson-nav">
+  <a href="0020-tls-13-handshake.html">&larr; Previous: The TLS 1.3 Handshake, Step by Step</a>
+  <a href="0022-modern-tls-extensions.html">Next: Modern TLS Extensions — Encrypted Client Hello and Certificate Compression &rarr;</a>
+</div>
+
+</body>
+</html>

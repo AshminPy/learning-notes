@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 20 — The TLS 1.3 Handshake, Step by Step</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">PKI Engineer — Lesson 20 of 106</p>
+<h1>The TLS 1.3 Handshake, Step by Step</h1>
+
+<h2>What you will learn</h2>
+<p>The exact message-by-message flow of a TLS 1.3 full handshake per RFC 8446 — ClientHello through Finished — what's encrypted and when, why TLS 1.3 needs only one round trip instead of TLS 1.2's two, what a HelloRetryRequest is and when it happens, and how 0-RTT resumption works and why it comes with a real security trade-off you need to know about before ever enabling it.</p>
+
+<h2>Why this matters</h2>
+<p>"TLS handshake failed" is one of the most common errors you'll troubleshoot in this field, and you cannot diagnose it by guessing — you have to know which specific message in the sequence failed to know what's actually wrong (protocol version mismatch, no common cipher, untrusted certificate, missing key share). This lesson gives you the exact sequence so that later, when Stage Q walks through real incidents like "unable to get local issuer certificate," you already know precisely where in this flow that failure occurs.</p>
+
+<h2>Simple explanation</h2>
+<p>A TLS 1.3 handshake is a negotiation with three jobs, done in one round trip: agree on cryptographic parameters, exchange enough key material for both sides to derive the same shared secret, and let the client verify the server is who it claims to be via its certificate. The single biggest change from TLS 1.2 is timing: the client sends its Diffie-Hellman key material in its very first message instead of waiting for the server to ask for it, so the server can compute the shared secret and start encrypting immediately — that one change is what collapses TLS 1.2's two round trips down to TLS 1.3's one.</p>
+
+<h2>How it works</h2>
+
+<h3>The full 1-RTT handshake, per RFC 8446 Section 2</h3>
+<p>RFC 8446 groups the handshake into three phases. In the notation below, <code>{}</code> means "encrypted with handshake traffic keys" and <code>*</code> means "optional/situational" — both taken directly from the RFC's own Figure 1 notation:</p>
+<pre><code>Client                                              Server
+
+ClientHello
++ key_share
++ signature_algorithms
++ psk_key_exchange_modes
++ pre_shared_key*                -------->
+                                                        ServerHello
+                                                        + key_share
+                                                        + pre_shared_key*
+                                             {EncryptedExtensions}
+                                             {CertificateRequest*}
+                                                     {Certificate*}
+                                               {CertificateVerify*}
+                                                        {Finished}
+                                  <--------      [Application Data*]
+{Certificate*}
+{CertificateVerify*}
+{Finished}                       -------->
+[Application Data]               <------->      [Application Data]
+
+  {}  = encrypted using keys derived from the (EC)DHE shared secret
+  []  = encrypted using the final application traffic keys
+  *   = message only sent in certain circumstances (client-cert auth,
+        PSK resumption)</code></pre>
+
+<h3>Phase 1 — Key Exchange (ClientHello / ServerHello)</h3>
+<p>The client sends a <strong>ClientHello</strong> containing: the highest TLS version it supports (via the <code>supported_versions</code> extension — TLS 1.3 repurposed the old version field for backward-compatibility reasons and uses this extension as the real version negotiation mechanism), a list of cipher suites it supports, a <code>key_share</code> extension containing its (EC)DHE public key material for one or more supported groups, and <code>signature_algorithms</code> listing which signature schemes it can verify. This is the single biggest structural change from TLS 1.2: the client guesses which key-exchange group the server will pick and sends its key share <em>speculatively</em>, in the very first message, rather than waiting to be asked. The server picks a cipher suite and a matching group, sends back its own <code>key_share</code> in the <strong>ServerHello</strong>, and at that point <em>both sides can independently compute the same shared secret</em> — this is the moment that makes the rest of the handshake encryptable.</p>
+
+<h3>Phase 2 — Server Parameters ({EncryptedExtensions}, {CertificateRequest*})</h3>
+<p>Everything from this point forward in the handshake is encrypted using keys derived from that shared secret — this is the other headline change from TLS 1.2, where the certificate and everything after it traveled in plaintext. <strong>EncryptedExtensions</strong> carries any server extensions that aren't needed for cryptographic negotiation (like ALPN's negotiated protocol, covered in Lesson 21). If the server wants to authenticate the client too (mutual TLS, covered in Stage F), it sends an optional <strong>CertificateRequest</strong> here.</p>
+
+<h3>Phase 3 — Authentication ({Certificate*}, {CertificateVerify*}, {Finished})</h3>
+<p>The server sends its <strong>Certificate</strong> message (its X.509 certificate chain, Stage B), then a <strong>CertificateVerify</strong> message — a signature over the entire handshake transcript so far, made with the private key matching that certificate, proving the server actually holds the private key and isn't just replaying someone else's certificate. Then a <strong>Finished</strong> message, a MAC over the full transcript, proves the server's view of the handshake matches the client's and that nothing was tampered with in transit. If the client's certificate was requested, the client mirrors this with its own <code>{Certificate}</code>, <code>{CertificateVerify}</code>, and <code>{Finished}</code>. Once both Finished messages are sent and verified, the handshake is complete and both sides switch to application traffic keys — <code>[Application Data]</code> in the diagram — for the actual HTTP (or whatever protocol) traffic.</p>
+
+<h3>HelloRetryRequest — when the client's first guess is wrong</h3>
+<p>The client's speculative <code>key_share</code> in Phase 1 is a guess about which group the server prefers. If the server doesn't support any of the groups the client sent a key share for, it can't just fail the connection — instead it sends a <strong>HelloRetryRequest</strong> telling the client which group to use, the client sends a corrected <code>ClientHello</code> with a matching <code>key_share</code>, and the handshake continues. This costs one extra round trip on that specific connection (making it functionally similar to TLS 1.2's two round trips for that case only), but the handshake transcript is preserved, not restarted — RFC 8446 treats it as a continuation, not a fresh attempt.</p>
+
+<h3>0-RTT — resuming a previous connection with zero added latency</h3>
+<p>If the client has a previously negotiated <strong>Pre-Shared Key (PSK)</strong> from an earlier session with the same server (session resumption, unified under the PSK model in TLS 1.3 — this replaces TLS 1.2's separate session-ID and session-ticket mechanisms), it can send encrypted <strong>early data</strong> in its very first flight, before the server has responded at all:</p>
+<pre><code>Client                                              Server
+
+ClientHello
++ early_data
++ key_share*
++ psk_key_exchange_modes
++ pre_shared_key
+(Application Data*)              -------->
+                                                        ServerHello
+                                                 + pre_shared_key
+                                                     + key_share*
+                                             {EncryptedExtensions}
+                                                + early_data*
+                                                        {Finished}
+                                  <--------
+(EndOfEarlyData)
+{Finished}                        -------->
+[Application Data]               <------->      [Application Data]
+
+  ()  = encrypted using the client's early traffic secret (0-RTT data)</code></pre>
+<p>This is genuinely zero added round trips for that early data — but it comes with a real, well-documented risk: because there's no live back-and-forth confirming freshness before that data is accepted, a captured 0-RTT ClientHello can be <strong>replayed</strong> by an attacker, and the server has no built-in way to tell a replay from the original request at the TLS layer. RFC 8446 is explicit that 0-RTT data does not have the same forward-secrecy and replay protection as the rest of the handshake, and it's why 0-RTT is generally recommended only for idempotent requests (safe to process more than once) — never for anything that changes state, like a payment or a password change.</p>
+
+<h3>TLS 1.2 vs TLS 1.3 handshake, side by side</h3>
+<table>
+<tr><th>Property</th><th>TLS 1.2</th><th>TLS 1.3</th></tr>
+<tr><td>Round trips (full handshake)</td><td>2</td><td>1</td></tr>
+<tr><td>When encryption starts</td><td>After ChangeCipherSpec, late in the handshake</td><td>Immediately after ServerHello — certificate and everything after it is encrypted</td></tr>
+<tr><td>Key exchange</td><td>Static RSA or (EC)DHE, negotiated after ClientHello</td><td>(EC)DHE only — client sends key share speculatively in ClientHello; static RSA removed entirely</td></tr>
+<tr><td>Session resumption</td><td>Session IDs or session tickets (RFC 5077), separate mechanisms</td><td>Unified under the PSK model; enables 0-RTT</td></tr>
+<tr><td>Renegotiation</td><td>Supported (and a historical source of vulnerabilities)</td><td>Removed entirely</td></tr>
+<tr><td>Compression</td><td>Supported (source of the CRIME attack)</td><td>Removed entirely</td></tr>
+</table>
+
+<h2>Architecture / diagram</h2>
+<pre><code>Where this fits in the full connection lifecycle (Lesson 19's diagram, expanded):
+
+  [ TCP 3-way handshake completes -- Lesson 19 ]
+                    |
+                    v
+  ClientHello (+ key_share, guessing the group)
+                    |
+        does the server support that group?
+           /                        \
+          NO                        YES
+           |                          |
+   HelloRetryRequest          ServerHello (+ key_share)
+   + corrected ClientHello           |
+           |                         v
+           \------------> both sides now share a secret
+                                      |
+                                      v
+                    {EncryptedExtensions} {CertificateRequest*}
+                    {Certificate} {CertificateVerify} {Finished}
+                                      |
+                                      v
+                    client: {Certificate*} {CertificateVerify*} {Finished}
+                                      |
+                                      v
+                       [Application Data] both directions
+                       (this is where HTTP -- Lesson 19 -- begins)</code></pre>
+
+<h2>Important terminology</h2>
+<ul>
+<li><strong>ClientHello / ServerHello</strong> — the first message from each side, negotiating protocol version, cipher suite, and key-exchange group.</li>
+<li><strong>key_share</strong> — the extension carrying a side's ephemeral (EC)DHE public key material, sent speculatively by the client in TLS 1.3.</li>
+<li><strong>HelloRetryRequest</strong> — the server's message telling the client to resend ClientHello with a different key-exchange group, when the client's initial guess didn't match anything the server supports.</li>
+<li><strong>CertificateVerify</strong> — a signature over the handshake transcript proving the sender holds the private key matching the certificate it just presented.</li>
+<li><strong>Finished</strong> — a MAC over the full handshake transcript, confirming both sides agree on everything exchanged so far and detecting any tampering.</li>
+<li><strong>0-RTT / early data</strong> — encrypted application data sent in the client's very first flight using a resumed PSK, with no replay protection at the TLS layer.</li>
+<li><strong>Forward secrecy</strong> — the property that a compromised long-term private key later cannot decrypt past sessions, guaranteed in TLS 1.3 because key exchange is always ephemeral (EC)DHE, never static RSA (Lesson 21 covers this in full).</li>
+</ul>
+
+<h2>Real-world example</h2>
+<p>Cloudflare's own account of shipping RFC 8446, published the day the RFC was finalized, frames the practical payoff plainly: TLS 1.2 needed "two additional round-trips between the browser and the server before encrypted data can be sent," and TLS 1.3's redesign — sending the (EC)DHE key share speculatively in the first message — lets the server "learn the shared secret and send encrypted data one round trip earlier." On a mobile connection with 100-200ms of round-trip latency, cutting one full round trip off every single new HTTPS connection is a measurable, user-visible difference at the scale of a service like Cloudflare's, not a theoretical improvement.</p>
+
+<h2>Hands-on lab</h2>
+<p><em>Track B.</em> Force a TLS 1.3 connection and inspect the negotiated parameters, then compare against a TLS 1.2 connection to the same host if it supports both:</p>
+<pre><code># Force TLS 1.3 and show protocol + cipher negotiated
+echo | openssl s_client -connect example.com:443 -tls1_3 2>/dev/null \
+  | grep -E "Protocol|Cipher|New,"
+
+# Show the full handshake trace with -msg to see each message name
+# in order -- ClientHello, ServerHello, EncryptedExtensions, etc.
+echo | openssl s_client -connect example.com:443 -tls1_3 -msg 2>&1 \
+  | grep -E "TLS 1\.3, Handshake"
+
+# Compare against TLS 1.2 on the same host (if still supported)
+echo | openssl s_client -connect example.com:443 -tls1_2 2>/dev/null \
+  | grep -E "Protocol|Cipher|New,"
+
+# Time a fresh handshake vs a resumed one to see 0-RTT/session
+# resumption's latency effect directly
+time (echo | openssl s_client -connect example.com:443 -tls1_3 2>/dev/null >/dev/null)</code></pre>
+<p>Expected result: the <code>-msg</code> trace shows the exact message sequence from this lesson in order — ClientHello, ServerHello, EncryptedExtensions, Certificate, CertificateVerify, Finished — confirming the RFC 8446 flow against a real live handshake instead of just the diagram.</p>
+
+<h2>What can go wrong</h2>
+<p>A very common real failure is a client and server that simply don't share a common cipher suite or key-exchange group after a server-side hardening change (e.g. disabling older groups) — this surfaces as a generic "handshake failure" alert with no further detail from most clients, and the only way to actually diagnose it is to check what the client offered against what the server now accepts, usually with <code>openssl s_client</code>'s verbose output or a packet capture. Another real one: a server that supports TLS 1.3 but is missing intermediate certificates in its chain will still complete the cryptographic handshake successfully (ServerHello through Finished all succeed) but the client will reject the connection at the certificate-verification step — this looks like a handshake problem but is actually a chain-of-trust problem (Stage D), a distinction worth keeping straight before you start troubleshooting the wrong layer.</p>
+
+<h2>Troubleshooting</h2>
+<p>When a TLS connection fails, identify exactly which phase failed before guessing at a fix: if the failure happens before any certificate is even presented, suspect protocol version or cipher/group mismatch (Phase 1). If the certificate is presented but rejected, the cryptographic handshake itself succeeded and the problem is trust-chain or hostname validation (Stage D/Lesson 16), not the TLS mechanics covered in this lesson. <code>openssl s_client -connect host:443 -msg</code> shows you the actual message sequence exchanged, which tells you precisely how far the handshake got before it stopped — always more reliable than a generic client error message alone.</p>
+
+<h2>Security considerations</h2>
+<p>Never enable 0-RTT for anything that isn't provably idempotent — RFC 8446 itself documents that early data has no replay protection at the TLS layer, meaning an attacker who captures a 0-RTT ClientHello can resend it and have the server process the same request again. If your application needs 0-RTT's latency benefit, replay protection has to be handled at the application layer (e.g. idempotency tokens), not assumed from TLS. Also confirm any server you operate genuinely completed the certificate/CertificateVerify authentication step and isn't just accepting whatever cryptographic handshake succeeds — a handshake that finishes without proper certificate validation on the client side provides confidentiality and integrity but no actual server authentication, which defeats a core purpose of TLS.</p>
+
+<h2>Production best practices</h2>
+<p>Prefer TLS 1.3 wherever both ends support it — one fewer round trip on every new connection is a real, compounding latency win at scale, not a marginal one. Keep TLS 1.2 available as a fallback only if you have a genuine legacy-client population that can't be upgraded (verify this with real traffic data, not assumption), and never re-enable TLS 1.0/1.1 (RFC 8996, Lesson 19) to chase compatibility — that trade isn't worth it in 2026. If you enable 0-RTT for performance, scope it explicitly to safe, idempotent endpoints only, and document that decision — don't let it become an implicit default across an entire service.</p>
+
+<h2>Exam and interview notes</h2>
+<p><strong>Interview Q:</strong> "Why does TLS 1.3 need only one round trip while TLS 1.2 needs two?" <strong>A:</strong> "The client sends its (EC)DHE key share speculatively in the very first ClientHello, guessing which group the server will accept, instead of waiting for the server to ask for it. That lets the server compute the shared secret and start encrypting — including the certificate — one full round trip earlier than TLS 1.2, which negotiated the key-exchange method first and only exchanged key material afterward."</p>
+<p><strong>Interview Q:</strong> "What happens if the client's key_share guess is wrong?" <strong>A:</strong> "The server sends a HelloRetryRequest specifying the group it actually supports, the client resends ClientHello with a matching key_share, and the handshake continues using the preserved transcript — it costs one extra round trip on that connection only, it doesn't restart the handshake from scratch."</p>
+<p><strong>Interview Q:</strong> "What's the risk with TLS 1.3's 0-RTT mode?" <strong>A:</strong> "Early data sent in the client's first flight has no replay protection at the TLS layer — RFC 8446 documents this explicitly. An attacker who captures that first flight can resend it, and the server has no built-in way to distinguish it from the original. It should only be used for idempotent requests, with any replay protection handled at the application layer."</p>
+
+<h2>Source</h2>
+<p>IETF, <a href="https://www.rfc-editor.org/rfc/rfc8446" target="_blank" rel="noopener">RFC 8446, "The Transport Layer Security (TLS) Protocol Version 1.3"</a> — Section 2 (Protocol Overview, full handshake and HelloRetryRequest message flow diagrams), Section 2.3 (0-RTT/early data flow and its replay-protection caveat), Section 1.2 (changes from TLS 1.2: static RSA/DH removed, compression removed, renegotiation removed, session resumption unified under PSK) — fetched live 2026-08-08. Cloudflare, <a href="https://blog.cloudflare.com/rfc-8446-aka-tls-1-3/" target="_blank" rel="noopener">"RFC 8446, aka TLS 1.3"</a> (published 2018-08-10; practical round-trip and latency explanation) — fetched live 2026-08-08. IETF, <a href="https://www.rfc-editor.org/rfc/rfc8996.html" target="_blank" rel="noopener">RFC 8996, "Deprecating TLS 1.0 and TLS 1.1"</a> (context for why only TLS 1.2/1.3 are in scope) — fetched live 2026-08-08.</p>
+
+<div class="recap">
+  <strong>Recap</strong>
+  <ul>
+    <li>TLS 1.3's full handshake is one round trip: ClientHello (with a speculative key_share) → ServerHello + encrypted Certificate/CertificateVerify/Finished → client Finished → application data.</li>
+    <li>Everything after ServerHello is encrypted — the single biggest structural change from TLS 1.2, where the certificate traveled in plaintext.</li>
+    <li>A HelloRetryRequest happens when the client's guessed key-exchange group doesn't match what the server supports — it costs one extra round trip but preserves the transcript rather than restarting.</li>
+    <li>0-RTT lets a resumed client send encrypted data in its very first flight with zero added round trips, but RFC 8446 is explicit that early data has no replay protection at the TLS layer — restrict it to idempotent requests only.</li>
+    <li>Diagnose handshake failures by phase: pre-certificate failures point to version/cipher/group mismatch; post-certificate rejections point to chain-of-trust or hostname validation, a different problem entirely.</li>
+  </ul>
+</div>
+
+<p class="callout"><strong>Confidence check — answer without looking back:</strong></p>
+<ul>
+<li>What single change lets TLS 1.3 complete a full handshake in one round trip instead of TLS 1.2's two?</li>
+<li>What triggers a HelloRetryRequest, and does it restart the handshake or continue it?</li>
+<li>Why is 0-RTT early data considered risky, and what kind of request should it be restricted to?</li>
+<li>If a client rejects a server's certificate after the cryptographic handshake completed successfully, which layer is actually broken — TLS mechanics, or something else?</li>
+</ul>
+
+<footer class="teacher-reminder">If your lab's <code>-msg</code> trace shows a message sequence that doesn't match this lesson's diagram (extra retries, missing Certificate messages), paste the exact trace back to your teacher — it likely means the server negotiated a resumed/PSK handshake rather than a full one, which is worth identifying explicitly rather than assuming it's an error.</footer>
+
+<div class="lesson-nav">
+  <a href="0019-tls-fundamentals.html">&larr; Previous: TLS Fundamentals: HTTP vs HTTPS, TCP, and the Handshake at a Glance</a>
+  <a href="0021-cipher-suites.html">Next: Cipher Suites, SNI, ALPN, and Forward Secrecy &rarr;</a>
+</div>
+
+</body>
+</html>
