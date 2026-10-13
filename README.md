@@ -14,6 +14,7 @@ An independent, free rapid-revision and active-recall companion for CKA and Goog
 - `terraform/` — Terraform, zero to expert, Terraform Associate anchor — 37 lessons + [roadmap tracker](https://ashminpy.github.io/learning-notes/terraform/objectives.html)
 - `keyboard-workflow/` — AeroSpace / Raycast / Warp keyboard-first productivity — 8 lessons + [roadmap tracker](https://ashminpy.github.io/learning-notes/keyboard-workflow/objectives.html)
 - `linux/` — Linux for Cloud & SRE, zero to hero, LFCS-aligned — 2 of 26 lessons published + [progress tracker](https://ashminpy.github.io/learning-notes/linux/objectives.html)
+- `orca/` — Orca: running many AI coding agents in parallel — 1 of 23 lessons published + [roadmap tracker](https://ashminpy.github.io/learning-notes/orca/objectives.html)
 
 Found something inaccurate or outdated? [Open an issue](https://github.com/AshminPy/learning-notes/issues/new) — corrections are welcome.
 

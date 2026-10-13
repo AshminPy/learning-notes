@@ -1,0 +1,52 @@
+/* orca theme — shared rules live in ../../assets/course-style.css */
+@import url("../../assets/course-style.css");
+
+:root {
+  --bg: #fbfdfc;
+  --fg: #16201e;
+  --muted: #5e6b68;
+  --accent: #0f766e;
+  --rule: #d3dedb;
+  --code-bg: #e8f2f0;
+  --ok: #15803d;
+  --bad: #b91c1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141917;
+    --fg: #e3ebe8;
+    --muted: #93a29e;
+    --accent: #5eead4;
+    --rule: #33403c;
+    --code-bg: #1d2a27;
+    --ok: #4ade80;
+    --bad: #f87171;
+  }
+}
+
+/* Instant-feedback multiple choice — used with assets/quiz.js.
+   Markup: <div class="quiz mcq" data-answer="b"> … radios … <button>Check</button>
+           <div class="feedback"></div> <div class="why">explanation</div> */
+.mcq .feedback { margin-top: 0.6rem; font-weight: bold; }
+.mcq .feedback.ok { color: var(--ok); }
+.mcq .feedback.bad { color: var(--bad); }
+.mcq .why { display: none; margin-top: 0.4rem; color: var(--muted); }
+.mcq .why.shown { display: block; }
+
+/* Free recall — used with assets/quiz.js (.recall) */
+.recall textarea {
+  font-family: inherit; font-size: 1rem; width: 100%; min-height: 4rem;
+  padding: 0.5rem 0.6rem; border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--bg); color: var(--fg);
+}
+
+/* Side-by-side "pattern" cards */
+.patterns { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.25rem 0; }
+.patterns > div { border: 1px solid var(--rule); border-radius: 6px; padding: 0.9rem 1.1rem; }
+.patterns h3 { margin-top: 0; color: var(--accent); }
+@media (max-width: 640px) { .patterns { grid-template-columns: 1fr; } }
+
+/* Monospace diagram block */
+.desks { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem;
+  background: var(--code-bg); border-radius: 6px; padding: 1rem; white-space: pre; overflow-x: auto; }
