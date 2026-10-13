@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lesson 1 — One task, one worktree, one agent</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Orca: Many Agents, Many Tasks — Lesson 1 of 23</p>
+<h1>One task, one worktree, one agent</h1>
+
+<p><strong>Today's win:</strong> you run two agents at the same time, on two different tasks, in one of your own repos. Neither agent can touch the other's files.</p>
+
+<h2>Why this matters</h2>
+<p>Two agents in <em>one</em> folder edit the same files. They overwrite each other, and you cannot tell who broke what. Orca solves this with one simple rule: <strong>every task gets its own folder</strong>.</p>
+
+<p class="callout"><strong>Mental model — separate desks.</strong> Your repo is an office. Each task gets its own desk (a <em>worktree</em>): a full copy of the project with its own branch. One worker (an <em>agent</em>) sits at each desk. You are the manager who walks between desks and decides what ships.<br><br>
+<em>What this predicts:</em> while they work, agents cannot overwrite each other. Problems appear only later, when you <strong>combine</strong> their branches — just like two people's paper drafts only clash when you staple them together.</p>
+
+<div class="desks">repo: my-app  (base ref: main)
+ ├── desk 1  worktree "fix-tests"   branch fix-tests   ← agent: Claude Code
+ ├── desk 2  worktree "update-docs" branch update-docs ← agent: Codex
+ └── desk 3  worktree "explore-ci"  branch explore-ci  ← agent: Claude Code
+                         you: review each diff → merge the good ones → delete the rest</div>
+
+<h2>The three pieces</h2>
+<table>
+<tr><th>Piece</th><th>What it is</th><th>Source</th></tr>
+<tr><td>Worktree</td><td>A real <code>git worktree</code>: its own folder, its own branch, its own terminals. Plain git still works inside it.</td><td><a href="https://onorca.dev/docs/model/worktrees">Worktrees</a></td></tr>
+<tr><td>Agent</td><td>A coding CLI you already have (Claude Code, Codex, Cursor CLI…) running in that worktree's terminal.</td><td><a href="https://onorca.dev/docs">What is Orca?</a></td></tr>
+<tr><td>You</td><td>The reviewer. You read each diff, keep the winner, delete the rest. Deleting a worktree removes its folder <em>and</em> its branch.</td><td><a href="https://onorca.dev/docs/model/worktrees">Worktrees</a></td></tr>
+</table>
+
+<h2>Two ways to use many agents</h2>
+<div class="patterns">
+<div>
+<h3>Fan-out</h3>
+<p><strong>Different tasks</strong>, one agent each. Three bugs → three worktrees → three agents.</p>
+<p>Rule: the tasks must be <strong>independent</strong> — they should not change the same files, or you will fight merge conflicts later.</p>
+<p><em>This is your main goal.</em></p>
+</div>
+<div>
+<h3>Race</h3>
+<p><strong>Same task</strong>, several agents. Compare the diffs, keep the best one.</p>
+<p>Orca's tip: <em>"Where three agents agree, the answer is probably right."</em> If they disagree, you found the hard part. (<a href="https://onorca.dev/docs/recipes/parallel-agents">Recipe</a>)</p>
+<p><em>Lesson 2.</em></p>
+</div>
+</div>
+
+<p class="callout mistake"><strong>Common mistake:</strong> fanning out tasks that touch the same file (for example, two agents both editing <code>README.md</code>). The worktrees protect you while they work — but at merge time you get a conflict to fix by hand. Split work by <em>files or modules</em>, not just by "topic".</p>
+
+<h2>Check yourself — before the hands-on</h2>
+
+<div class="quiz mcq" data-answer="b">
+<p>Q1. Two agents in two Orca worktrees both edit <code>README.md</code>. When do they collide?</p>
+<div class="opts">
+<label><input type="radio" name="q1" value="a"> While both agents are still working</label>
+<label><input type="radio" name="q1" value="b"> When you merge both branches together</label>
+<label><input type="radio" name="q1" value="c"> Never, because Orca merges them automatically</label>
+</div>
+<button>Check</button>
+<div class="feedback"></div>
+<div class="why">Each worktree is its own folder and branch, so nothing clashes during work. The clash shows up when both branches are combined into <code>main</code>.</div>
+</div>
+
+<div class="quiz mcq" data-answer="a">
+<p>Q2. You want three <em>different</em> bugs fixed today. Which pattern fits?</p>
+<div class="opts">
+<label><input type="radio" name="q2" value="a"> Fan-out: one agent per bug</label>
+<label><input type="radio" name="q2" value="b"> Race: three agents per bug</label>
+<label><input type="radio" name="q2" value="c"> One agent fixing every bug</label>
+</div>
+<button>Check</button>
+<div class="feedback"></div>
+<div class="why">Different tasks → fan-out. Race is for <em>one</em> hard task where you want several attempts. One agent for everything is the slow, serial way Orca replaces.</div>
+</div>
+
+<div class="quiz mcq" data-answer="c">
+<p>Q3. You delete a losing worktree in Orca. What is removed?</p>
+<div class="opts">
+<label><input type="radio" name="q3" value="a"> Only the agent terminal tab</label>
+<label><input type="radio" name="q3" value="b"> Only the folder on disk</label>
+<label><input type="radio" name="q3" value="c"> The folder and its branch</label>
+</div>
+<button>Check</button>
+<div class="feedback"></div>
+<div class="why">Orca docs: deleting a worktree removes both the directory and the branch, after a confirmation. So keep anything you want <em>before</em> you delete.</div>
+</div>
+
+<div class="quiz recall">
+<p>Q4. In your own words: why can two agents in two worktrees not overwrite each other's files while they work?</p>
+<textarea placeholder="Type your answer, then reveal"></textarea>
+<button>Reveal</button>
+<div class="answer">Because each worktree is a separate folder on disk with its own branch. Each agent only sees and edits its own copy.</div>
+</div>
+
+<h2>Hands-on: your first fan-out</h2>
+<div class="tryit">
+<p class="eyebrow">Try it — about 10 minutes, nothing to merge</p>
+<p>Two <strong>read-only</strong> tasks, so there is nothing to break and nothing to merge.</p>
+
+<p><strong>1. Predict first.</strong> Write down: after you start two agents, will any file in the folder you are working in now change? Yes or no — and why?</p>
+
+<p><strong>2. Launch agent A (UI way).</strong> In Orca's sidebar, click <strong>+</strong> next to your repo (use any repo with a <code>tests/</code> folder and a README; adjust folder names in the prompts if yours differ). Name it <code>explore-tests</code>, start from <code>main</code>, pick <strong>Claude Code</strong>. Paste:</p>
+<pre><code>Read the tests/ folder. List the 5 test files that look slowest or most fragile, with one reason each. Do not edit any files.</code></pre>
+
+<p><strong>3. Launch agent B (CLI way).</strong> From any terminal:</p>
+<pre><code>orca worktree create --repo path:/path/to/your/repo \
+  --name explore-docs --no-parent --agent claude --activate \
+  --prompt "Read README.md and docs/. List 5 places where the docs look out of date, with the file name. Do not edit any files."</code></pre>
+<p><code>--agent</code> starts the agent in the first terminal, <code>--prompt</code> sends the task, <code>--no-parent</code> marks it as independent work, <code>--activate</code> shows it in the app.</p>
+
+<p><strong>4. Watch both.</strong> Drag one worktree's tab to the right edge of the pane to split the view. Or check from a terminal:</p>
+<pre><code>orca worktree ps
+git -C /path/to/your/repo worktree list</code></pre>
+
+<p><strong>5. Check your prediction.</strong> Run <code>git status</code> in the folder you were working in before. Was your guess right?</p>
+
+<p><strong>6. Clean up</strong> when both agents finish (copy any answer you want to keep first). Use the delete action on each worktree in the sidebar, or:</p>
+<pre><code>orca worktree rm --worktree name:explore-tests --force
+orca worktree rm --worktree name:explore-docs --force</code></pre>
+<p>Safety net: if a branch has commits that are not merged, Orca keeps the branch. <code>--force</code> forces the folder removal, not the branch deletion.</p>
+</div>
+
+<p class="callout exam-tip"><strong>Done when:</strong> both agents worked at the same time, <code>git worktree list</code> showed two extra folders while they ran, and the folder you started in did not change.</p>
+
+<h2>Read next (primary source)</h2>
+<p><a href="https://onorca.dev/docs/first-session">Orca docs — Your first 3-agent session</a> (official, ~5 min). Then skim <a href="https://onorca.dev/docs/model/worktrees">Worktrees</a>. Sources checked 2026-10-12 against Orca 1.4.224.</p>
+
+<p>Quick reference: <a href="../reference/glossary.html">Glossary</a> · <a href="../reference/cli-cheatsheet.html">CLI cheat sheet</a></p>
+
+<div class="recap">
+<ul>
+<li>One task = one worktree = one agent. Worktrees are real git worktrees: own folder, own branch.</li>
+<li>Isolation protects you <em>during</em> work. Conflicts appear only at merge time.</li>
+<li>Fan-out = different independent tasks. Race = same task, pick the winner.</li>
+<li>Deleting a worktree deletes its folder <strong>and</strong> branch.</li>
+</ul>
+</div>
+
+<footer class="teacher-reminder">Stuck, or an agent did something odd? Paste the output or a screenshot back to me — I'm your teacher for this course, and real errors are the best lessons.</footer>
+
+<div class="lesson-nav">
+<a href="../index.html">&larr; Course home</a>
+<span>Next: Lesson 2 — Preparing a repo for parallel work (planned)</span>
+</div>
+
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

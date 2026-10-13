@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orca — Glossary</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<p class="eyebrow">Orca: many agents, many tasks — Reference</p>
+<h1>Glossary</h1>
+<p>Every lesson uses these words with exactly these meanings. Checked 2026-10-12 against Orca 1.4.224 and <a href="https://onorca.dev/docs">onorca.dev/docs</a>.</p>
+
+<h2>Core</h2>
+<table>
+<tr><th>Term</th><th>Meaning</th></tr>
+<tr><td>Repo</td><td>A local git checkout you added to Orca (<strong>Add Repo</strong>).</td></tr>
+<tr><td>Base ref</td><td>"The ref every new worktree branches from" — usually <code>origin/main</code>. Set per repo.</td></tr>
+<tr><td>Start-from ref</td><td>The point one specific worktree branches off. Defaults to the base ref.</td></tr>
+<tr><td>Worktree</td><td>A real <code>git worktree</code>: its own folder, branch, terminals and browser tabs. One per task.</td></tr>
+<tr><td>Worktree id</td><td>Two-part address <code>&lt;repoId&gt;::&lt;worktreePath&gt;</code>. A bare repo id is <em>not</em> a worktree id.</td></tr>
+<tr><td>Selector</td><td>How the CLI names a worktree: <code>id:</code>, <code>name:</code>, <code>path:</code>, <code>branch:</code>, <code>issue:</code>, or <code>active</code>.</td></tr>
+<tr><td>Agent</td><td>A coding CLI (Claude Code, Codex, Cursor CLI, …) running in a worktree's terminal.</td></tr>
+<tr><td>Terminal handle</td><td>The CLI's name for one live terminal. Changes after an Orca restart — re-list, don't reuse.</td></tr>
+<tr><td>Worktree comment</td><td>Short status line on the workspace card (<code>worktree set --comment</code>).</td></tr>
+</table>
+
+<h2>Patterns</h2>
+<table>
+<tr><th>Term</th><th>Meaning</th></tr>
+<tr><td>Fan-out</td><td>Different independent tasks, one worktree + agent each. (Course term.)</td></tr>
+<tr><td>Race</td><td>Same task, several agents; compare diffs, keep the winner, delete the rest.</td></tr>
+<tr><td>Handoff</td><td>Give a task fully to another agent/worktree and stop. No supervision.</td></tr>
+</table>
+
+<h2>Orchestration (later lessons — experimental feature)</h2>
+<table>
+<tr><th>Term</th><th>Meaning</th></tr>
+<tr><td>Coordinator</td><td>The agent/session that creates the Run and tasks, starts workers, reads the inbox.</td></tr>
+<tr><td>Run</td><td>A durable namespace with a coordinator inbox. Tracks work; does not schedule it.</td></tr>
+<tr><td>Task</td><td>A work item with a spec, optional dependencies, and a status (<code>pending</code>, <code>ready</code>, <code>dispatched</code>, <code>completed</code>, <code>failed</code>, <code>blocked</code>).</td></tr>
+<tr><td>Dispatch</td><td>One attempt to run a task on a terminal.</td></tr>
+<tr><td>Worker</td><td>An agent started on a task through a dispatch.</td></tr>
+<tr><td><code>worker_done</code></td><td>The message a worker sends exactly once when finished — even on failure.</td></tr>
+<tr><td>Decision gate</td><td>A question that blocks a task until someone records an answer.</td></tr>
+</table>
+
+<p><a href="../lessons/0001-one-task-one-worktree.html">← Lesson 1</a> · <a href="cli-cheatsheet.html">CLI cheat sheet</a></p>
+</body>
+</html>

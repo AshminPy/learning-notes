@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orca — CLI cheat sheet</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<p class="eyebrow">Orca: many agents, many tasks — Reference</p>
+<h1>CLI cheat sheet</h1>
+<p>Flags checked with <code>orca &lt;command&gt; --help</code> on Orca 1.4.224 (2026-10-12). Add <code>--json</code> when a script or agent reads the output. Always confirm with <code>--help</code> after an Orca update.</p>
+
+<h2>Is Orca up?</h2>
+<pre><code>orca status                 # app + runtime ready?
+orca repo list              # repos Orca knows
+orca worktree ps            # one-line summary of every worktree (live terminals, unread)</code></pre>
+
+<h2>Start agents in parallel (fan-out)</h2>
+<pre><code># new independent worktree + agent + task, in one command
+orca worktree create --repo path:/abs/repo --name &lt;task&gt; --no-parent \
+  --agent claude --prompt "&lt;task brief&gt;" [--activate]
+
+# fresh agent in the CURRENT worktree (no new checkout)
+orca terminal create --worktree active --command "codex"</code></pre>
+
+<h2>Watch and steer</h2>
+<pre><code>orca terminal list --worktree &lt;selector&gt;
+orca terminal read --terminal &lt;handle&gt;
+orca terminal wait --terminal &lt;handle&gt; --for tui-idle --timeout-ms 60000
+orca terminal send --terminal &lt;handle&gt; --text "&lt;message&gt;" --enter
+orca worktree set --worktree active --comment "fix done; running tests"</code></pre>
+<p class="callout mistake">A timed-out <code>terminal wait</code> still prints a result. Check <code>satisfied: true</code> before you send — text typed into a TUI that is still starting is lost.</p>
+
+<h2>Clean up</h2>
+<pre><code>orca worktree rm --worktree name:&lt;task&gt; [--force]   # --force: folder only, never forces branch deletion</code></pre>
+
+<h2>Learn more from the installed version</h2>
+<pre><code>orca skills get orca-cli
+orca skills get orchestration</code></pre>
+
+<p><a href="../lessons/0001-one-task-one-worktree.html">← Lesson 1</a> · <a href="glossary.html">Glossary</a></p>
+</body>
+</html>
